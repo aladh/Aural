@@ -47,7 +47,14 @@ locally and ignored by Git.
 
 ## Build and run
 
-From a checkout of this repository:
+Start from a fresh clone:
+
+```bash
+git clone https://github.com/aladh/Aural.git
+cd Aural
+```
+
+Then build, package, sign, and launch the app:
 
 ```bash
 ./script/build_and_run.sh
@@ -68,6 +75,9 @@ Useful modes:
 
 The generated local signing identity lives under the ignored `.build/aural-signing/` directory. It
 is not system-trusted, is not a distribution identity, and never needs to be committed.
+
+See [Development setup](docs/development-setup.md) for fresh-machine prerequisites, the first-build
+flow, everyday commands, generated local state, and clean recovery instructions.
 
 ## Verify
 
@@ -150,6 +160,7 @@ upstreams, but are not a substitute for binary-distribution license review.
 
 Design records and implementation notes:
 
+- [Development setup and clean recovery](docs/development-setup.md)
 - [Product and acceptance contract](docs/product-and-acceptance-contract.md)
 - [Playback engine ADR](docs/ADR-001-playback-engine.md)
 - [Playback state and dependency ownership ADR](docs/ADR-002-playback-state-and-dependencies.md)
