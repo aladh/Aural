@@ -59,6 +59,8 @@ jobs:
           fi
 
       - name: Build and validate release archive
+        env:
+          AURAL_SIGNING_IDENTITY: "-"
         run: |
           version="${GITHUB_REF_NAME#v}"
           ./Scripts/archive-app.sh
@@ -81,7 +83,7 @@ jobs:
 
             This is an ARM64-only build for Apple-silicon Macs running macOS 15 or newer.
 
-            The artifact has a hardened-runtime, self-signed development signature because this
+            The artifact has a hardened-runtime, ad-hoc signature because this
             project does not yet have Developer ID and notarization credentials. macOS will not
             automatically trust it as an identified-developer application. You can instead build
             directly from the tagged source using the documented development setup.

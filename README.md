@@ -152,7 +152,7 @@ Pushing a version tag such as `v0.0.1` runs the ARM64 release workflow on GitHub
 creates a ZIP and SHA-256 checksum, and publishes an experimental GitHub prerelease.
 
 Until Developer ID and notarization credentials are configured, automated release artifacts use a
-hardened-runtime, self-signed development identity and are not automatically trusted by macOS.
+hardened-runtime, ad-hoc signature and are not automatically trusted by macOS.
 Release notes must state that limitation. Source builds remain the preferred development path.
 
 ## Architecture

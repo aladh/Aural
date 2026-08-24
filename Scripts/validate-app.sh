@@ -47,7 +47,7 @@ fi
 
 codesign --verify --strict --verbose=2 "$app_path"
 signing_details="$(codesign --display --verbose=4 "$app_path" 2>&1)"
-if [[ "$signing_details" != *"flags=0x10000(runtime)"* ]]; then
+if ! grep -Eq 'flags=0x[0-9a-fA-F]+\([^)]*runtime' <<< "$signing_details"; then
     print -u2 "The app is signed without hardened runtime"
     exit 1
 fi

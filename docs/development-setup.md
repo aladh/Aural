@@ -81,7 +81,8 @@ build, packaging, or releases.
 
 For a tagged release, first update both version fields in `Packaging/Info.plist`, commit and push
 the change, then create an annotated `vMAJOR.MINOR.PATCH` tag matching
-`CFBundleShortVersionString`. The tag workflow builds and publishes the ARM64 artifact; see
+`CFBundleShortVersionString`. CI uses an ad-hoc signature so the build does not depend on an
+interactive development keychain. The tag workflow builds and publishes the ARM64 artifact; see
 [Tagged releases](../README.md#tagged-releases) for its signing status and validation guarantees.
 
 ## Generated local state

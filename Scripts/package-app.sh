@@ -124,7 +124,12 @@ sign_with_local_identity() {
         "$app_path"
 }
 
-if [[ -n "$distribution_identity" ]]; then
+if [[ "$distribution_identity" == "-" ]]; then
+    codesign --force --options runtime --timestamp=none \
+        --sign - \
+        "$app_path"
+    signing_kind="ad hoc"
+elif [[ -n "$distribution_identity" ]]; then
     codesign --force --options runtime --timestamp \
         --sign "$distribution_identity" \
         "$app_path"
@@ -138,6 +143,8 @@ fi
 
 if [[ "$build_configuration" == "release" && -z "$distribution_identity" ]]; then
     print -u2 "Release bundle uses the local identity; set AURAL_SIGNING_IDENTITY to create a distributable Developer ID build."
+elif [[ "$build_configuration" == "release" && "$distribution_identity" == "-" ]]; then
+    print -u2 "Release bundle uses an ad-hoc signature; set AURAL_SIGNING_IDENTITY to a Developer ID identity for distribution."
 fi
 
 print "Packaged $app_path ($build_configuration, $signing_kind signature, version $app_version ($app_build_number))"
