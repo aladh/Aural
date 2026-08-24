@@ -1,0 +1,11 @@
+*.a
+*.app/
+*.xcuserstate
+.DS_Store
+.build/
+diagnostics/
+.swiftpm/
+AuralArtwork/
+Backend/aural-playback/target/
+DerivedData/
+dist/

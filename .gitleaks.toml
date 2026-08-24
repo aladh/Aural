@@ -1,0 +1,6 @@
+[allowlist]
+description = "Known public identifiers that are intentionally committed"
+regexes = [
+  # Spotify's desktop OAuth client identifier is public application metadata, not a credential.
+  '''65b708073fc0480ea92a077233ca87bd''',
+]

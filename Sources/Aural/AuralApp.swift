@@ -1,0 +1,135 @@
+import AppKit
+import OSLog
+import SwiftUI
+
+@MainActor
+final class AuralAppDelegate: NSObject, NSApplicationDelegate {
+    /// The app's content window, tracked so its close can be distinguished from
+    /// menu and popover windows closing — those are windows too on macOS.
+    private weak var trackedMainWindow: NSWindow?
+    private var terminationHandler: (@MainActor () async -> Void)?
+    private var terminationPending = false
+    private var terminationShutdownTask: Task<Void, Never>?
+    private var terminationTimeoutTask: Task<Void, Never>?
+
+    func installTerminationHandler(_ handler: @escaping @MainActor () async -> Void) {
+        terminationHandler = handler
+    }
+
+    func applicationDidFinishLaunching(_: Notification) {
+        AuralLog.lifecycle.info("Application finished launching")
+        let center = NotificationCenter.default
+        center.addObserver(
+            self,
+            selector: #selector(windowDidBecomeMain(_:)),
+            name: NSWindow.didBecomeMainNotification,
+            object: nil
+        )
+        center.addObserver(
+            self,
+            selector: #selector(windowWillClose(_:)),
+            name: NSWindow.willCloseNotification,
+            object: nil
+        )
+    }
+
+    @objc private func windowDidBecomeMain(_ notification: Notification) {
+        // Menus become key; they never become main. This is what makes the
+        // window below Aural's own content window.
+        trackedMainWindow = notification.object as? NSWindow
+        AuralLog.ui.info("Main window became active")
+    }
+
+    @objc private func windowWillClose(_ notification: Notification) {
+        guard let window = notification.object as? NSWindow,
+            window === trackedMainWindow
+        else { return }
+        trackedMainWindow = nil
+        ArtworkCache.shared.removeAll()
+        AuralLog.ui.info("Main window closed; artwork cache purged")
+    }
+
+    func applicationWillTerminate(_: Notification) {
+        NotificationCenter.default.removeObserver(self)
+    }
+
+    func applicationShouldTerminate(_: NSApplication) -> NSApplication.TerminateReply {
+        guard let terminationHandler else { return .terminateNow }
+        guard !terminationPending else { return .terminateLater }
+        terminationPending = true
+        AuralLog.lifecycle.info("Application termination began")
+
+        terminationShutdownTask = Task { [weak self] in
+            await terminationHandler()
+            self?.finishTermination()
+        }
+        terminationTimeoutTask = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(3))
+            guard !Task.isCancelled else { return }
+            self?.finishTermination()
+        }
+        return .terminateLater
+    }
+
+    private func finishTermination() {
+        guard terminationPending else { return }
+        terminationPending = false
+        terminationShutdownTask?.cancel()
+        terminationTimeoutTask?.cancel()
+        terminationShutdownTask = nil
+        terminationTimeoutTask = nil
+        NSApplication.shared.reply(toApplicationShouldTerminate: true)
+    }
+
+    func applicationShouldTerminateAfterLastWindowClosed(_: NSApplication) -> Bool {
+        false
+    }
+}
+
+struct AuralApp: App {
+    @NSApplicationDelegateAdaptor(AuralAppDelegate.self) private var appDelegate
+    @State private var player: PlaybackStore
+    @AppStorage(AccentColorOption.storageKey) private var accentColor =
+        AccentColorOption.defaultValue
+
+    init() {
+        let environment = PlaybackEnvironment.live
+        _player = State(initialValue: PlaybackStore(environment: environment))
+    }
+
+    var body: some Scene {
+        Window("Aural", id: "main") {
+            RootView(player: player, catalog: player.catalog)
+                .frame(minWidth: 960, minHeight: 640)
+                .accentColor(accentColor.color)
+                .tint(accentColor.color)
+                .task {
+                    appDelegate.installTerminationHandler { await player.shutdownForTermination() }
+                    await player.restore()
+                }
+        }
+        .defaultSize(width: 1220, height: 780)
+        .defaultLaunchBehavior(.presented)
+        .windowStyle(.hiddenTitleBar)
+        .windowToolbarStyle(.unifiedCompact)
+        .commands {
+            InspectorCommands()
+            AccountCommands(player: player)
+            PlaybackCommands(player: player)
+        }
+
+        Settings {
+            SettingsView()
+                .accentColor(accentColor.color)
+                .tint(accentColor.color)
+        }
+    }
+}
+
+/// The package executable's deliberately narrow entry point. Keeping the scene
+/// implementation in `AuralCore` lets non-shipping checks exercise real app
+/// boundaries without copying production code into a test-only target.
+@MainActor
+public func runAuralApplication() {
+    AuralApp.main()
+}

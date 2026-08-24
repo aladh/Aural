@@ -1,0 +1,3 @@
+import AuralCore
+
+runAuralApplication()

@@ -1,0 +1,5 @@
+module AuralPlaybackCore {
+    header "aural_playback.h"
+    link "aural_playback"
+    export *
+}

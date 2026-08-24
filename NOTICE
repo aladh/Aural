@@ -1,0 +1,12 @@
+Aural
+Copyright (c) 2026 Aural contributors
+
+Aural is an unofficial, independently developed client. It is not affiliated with, endorsed by,
+or sponsored by Spotify AB, and it reaches Spotify through private, reverse-engineered
+interfaces rather than through any supported API surface. Spotify is a trademark of Spotify AB.
+
+Third-party code and projects this repository builds on (see THIRD_PARTY_NOTICES.md):
+
+- Portions of `Backend/aural-playback` and `Sources/Aural/Spotify` are adapted from Spotifly
+  (https://github.com/ralph/Spotifly), MIT License, Copyright (c) 2026 Ralph von der Heyden.
+- The Rust bridge links librespot (https://github.com/librespot-org/librespot), MIT License.

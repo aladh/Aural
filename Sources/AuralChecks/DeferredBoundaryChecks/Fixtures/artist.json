@@ -1,0 +1,1 @@
+{"data":{"artistUnion":{"uri":"spotify:artist:fixture","id":"fixture","profile":{"name":"Fixture Artist"},"visuals":{"avatarImage":{"sources":[]}},"discography":{"all":{"items":[{"releases":{"items":[{"uri":"spotify:album:fixture","id":"fixture","name":"Fixture Album","type":"ALBUM","date":{"year":2026},"coverArt":{"sources":[]},"tracks":{"totalCount":1}}]}}],"totalCount":1}}}}}

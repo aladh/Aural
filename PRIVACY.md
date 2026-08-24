@@ -1,0 +1,50 @@
+# Privacy
+
+This notice describes Aural's current source code. A third-party build can be modified, so review
+the source and the distributor before running a binary you did not build yourself.
+
+## Data Aural accesses
+
+After sign-in, Aural requests broad Spotify desktop-client scopes and can access account identity,
+library, playlists, playback state, devices, queue, listening history, and catalog metadata. It can
+also send playback, queue, library, and playlist commands when the user invokes those features.
+These scopes are broader than the current UI uses because the private desktop-client authorization
+flow is designed for Spotify's own client, not for independently registered applications.
+
+Aural communicates directly with Spotify-owned account, client-token, catalog, metadata, and
+playback services, plus artwork hosts returned by Spotify. It has no Aural-operated backend.
+
+## Local storage
+
+- Developer ID builds store Spotify OAuth credentials in macOS Keychain.
+- Repeatedly rebuilt self-signed development builds store the same grant in the app's local
+  preferences because their changing signatures cannot retain a stable Keychain access policy.
+- Local preferences also retain a random installation/device identifier, UI preferences, shuffle
+  history, and playback preferences.
+- Artwork is held in a bounded ephemeral URL cache and in-memory image cache; the app purges its
+  artwork cache when the main window closes.
+- Spotify/librespot session credentials may be cached under the app's local cache directory so the
+  playback device can reconnect.
+- Apple Unified Logging stores privacy-safe operational events. Aural's logging contract excludes
+  tokens, OAuth redirects, raw API bodies, and raw user payloads.
+
+Generated data remains on the Mac unless the user deliberately shares it. Aural does not include
+analytics, advertising, crash-reporting SDKs, or telemetry sent to the project maintainers.
+
+## Diagnostics
+
+`Scripts/export-diagnostics.sh` exports a bounded slice of Aural's Unified Logging into the ignored
+`diagnostics/` directory. Review every report before sharing it. Do not attach credentials, account
+exports, raw service responses, or unrelated system logs to an issue.
+
+## Removing data
+
+Use **Aural → Sign Out** to clear the active Aural grant and playback session. macOS application
+preferences, caches, or diagnostic files may remain until removed through normal macOS file
+management. Revoking Aural/Spotify desktop access from the Spotify account is an additional way to
+invalidate previously issued credentials.
+
+## Service terms
+
+Spotify processes data under its own privacy policy and terms. Aural is unofficial and uses private
+interfaces; see [README.md](README.md) before signing in.
