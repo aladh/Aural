@@ -79,6 +79,11 @@ git status --short
 Use `./Scripts/check-clean.sh` as the slower clean-room gate for changes to dependencies, FFI,
 build, packaging, or releases.
 
+For a tagged release, first update both version fields in `Packaging/Info.plist`, commit and push
+the change, then create an annotated `vMAJOR.MINOR.PATCH` tag matching
+`CFBundleShortVersionString`. The tag workflow builds and publishes the ARM64 artifact; see
+[Tagged releases](../README.md#tagged-releases) for its signing status and validation guarantees.
+
 ## Generated local state
 
 The following are reproducible, ignored outputs and may be deleted at any time:

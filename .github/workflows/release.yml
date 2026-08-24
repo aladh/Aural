@@ -1,0 +1,96 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    name: Build ARM64 release
+    runs-on: macos-15
+    timeout-minutes: 45
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Cache Rust dependencies and build products
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.cargo/git
+            ~/.cargo/registry
+            Backend/aural-playback/target
+          key: macos-release-rust-${{ hashFiles('Backend/aural-playback/Cargo.lock') }}
+          restore-keys: |
+            macos-release-rust-
+            macos-rust-
+
+      - name: Install verification tools
+        run: |
+          if brew tap | grep -qx 'aws/tap'; then
+            brew untap aws/tap
+          fi
+          brew install ripgrep
+
+      - name: Verify tag and runner
+        run: |
+          if [[ ! "$GITHUB_REF_NAME" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "Tag $GITHUB_REF_NAME is not a semantic version tag" >&2
+            exit 1
+          fi
+          version="${GITHUB_REF_NAME#v}"
+          plist_version="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' Packaging/Info.plist)"
+          if [[ "$version" != "$plist_version" ]]; then
+            echo "Tag $GITHUB_REF_NAME does not match app version $plist_version" >&2
+            exit 1
+          fi
+          if [[ "$(uname -m)" != "arm64" ]]; then
+            echo "Release job must run on ARM64, not $(uname -m)" >&2
+            exit 1
+          fi
+
+      - name: Build and validate release archive
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          ./Scripts/archive-app.sh
+          architectures="$(lipo -archs Aural.app/Contents/MacOS/Aural)"
+          if [[ "$architectures" != "arm64" ]]; then
+            echo "Expected an ARM64-only app, found: $architectures" >&2
+            exit 1
+          fi
+          mv "dist/Aural-$version.zip" "dist/Aural-$version-arm64.zip"
+          cd dist
+          shasum -a 256 "Aural-$version-arm64.zip" > "Aural-$version-arm64.zip.sha256"
+
+      - name: Publish experimental release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_NOTES: |
+            > [!CAUTION]
+            > **Experimental build:** Aural uses unsupported, reverse-engineered Spotify interfaces
+            > and may stop working without notice. Use it only with an account you control.
+
+            This is an ARM64-only build for Apple-silicon Macs running macOS 15 or newer.
+
+            The artifact has a hardened-runtime, self-signed development signature because this
+            project does not yet have Developer ID and notarization credentials. macOS will not
+            automatically trust it as an identified-developer application. You can instead build
+            directly from the tagged source using the documented development setup.
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          gh release create "$GITHUB_REF_NAME" \
+            "dist/Aural-$version-arm64.zip" \
+            "dist/Aural-$version-arm64.zip.sha256" \
+            --verify-tag \
+            --prerelease \
+            --title "Aural $version" \
+            --notes "$RELEASE_NOTES"

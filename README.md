@@ -144,6 +144,17 @@ Before publishing a compiled binary, generate and review a complete license repo
 linked through `Cargo.lock`. The repository's notices cover Aural's adapted source and its primary
 upstreams, but are not a substitute for binary-distribution license review.
 
+### Tagged releases
+
+Pushing a version tag such as `v0.0.1` runs the ARM64 release workflow on GitHub's Apple-silicon
+`macos-15` runner. The tag must exactly match `CFBundleShortVersionString` in
+`Packaging/Info.plist`. The workflow runs the full quality gate, validates an ARM64-only app,
+creates a ZIP and SHA-256 checksum, and publishes an experimental GitHub prerelease.
+
+Until Developer ID and notarization credentials are configured, automated release artifacts use a
+hardened-runtime, self-signed development identity and are not automatically trusted by macOS.
+Release notes must state that limitation. Source builds remain the preferred development path.
+
 ## Architecture
 
 - Swift owns windows, navigation, presentation, OAuth, catalog access, metadata, shuffle policy,
