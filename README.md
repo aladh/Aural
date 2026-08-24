@@ -40,6 +40,7 @@ music streaming only for Premium subscribers; review the current
 - Xcode Command Line Tools with Swift 6.1 or newer.
 - [Rustup](https://rustup.rs/). The exact Rust toolchain and target are pinned in
   `rust-toolchain.toml` and install automatically on first use.
+- [ripgrep](https://github.com/BurntSushi/ripgrep) when running the verification scripts.
 
 The repository is source-only. Its architecture-specific Rust archive and app bundle are generated
 locally and ignored by Git.
