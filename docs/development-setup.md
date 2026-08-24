@@ -96,6 +96,10 @@ The following are reproducible, ignored outputs and may be deleted at any time:
 - `AuralArtwork/` — the bounded artwork cache;
 - `.DS_Store` and `.swiftpm/` — local tooling metadata.
 
+When changing the master app artwork in `Assets/AuralIcon.png`, regenerate every standard macOS
+icon representation with `./Scripts/generate-icon.sh`. Commit both the source PNG and generated
+`Assets/Aural.icns`.
+
 To recover from an uncertain local state, a fresh clone is the preferred reset. Do not copy build
 products or signing material from an older checkout. Cargo resolves the pinned librespot revision
 from `Cargo.lock`, and the scripts rebuild every generated input.

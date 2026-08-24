@@ -94,5 +94,6 @@ jobs:
             "dist/Aural-$version-arm64.zip.sha256" \
             --verify-tag \
             --prerelease \
+            --generate-notes \
             --title "Aural $version" \
             --notes "$RELEASE_NOTES"
