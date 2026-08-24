@@ -58,4 +58,8 @@ with Command Line Tools alone. Neither check executable is included in the packa
 - State what you tested manually. Maintainers can perform account-backed acceptance testing when a
   contributor cannot safely do so.
 
+Follow the [product and acceptance contract](docs/product-and-acceptance-contract.md) for manual
+testing. Live Spotify playback and account mutations are opt-in: launching or read-only acceptance
+testing is not permission to alter playback on any Connect device.
+
 Report vulnerabilities using [SECURITY.md](SECURITY.md), not a public issue.

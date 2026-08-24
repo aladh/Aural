@@ -150,6 +150,7 @@ upstreams, but are not a substitute for binary-distribution license review.
 
 Design records and implementation notes:
 
+- [Product and acceptance contract](docs/product-and-acceptance-contract.md)
 - [Playback engine ADR](docs/ADR-001-playback-engine.md)
 - [Playback state and dependency ownership ADR](docs/ADR-002-playback-state-and-dependencies.md)
 - [Private extended-metadata protocol](docs/extended-metadata.md)
