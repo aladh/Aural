@@ -30,6 +30,77 @@ Current product constraints:
 - Keep the experimental and unofficial-project warnings prominent in public documentation and
   releases.
 
+## Aural's taste and judgment
+
+Rules catch regressions; taste decides among several technically valid solutions. Aural should have
+**quiet confidence**: unmistakably native, visually calm, information-dense without feeling cramped,
+and capable without advertising every capability. The best implementation often feels obvious in
+retrospect and disappears during use.
+
+Use these principles when the specification does not settle a decision:
+
+- **Start with the Mac, not a mockup.** Ask how Finder, Music, Settings, and well-made productivity
+  apps solve the interaction. Use system structure, materials, typography, spacing, controls,
+  commands, focus, and accessibility before inventing a visual language. Native is a behavioral
+  standard, not merely an SF Symbol and a blur.
+- **Remove before adding.** Aural became better by removing the redundant app header, profile card,
+  manual refresh, volume control, playlist icons, track-row artwork, and unnecessary pickers. Every
+  persistent control must earn its space through frequent use or essential state. Capability alone
+  is not a reason to expose UI.
+- **One clear hierarchy.** At a glance, the user should see where they are, what is playing, and the
+  primary action. Supporting metadata should be quieter, aligned, and close to what it describes.
+  Avoid competing cards, oversized empty hero regions, decorative containers, and repeated labels.
+- **Dense, not crowded.** Music libraries benefit from efficient tables and stable side panels.
+  Spend space on readable titles and useful columns, not repeated artwork or ornamental padding.
+  Preserve breathing room around groups rather than inflating every row and control.
+- **State must be honest.** Never show Pause when nothing is playing, imply that a remote device is
+  local, display a control as available when it cannot succeed, or leave `Unknown` when information
+  is resolvable. Loading, empty, stale, disabled, error, inactive-window, and reconnecting states are
+  part of the design—not cleanup after the happy path.
+- **Motion explains; it does not perform.** Smooth progress is useful because time is continuous.
+  Stable Queue/History headers are useful because context should not jump. Prefer subtle system
+  transitions, preserve spatial anchors, and avoid animation that delays input or attracts attention
+  to chrome.
+- **Color is semantic and restrained.** The accent identifies selection and primary actions; it
+  should not create blue-on-blue ambiguity or overwhelm content. Test every user-selected accent in
+  light, dark, active, inactive, selected, disabled, and keyboard-focused states. Do not hardcode a
+  color where a semantic style conveys intent.
+- **Controls should look and act like their meaning.** Use track-skip icons rather than seek icons,
+  direct column sorting rather than a picker, the app menu for Sign Out, and the native Settings
+  scene for preferences. Labels, tooltips, shortcuts, hit targets, and VoiceOver descriptions should
+  agree with the visible action.
+- **Fast is a feeling built from details.** Keep the main thread free, cancel obsolete work, hydrate
+  metadata progressively, downsample artwork, bound caches, and avoid gratuitous polling. Preserve
+  useful content during refresh instead of flashing empty states. Optimize measured bottlenecks, but
+  prefer deleting work over adding elaborate machinery.
+- **Architecture should reduce cognitive load.** A small explicit owner, a typed state transition,
+  and a deterministic check are preferable to a clever abstraction. Do not generalize from one use,
+  introduce a protocol without a boundary, or split code merely to make the tree look architectural.
+- **Fix the class of bug.** A white inactive-window Play button is a semantic styling problem, not
+  one bad RGB value. Empty playlists after a request race are a lifetime/epoch problem, not a reason
+  to reload more often. Find the invariant, enforce it at its owner, then add the closest regression
+  check.
+- **Polish the whole loop.** Judge launch, sign-in, loading, browsing, resizing, keyboard navigation,
+  window deactivation, close/reopen, offline/error recovery, sign-out, and fresh-clone development.
+  A beautiful steady-state screenshot does not compensate for a janky transition or fragile setup.
+
+Before accepting a UI or architecture change, perform this taste pass:
+
+1. **Glance:** Is the primary content/action obvious in two seconds?
+2. **Delete:** Can an element, state, abstraction, request, or timer disappear with no loss?
+3. **Native:** Would a Mac user predict the location, behavior, keyboard path, and inactive state?
+4. **Truth:** Does every visible state match authoritative playback/account data?
+5. **Stability:** Do refreshes, tab switches, metadata arrival, and window focus preserve spatial
+   anchors and useful content?
+6. **Edges:** Are empty, loading, error, stale, disabled, long-text, light/dark, and accessibility
+   states deliberately handled?
+7. **Cost:** What work, memory, wakeups, ownership, and failure modes did the change add?
+8. **Coherence:** Does it make Aural feel like one focused app rather than another feature attached?
+
+When two options remain, prefer the one with fewer concepts, fewer persistent controls, clearer
+ownership, more native behavior, and a better failure mode. Novelty must justify itself; simplicity
+does not mean crude, and polish does not mean decoration.
+
 ## First five minutes
 
 1. Run `git status --short` and preserve unrelated user changes. Never reset or overwrite them.
