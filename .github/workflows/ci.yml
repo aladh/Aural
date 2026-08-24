@@ -33,7 +33,11 @@ jobs:
           restore-keys: macos-rust-
 
       - name: Install verification tools
-        run: brew install ripgrep
+        run: |
+          if brew tap | grep -qx 'aws/tap'; then
+            brew untap aws/tap
+          fi
+          brew install ripgrep
 
       - name: Show toolchains
         run: |
