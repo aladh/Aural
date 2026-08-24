@@ -44,6 +44,12 @@ The packaging script creates an isolated self-signed development identity and ke
 not require repeated login-keychain approvals. The generated identity is local-only and unsuitable
 for distribution.
 
+Sandboxed development tools may require one permission grant for `./Scripts/package-app.sh` (or the
+calling `./script/build_and_run.sh`) to invoke macOS `security` and `codesign` when that isolated
+keychain is first created. Grant the packaging script as a unit instead of approving individual
+`security` commands. Later builds reuse the project-local keychain until `.build/` is deleted; no
+login-keychain password is part of the workflow.
+
 On first launch, choose Connect and complete Spotify authorization in the browser. Authentication
 state is machine-local and intentionally not stored in Git. Follow the
 [product and acceptance contract](product-and-acceptance-contract.md) before exercising a live
