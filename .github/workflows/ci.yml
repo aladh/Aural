@@ -22,6 +22,16 @@ jobs:
       - name: Check out source
         uses: actions/checkout@v5
 
+      - name: Cache Rust dependencies and build products
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/git
+            ~/.cargo/registry
+            Backend/aural-playback/target
+          key: macos-rust-${{ hashFiles('Backend/aural-playback/Cargo.lock') }}
+          restore-keys: macos-rust-
+
       - name: Install verification tools
         run: brew install ripgrep
 

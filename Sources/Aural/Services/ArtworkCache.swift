@@ -14,7 +14,9 @@ final class ArtworkCache {
 
     private let images = NSCache<NSString, NSImage>()
     private let session: URLSession
-    private var inFlight: [NSString: Task<NSImage?, Never>] = [:]
+    // Task results cross an async isolation boundary, so keep AppKit objects out of them.
+    // NSImage is main-thread-bound and explicitly non-Sendable on supported macOS SDKs.
+    private var inFlight: [NSString: Task<SendableCGImage?, Never>] = [:]
     /// Failed fetches retry after this long instead of on every appearance.
     private let failureRetryInterval: TimeInterval = 20
     /// Broken or expired artwork URLs must not accumulate for an entire listening session.
@@ -52,10 +54,11 @@ final class ArtworkCache {
             return nil
         }
         if let task = inFlight[key] {
-            return await task.value
+            guard let decoded = await task.value else { return nil }
+            return Self.image(from: decoded)
         }
 
-        let task = Task { [session] () -> NSImage? in
+        let task = Task { [session] () -> SendableCGImage? in
             do {
                 let (data, response) = try await session.data(from: url)
                 guard
@@ -67,18 +70,16 @@ final class ArtworkCache {
                     Self.downsample(data, maxPixelSize: pixelSize)
                 }).value else { return nil }
 
-                return NSImage(
-                    cgImage: decoded.image,
-                    size: NSSize(width: decoded.image.width, height: decoded.image.height)
-                )
+                return decoded
             } catch {
                 return nil
             }
         }
 
         inFlight[key] = task
-        let image = await task.value
+        let decoded = await task.value
         inFlight[key] = nil
+        let image = decoded.map(Self.image(from:))
 
         if let image, let representation = image.representations.first {
             let cost = representation.pixelsWide * representation.pixelsHigh * 4
@@ -122,6 +123,13 @@ final class ArtworkCache {
             return CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary)
                 .map(SendableCGImage.init)
         }
+    }
+
+    private static func image(from decoded: SendableCGImage) -> NSImage {
+        NSImage(
+            cgImage: decoded.image,
+            size: NSSize(width: decoded.image.width, height: decoded.image.height)
+        )
     }
 }
 
