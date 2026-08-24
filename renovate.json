@@ -1,0 +1,44 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": [
+    "config:recommended",
+    "helpers:pinGitHubActionDigests",
+    ":maintainLockFilesWeekly"
+  ],
+  "timezone": "America/Toronto",
+  "schedule": ["before 6am on monday"],
+  "dependencyDashboard": true,
+  "labels": ["dependencies"],
+  "prConcurrentLimit": 3,
+  "prHourlyLimit": 2,
+  "rebaseWhen": "conflicted",
+  "packageRules": [
+    {
+      "description": "Group routine Rust dependency updates",
+      "matchManagers": ["cargo"],
+      "matchUpdateTypes": ["minor", "patch"],
+      "minimumReleaseAge": "3 days",
+      "groupName": "Rust dependencies",
+      "groupSlug": "rust-dependencies"
+    },
+    {
+      "description": "Update the shared librespot revision atomically",
+      "matchManagers": ["cargo"],
+      "matchPackageNames": ["/^librespot-/"],
+      "groupName": "librespot",
+      "groupSlug": "librespot"
+    },
+    {
+      "description": "Group non-major GitHub Actions updates and retain digest pins",
+      "matchManagers": ["github-actions"],
+      "matchUpdateTypes": ["minor", "patch", "digest", "pin"],
+      "groupName": "GitHub Actions",
+      "groupSlug": "github-actions"
+    },
+    {
+      "description": "Keep Rust toolchain updates explicit",
+      "matchManagers": ["rust-toolchain"],
+      "minimumReleaseAge": "3 days"
+    }
+  ]
+}
