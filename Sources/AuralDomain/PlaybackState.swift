@@ -460,7 +460,7 @@ public struct PlaybackState: Equatable, Sendable {
 
 public enum PlaybackReducer {
     /// Query-only epoch and ordered-source revision gates. A `true` result does not record the
-    /// revision or apply `event`; only a successful `reduce` may mutate `PlaybackState`.
+    /// revision; only a successful `reduce` may mutate `PlaybackState`.
     public static func accepts(
         _ state: PlaybackState,
         accountEpoch: UInt64,
