@@ -177,6 +177,52 @@ func runPlaybackReducerChecks(_ check: CheckRunner) {
         check.equal("a stale pre-reset event cannot revive the session", state, afterReset)
     }
 
+    check.suite("Playback reducer ordering-gate queries") {
+        var state = PlaybackState(accountEpoch: 1, engineEpoch: 1, session: .ready)
+        _ = PlaybackReducer.reduce(
+            &state,
+            envelope: envelope(source: .enginePlayback, revision: 4, event: .transport(.playing))
+        )
+        let beforeQuery = state
+
+        check.check(
+            "a newer playback revision would be accepted",
+            PlaybackReducer.accepts(
+                state,
+                accountEpoch: 1,
+                engineEpoch: 1,
+                source: .enginePlayback,
+                revision: 5
+            )
+        )
+        check.equal("an acceptance query does not record the revision", state, beforeQuery)
+
+        check.check(
+            "a duplicate playback revision would be rejected",
+            !PlaybackReducer.accepts(
+                state,
+                accountEpoch: 1,
+                engineEpoch: 1,
+                source: .enginePlayback,
+                revision: 4
+            )
+        )
+        check.equal("a rejection query is also inert", state, beforeQuery)
+
+        check.check(
+            "a higher engine epoch opens a fresh revision namespace for the query",
+            PlaybackReducer.accepts(
+                state,
+                accountEpoch: 1,
+                engineEpoch: 2,
+                source: .enginePlayback,
+                revision: 1
+            )
+        )
+        check.equal("a higher-epoch query does not adopt the epoch", state.engineEpoch, 1)
+        check.equal("a higher-epoch query does not clear recorded revisions", state.sourceRevisions[.enginePlayback], 4)
+    }
+
     check.suite("Optimistic playback command reconciliation") {
         let pauseID = UUID(uuidString: "00000000-0000-0000-0000-000000000010")!
         var state = PlaybackState(accountEpoch: 1, engineEpoch: 1, session: .ready, transport: .playing)

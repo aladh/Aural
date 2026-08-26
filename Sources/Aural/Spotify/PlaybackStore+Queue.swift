@@ -75,7 +75,7 @@ extension PlaybackStore {
             guard self.acceptsEngineEvent(
                 generation: state.sessionGeneration,
                 revision: state.revision,
-                source: .queue
+                source: .engineQueue
             ) else { return }
             self.receive(state, revision: state.revision, mayAdoptPlaybackIdentity: false)
         })

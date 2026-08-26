@@ -459,6 +459,24 @@ public struct PlaybackState: Equatable, Sendable {
 }
 
 public enum PlaybackReducer {
+    /// Query-only epoch and ordered-source revision gates. A `true` result does not record the
+    /// revision or apply `event`; only a successful `reduce` may mutate `PlaybackState`.
+    public static func accepts(
+        _ state: PlaybackState,
+        accountEpoch: UInt64,
+        engineEpoch: UInt64,
+        source: PlaybackEventSource,
+        revision: UInt64?
+    ) -> Bool {
+        adopting(
+            state,
+            accountEpoch: accountEpoch,
+            engineEpoch: engineEpoch,
+            source: source,
+            revision: revision
+        ) != nil
+    }
+
     @discardableResult
     public static func reduce(
         _ state: inout PlaybackState,
@@ -467,28 +485,13 @@ public enum PlaybackReducer {
         // Reduce into a candidate so a rejected event is genuinely inert. In particular, an
         // unknown command acknowledgement must not consume its source revision and prevent the
         // matching acknowledgement from arriving later.
-        var candidate = state
-
-        guard envelope.accountEpoch >= candidate.accountEpoch else { return false }
-        if envelope.accountEpoch > candidate.accountEpoch {
-            candidate = PlaybackState(
-                accountEpoch: envelope.accountEpoch,
-                engineEpoch: envelope.engineEpoch,
-                session: .signedOut
-            )
-        }
-
-        guard envelope.engineEpoch >= candidate.engineEpoch else { return false }
-        if envelope.engineEpoch > candidate.engineEpoch {
-            candidate.engineEpoch = envelope.engineEpoch
-            candidate.sourceRevisions = [:]
-            candidate.pendingCommands = [:]
-        }
-
-        if let revision = envelope.revision {
-            let previous = candidate.sourceRevisions[envelope.source] ?? 0
-            guard revision > previous else { return false }
-        }
+        guard var candidate = adopting(
+            state,
+            accountEpoch: envelope.accountEpoch,
+            engineEpoch: envelope.engineEpoch,
+            source: envelope.source,
+            revision: envelope.revision
+        ) else { return false }
 
         switch envelope.event {
         case let .reset(session):
@@ -606,6 +609,41 @@ public enum PlaybackReducer {
         }
         state = candidate
         return true
+    }
+
+    /// Account epoch, engine epoch, and per-source revision gates shared by `accepts` and `reduce`.
+    /// The returned candidate has not yet recorded `envelope.revision`.
+    private static func adopting(
+        _ state: PlaybackState,
+        accountEpoch: UInt64,
+        engineEpoch: UInt64,
+        source: PlaybackEventSource,
+        revision: UInt64?
+    ) -> PlaybackState? {
+        var candidate = state
+
+        guard accountEpoch >= candidate.accountEpoch else { return nil }
+        if accountEpoch > candidate.accountEpoch {
+            candidate = PlaybackState(
+                accountEpoch: accountEpoch,
+                engineEpoch: engineEpoch,
+                session: .signedOut
+            )
+        }
+
+        guard engineEpoch >= candidate.engineEpoch else { return nil }
+        if engineEpoch > candidate.engineEpoch {
+            candidate.engineEpoch = engineEpoch
+            candidate.sourceRevisions = [:]
+            candidate.pendingCommands = [:]
+        }
+
+        if let revision {
+            let previous = candidate.sourceRevisions[source] ?? 0
+            guard revision > previous else { return nil }
+        }
+
+        return candidate
     }
 
     private static func reconcileTransport(
