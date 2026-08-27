@@ -278,9 +278,9 @@ func runPlaybackSupportChecks(_ check: CheckRunner) {
 
         var full = PCMWriteBackpressure()
         var waitCount = 0
-        var remaining = 16
+        let remaining = 16
         var controlRan = false
-        writeLoop: while remaining > 0 {
+        writeLoop: while true {
             switch full.admit(freeSpace: 0, remaining: remaining, isRendering: true) {
             case .write(_):
                 check.check("a full rendering buffer cannot admit a write", false)
