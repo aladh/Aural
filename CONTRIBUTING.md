@@ -157,9 +157,10 @@ Release notes must state that limitation. Source builds remain the preferred dev
 
 ## Diagnostics
 
-Release builds use Apple's Unified Logging. To export a bounded local report without tokens, OAuth
-redirects, or raw API payloads, run `./Scripts/export-diagnostics.sh`; reports are written under the
-ignored `diagnostics/` directory.
+Release builds use Apple's Unified Logging. The intended contract excludes tokens, OAuth redirects,
+and raw API payloads. `./Scripts/export-diagnostics.sh` exports a bounded local report into the
+ignored `diagnostics/` directory. Review every report before sharing it, and do not share a report
+that contains credentials, OAuth redirects, raw API responses or payloads, or private account data.
 
 ## Pull requests
 

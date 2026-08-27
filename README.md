@@ -36,7 +36,7 @@ music streaming only for Premium subscribers; review the current
 - Spotify Connect device discovery, remote playback mirroring, device transfer, and queue display.
 - Home, Search, profile, Liked Songs, playlists, albums, and artists from the signed-in account.
 - Sortable playlist metadata including Date Added, Popularity, BPM, and Camelot Key.
-- Bounded artwork caching and privacy-safe Unified Logging.
+- Bounded artwork caching and local operational Unified Logging.
 
 ## Requirements
 
