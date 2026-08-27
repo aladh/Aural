@@ -190,6 +190,13 @@ The normal quality gate enforces several of these mechanically. Treat all of the
   UI state. Keep callbacks bounded and do not block the Rust callback thread.
 - Keep the checked-in C header and Rust exports exactly aligned. Changes to FFI ownership, pointer
   lifetime, string allocation, callbacks, or threading require Rust tests and the clean gate.
+- Every `aural-playback` `extern "C"` export must enter through the panic-barrier helpers in
+  `ffi.rs` so a Rust panic cannot unwind into Swift. Map a contained panic to the defined sentinel
+  for that return type. Call `block_on_export` rather than `RUNTIME.block_on` from an export, and
+  `refuse_if_nested_runtime` before any export mutates lifecycle flags that `block_on` would have
+  reached: nested runtime re-entry returns `ERROR_GENERAL` and must not be reported as grant
+  supersession. Do not hold Rust locks while invoking Swift, and do not treat the barrier as making
+  invalid foreign pointers safe. Do not replace the process panic hook.
 - Prefer Swift structured concurrency, `AsyncStream`, and Observation for new state. Introduce
   Combine only at a publisher-native system boundary where it is materially simpler.
 - Avoid `nonisolated(unsafe)`, mutable global state, broad singletons, unstructured `Task` lifetimes,

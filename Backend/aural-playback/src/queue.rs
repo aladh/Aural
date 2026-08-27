@@ -220,9 +220,11 @@ pub(crate) fn process_and_send_queue(player_state: PlayerState) {
 /// anything yet rather than having been told there is nothing.
 #[no_mangle]
 pub extern "C" fn aural_playback_get_queue_snapshot() -> *mut c_char {
-    let snapshot = LAST_QUEUE_JSON
-        .lock()
-        .unwrap_or_else(|e| e.into_inner())
-        .clone();
-    snapshot.map_or(std::ptr::null_mut(), into_owned_c_string)
+    ffi_owned_string("aural_playback_get_queue_snapshot", || {
+        let snapshot = LAST_QUEUE_JSON
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .clone();
+        snapshot.map_or(std::ptr::null_mut(), into_owned_c_string)
+    })
 }
