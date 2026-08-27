@@ -15,14 +15,18 @@ func runParsingChecks(_ check: CheckRunner) {
     }
 
     check.suite("Loopback request-line parsing") {
-        let parsed = LoopbackRequestParser.parseRequestLine("GET /login?code=abc&state=xyz HTTP/1.1\r\nHost: 127.0.0.1\n")
-        check.notNil("GET line parses", parsed)
-        check.equal("path", parsed?.path, "/login")
-        check.equal("code parameter", parsed?.queryItems?.first(where: { $0.name == "code" })?.value, "abc")
-        check.equal("state parameter", parsed?.queryItems?.first(where: { $0.name == "state" })?.value, "xyz")
+        let crlf = LoopbackRequestParser.parseRequestLine("GET /login?code=abc&state=xyz HTTP/1.1\r\nHost: 127.0.0.1\n")
+        check.notNil("CRLF GET line parses", crlf)
+        check.equal("path", crlf?.path, "/login")
+        check.equal("code parameter", crlf?.queryItems?.first(where: { $0.name == "code" })?.value, "abc")
+        check.equal("state parameter", crlf?.queryItems?.first(where: { $0.name == "state" })?.value, "xyz")
+
+        let lf = LoopbackRequestParser.parseRequestLine("GET /login?code=abc&state=xyz HTTP/1.1\nHost: 127.0.0.1\n")
+        check.equal("LF terminator yields the same path", lf?.path, "/login")
+        check.equal("LF terminator yields the same code", lf?.queryItems?.first(where: { $0.name == "code" })?.value, "abc")
 
         let splitLine = LoopbackRequestParser.parseRequestLine("GET /login?code=abc HTTP/1.1")
-        check.notNil("split request still parses", splitLine)
+        check.notNil("unterminated split request still parses", splitLine)
         check.equal("split-request path", splitLine?.path, "/login")
         check.equal("split-request code", splitLine?.queryItems?.first(where: { $0.name == "code" })?.value, "abc")
         check.nil_("empty input rejected", LoopbackRequestParser.parseRequestLine(""))

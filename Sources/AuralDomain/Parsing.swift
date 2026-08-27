@@ -43,10 +43,20 @@ public enum LoopbackRequestParser {
         return parseOriginFormCallbackTarget(String(parts[1]))
     }
 
-    /// First line of an HTTP request, without CR/LF. Empty or missing lines are malformed.
+    /// First HTTP request-line, without a CR, LF, or CRLF terminator.
+    ///
+    /// Swift treats CRLF as a single `Character`, so this walks Unicode scalars. Empty or
+    /// terminator-only input is malformed.
     public static func firstRequestLine(_ request: String) -> String? {
-        let line = request.prefix { $0 != "\n" && $0 != "\r" }
-        return line.isEmpty ? nil : String(line)
+        let scalars = request.unicodeScalars
+        var end = scalars.startIndex
+        while end != scalars.endIndex {
+            let scalar = scalars[end]
+            if scalar == "\r" || scalar == "\n" { break }
+            end = scalars.index(after: end)
+        }
+        let line = String(scalars[scalars.startIndex..<end])
+        return line.isEmpty ? nil : line
     }
 
     /// Origin-form request-target that names exactly `/login` after percent-decoding.

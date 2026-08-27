@@ -10,8 +10,9 @@ func runPlaybackProjectionContractChecks(_ check: CheckRunner) {
         """
         check.equal(
             "an explicit setter on a projection is reported",
-            PlaybackStoreProjectionContract.explicitSetterLines(in: writable),
-            ["            set { state.session = newValue }"]
+            PlaybackStoreProjectionContract.explicitSetterLines(in: writable)
+                .map { $0.trimmingCharacters(in: .whitespaces) },
+            ["set { state.session = newValue }"]
         )
         check.check(
             "a parameterized setter is reported",

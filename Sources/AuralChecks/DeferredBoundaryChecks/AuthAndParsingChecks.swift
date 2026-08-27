@@ -258,12 +258,17 @@ func runLoopbackParsingChecks(_ check: CheckRunner) {
         let parsed = LoopbackCallbackServer.parseRequestLine(
             "GET /login?code=abc&state=xyz HTTP/1.1\r\nHost: 127.0.0.1\n"
         )
-        check.notNil("GET line parses", parsed)
+        check.notNil("CRLF GET line parses", parsed)
         if let parsed {
             check.equal("path", parsed.path, "/login")
             check.equal("code parameter", parsed.queryItems?.first(where: { $0.name == "code" })?.value, "abc")
             check.equal("state parameter", parsed.queryItems?.first(where: { $0.name == "state" })?.value, "xyz")
         }
+
+        let lf = LoopbackCallbackServer.parseRequestLine(
+            "GET /login?code=abc&state=xyz HTTP/1.1\nHost: 127.0.0.1\n"
+        )
+        check.equal("LF terminator yields the same path", lf?.path, "/login")
 
         // A request split across TCP reads may arrive with no trailing newline yet.
         let splitLine = LoopbackCallbackServer.parseRequestLine("GET /login?code=abc HTTP/1.1")
