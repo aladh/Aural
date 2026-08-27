@@ -629,6 +629,29 @@ fn block_on_export_refuses_a_tokio_owned_thread() {
     assert_eq!(refused, Err(ERROR_GENERAL));
 }
 
+#[test]
+fn init_player_nested_runtime_does_not_clear_teardown_flags() {
+    let _guard = lock_global_state();
+    aural_playback_cleanup();
+    SHUTTING_DOWN.store(true, Ordering::SeqCst);
+    SLEEPING.store(true, Ordering::SeqCst);
+
+    let code = RUNTIME.block_on(async { aural_playback_init_player(std::ptr::null()) });
+
+    assert_eq!(code, ERROR_GENERAL);
+    assert!(
+        SHUTTING_DOWN.load(Ordering::SeqCst),
+        "nested init must not cancel an in-flight shutdown"
+    );
+    assert!(
+        SLEEPING.load(Ordering::SeqCst),
+        "nested init must not cancel sleep"
+    );
+
+    SHUTTING_DOWN.store(false, Ordering::SeqCst);
+    SLEEPING.store(false, Ordering::SeqCst);
+}
+
 const FFI_PANIC_BARRIERS: &[&str] = &[
     "ffi_command",
     "ffi_query_i32",

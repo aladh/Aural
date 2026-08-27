@@ -463,22 +463,31 @@ pub extern "C" fn aural_playback_init_player(access_token: *const c_char) -> i32
         let rust_log = std::env::var("RUST_LOG").unwrap_or_else(|_| "(not set)".to_string());
         debug!("RUST_LOG={}", rust_log);
 
-        // Reset shutdown and sleeping flags in case we're reinitializing
-        SHUTTING_DOWN.store(false, Ordering::SeqCst);
-        SLEEPING.store(false, Ordering::SeqCst);
-
         // A null token means "connect from the cached streaming credentials", which is the normal
         // case: only the first init after the one-time grant carries a token.
         let token_str = unsafe { c_string_arg(access_token) };
 
-        // Check if we already have a session
+        // Already-initialized remains the established no-op: drop teardown flags and return
+        // success without `block_on`. Nested-runtime refusal does not apply here because
+        // this path never entered the runtime before the barrier either.
         {
             let session_guard = SESSION.lock().unwrap_or_else(|e| e.into_inner());
             if session_guard.is_some() {
-                // Already initialized
+                SHUTTING_DOWN.store(false, Ordering::SeqCst);
+                SLEEPING.store(false, Ordering::SeqCst);
                 return 0;
             }
         }
+
+        // Refuse before clearing teardown flags: a Tokio-owned call used to panic inside
+        // `block_on`, and mapping that to `ERROR_GENERAL` must not also look like a
+        // successful reinitialization that cancelled shutdown or sleep.
+        if let Err(code) = refuse_if_nested_runtime() {
+            return code;
+        }
+
+        SHUTTING_DOWN.store(false, Ordering::SeqCst);
+        SLEEPING.store(false, Ordering::SeqCst);
 
         let result = match block_on_export(async {
             init_player_async(token_str.as_deref(), false, false).await
