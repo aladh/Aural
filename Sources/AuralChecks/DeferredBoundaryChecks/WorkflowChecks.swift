@@ -544,6 +544,11 @@ func runWorkflowChecks(_ runner: CheckRunner) async {
         )
         runner.equal("QueueService Web refresh stays Connect-owned", refreshed?.source, .connect)
         runner.equal("QueueService Web refresh keeps the Connect ordering revision", refreshed?.revision, 1)
+        runner.equal(
+            "Web refresh does not rewrite the Connect mutation snapshot",
+            await orderedService.mutationSnapshot()?.next.map(\.uid),
+            ["occ-4"]
+        )
         let laterConnect = await orderedService.acceptConnect(
             [
                 QueueEntry(uri: "spotify:track:same", provider: "connect", occurrence: 0, uid: "occ-a"),
@@ -552,7 +557,12 @@ func runWorkflowChecks(_ runner: CheckRunner) async {
             ],
             accountEpoch: 3,
             sourceRevision: 2,
-            contextURI: "spotify:track:same"
+            contextURI: "spotify:track:same",
+            protocolNext: [
+                QueueProtocolTrack(uri: "spotify:track:same", uid: "occ-a", provider: "queue"),
+                QueueProtocolTrack(uri: "spotify:track:same", uid: "occ-b", provider: "queue"),
+                QueueProtocolTrack(uri: "spotify:track:tail", uid: "occ-c", provider: "queue"),
+            ]
         )
         runner.equal(
             "a later Connect revision still replaces order after a Web refresh",
@@ -565,9 +575,9 @@ func runWorkflowChecks(_ runner: CheckRunner) async {
             ["occ-a", "occ-b", "occ-c"]
         )
         runner.equal(
-            "Web refresh does not rewrite the Connect mutation snapshot",
+            "a later Connect revision updates mutation metadata after a Web refresh",
             await orderedService.mutationSnapshot()?.next.map(\.uid),
-            ["occ-4"]
+            ["occ-a", "occ-b", "occ-c"]
         )
     }
 
