@@ -483,6 +483,11 @@ func runQueueMutationChecks(_ check: CheckRunner) {
             entry(duplicate, provider: "web-api", occurrence: 0),
             entry(duplicate, provider: "web-api", occurrence: 1),
         ]
+        let webDuplicateProtocol = [
+            protocolTrack(duplicate, uid: "q0"),
+            protocolTrack(duplicate, uid: "q1"),
+            protocolTrack("spotify:delimiter", provider: "delimiter"),
+        ]
         check.equal(
             "Web presentation without UIDs cannot remove duplicate URI occurrences",
             QueueMutationPolicy.evaluateRemoval(
@@ -490,7 +495,7 @@ func runQueueMutationChecks(_ check: CheckRunner) {
                 visibleUpcoming: webDuplicates,
                 nowPlayingID: nil,
                 historyIDs: [],
-                mutation: snapshot(next: protocolNext),
+                mutation: snapshot(next: webDuplicateProtocol),
                 route: remote,
                 isConnected: true,
                 accountEpoch: 1,
