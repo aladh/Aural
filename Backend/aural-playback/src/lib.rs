@@ -12,6 +12,7 @@ mod queue;
 mod runtime;
 mod session_lifecycle;
 mod state;
+mod transport;
 
 pub(crate) use connect::*;
 pub(crate) use ffi::*;
@@ -21,6 +22,7 @@ pub(crate) use queue::*;
 pub(crate) use runtime::*;
 pub(crate) use session_lifecycle::*;
 pub(crate) use state::*;
+pub(crate) use transport::*;
 
 pub(crate) use futures_util::StreamExt;
 pub(crate) use librespot_connect::{

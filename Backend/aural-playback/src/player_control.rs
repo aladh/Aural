@@ -43,26 +43,6 @@ pub(crate) fn require_session_connected() -> Result<(), i32> {
     Ok(())
 }
 
-/// Helper to ensure the device is active before loading content.
-/// If not active, activates via Spirc directly (no spclient HTTP needed).
-/// Returns Ok(()) if ready to load, Err(i32) with error code if activation failed.
-pub(crate) fn ensure_active_for_playback(spirc: &Arc<Spirc>) -> Result<(), i32> {
-    if !is_active_device() {
-        debug!("Device not active, activating via spirc.activate()");
-        match spirc.activate() {
-            Ok(_) => {
-                debug!("Activate succeeded");
-                set_active_device(true);
-            }
-            Err(_e) => {
-                debug!("Activate failed: {:?}", _e);
-                return Err(-1);
-            }
-        }
-    }
-    Ok(())
-}
-
 /// Plays multiple tracks in sequence.
 /// Returns 0 on success, -1 on error.
 ///
@@ -216,26 +196,7 @@ pub extern "C" fn aural_playback_play_uri(uri_or_url: *const c_char, track_index
 /// Returns 0 on success, -1 on error, -2 if channel closed (needs reinit).
 #[no_mangle]
 pub extern "C" fn aural_playback_pause() -> i32 {
-    ffi_command("aural_playback_pause", || {
-        debug!("aural_playback_pause called");
-        if let Err(e) = require_session_connected() {
-            return e;
-        }
-        // IS_PLAYING is cleared here rather than left to the event stream: the user can pause
-        // while a track is still loading, and in that case PlayerEvent::Playing never fires,
-        // so there is no playing-to-paused transition for the listener to report.
-        spirc_command("Pause", |spirc| {
-            spirc.pause()?;
-            IS_PLAYING.store(false, Ordering::SeqCst);
-            // A locally issued pause is not guaranteed to produce a PlayerEvent::Paused (for
-            // example while the player is still transitioning between tracks). Publish the
-            // accepted state now so Swift does not keep interpolating time and presenting Pause
-            // indefinitely. A later player or cluster update remains authoritative and can
-            // correct this snapshot if the command did not land.
-            send_local_playback_state(false, POSITION_MS.load(Ordering::SeqCst));
-            Ok(())
-        })
-    })
+    ffi_command("aural_playback_pause", pause_playback)
 }
 
 /// Clears any buffered audio samples.
@@ -249,201 +210,11 @@ pub extern "C" fn aural_playback_clear_audio_buffer() {
     })
 }
 
-/// How often the two waits below re-read `PLAYING_EVENT_SEQ`.
-pub(crate) const PLAYING_EVENT_POLL_INTERVAL: Duration = Duration::from_millis(25);
-
-/// How long `aural_playback_resume` gives `Spirc::play` before falling back to a load. `play` only
-/// queues a command, so this is the window in which an accepted one produces audio.
-pub(crate) const PLAY_COMMAND_PLAYING_TIMEOUT: Duration = Duration::from_millis(500);
-
-/// How long the resume fallback then gives its load, which has a context to fetch first.
-pub(crate) const RESUME_LOAD_PLAYING_TIMEOUT: Duration = Duration::from_secs(2);
-
-/// How long rehydration waits for the Player to actually start before giving up on the
-/// wait (not on the session). Observed load-to-playing is around a second.
-pub(crate) const REHYDRATE_PLAYING_TIMEOUT: Duration = Duration::from_secs(3);
-
-/// Waits for the Player to report playback, blocking the calling thread.
-///
-/// For the synchronous FFI entry points, which are called on Swift's own threads. Inside the
-/// runtime use the async twin below instead.
-pub(crate) fn wait_for_playing_event(previous_seq: u64, timeout: Duration) -> bool {
-    let deadline = std::time::Instant::now() + timeout;
-    loop {
-        if PLAYING_EVENT_SEQ.load(Ordering::SeqCst) > previous_seq {
-            return true;
-        }
-        if std::time::Instant::now() >= deadline {
-            return false;
-        }
-        std::thread::sleep(PLAYING_EVENT_POLL_INTERVAL);
-    }
-}
-
-/// Waits for the Player to report playback, without parking a runtime worker.
-///
-/// Runs inside `init_player_async`, where the thread sleep above would block a tokio worker.
-pub(crate) async fn wait_for_playing_event_async(previous_seq: u64, timeout: Duration) -> bool {
-    let deadline = tokio::time::Instant::now() + timeout;
-    loop {
-        if PLAYING_EVENT_SEQ.load(Ordering::SeqCst) > previous_seq {
-            return true;
-        }
-        if tokio::time::Instant::now() >= deadline {
-            return false;
-        }
-        tokio::time::sleep(PLAYING_EVENT_POLL_INTERVAL).await;
-    }
-}
-
-/// Reloads what was playing, at the position it stopped.
-///
-/// **The caller must have activated the device.** `Spirc::load` only hands the command to a
-/// channel, so `Ok` means "queued", not "accepted" — and `SpircTask` drops `Load` while its
-/// connect state is inactive. This used to call `set_active_device(true)` on that `Ok`,
-/// which turned a discarded load into an apparent takeover: Swift then believed Aural was
-/// the active device and routed every later transport command to a local player that was
-/// ignoring all of them. Activity is recorded where it is actually established — by
-/// `ensure_active_for_playback` and by `init_player_async` — never inferred from a queued
-/// command. Both callers satisfy the precondition: `aural_playback_resume` activates first, and
-/// the rehydration in `init_player_async` runs only when `should_resume()` held, which
-/// implies `was_active` and therefore that `spirc.activate()` already ran.
-pub(crate) fn resume_via_load(spirc: &Arc<Spirc>) -> i32 {
-    /// Issues one resume load. `None` means "this one did not take, try the next fallback";
-    /// a closed channel is the one failure that is terminal, since the next load would fail
-    /// on the same channel.
-    fn try_load(spirc: &Spirc, what: &str, request: LoadRequest) -> Option<i32> {
-        match spirc.load(request) {
-            Ok(_) => Some(0),
-            Err(e) => match spirc_error(what, &e) {
-                ERROR_NEEDS_REINIT => Some(ERROR_NEEDS_REINIT),
-                _ => None,
-            },
-        }
-    }
-
-    // Read rather than taken. `Spirc::load` only queues a command, so reaching this point
-    // does not mean playback resumed — the load can fail on a closed channel, or be accepted
-    // and never produce audio. Clearing here would throw away the only pre-deactivation
-    // position and leave the retry restarting the track from zero. The `Playing` event
-    // clears it instead, which is the one signal that the resume actually landed.
-    let position_ms = resume_position(
-        RESUME_POSITION_MS.load(Ordering::SeqCst),
-        POSITION_MS.load(Ordering::SeqCst),
-    );
-    let context_uri = CURRENT_CONTEXT_URI
-        .lock()
-        .unwrap_or_else(|e| e.into_inner())
-        .clone();
-    let current_track_uri = CURRENT_TRACK_URI
-        .lock()
-        .unwrap_or_else(|e| e.into_inner())
-        .clone();
-
-    if let Some(context_uri) = context_uri.filter(|uri| !uri.is_empty()) {
-        let playing_track = current_track_uri.clone().map(PlayingTrack::Uri);
-        debug!(
-            "Resume fallback: loading context {} at {}ms (track hint: {:?})",
-            context_uri, position_ms, playing_track
-        );
-
-        let load_request = LoadRequest::from_context_uri(
-            context_uri,
-            LoadRequestOptions {
-                start_playing: true,
-                seek_to: position_ms,
-                playing_track,
-                ..Default::default()
-            },
-        );
-
-        if let Some(result) = try_load(spirc, "Resume fallback context load", load_request) {
-            return result;
-        }
-    }
-
-    if let Some(track_uri) = current_track_uri.filter(|uri| !uri.is_empty()) {
-        debug!(
-            "Resume fallback: loading single track {} at {}ms",
-            track_uri, position_ms
-        );
-        let load_request = LoadRequest::from_tracks(
-            vec![track_uri],
-            LoadRequestOptions {
-                start_playing: true,
-                seek_to: position_ms,
-                ..Default::default()
-            },
-        );
-
-        if let Some(result) = try_load(spirc, "Resume fallback track load", load_request) {
-            return result;
-        }
-    }
-
-    ERROR_GENERAL
-}
-
 /// Resumes playback.
 /// Returns 0 on success, -1 on error, -2 if channel closed (needs reinit).
 #[no_mangle]
 pub extern "C" fn aural_playback_resume() -> i32 {
-    ffi_command("aural_playback_resume", || {
-        debug!("aural_playback_resume called");
-        if let Err(e) = require_session_connected() {
-            return e;
-        }
-
-        if IS_PLAYING.load(Ordering::SeqCst) {
-            return 0;
-        }
-
-        // A resume is already working; joining it is what this caller wanted, so report success
-        // rather than starting a second one that would restart the track underneath the first.
-        if RESUMING.swap(true, Ordering::SeqCst) {
-            debug!("Resume already in progress");
-            return 0;
-        }
-        let _resuming = ResumeGuard;
-
-        let Some(spirc) = current_spirc("Resume") else {
-            return ERROR_GENERAL;
-        };
-
-        // Activation is a precondition, not an optimization. `SpircTask` matches
-        // `_ if !self.connect_state.is_active()` ahead of every transport command, so `Play`,
-        // `Load`, `Next`, `Prev`, `Shuffle` and `SetPosition` are discarded with a warning while
-        // inactive — the whole resume path below, load fallback included, would be dropped and
-        // nothing would play. Waking from sleep lands here every time: the sleep teardown shuts
-        // Spirc down, librespot answers with `SessionDisconnected`, and its handler clears the
-        // active flag.
-        if let Err(e) = ensure_active_for_playback(&spirc) {
-            return e;
-        }
-
-        let play_seq_before = PLAYING_EVENT_SEQ.load(Ordering::SeqCst);
-        if let Err(e) = spirc.play() {
-            return spirc_error("Resume", &e);
-        }
-
-        if wait_for_playing_event(play_seq_before, PLAY_COMMAND_PLAYING_TIMEOUT) {
-            return 0;
-        }
-
-        debug!("Resume play() produced no Playing event within timeout; attempting load fallback");
-        let fallback_seq_before = PLAYING_EVENT_SEQ.load(Ordering::SeqCst);
-        let load_result = resume_via_load(&spirc);
-        if load_result != 0 {
-            return load_result;
-        }
-
-        if wait_for_playing_event(fallback_seq_before, RESUME_LOAD_PLAYING_TIMEOUT) {
-            0
-        } else {
-            debug!("Resume fallback load produced no Playing event within timeout");
-            ERROR_GENERAL
-        }
-    })
+    ffi_command("aural_playback_resume", resume_playback)
 }
 
 /// Stops playback completely.
