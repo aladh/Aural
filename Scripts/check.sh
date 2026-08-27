@@ -169,7 +169,7 @@ if [[ ! -f "$projections_file" ]]; then
     print -u2 "PlaybackStore projections must live in PlaybackStore+Projections.swift"
     exit 1
 fi
-if rg -n '^[[:space:]]*set[[:space:]]*(\{|\()' "$projections_file"; then
+if rg -n '(^|[^[:alnum:]_])set[[:space:]]*(\([^)]*\)[[:space:]]*)?\{' "$projections_file"; then
     print -u2 "PlaybackStore state projections must remain read-only; use an explicit atomic action"
     exit 1
 fi

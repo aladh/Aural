@@ -15,8 +15,9 @@ enum PlaybackStoreProjectionContract {
 
     static func isExplicitSetterLine(_ line: String) -> Bool {
         let trimmed = line.trimmingCharacters(in: .whitespaces)
-        guard trimmed.hasPrefix("set") else { return false }
-        let afterSet = trimmed.dropFirst(3).trimmingCharacters(in: .whitespaces)
-        return afterSet.hasPrefix("{") || afterSet.hasPrefix("(")
+        return trimmed.range(
+            of: #"\bset\s*(\([^)]*\))?\s*\{"#,
+            options: .regularExpression
+        ) != nil
     }
 }

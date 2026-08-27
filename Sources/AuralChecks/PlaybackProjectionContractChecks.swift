@@ -43,5 +43,11 @@ func runPlaybackProjectionContractChecks(_ check: CheckRunner) {
             "didSet observers are not setter accessors",
             !PlaybackStoreProjectionContract.isExplicitSetterLine("        didSet { }")
         )
+        check.check(
+            "an inline get/set accessor is reported",
+            PlaybackStoreProjectionContract.isExplicitSetterLine(
+                "    var phase: Phase { get { state.session } set { state.session = newValue } }"
+            )
+        )
     }
 }

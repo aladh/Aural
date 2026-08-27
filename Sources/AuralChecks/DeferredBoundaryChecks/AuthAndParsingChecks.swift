@@ -318,6 +318,14 @@ func runLoopbackParsingChecks(_ check: CheckRunner) {
             "encoded extra segment rejected",
             LoopbackCallbackServer.parseRequestLine("GET /login%2Fextra?code=abc HTTP/1.1\n")
         )
+        check.nil_(
+            "empty HTTP version rejected",
+            LoopbackCallbackServer.parseRequestLine("GET /login?code=abc HTTP/\n")
+        )
+        check.nil_(
+            "suffixed HTTP version rejected",
+            LoopbackCallbackServer.parseRequestLine("GET /login?code=abc HTTP/1.1junk\n")
+        )
     }
 }
 

@@ -39,8 +39,17 @@ public enum LoopbackRequestParser {
         guard let line = firstRequestLine(request) else { return nil }
         let parts = line.split(separator: " ", omittingEmptySubsequences: false)
         guard parts.count == 3, parts[0] == "GET" else { return nil }
-        guard parts[2].hasPrefix("HTTP/") else { return nil }
+        guard isHTTPVersion(parts[2]) else { return nil }
         return parseOriginFormCallbackTarget(String(parts[1]))
+    }
+
+    /// RFC 9112 `HTTP-version`: `HTTP/` plus a numeric major, optionally `.` minor.
+    static func isHTTPVersion(_ token: Substring) -> Bool {
+        guard token.hasPrefix("HTTP/") else { return false }
+        let version = token.dropFirst(5)
+        let parts = version.split(separator: ".", omittingEmptySubsequences: false)
+        guard (1...2).contains(parts.count) else { return false }
+        return parts.allSatisfy { !$0.isEmpty && $0.allSatisfy(\.isNumber) }
     }
 
     /// First HTTP request-line, without a CR, LF, or CRLF terminator.

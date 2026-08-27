@@ -281,6 +281,10 @@ fn credentials_cache_dir_uses_injected_home_without_tmp_fallback() {
         "/private/tmp/aural",
         "/var/tmp",
         "/private/var/tmp",
+        "/var/../tmp",
+        "/Users/../tmp",
+        "/foo/../private/tmp",
+        "/private/./tmp",
     ] {
         assert_eq!(
             credentials_cache_dir_from_home(Some(std::path::Path::new(shared))),

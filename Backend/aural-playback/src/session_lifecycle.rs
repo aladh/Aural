@@ -37,7 +37,8 @@ pub(crate) fn credentials_cache_dir_from_home(
     if !home.is_absolute() {
         return Err(CredentialsCacheError::Relative);
     }
-    if is_shared_temporary_home(home) {
+    let home = lexically_normalized_absolute(home).ok_or(CredentialsCacheError::SharedTemporary)?;
+    if is_shared_temporary_home(&home) {
         return Err(CredentialsCacheError::SharedTemporary);
     }
     Ok(home
@@ -45,6 +46,19 @@ pub(crate) fn credentials_cache_dir_from_home(
         .join("Application Support")
         .join("Aural")
         .join("credentials"))
+}
+
+/// Collapse `.` and refuse `..` without touching the filesystem or following symlinks.
+fn lexically_normalized_absolute(home: &std::path::Path) -> Option<std::path::PathBuf> {
+    let mut normalized = std::path::PathBuf::new();
+    for component in home.components() {
+        match component {
+            std::path::Component::CurDir => {}
+            std::path::Component::ParentDir => return None,
+            other => normalized.push(other),
+        }
+    }
+    Some(normalized)
 }
 
 /// Shared world-writable temp roots, including the macOS `/tmp` → `/private/tmp` pair.

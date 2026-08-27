@@ -58,6 +58,11 @@ func runParsingChecks(_ check: CheckRunner) {
         check.nil_("missing HTTP version rejected", LoopbackRequestParser.parseRequestLine("GET /login?code=abc\n"))
         check.nil_("extra request-line tokens rejected", LoopbackRequestParser.parseRequestLine("GET /login HTTP/1.1 extra\n"))
         check.nil_("tab-separated request-line rejected", LoopbackRequestParser.parseRequestLine("GET\t/login HTTP/1.1\n"))
+        check.notNil("HTTP/1.0 is accepted", LoopbackRequestParser.parseRequestLine("GET /login HTTP/1.0\n"))
+        check.notNil("HTTP/2 is accepted", LoopbackRequestParser.parseRequestLine("GET /login HTTP/2\n"))
+        check.nil_("empty HTTP version rejected", LoopbackRequestParser.parseRequestLine("GET /login?code=abc HTTP/\n"))
+        check.nil_("suffixed HTTP version rejected", LoopbackRequestParser.parseRequestLine("GET /login?code=abc HTTP/1.1junk\n"))
+        check.nil_("non-numeric HTTP version rejected", LoopbackRequestParser.parseRequestLine("GET /login?code=abc HTTP/not-a-version\n"))
     }
 
     check.suite("Spotify authentication cookie matching") {
