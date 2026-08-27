@@ -124,6 +124,11 @@ func runPlaylistEditabilityChecks(_ check: CheckRunner) {
             PlaylistMutationSelection.occurrenceIDsForRemoval(from: [rows[3]]),
             []
         )
+        check.equal(
+            "mixed UID and URI-as-id selection removes only occurrence UIDs",
+            PlaylistMutationSelection.occurrenceIDsForRemoval(from: selected),
+            ["uid-a", "uid-b"]
+        )
         check.check(
             "add requires an editable target and at least one URI",
             PlaylistMutationSelection.canAdd(isTargetEditable: true, uris: [duplicateURI])

@@ -78,10 +78,11 @@ final class PlaylistMutationController {
 
         startMutation { identity in
             try await self.mutations.addToPlaylist(playlistId: playlistID, trackUris: uris)
-            guard self.isCurrent(identity) else { return }
-            await self.reconcileIfOpen(playlist)
-            guard self.isCurrent(identity) else { return }
-            self.feedback.success(Self.addedMessage(count: uris.count, playlistTitle: playlist.title))
+            await self.finishSuccessfulWrite(
+                identity,
+                playlist: playlist,
+                message: Self.addedMessage(count: uris.count, playlistTitle: playlist.title)
+            )
         }
     }
 
@@ -109,10 +110,11 @@ final class PlaylistMutationController {
 
         startMutation { identity in
             try await self.mutations.removeFromPlaylist(playlistId: playlistID, uids: uids)
-            guard self.isCurrent(identity) else { return }
-            await self.reconcileIfOpen(playlist)
-            guard self.isCurrent(identity) else { return }
-            self.feedback.success(Self.removedMessage(count: uids.count, playlistTitle: playlist.title))
+            await self.finishSuccessfulWrite(
+                identity,
+                playlist: playlist,
+                message: Self.removedMessage(count: uids.count, playlistTitle: playlist.title)
+            )
         }
     }
 
@@ -137,9 +139,31 @@ final class PlaylistMutationController {
         }
     }
 
+    private func finishSuccessfulWrite(
+        _ identity: AccountScopedRequestIdentity,
+        playlist: CatalogItem,
+        message: String
+    ) async {
+        // A superseded or cancelled task may still observe a completed server write.
+        // Refresh once for that write whenever the captured account/session is current.
+        // requestID and Task.isCancelled are latest-intent gates, not session validity.
+        guard sessionAllowsApply(identity) else { return }
+        await reconcileIfOpen(playlist)
+        guard sessionAllowsApply(identity) else { return }
+        feedback.success(message)
+    }
+
     private func reconcileIfOpen(_ playlist: CatalogItem) async {
         guard playlistStore.loadedURI == playlist.uri else { return }
         await playlistStore.load(playlist, force: true)
+    }
+
+    /// Account/session gate for applying a completed write. Does not use request identity
+    /// or cooperative cancellation, so a superseded in-flight success can still refresh.
+    private func sessionAllowsApply(_ identity: AccountScopedRequestIdentity) -> Bool {
+        identity.accountEpoch == session.accountEpoch
+            && identity.sessionRevision == session.snapshot.revision
+            && session.isAvailable
     }
 
     private func isCurrent(_ identity: AccountScopedRequestIdentity) -> Bool {

@@ -135,7 +135,9 @@ struct TrackTable: View {
                 if playlistActions.canRemoveOccurrences {
                     Divider()
                     Button("Remove from Playlist", role: .destructive) {
-                        playlistActions.removeOccurrences(Array(selectedIDs))
+                        playlistActions.removeOccurrences(
+                            PlaylistMutationSelection.occurrenceIDsForRemoval(from: selectedTracks)
+                        )
                     }
                     .disabled(
                         PlaylistMutationSelection.occurrenceIDsForRemoval(from: selectedTracks).isEmpty

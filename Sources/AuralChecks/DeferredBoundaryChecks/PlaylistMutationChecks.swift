@@ -29,9 +29,10 @@ private actor ScriptedPlaylistServices: CatalogProviding, PlaylistMutating {
     var removeCalls: [(playlistId: String, uids: [String])] = []
     var addError: (any Error)?
     var removeError: (any Error)?
-    private var parked: CheckedContinuation<Void, any Error>?
+    private var waiters: [CheckedContinuation<Void, any Error>] = []
 
-    var isParked: Bool { parked != nil }
+    var isParked: Bool { !waiters.isEmpty }
+    var parkedCount: Int { waiters.count }
 
     func searchTracks(_: String, limit _: Int) async throws -> [PathfinderTrack] {
         throw PlaylistMutationCheckFailure.unavailable
@@ -64,8 +65,13 @@ private actor ScriptedPlaylistServices: CatalogProviding, PlaylistMutating {
     }
 
     func completePark() {
-        parked?.resume()
-        parked = nil
+        guard !waiters.isEmpty else { return }
+        waiters.removeFirst().resume()
+    }
+
+    func failPark() {
+        guard !waiters.isEmpty else { return }
+        waiters.removeFirst().resume(throwing: CancellationError())
     }
 
     func setAddError(_ error: (any Error)?) { addError = error }
@@ -78,18 +84,9 @@ private actor ScriptedPlaylistServices: CatalogProviding, PlaylistMutating {
     }
 
     private func park() async throws {
-        try await withTaskCancellationHandler {
-            try await withCheckedThrowingContinuation { continuation in
-                parked = continuation
-            }
-        } onCancel: {
-            Task { await self.failPark() }
+        try await withCheckedThrowingContinuation { continuation in
+            waiters.append(continuation)
         }
-    }
-
-    private func failPark() {
-        parked?.resume(throwing: CancellationError())
-        parked = nil
     }
 }
 
@@ -375,6 +372,7 @@ func runPlaylistMutationChecks(_ runner: CheckRunner) async {
         catalog.playlistMutations.addTracks([fixtureTrack(id: "row", uri: "spotify:track:new")], to: owned)
         _ = await waitUntil { await services.isParked }
         catalog.playlistMutations.reset()
+        await services.failPark()
         await yieldPasses()
         runner.equal("cancelled mutation does not replace the rejection message with success", feedback.message?.kind, .failure)
         runner.equal("cancelled mutation leaves tracks unchanged", catalog.playlistStore.tracks.map(\.id), loadedIDs)
@@ -395,6 +393,72 @@ func runPlaylistMutationChecks(_ runner: CheckRunner) async {
             "Connect Spotify before changing playlists."
         )
         runner.equal("unavailable session does not send another write", await services.addCalls.count, 3)
+        feedback.dismiss()
+    }
+
+    await runner.suite("Overlapping mutations reconcile each completed write") {
+        let services = ScriptedPlaylistServices()
+        do {
+            try await services.setLibrary([decodePlaylist(ownedLibraryJSON)])
+            try await services.setPlaylist(decodePlaylistUnion(ownedContentsJSON))
+        } catch {
+            runner.check("overlapping fixtures decode", false)
+            return
+        }
+        let session = CatalogSessionAvailability(accountEpoch: 1, isAvailable: true)
+        let feedback = TransientFeedbackPresenter(clock: HoldingClock(), duration: 4)
+        let catalog = makeCatalog(services: services, session: session, feedback: feedback)
+        await catalog.homeLibrary.loadProfile()
+        await catalog.homeLibrary.loadPlaylists()
+        let owned = catalog.homeLibrary.playlists[0]
+        await catalog.playlistStore.load(owned)
+        let loadsBefore = await services.playlistLoadCount
+
+        catalog.playlistMutations.addTracks(
+            [fixtureTrack(id: "row-1", uri: "spotify:track:first")],
+            to: owned
+        )
+        _ = await waitUntil { await services.parkedCount == 1 }
+        catalog.playlistMutations.addTracks(
+            [fixtureTrack(id: "row-2", uri: "spotify:track:second")],
+            to: owned
+        )
+        _ = await waitUntil { await services.addCalls.count == 2 && await services.parkedCount == 2 }
+        let sentAdds = await services.addCalls
+        runner.equal("both overlapping writes are sent", sentAdds.count, 2)
+        runner.equal(
+            "first overlapping write keeps its batch",
+            sentAdds.map(\.uris),
+            [["spotify:track:first"], ["spotify:track:second"]]
+        )
+
+        do {
+            try await services.setPlaylist(decodePlaylistUnion(ownedAfterAddJSON))
+        } catch {
+            runner.check("overlapping post-add fixture decodes", false)
+        }
+        await services.completePark()
+        _ = await waitUntil { await services.playlistLoadCount == loadsBefore + 1 }
+        await services.completePark()
+        _ = await waitUntil {
+            await services.playlistLoadCount == loadsBefore + 2
+                && feedback.message?.kind == .success
+                && catalog.playlistStore.tracks.map(\.id) == ["uid-a", "uid-b", "uid-c"]
+        }
+        runner.equal(
+            "each completed overlapping write reloads the open playlist once",
+            await services.playlistLoadCount,
+            loadsBefore + 2
+        )
+        runner.equal(
+            "later overlapping success reports through the presenter",
+            feedback.message?.kind,
+            .success
+        )
+        runner.check(
+            "stale account/session still blocked overlapping apply",
+            catalog.playlistStore.tracks.map(\.id) == ["uid-a", "uid-b", "uid-c"]
+        )
         feedback.dismiss()
     }
 
@@ -424,6 +488,11 @@ func runPlaylistMutationChecks(_ runner: CheckRunner) async {
                     && containsToken(table, "Menu(\"Add to Playlist\")")
                     && containsToken(table, "onDeleteCommand")
                     && containsToken(table, "Remove from Playlist")
+            )
+            runner.check(
+                "Remove from Playlist and Delete pass only occurrence UIDs",
+                containsToken(table, "PlaylistMutationSelection.occurrenceIDsForRemoval(from: selectedTracks)")
+                    && !containsToken(table, "removeOccurrences(Array(selectedIDs))")
             )
             runner.check(
                 "read-only tables do not register delete unless removal is offered",
