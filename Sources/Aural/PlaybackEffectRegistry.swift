@@ -8,6 +8,8 @@ enum PlaybackEffectID: Hashable {
     case catalogLoad
     case positionRefresh
     case queueSnapshot
+    case connectQueueAccept
+    case queueReplacement
     case queueRefresh
     case trackMetadata
     case commandError
@@ -29,7 +31,11 @@ enum PlaybackEffectID: Hashable {
 ///
 /// Transport commands use unique `.command(UUID)` tokens, so this is lifetime ownership rather than
 /// kind-level cancel-in-flight. A second pause is refused by the pending-command gate, not by
-/// replacing an in-flight token. See `docs/ADR-003-playback-command-effects.md`.
+/// replacing an in-flight token. Sequential Add to Queue keeps unique `.queueCommand(UUID)` tokens
+/// so ordered multi-add is not cancelled. Authoritative Connect `set_queue` replacement uses one
+/// `.queueReplacement` lifetime plus a MainActor request token: a second removal is refused while
+/// one is in flight, because cancellation cannot undo a `set_queue` Spotify already accepted.
+/// See `docs/ADR-003-playback-command-effects.md`.
 @MainActor
 final class PlaybackEffectRegistry {
     private var tasks: [PlaybackEffectID: Task<Void, Never>] = [:]

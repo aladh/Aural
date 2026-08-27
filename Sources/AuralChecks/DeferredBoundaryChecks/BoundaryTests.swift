@@ -24,6 +24,7 @@ enum BoundaryChecksMain {
         await runPlaybackCommandFailureChecks(runner)
         await runPlaybackEventOutcomeChecks(runner)
         await runPlaylistMutationChecks(runner)
+        await runQueueManagementChecks(runner)
         await runTransientFeedbackChecks(runner)
 
         if !runner.succeeded {

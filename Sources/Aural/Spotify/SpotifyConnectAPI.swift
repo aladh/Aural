@@ -1,3 +1,4 @@
+import AuralDomain
 import Foundation
 
 nonisolated enum SpotifyConnectAPIError: Error, LocalizedError, Equatable {
@@ -29,6 +30,7 @@ nonisolated struct SpotifyConnectCommand: Encodable, Sendable {
         case repeatContext = "set_repeating_context"
         case repeatTrack = "set_repeating_track"
         case addToQueue = "add_to_queue"
+        case setQueue = "set_queue"
         case play
     }
 
@@ -101,11 +103,61 @@ nonisolated struct SpotifyConnectCommand: Encodable, Sendable {
         let metadata: [String: String] = [:]
     }
 
+    struct QueueTrack: Encodable, Sendable {
+        let uri: String
+        let uid: String
+        let provider: String
+        let metadata: [String: String]
+        let removed: [String]
+        let blocked: [String]
+        let restrictions: [String: [String]]
+        let albumURI: String
+        let disallowReasons: [String]
+        let artistURI: String
+
+        init(_ track: QueueProtocolTrack) {
+            uri = track.uri
+            uid = track.uid
+            provider = track.provider
+            metadata = track.metadata
+            removed = track.removed
+            blocked = track.blocked
+            restrictions = track.restrictions
+            albumURI = track.albumURI
+            disallowReasons = track.disallowReasons
+            artistURI = track.artistURI
+        }
+
+        enum CodingKeys: String, CodingKey {
+            case uri, uid, provider, metadata, removed, blocked, restrictions
+            case albumURI = "album_uri"
+            case disallowReasons = "disallow_reasons"
+            case artistURI = "artist_uri"
+        }
+
+        func encode(to encoder: any Encoder) throws {
+            var container = encoder.container(keyedBy: CodingKeys.self)
+            try container.encode(uri, forKey: .uri)
+            try container.encode(uid, forKey: .uid)
+            try container.encode(provider, forKey: .provider)
+            try container.encode(metadata, forKey: .metadata)
+            if !removed.isEmpty { try container.encode(removed, forKey: .removed) }
+            if !blocked.isEmpty { try container.encode(blocked, forKey: .blocked) }
+            if !restrictions.isEmpty { try container.encode(restrictions, forKey: .restrictions) }
+            if !albumURI.isEmpty { try container.encode(albumURI, forKey: .albumURI) }
+            if !disallowReasons.isEmpty { try container.encode(disallowReasons, forKey: .disallowReasons) }
+            if !artistURI.isEmpty { try container.encode(artistURI, forKey: .artistURI) }
+        }
+    }
+
     let endpoint: Kind
     let loggingParameters = LoggingParameters()
     var value: Value?
     var context: Context?
     var track: Track?
+    var nextTracks: [QueueTrack]?
+    var prevTracks: [QueueTrack]?
+    var queueRevision: String?
 
     enum CodingKeys: String, CodingKey {
         case endpoint
@@ -113,6 +165,9 @@ nonisolated struct SpotifyConnectCommand: Encodable, Sendable {
         case value
         case context
         case track
+        case nextTracks = "next_tracks"
+        case prevTracks = "prev_tracks"
+        case queueRevision = "queue_revision"
         case options
     }
 
@@ -122,6 +177,9 @@ nonisolated struct SpotifyConnectCommand: Encodable, Sendable {
         try container.encode(loggingParameters, forKey: .loggingParameters)
         try container.encodeIfPresent(value, forKey: .value)
         try container.encodeIfPresent(track, forKey: .track)
+        try container.encodeIfPresent(nextTracks, forKey: .nextTracks)
+        try container.encodeIfPresent(prevTracks, forKey: .prevTracks)
+        try container.encodeIfPresent(queueRevision, forKey: .queueRevision)
         if let context {
             try container.encode(context, forKey: .context)
             try container.encodeIfPresent(context.options, forKey: .options)
@@ -151,6 +209,18 @@ nonisolated struct SpotifyConnectCommand: Encodable, Sendable {
 
     static func addToQueue(_ uri: String) -> Self {
         SpotifyConnectCommand(endpoint: .addToQueue, track: Track(uri: uri))
+    }
+
+    static func setQueue(
+        next: [QueueProtocolTrack],
+        prev: [QueueProtocolTrack],
+        queueRevision: String
+    ) -> Self {
+        var command = SpotifyConnectCommand(endpoint: .setQueue)
+        command.nextTracks = next.map(QueueTrack.init)
+        command.prevTracks = prev.map(QueueTrack.init)
+        command.queueRevision = queueRevision
+        return command
     }
 
     static func play(uri: String, trackIndex: Int? = nil) -> Self {

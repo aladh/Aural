@@ -51,16 +51,68 @@ nonisolated struct RustQueueState: Decodable, Sendable {
     struct QueueItem: Decodable, Sendable {
         let uri: String
         let provider: String
+        var uid: String?
+
+        enum CodingKeys: String, CodingKey {
+            case uri, provider, uid
+        }
+    }
+
+    struct ProtocolTrack: Decodable, Sendable {
+        let uri: String
+        let uid: String
+        let provider: String
+        var metadata: [String: String]?
+        var removed: [String]?
+        var blocked: [String]?
+        var restrictions: [String: [String]]?
+        var albumURI: String?
+        var disallowReasons: [String]?
+        var artistURI: String?
+
+        enum CodingKeys: String, CodingKey {
+            case uri, uid, provider, metadata, removed, blocked, restrictions
+            case albumURI = "album_uri"
+            case disallowReasons = "disallow_reasons"
+            case artistURI = "artist_uri"
+        }
+
+        func domainTrack() -> QueueProtocolTrack {
+            QueueProtocolTrack(
+                uri: uri,
+                uid: uid,
+                provider: provider,
+                metadata: metadata ?? [:],
+                removed: removed ?? [],
+                blocked: blocked ?? [],
+                restrictions: restrictions ?? [:],
+                albumURI: albumURI ?? "",
+                disallowReasons: disallowReasons ?? [],
+                artistURI: artistURI ?? ""
+            )
+        }
     }
 
     let track: Item?
     let nextTracks: [QueueItem]?
+    let prevTracks: [QueueItem]?
+    var protocolNextTracks: [ProtocolTrack]?
+    var protocolPrevTracks: [ProtocolTrack]?
+    var queueRevision: String?
+    var disallowSetQueue: Bool?
+    var disallowRemovingFromNextTracks: Bool?
     var revision: UInt64?
     var sessionGeneration: UInt64?
 
     enum CodingKeys: String, CodingKey {
         case track
         case nextTracks = "next_tracks"
+        case prevTracks = "prev_tracks"
+        case protocolNextTracks = "protocol_next_tracks"
+        case protocolPrevTracks = "protocol_prev_tracks"
+        case queueRevision = "queue_revision"
+        case disallowSetQueue = "disallow_set_queue"
+        case disallowRemovingFromNextTracks = "disallow_removing_from_next_tracks"
         case revision
         case sessionGeneration = "session_generation"
     }
@@ -152,6 +204,13 @@ final class PlaybackStore {
     /// `state.sourceRevisions[.engineQueue]`, which tracks provenance snapshots after merge.
     @ObservationIgnored var connectQueueCallback = ConnectQueueCallbackWatermark()
     @ObservationIgnored var shuffleHistoryCache: [String: TimeInterval] = [:]
+    /// Connect protocol queue used for `set_queue`. This is a MainActor projection of
+    /// `QueueService`'s mutation snapshot, updated only after accepted Connect intake or a
+    /// committed replacement. Web inspector refresh must not write it.
+    @ObservationIgnored var queueMutation: QueueMutationSnapshot?
+    /// Lifetime token for one in-flight Connect `set_queue` replacement. Not a source revision.
+    /// A finished request clears only its own token so teardown cannot drop a newer session gate.
+    @ObservationIgnored var queueReplacementToken: UUID?
 
     init(
         environment: PlaybackEnvironment = .live,

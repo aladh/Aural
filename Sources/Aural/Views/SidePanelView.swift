@@ -23,6 +23,7 @@ struct SidePanelView: View {
     let onClose: () -> Void
 
     @State private var tab: Tab = .queue
+    @State private var upcomingSelection: Set<QueueEntry.ID> = []
 
     enum Tab: String, CaseIterable {
         case queue = "Queue"
@@ -92,30 +93,68 @@ struct SidePanelView: View {
                 message: "Play something, or use a track's context menu to add it to the queue."
             )
         } else {
-            ScrollView {
-                VStack(alignment: .leading, spacing: 4) {
-                    if player.hasCurrentTrack {
-                        Text("Now playing")
-                            .font(.caption.weight(.semibold))
-                            .foregroundStyle(.secondary)
+            List(selection: $upcomingSelection) {
+                if player.hasCurrentTrack {
+                    Section("Now playing") {
                         CurrentTrackRow(player: player)
-
-                        if !player.queueNextEntries.isEmpty {
-                            Text("Next up")
-                                .font(.caption.weight(.semibold))
-                                .foregroundStyle(.secondary)
-                                .padding(.top, 12)
-                        }
                     }
+                }
 
-                    ForEach(player.queueNextEntries) { entry in
-                        QueueRow(entry: entry, metadata: metadata) {
-                            player.play(uri: entry.uri)
+                if !player.queueNextEntries.isEmpty {
+                    Section("Next up") {
+                        ForEach(player.queueNextEntries) { entry in
+                            QueueUpcomingRow(entry: entry, metadata: metadata)
+                                .tag(entry.id)
                         }
                     }
                 }
-                .padding(14)
             }
+            .listStyle(.plain)
+            .environment(\.defaultMinListRowHeight, 28)
+            .contextMenu(forSelectionType: QueueEntry.ID.self) { selectedIDs in
+                let selected = QueueMutationSelection.orderedUpcoming(
+                    selectedIDs: selectedIDs,
+                    in: player.queueNextEntries
+                )
+                if selected.count == 1, let entry = selected.first {
+                    Button("Play", systemImage: "play.fill") {
+                        player.play(uri: entry.uri)
+                    }
+                    .disabled(!player.canStartPlayback)
+                }
+                if !selected.isEmpty {
+                    Button("Remove from Queue", role: .destructive) {
+                        player.removeUpcomingQueueOccurrences(selectedIDs: selectedIDs)
+                    }
+                    .disabled(!player.canRemoveUpcomingQueue(selectedIDs: selectedIDs))
+                }
+            } primaryAction: { selectedIDs in
+                let selected = QueueMutationSelection.orderedUpcoming(
+                    selectedIDs: selectedIDs,
+                    in: player.queueNextEntries
+                )
+                guard selected.count == 1, let entry = selected.first else { return }
+                guard player.canStartPlayback else { return }
+                player.play(uri: entry.uri)
+            }
+            .onDeleteCommand {
+                let selectedCount = QueueMutationSelection.orderedUpcoming(
+                    selectedIDs: upcomingSelection,
+                    in: player.queueNextEntries
+                ).count
+                guard QueueMutationSelection.keyboardCommand(
+                    deleteOrBackspace: true,
+                    selectedUpcomingCount: selectedCount,
+                    isRemovalAllowed: player.canRemoveUpcomingQueue(selectedIDs: upcomingSelection)
+                ) == .removeUpcomingOccurrences else {
+                    return
+                }
+                player.removeUpcomingQueueOccurrences(selectedIDs: upcomingSelection)
+            }
+            .onChange(of: player.queueNextEntries.map(\.id), initial: true) { _, ids in
+                upcomingSelection.formIntersection(Set(ids))
+            }
+            .accessibilityLabel("Queue")
         }
     }
 
@@ -144,62 +183,27 @@ struct SidePanelView: View {
     }
 }
 
-/// One tappable row in the queue list. Resolves its display name from the catalog
-/// once per uri — queue updates carry uris only, and resolving inside body would
-/// rescan loaded lists on every hover change.
-private struct QueueRow: View {
+/// One selectable upcoming queue row. Playback is Return/double-click via the list
+/// primary action, not a single click, so selection and removal stay distinct.
+private struct QueueUpcomingRow: View {
     let entry: QueueEntry
-    var isCurrent = false
     let metadata: CatalogMetadataRepository
-    let action: () -> Void
-
-    @State private var isHovering = false
 
     var body: some View {
-        rowBody
-    }
-
-    private var rowBody: some View {
-        Button(action: action) {
-            HStack(spacing: 10) {
-
-                VStack(alignment: .leading, spacing: 1) {
-                    Text(title)
-                        .font(.callout.weight(isCurrent ? .semibold : .regular))
-                        .foregroundStyle(isCurrent ? Color.accentColor : .primary)
-                        .lineLimit(1)
-                    Text(subtitle)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
-
-                Spacer(minLength: 0)
-
-                Image(systemName: isCurrent ? "speaker.wave.2.fill" : "play")
-                    .font(.system(size: 11, weight: .semibold))
-                    .foregroundStyle(isCurrent ? Color.accentColor : .secondary)
-                    .opacity(isCurrent || isHovering ? 1 : 0)
-            }
-            .padding(6)
-            .contentShape(Rectangle())
-            .background(
-                isHovering ? Color.primary.opacity(0.055) : .clear,
-                in: RoundedRectangle(cornerRadius: 7, style: .continuous)
-            )
+        VStack(alignment: .leading, spacing: 1) {
+            Text(title)
+                .font(.callout)
+                .lineLimit(1)
+            Text(subtitle)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
         }
-        .buttonStyle(.plain)
-        .disabled(isCurrent)
-        .onHover { isHovering = $0 }
-        // A row scrolled away under a resting cursor keeps no highlight.
-        .onDisappear { isHovering = false }
-        .help(isCurrent ? title : "Play \(title)")
-        .accessibilityLabel("\(isCurrent ? "Now playing" : "Play") \(title), \(subtitle)")
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.vertical, 2)
+        .accessibilityLabel("\(title), \(subtitle)")
     }
 
-    /// Resolve at render time so a queue received before the catalog automatically gains names
-    /// when Liked Songs, search, or a playlist finishes loading.
     private var title: String {
         metadata.displayInfo(for: entry.uri).title
     }

@@ -1,4 +1,5 @@
 use crate::*;
+use std::collections::HashMap;
 
 // Player state
 pub(crate) static PLAYER: Lazy<Mutex<Option<Arc<Player>>>> = Lazy::new(|| Mutex::new(None));
@@ -413,6 +414,33 @@ pub(crate) struct QueueItem {
     pub(crate) album_name: String,
     /// Track provider: "context", "queue", "autoplay", or "unavailable"
     pub(crate) provider: String,
+    /// Connect occurrence uid when the cluster supplied one. Empty when unknown.
+    pub(crate) uid: String,
+}
+
+/// Unfiltered Connect queue row used for `set_queue` replacement.
+/// Fields match `ProvidedTrack` in player.proto at librespot 9c7d756, except
+/// `disallow_setting_modes` / `disallow_signals` maps which are omitted when empty
+/// (no evidence they appear on queue rows in official `set_queue` JSON).
+#[derive(Serialize, Clone, Debug, PartialEq, Eq)]
+pub(crate) struct ProtocolQueueTrack {
+    pub(crate) uri: String,
+    pub(crate) uid: String,
+    pub(crate) provider: String,
+    #[serde(default, skip_serializing_if = "HashMap::is_empty")]
+    pub(crate) metadata: HashMap<String, String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub(crate) removed: Vec<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub(crate) blocked: Vec<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) restrictions: Option<serde_json::Map<String, serde_json::Value>>,
+    #[serde(skip_serializing_if = "String::is_empty")]
+    pub(crate) album_uri: String,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub(crate) disallow_reasons: Vec<String>,
+    #[serde(skip_serializing_if = "String::is_empty")]
+    pub(crate) artist_uri: String,
 }
 
 #[derive(Serialize)]
@@ -422,6 +450,11 @@ pub(crate) struct QueueState {
     pub(crate) track: Option<QueueItem>,
     pub(crate) next_tracks: Vec<QueueItem>,
     pub(crate) prev_tracks: Vec<QueueItem>,
+    pub(crate) protocol_next_tracks: Vec<ProtocolQueueTrack>,
+    pub(crate) protocol_prev_tracks: Vec<ProtocolQueueTrack>,
+    pub(crate) queue_revision: String,
+    pub(crate) disallow_set_queue: bool,
+    pub(crate) disallow_removing_from_next_tracks: bool,
 }
 
 #[derive(Serialize)]

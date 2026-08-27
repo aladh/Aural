@@ -5,6 +5,7 @@
 
 import Foundation
 @testable import AuralCore
+import struct AuralDomain.QueueProtocolTrack
 
 @MainActor
 func runPlaybackPanelChecks(_ check: CheckRunner) {
@@ -458,6 +459,22 @@ func runPlaybackPanelChecks(_ check: CheckRunner) {
             let track = addObject?["track"] as? [String: Any]
             check.equal("queue endpoint is encoded", addObject?["endpoint"] as? String, "add_to_queue")
             check.equal("queued track uri is encoded", track?["uri"] as? String, "spotify:track:abc")
+            check.nil_("add_to_queue does not encode next_tracks", addObject?["next_tracks"])
+
+            let setQueue = try JSONEncoder().encode(
+                SpotifyConnectCommand.setQueue(
+                    next: [QueueProtocolTrack(uri: "spotify:track:keep", uid: "q0", provider: "queue")],
+                    prev: [QueueProtocolTrack(uri: "spotify:track:prev", uid: "p0", provider: "context")],
+                    queueRevision: "rev-1"
+                )
+            )
+            let setObject = try JSONSerialization.jsonObject(with: setQueue) as? [String: Any]
+            check.equal("set_queue endpoint is encoded", setObject?["endpoint"] as? String, "set_queue")
+            check.equal(
+                "set_queue preserves prev_tracks",
+                ((setObject?["prev_tracks"] as? [[String: Any]])?.first?["uri"] as? String),
+                "spotify:track:prev"
+            )
         } catch {
             check.check("Connect commands encode: \(error)", false)
         }

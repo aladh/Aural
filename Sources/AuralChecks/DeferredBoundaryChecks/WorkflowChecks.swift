@@ -67,6 +67,15 @@ private actor SuspendedWebQueue: WebQueueClient {
     }
 }
 
+private actor ReorderedWebQueue: WebQueueClient {
+    func queue() async throws -> [CatalogTrack] {
+        [
+            workflowTrack("spotify:track:reordered"),
+            workflowTrack("spotify:track:same"),
+        ]
+    }
+}
+
 private actor UnavailableWebQueue: WebQueueClient {
     func queue() async throws -> [CatalogTrack] {
         throw URLError(.badServerResponse)
@@ -393,8 +402,8 @@ func runWorkflowChecks(_ runner: CheckRunner) async {
             sourceRevision: 1,
             contextURI: "spotify:track:fresh"
         )
-        runner.equal("new-account queue remains authoritative", accepted?.accountEpoch, 8)
-        runner.equal("new-account queue retains fresh entry", accepted?.entries.first?.uri, "spotify:track:fresh")
+        runner.equal("new-account queue remains authoritative", accepted?.snapshot.accountEpoch, 8)
+        runner.equal("new-account queue retains fresh entry", accepted?.snapshot.entries.first?.uri, "spotify:track:fresh")
 
         let wrongAccount = await service.acceptConnect(
             [QueueEntry(uri: "spotify:track:wrong", provider: "connect", occurrence: 0)],
@@ -433,6 +442,143 @@ func runWorkflowChecks(_ runner: CheckRunner) async {
         )
         let merged = mergeQueueSnapshots(current: old, incoming: replacement)
         runner.equal("replacement queues discard unreachable metadata", merged.tracks.map(\.uri), ["spotify:track:new"])
+
+        let connectUID = workflowQueueSnapshot(
+            revision: 4,
+            contextURI: "spotify:track:same",
+            entryURI: "spotify:track:same",
+            uid: "occ-4"
+        )
+        let webLabels = workflowQueueSnapshot(
+            revision: 5,
+            contextURI: "spotify:track:same",
+            entryURI: "spotify:track:same",
+            source: .webAPI,
+            provider: "web-api"
+        )
+        let labeled = mergeQueueSnapshots(current: connectUID, incoming: webLabels)
+        runner.equal(
+            "Web metadata merge keeps the Connect occurrence uid for the same URI index",
+            labeled.entries.first?.uid ?? "",
+            "occ-4"
+        )
+        let reorderedWeb = workflowQueueSnapshot(
+            revision: 7,
+            contextURI: "spotify:track:same",
+            entryURI: "spotify:track:reordered",
+            source: .webAPI,
+            provider: "web-api"
+        )
+        let keptOrder = mergeQueueSnapshots(current: connectUID, incoming: reorderedWeb)
+        runner.equal(
+            "same-context Web refresh keeps Connect occurrence order",
+            keptOrder.entries.map(\.uri),
+            ["spotify:track:same"]
+        )
+        runner.equal(
+            "same-context Web refresh keeps the Connect occurrence uid",
+            keptOrder.entries.first?.uid ?? "",
+            "occ-4"
+        )
+        runner.equal("same-context Web refresh stays Connect-owned", keptOrder.source, .connect)
+        runner.equal(
+            "same-context Web refresh does not copy the Web revision onto Connect order",
+            keptOrder.revision,
+            connectUID.revision
+        )
+        runner.equal(
+            "same-context Web refresh does not copy Web receivedAt onto Connect order",
+            keptOrder.receivedAt,
+            connectUID.receivedAt
+        )
+        let changedURI = workflowQueueSnapshot(
+            revision: 6,
+            contextURI: "spotify:track:changed",
+            entryURI: "spotify:track:changed",
+            source: .webAPI,
+            provider: "web-api"
+        )
+        runner.equal(
+            "Web metadata merge does not invent a uid when the URI at that index changed",
+            mergeQueueSnapshots(current: connectUID, incoming: changedURI).entries.first?.uid ?? "",
+            ""
+        )
+        runner.equal(
+            "changed-URI Web merge uses the Web entry URI",
+            mergeQueueSnapshots(current: connectUID, incoming: changedURI).entries.first?.uri ?? "",
+            "spotify:track:changed"
+        )
+        runner.equal(
+            "changed-URI Web merge keeps Web provenance",
+            mergeQueueSnapshots(current: connectUID, incoming: changedURI).source,
+            .webAPI
+        )
+
+        let orderedService = QueueService(
+            webQueue: ReorderedWebQueue(),
+            metadata: TrackMetadataService(remote: RecordingRemoteClient()),
+            clock: WorkflowClock()
+        )
+        await orderedService.reset(accountEpoch: 3)
+        _ = await orderedService.acceptConnect(
+            [QueueEntry(uri: "spotify:track:same", provider: "connect", occurrence: 0, uid: "occ-4")],
+            accountEpoch: 3,
+            sourceRevision: 1,
+            contextURI: "spotify:track:same",
+            protocolNext: [QueueProtocolTrack(uri: "spotify:track:same", uid: "occ-4", provider: "queue")]
+        )
+        let refreshed = await orderedService.refresh(
+            fallbackEntries: [QueueEntry(uri: "spotify:track:same", provider: "connect", occurrence: 0, uid: "occ-4")],
+            currentTrackURI: "spotify:track:same",
+            accountEpoch: 3
+        )
+        runner.equal(
+            "QueueService Web refresh keeps Connect occurrence URIs",
+            refreshed?.entries.map(\.uri),
+            ["spotify:track:same"]
+        )
+        runner.equal(
+            "QueueService Web refresh keeps Connect occurrence uids",
+            refreshed?.entries.first?.uid ?? "",
+            "occ-4"
+        )
+        runner.equal("QueueService Web refresh stays Connect-owned", refreshed?.source, .connect)
+        runner.equal("QueueService Web refresh keeps the Connect ordering revision", refreshed?.revision, 1)
+        runner.equal(
+            "Web refresh does not rewrite the Connect mutation snapshot",
+            await orderedService.mutationSnapshot()?.next.map(\.uid),
+            ["occ-4"]
+        )
+        let laterConnect = await orderedService.acceptConnect(
+            [
+                QueueEntry(uri: "spotify:track:same", provider: "connect", occurrence: 0, uid: "occ-a"),
+                QueueEntry(uri: "spotify:track:same", provider: "connect", occurrence: 1, uid: "occ-b"),
+                QueueEntry(uri: "spotify:track:tail", provider: "connect", occurrence: 2, uid: "occ-c"),
+            ],
+            accountEpoch: 3,
+            sourceRevision: 2,
+            contextURI: "spotify:track:same",
+            protocolNext: [
+                QueueProtocolTrack(uri: "spotify:track:same", uid: "occ-a", provider: "queue"),
+                QueueProtocolTrack(uri: "spotify:track:same", uid: "occ-b", provider: "queue"),
+                QueueProtocolTrack(uri: "spotify:track:tail", uid: "occ-c", provider: "queue"),
+            ]
+        )
+        runner.equal(
+            "a later Connect revision still replaces order after a Web refresh",
+            laterConnect?.snapshot.entries.map(\.uri),
+            ["spotify:track:same", "spotify:track:same", "spotify:track:tail"]
+        )
+        runner.equal(
+            "later Connect occurrences keep distinct uids",
+            laterConnect?.snapshot.entries.map(\.uid),
+            ["occ-a", "occ-b", "occ-c"]
+        )
+        runner.equal(
+            "a later Connect revision updates mutation metadata after a Web refresh",
+            await orderedService.mutationSnapshot()?.next.map(\.uid),
+            ["occ-a", "occ-b", "occ-c"]
+        )
     }
 
     await runner.suite("Progressive queue metadata") {
@@ -674,16 +820,19 @@ private func workflowTrack(_ uri: String) -> CatalogTrack {
 private func workflowQueueSnapshot(
     revision: UInt64,
     contextURI: String,
-    entryURI: String
+    entryURI: String,
+    source: QueueSnapshotSource = .connect,
+    uid: String = "",
+    provider: String = "connect"
 ) -> ProvenanceQueueSnapshot {
     ProvenanceQueueSnapshot(
         accountEpoch: 1,
         revision: revision,
-        source: .connect,
+        source: source,
         completeness: .complete,
         receivedAt: Date(timeIntervalSince1970: TimeInterval(revision)),
         contextURI: contextURI,
-        entries: [QueueEntry(uri: entryURI, provider: "connect", occurrence: 0)],
+        entries: [QueueEntry(uri: entryURI, provider: provider, occurrence: 0, uid: uid)],
         tracks: [workflowTrack(entryURI)]
     )
 }

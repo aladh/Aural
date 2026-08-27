@@ -26,7 +26,7 @@ extension PlaybackStore {
     var positionAnchorDate: Date { state.timing.anchoredAt }
     var queueNextEntries: [QueueEntry] {
         state.queue.entries.map {
-            QueueEntry(uri: $0.uri, provider: $0.provider, occurrence: queueOccurrence($0.id))
+            QueueEntry(uri: $0.uri, provider: $0.provider, occurrence: queueOccurrence($0.id), uid: $0.uid)
         }
     }
     var connectDevices: [ConnectDevice] {

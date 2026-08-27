@@ -103,11 +103,25 @@ public struct QueueEntry: Identifiable, Equatable, Sendable {
     public let id: String
     public let uri: String
     public let provider: String
+    /// Connect occurrence uid when the authoritative snapshot supplied one.
+    /// Empty for Web/non-authoritative presentation that has not bound a uid.
+    public let uid: String
 
-    public init(uri: String, provider: String, occurrence: Int = 0) {
-        id = "\(occurrence)-\(provider)-\(uri)"
+    public init(uri: String, provider: String, occurrence: Int = 0, uid: String = "") {
+        id = Self.identity(occurrence: occurrence, provider: provider, uri: uri, uid: uid)
         self.uri = uri
         self.provider = provider
+        self.uid = uid
+    }
+
+    /// Selectable identity. A non-empty Connect uid is part of the id so a later
+    /// snapshot with the same URI order cannot keep an old selection aimed at a
+    /// different occurrence.
+    public static func identity(occurrence: Int, provider: String, uri: String, uid: String) -> String {
+        if uid.isEmpty {
+            return "\(occurrence)-\(provider)-\(uri)"
+        }
+        return "\(occurrence)-\(uid)-\(provider)-\(uri)"
     }
 
     /// What fed this entry, in listener-facing words.

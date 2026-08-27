@@ -645,31 +645,69 @@ func runPlaybackReducerChecks(_ check: CheckRunner) {
         _ = PlaybackReducer.reduce(&state, envelope: envelope(source: .engineQueue, revision: 3, event: .queue(laterProvisionalEmpty)))
         check.equal("a later provisional empty cannot erase an exact queue", state.queue, exact)
 
-        let connectQueue = queue([item("connect", provider: "queue")], source: .connect, completeness: .complete, revision: 999)
+        let connectQueue = queue([item("connect", provider: "queue")], source: .connect, completeness: .complete, revision: 2)
         _ = PlaybackReducer.reduce(&state, envelope: envelope(source: .engineQueue, revision: 4, event: .queue(connectQueue)))
-        check.equal("a Connect fallback cannot replace the documented queue", state.queue, exact)
+        check.equal(
+            "a complete Connect snapshot owns occurrence order over Web API",
+            state.queue.entries.map(\.uri),
+            connectQueue.entries.map(\.uri)
+        )
+        check.equal("Connect remains the ordering source", state.queue.source, .connect)
+
+        let webReorder = queue(
+            [item("c"), item("a")],
+            source: .webAPI,
+            completeness: .complete,
+            revision: 50
+        )
+        _ = PlaybackReducer.reduce(&state, envelope: envelope(source: .engineQueue, revision: 5, event: .queue(webReorder)))
+        check.equal(
+            "a same-context Web refresh cannot reorder complete Connect occurrences",
+            state.queue.entries.map(\.uri),
+            connectQueue.entries.map(\.uri)
+        )
+        check.equal("Web refresh does not take ownership of Connect order", state.queue.source, .connect)
+        check.equal(
+            "a high-revision Web refresh does not overwrite the Connect ordering revision",
+            state.queue.revision,
+            connectQueue.revision
+        )
+        check.equal(
+            "a high-revision Web refresh does not overwrite Connect receivedAt",
+            state.queue.receivedAt,
+            connectQueue.receivedAt
+        )
 
         let exactNewer = queue([item("c")], source: .webAPI, completeness: .complete, revision: 2)
-        _ = PlaybackReducer.reduce(&state, envelope: envelope(source: .engineQueue, revision: 5, event: .queue(exactNewer)))
-        check.equal("a newer exact queue replaces an older exact queue", state.queue, exactNewer)
+        _ = PlaybackReducer.reduce(&state, envelope: envelope(source: .engineQueue, revision: 6, event: .queue(exactNewer)))
+        check.equal(
+            "a newer Web snapshot still cannot replace complete Connect order",
+            state.queue.entries.map(\.uri),
+            connectQueue.entries.map(\.uri)
+        )
 
-        let exactStale = queue([item("stale")], source: .webAPI, completeness: .complete, revision: 1)
-        _ = PlaybackReducer.reduce(&state, envelope: envelope(source: .engineQueue, revision: 6, event: .queue(exactStale)))
-        check.equal("an older queue-source revision is ignored", state.queue, exactNewer)
+        let exactStale = queue([item("stale")], source: .connect, completeness: .complete, revision: 1)
+        _ = PlaybackReducer.reduce(&state, envelope: envelope(source: .engineQueue, revision: 7, event: .queue(exactStale)))
+        check.equal("an older Connect queue-source revision is ignored", state.queue.entries.map(\.uri), connectQueue.entries.map(\.uri))
 
-        let lowerCompleteness = queue([], source: .webAPI, completeness: .metadataOnly, revision: 2)
-        _ = PlaybackReducer.reduce(&state, envelope: envelope(source: .engineQueue, revision: 7, event: .queue(lowerCompleteness)))
-        check.equal("equal-revision metadata cannot downgrade an exact URI queue", state.queue, exactNewer)
+        let lowerCompleteness = queue([], source: .connect, completeness: .metadataOnly, revision: 2)
+        _ = PlaybackReducer.reduce(&state, envelope: envelope(source: .engineQueue, revision: 8, event: .queue(lowerCompleteness)))
+        check.equal("equal-revision metadata cannot downgrade an exact URI queue", state.queue.entries.map(\.uri), connectQueue.entries.map(\.uri))
 
         let duplicates = queue(
-            [item("same", occurrence: 0), item("same", occurrence: 1), item("tail")],
-            source: .webAPI,
+            [item("same", occurrence: 0, provider: "queue"), item("same", occurrence: 1, provider: "queue"), item("tail", provider: "queue")],
+            source: .connect,
             completeness: .complete,
             revision: 3
         )
-        _ = PlaybackReducer.reduce(&state, envelope: envelope(source: .engineQueue, revision: 8, event: .queue(duplicates)))
+        _ = PlaybackReducer.reduce(&state, envelope: envelope(source: .engineQueue, revision: 9, event: .queue(duplicates)))
         check.equal("duplicate queue uris preserve source order", state.queue.entries.map(\.uri), ["spotify:track:same", "spotify:track:same", "spotify:track:tail"])
-        check.notEqual("duplicate queue occurrences retain distinct identities", state.queue.entries[0].id, state.queue.entries[1].id)
+        check.equal("the later Connect occurrence list keeps its own revision", state.queue.revision, 3)
+        let duplicateIDs = state.queue.entries.map(\.id)
+        check.check(
+            "duplicate queue occurrences retain distinct identities",
+            duplicateIDs.count == 3 && Set(duplicateIDs).count == duplicateIDs.count
+        )
 
         var newContext = queue(
             [item("new-context", provider: "queue")],
@@ -681,7 +719,7 @@ func runPlaybackReducerChecks(_ check: CheckRunner) {
         newContext.receivedAt = traceDate.addingTimeInterval(100)
         _ = PlaybackReducer.reduce(
             &state,
-            envelope: envelope(source: .engineQueue, revision: 9, event: .queue(newContext))
+            envelope: envelope(source: .engineQueue, revision: 10, event: .queue(newContext))
         )
         check.equal("a new playback context resets old Web queue precedence", state.queue, newContext)
 
@@ -695,7 +733,7 @@ func runPlaybackReducerChecks(_ check: CheckRunner) {
         olderOtherContext.receivedAt = newContext.receivedAt.addingTimeInterval(-1)
         _ = PlaybackReducer.reduce(
             &state,
-            envelope: envelope(source: .engineQueue, revision: 10, event: .queue(olderOtherContext))
+            envelope: envelope(source: .engineQueue, revision: 11, event: .queue(olderOtherContext))
         )
         check.equal("an older queue from another context cannot return late", state.queue, newContext)
 
@@ -705,7 +743,7 @@ func runPlaybackReducerChecks(_ check: CheckRunner) {
             envelope: envelope(
                 account: 0,
                 source: .engineQueue,
-                revision: 11,
+                revision: 12,
                 event: .queue(queue([item("stale-account")], source: .webAPI, completeness: .complete, revision: 100))
             )
         )
@@ -718,7 +756,7 @@ func runPlaybackReducerChecks(_ check: CheckRunner) {
             envelope: envelope(
                 engine: 0,
                 source: .engineQueue,
-                revision: 11,
+                revision: 12,
                 event: .queue(queue([item("stale-engine")], source: .webAPI, completeness: .complete, revision: 100))
             )
         )

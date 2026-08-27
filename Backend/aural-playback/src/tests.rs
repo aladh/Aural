@@ -531,6 +531,11 @@ fn queue_snapshot_json_keeps_legacy_fields_and_adds_ordering() {
         track: None,
         next_tracks: Vec::new(),
         prev_tracks: Vec::new(),
+        protocol_next_tracks: Vec::new(),
+        protocol_prev_tracks: Vec::new(),
+        queue_revision: String::new(),
+        disallow_set_queue: false,
+        disallow_removing_from_next_tracks: false,
     })
     .expect("serialize queue snapshot");
 
@@ -539,6 +544,11 @@ fn queue_snapshot_json_keeps_legacy_fields_and_adds_ordering() {
     assert!(json["track"].is_null());
     assert_eq!(json["next_tracks"], serde_json::json!([]));
     assert_eq!(json["prev_tracks"], serde_json::json!([]));
+    assert_eq!(json["protocol_next_tracks"], serde_json::json!([]));
+    assert_eq!(json["protocol_prev_tracks"], serde_json::json!([]));
+    assert_eq!(json["queue_revision"], "");
+    assert_eq!(json["disallow_set_queue"], false);
+    assert_eq!(json["disallow_removing_from_next_tracks"], false);
 }
 
 #[test]
@@ -572,42 +582,6 @@ fn devices_snapshot_wraps_legacy_devices_with_ordering() {
     assert_eq!(device["is_restricted"], false);
     assert_eq!(device["volume_percent"], 42);
     assert_eq!(device["disable_volume"], true);
-}
-
-fn provided_track(uri: &str, provider: &str) -> ProvidedTrack {
-    ProvidedTrack {
-        uri: uri.to_string(),
-        provider: provider.to_string(),
-        ..Default::default()
-    }
-}
-
-#[test]
-fn queue_conversion_preserves_identity_and_provider_only() {
-    let item = to_queue_item(&provided_track("spotify:track:abc", "queue"));
-
-    assert_eq!(item.uri, "spotify:track:abc");
-    assert_eq!(item.provider, "queue");
-    assert!(item.name.is_empty());
-    assert!(item.artist.is_empty());
-    assert!(item.image_url.is_empty());
-    assert!(item.album_name.is_empty());
-    assert_eq!(item.duration_ms, 0);
-}
-
-#[test]
-fn queue_conversion_stops_at_delimiter_and_filters_non_tracks() {
-    let tracks = vec![
-        provided_track("spotify:episode:ignored", "context"),
-        provided_track("spotify:track:first", "queue"),
-        provided_track("spotify:delimiter", "delimiter"),
-        provided_track("spotify:track:autoplay-hidden", "autoplay"),
-    ];
-
-    let items = collect_queue_items(&tracks, "next");
-    assert_eq!(items.len(), 1);
-    assert_eq!(items[0].uri, "spotify:track:first");
-    assert_eq!(items[0].provider, "queue");
 }
 
 #[test]

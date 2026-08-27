@@ -50,6 +50,29 @@ ADRs; historical measurements belong in the performance baseline.
 - Queue order comes from the playback source of truth. Catalog and Web API metadata may enrich
   names but must not reorder the queue. Resolvable entries should progressively replace fallback
   labels rather than remaining misleadingly `Unknown`.
+- Upcoming queue rows use a native selectable list. Delete/Backspace and **Remove from Queue**
+  remove only selected *upcoming* occurrences by queue identity (Connect occurrence uid when
+  present), never by track URI. Duplicate URIs or duplicate UIDs that cannot be proven fail
+  closed. The now-playing row and History tab are not removable queue entries. Play from the queue
+  remains a deliberate primary action (Return/double-click), not a single-click.
+- Queue replacement is a Spotify Connect `set_queue` of remaining protocol `next_tracks` plus the
+  current `prev_tracks` and the exact incoming ProvidedTrack metadata map (`metadata`, `uid`,
+  `provider`, and the other player.proto fields the snapshot carried). Aural does not synthesize
+  `is_queued` or edit presentation state to fake success. Sequential Add to Queue is not atomic:
+  feedback reports full success, zero success, or a partial completed count.
+  Removal is gated on a complete Connect mutation snapshot, account/engine epoch, owner, and
+  player `disallow_set_queue` / `disallow_removing_from_next_tracks` reasons. Partial, provisional,
+  web-API-only, restricted, joining, local-owner, stale-selection, and rejected results leave the
+  visible queue intact and report through `TransientFeedbackPresenter`. A second removal while one
+  authoritative replacement is in flight is refused without feedback: cancelling the local task
+  cannot undo a `set_queue` Spotify already accepted. Cancelled and
+  account-epoch-invalidated in-flight removals also leave the visible queue intact, without
+  transient feedback.
+- Local-owner removal is disabled: librespot `Spirc` at the pinned revision exposes `add_to_queue`
+  only, and inbound `SetQueue` is not a public local command. The follow-up is a tested Spirc
+  replacement export (or proven same-device HTTP `set_queue`), not a second owner. Add to Queue
+  remains available for local and remote owners, including multiple selected tracks in visible
+  order.
 
 ## Playlist behavior
 

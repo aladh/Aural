@@ -11,7 +11,7 @@ spike in [ADR 003](../../../docs/ADR-003-playback-command-effects.md). The concr
 auth parsing and PKCE, wire codecs, catalog resolution, formatting, privacy-safe API failure
 surfaces, injected coordinator/queue invalidation workflows, typed playback-command failures,
 `PlaybackEffectRegistry` task cancellation, transient mutation feedback, native playlist
-add/remove, and PCM writer wake/bypass. Do not move check code
+add/remove, native queue add/remove, and PCM writer wake/bypass. Do not move check code
 back into `Sources/Aural`: test code must not ship in the application executable.
 
 These checks intentionally use the custom runner rather than XCTest/Swift Testing so the complete

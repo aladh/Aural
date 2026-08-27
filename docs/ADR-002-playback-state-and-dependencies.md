@@ -17,8 +17,16 @@ could still combine values from different account, engine, command, queue, or se
   serializes playback effects and talks only to injected ports.
 - `AccountStore` owns restore, interactive authorization, revocation, logout, and account epochs.
   Every suspended account operation revalidates its generation and epoch before mutation.
-- `QueueService` owns source precedence and context identity. Metadata enrichment cannot reorder a
-  queue, and stale or provisional results cannot erase a newer authoritative snapshot.
+- `QueueService` owns source precedence, context identity, and the Connect mutation snapshot used
+  for `set_queue`. Metadata enrichment cannot reorder a queue, and stale or provisional results
+  cannot erase a newer authoritative snapshot. Same-context Web API `/me/player/queue` snapshots
+  may enrich labels only; complete Connect occurrence order remains authoritative and is not
+  replaced by Web entry order. A same-context Web snapshot must not copy its revision or
+  receivedAt onto that Connect ordering snapshot; those clocks stay distinct per source. Connect `set_queue` replacement reads that mutation snapshot
+  (`next`/`prev` protocol tracks, including Connect occurrence uids and the incoming metadata map,
+  `queue_revision`, restriction flags). QueueService updates it from Connect intake and from a
+  committed remote replacement, not from Web metadata enrichment. `PlaybackStore.queueMutation` is
+  a MainActor projection of that owner, not a second mutation source.
 - Home/library, search, and selected-playlist work have separate stores, request scopes, and
   account-epoch snapshots. The metadata repository independently rejects cross-account writes.
   Playlist add/remove is a focused `PlaylistMutating` port injected beside read-only

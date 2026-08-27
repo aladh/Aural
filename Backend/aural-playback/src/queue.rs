@@ -123,7 +123,158 @@ pub(crate) fn to_queue_item(track: &ProvidedTrack) -> QueueItem {
         duration_ms: 0,
         album_name: String::new(),
         provider: track.provider.clone(),
+        uid: track.uid.clone(),
     }
+}
+
+pub(crate) fn to_protocol_track(track: &ProvidedTrack) -> ProtocolQueueTrack {
+    ProtocolQueueTrack {
+        uri: track.uri.clone(),
+        uid: track.uid.clone(),
+        provider: track.provider.clone(),
+        metadata: track.metadata.clone(),
+        removed: track.removed.clone(),
+        blocked: track.blocked.clone(),
+        restrictions: protocol_restrictions(track),
+        album_uri: track.album_uri.clone(),
+        disallow_reasons: track.disallow_reasons.clone(),
+        artist_uri: track.artist_uri.clone(),
+    }
+}
+
+fn protocol_restrictions(
+    track: &ProvidedTrack,
+) -> Option<serde_json::Map<String, serde_json::Value>> {
+    let restrictions = track.restrictions.as_ref()?;
+    let mut map = serde_json::Map::new();
+    let fields: [(&str, &[String]); 25] = [
+        (
+            "disallow_pausing_reasons",
+            &restrictions.disallow_pausing_reasons,
+        ),
+        (
+            "disallow_resuming_reasons",
+            &restrictions.disallow_resuming_reasons,
+        ),
+        (
+            "disallow_seeking_reasons",
+            &restrictions.disallow_seeking_reasons,
+        ),
+        (
+            "disallow_peeking_prev_reasons",
+            &restrictions.disallow_peeking_prev_reasons,
+        ),
+        (
+            "disallow_peeking_next_reasons",
+            &restrictions.disallow_peeking_next_reasons,
+        ),
+        (
+            "disallow_skipping_prev_reasons",
+            &restrictions.disallow_skipping_prev_reasons,
+        ),
+        (
+            "disallow_skipping_next_reasons",
+            &restrictions.disallow_skipping_next_reasons,
+        ),
+        (
+            "disallow_toggling_repeat_context_reasons",
+            &restrictions.disallow_toggling_repeat_context_reasons,
+        ),
+        (
+            "disallow_toggling_repeat_track_reasons",
+            &restrictions.disallow_toggling_repeat_track_reasons,
+        ),
+        (
+            "disallow_toggling_shuffle_reasons",
+            &restrictions.disallow_toggling_shuffle_reasons,
+        ),
+        (
+            "disallow_set_queue_reasons",
+            &restrictions.disallow_set_queue_reasons,
+        ),
+        (
+            "disallow_interrupting_playback_reasons",
+            &restrictions.disallow_interrupting_playback_reasons,
+        ),
+        (
+            "disallow_transferring_playback_reasons",
+            &restrictions.disallow_transferring_playback_reasons,
+        ),
+        (
+            "disallow_remote_control_reasons",
+            &restrictions.disallow_remote_control_reasons,
+        ),
+        (
+            "disallow_inserting_into_next_tracks_reasons",
+            &restrictions.disallow_inserting_into_next_tracks_reasons,
+        ),
+        (
+            "disallow_inserting_into_context_tracks_reasons",
+            &restrictions.disallow_inserting_into_context_tracks_reasons,
+        ),
+        (
+            "disallow_reordering_in_next_tracks_reasons",
+            &restrictions.disallow_reordering_in_next_tracks_reasons,
+        ),
+        (
+            "disallow_reordering_in_context_tracks_reasons",
+            &restrictions.disallow_reordering_in_context_tracks_reasons,
+        ),
+        (
+            "disallow_removing_from_next_tracks_reasons",
+            &restrictions.disallow_removing_from_next_tracks_reasons,
+        ),
+        (
+            "disallow_removing_from_context_tracks_reasons",
+            &restrictions.disallow_removing_from_context_tracks_reasons,
+        ),
+        (
+            "disallow_updating_context_reasons",
+            &restrictions.disallow_updating_context_reasons,
+        ),
+        (
+            "disallow_playing_reasons",
+            &restrictions.disallow_playing_reasons,
+        ),
+        (
+            "disallow_stopping_reasons",
+            &restrictions.disallow_stopping_reasons,
+        ),
+        (
+            "disallow_add_to_queue_reasons",
+            &restrictions.disallow_add_to_queue_reasons,
+        ),
+        (
+            "disallow_setting_playback_speed_reasons",
+            &restrictions.disallow_setting_playback_speed_reasons,
+        ),
+    ];
+    for (key, values) in fields {
+        if !values.is_empty() {
+            map.insert(key.to_string(), serde_json::json!(values));
+        }
+    }
+    if map.is_empty() {
+        None
+    } else {
+        Some(map)
+    }
+}
+
+pub(crate) fn collect_protocol_tracks(tracks: &[ProvidedTrack]) -> Vec<ProtocolQueueTrack> {
+    tracks.iter().map(to_protocol_track).collect()
+}
+
+pub(crate) fn queue_replacement_disallowed(player_state: &PlayerState) -> (bool, bool) {
+    let Some(restrictions) = player_state.restrictions.as_ref() else {
+        return (false, false);
+    };
+    (
+        !restrictions.disallow_set_queue_reasons.is_empty(),
+        !restrictions
+            .disallow_removing_from_next_tracks_reasons
+            .is_empty(),
+    )
 }
 
 /// Collects the playable tracks of one queue side, stopping at the first delimiter.
@@ -175,6 +326,11 @@ pub(crate) fn process_and_send_queue(player_state: PlayerState) {
         return;
     };
 
+    let protocol_next_tracks = collect_protocol_tracks(&player_state.next_tracks);
+    let protocol_prev_tracks = collect_protocol_tracks(&player_state.prev_tracks);
+    let queue_revision = player_state.queue_revision.clone();
+    let (disallow_set_queue, disallow_removing_from_next_tracks) =
+        queue_replacement_disallowed(&player_state);
     let current_track = player_state.track.into_option().and_then(|t| {
         debug!("current track[0] uri='{}' provider='{}'", t.uri, t.provider);
         if t.uri.starts_with("spotify:track:") {
@@ -199,6 +355,11 @@ pub(crate) fn process_and_send_queue(player_state: PlayerState) {
         track: current_track,
         next_tracks,
         prev_tracks,
+        protocol_next_tracks,
+        protocol_prev_tracks,
+        queue_revision,
+        disallow_set_queue,
+        disallow_removing_from_next_tracks,
     });
 
     // Remembered as well as sent. A callback is a one-shot, and Swift has recovery paths that

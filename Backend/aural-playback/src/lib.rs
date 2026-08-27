@@ -55,4 +55,6 @@ pub(crate) use tokio::runtime::Runtime;
 pub(crate) use tokio::sync::mpsc;
 
 #[cfg(test)]
+mod queue_tests;
+#[cfg(test)]
 mod tests;

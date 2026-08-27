@@ -567,7 +567,9 @@ func runTransientFeedbackChecks(_ runner: CheckRunner) async {
             )
             runner.check(
                 "Add to Queue reports through the presenter, not playback notice",
-                containsToken(queue, "feedback.success(\"Added to Queue\")")
+                containsToken(queue, "presentAddToQueueFeedback")
+                    && containsToken(queue, "feedback.success")
+                    && containsToken(queue, "feedback.informational")
                     && containsToken(queue, "feedback.failure(")
                     && !containsToken(queue, "showTransientCommandError")
             )
