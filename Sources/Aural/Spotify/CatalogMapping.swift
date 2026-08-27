@@ -83,7 +83,8 @@ nonisolated enum CatalogMapping {
             title: playlist.name ?? "Untitled playlist",
             subtitle: playlist.ownerName ?? "Playlist",
             artworkURL: playlist.imageURL.flatMap(URL.init(string:)),
-            kind: .playlist
+            kind: .playlist,
+            ownerURI: ownerURI(from: playlist.ownerV2?.data?.uri, username: playlist.ownerV2?.data?.username)
         )
     }
 
@@ -162,6 +163,18 @@ nonisolated enum CatalogMapping {
             artworkURL: track.albumOfTrack?.coverArt?.largestURL.flatMap(URL.init(string:)),
             addedAt: spotifyDate(from: entry.addedAt?.isoString)
         )
+    }
+
+    static func profileUserURI(from profile: PathfinderProfile) -> String? {
+        ownerURI(from: profile.uri, username: profile.username)
+    }
+
+    static func ownerURI(from playlist: PathfinderPlaylistUnion) -> String? {
+        ownerURI(from: playlist.ownerV2?.data?.uri, username: playlist.ownerV2?.data?.username)
+    }
+
+    static func ownerURI(from uri: String?, username: String?) -> String? {
+        PlaylistEditability.userURI(uri: uri, username: username)
     }
 
     static func spotifyDate(from value: String?) -> Date? {

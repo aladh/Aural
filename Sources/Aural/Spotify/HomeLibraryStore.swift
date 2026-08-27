@@ -23,6 +23,7 @@ final class HomeLibraryStore {
 
     var greeting = "Home"
     var profileName = "Spotify Premium"
+    var profileURI: String?
     var homeSections: [CatalogSection] = []
     var playlists: [CatalogItem] = []
     var albums: [CatalogItem] = []
@@ -71,6 +72,7 @@ final class HomeLibraryStore {
         loadSessionSnapshot = nil
         greeting = "Home"
         profileName = "Spotify Premium"
+        profileURI = nil
         homeSections = []
         playlists = []
         albums = []
@@ -130,7 +132,10 @@ final class HomeLibraryStore {
     func loadProfile(force: Bool = false) async {
         await loadSection(.profile, force: force) { [provider] in
             let profile = try await provider.profile()
-            return .profile(profile.name ?? profile.username ?? "Spotify Premium")
+            return .profile(
+                name: profile.name ?? profile.username ?? "Spotify Premium",
+                uri: CatalogMapping.profileUserURI(from: profile)
+            )
         }
     }
 
@@ -163,7 +168,7 @@ final class HomeLibraryStore {
 
     private enum SectionPayload: Sendable {
         case home(greeting: String, sections: [CatalogSection])
-        case profile(String)
+        case profile(name: String, uri: String?)
         case items([CatalogItem])
         case tracks([CatalogTrack])
     }
@@ -196,8 +201,9 @@ final class HomeLibraryStore {
                     self.greeting = greeting
                     self.homeSections = sections
                     self.metadata.replaceItems(sections.flatMap(\.items), from: .home)
-                case let .profile(name):
+                case let .profile(name, uri):
                     self.profileName = name
+                    self.profileURI = uri
                 case let .items(items):
                     if section == .playlists { self.playlists = items }
                     if section == .albums { self.albums = items }

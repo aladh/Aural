@@ -230,6 +230,7 @@ private func feedbackEnvironment(
         lifecycle: IdleFeedbackLifecycle(),
         clock: clock,
         catalog: IdleFeedbackCatalog(),
+        playlistMutations: UnavailablePlaylistMutations(),
         trackAttributes: IdleFeedbackAttributes()
     )
 }

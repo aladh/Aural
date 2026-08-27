@@ -271,20 +271,25 @@ nonisolated struct PlaybackEnvironment: Sendable {
     let lifecycle: any SystemLifecycleEvents
     let clock: any PlaybackClock
     let catalog: any CatalogProviding
+    let playlistMutations: any PlaylistMutating
     let trackAttributes: any TrackAttributesProviding
 
-    static let live = PlaybackEnvironment(
-        remote: SpotifyConnectAPI(),
-        local: RustPlaybackEngine.shared,
-        webQueue: SpotifyWebPlayerAPI(),
-        account: LiveAccountSession(),
-        audioOutput: LiveAudioOutput(),
-        preferences: UserDefaultsPlaybackPreferences.shared,
-        lifecycle: MacSystemLifecycleEvents.shared,
-        clock: SystemPlaybackClock(),
-        catalog: PartnerAPI(),
-        trackAttributes: TrackAttributesAPI()
-    )
+    static let live: PlaybackEnvironment = {
+        let partnerAPI = PartnerAPI()
+        return PlaybackEnvironment(
+            remote: SpotifyConnectAPI(),
+            local: RustPlaybackEngine.shared,
+            webQueue: SpotifyWebPlayerAPI(),
+            account: LiveAccountSession(),
+            audioOutput: LiveAudioOutput(),
+            preferences: UserDefaultsPlaybackPreferences.shared,
+            lifecycle: MacSystemLifecycleEvents.shared,
+            clock: SystemPlaybackClock(),
+            catalog: partnerAPI,
+            playlistMutations: partnerAPI,
+            trackAttributes: TrackAttributesAPI()
+        )
+    }()
 }
 
 /// Serial owner for local blocking commands and remote network commands. The UI store receives

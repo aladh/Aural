@@ -36,6 +36,8 @@ music streaming only for Premium subscribers; review the current
 - Spotify Connect device discovery, remote playback mirroring, device transfer, and queue display.
 - Home, Search, profile, Liked Songs, playlists, albums, and artists from the signed-in account.
 - Sortable playlist metadata including Date Added, Popularity, BPM, and Camelot Key.
+- Add selected tracks to an owned library playlist, and remove selected occurrences from an open
+  owned playlist, with shared transient success and failure feedback.
 - Bounded artwork caching and local operational Unified Logging.
 
 ## Requirements
@@ -81,8 +83,9 @@ release mechanics are in [CONTRIBUTING.md](CONTRIBUTING.md).
 ## Limitations
 
 Live local and remote playback, Spotify Home, profile, saved tracks, demand-loaded library
-collections, search, and media detail pages are wired. Library editing and incremental on-screen
-pagination remain future work.
+collections, search, and media detail pages are wired. Owned-playlist add and occurrence removal
+are available. Playlist creation, rename, reordering, cover editing, collaborative-permission
+management, liked-library editing, and incremental on-screen pagination remain future work.
 
 Aural currently targets Apple-silicon Macs on macOS 15 or newer. Compatibility with Spotify is
 best-effort: because it depends on undocumented protocols, no stability commitment can be made for

@@ -12,6 +12,7 @@ struct PlaylistDetailView: View {
     @Bindable var store: PlaylistStore
     let metadata: CatalogMetadataRepository
     let playback: CatalogPlaybackAccess
+    let playlistActions: TrackPlaylistActions
 
     var body: some View {
         VStack(spacing: 0) {
@@ -120,7 +121,8 @@ struct PlaylistDetailView: View {
                 tracks: store.tracks,
                 metadata: metadata,
                 playback: playback,
-                showsDateAdded: true
+                showsDateAdded: true,
+                playlistActions: playlistActions
             )
         }
     }

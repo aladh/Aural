@@ -607,6 +607,7 @@ func runWorkflowChecks(_ runner: CheckRunner) async {
             lifecycle: lifecycle,
             clock: WorkflowClock(),
             catalog: WorkflowCatalog(),
+            playlistMutations: UnavailablePlaylistMutations(),
             trackAttributes: WorkflowAttributes()
         )
         let player = PlaybackStore(

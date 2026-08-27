@@ -121,7 +121,7 @@ final class PlaybackStore {
     let catalog: CatalogStore
     let history = PlaybackHistoryStore()
     @ObservationIgnored let environment: PlaybackEnvironment
-    /// App-composed mutation-feedback owner. Queue and later playlist mutations
+    /// App-composed mutation-feedback owner. Queue and playlist mutations
     /// report through this presenter rather than `PlaybackState.notice`.
     @ObservationIgnored let feedback: TransientFeedbackPresenter
     @ObservationIgnored let metadataService: TrackMetadataService
@@ -178,7 +178,9 @@ final class PlaybackStore {
         catalog = CatalogStore(
             provider: environment.catalog,
             attributesProvider: environment.trackAttributes,
-            session: catalogSession
+            playlistMutations: environment.playlistMutations,
+            session: catalogSession,
+            feedback: feedback
         )
         effects.replace(.engineEvents, with: Task { [weak self] in
             for await envelope in environment.local.events() {

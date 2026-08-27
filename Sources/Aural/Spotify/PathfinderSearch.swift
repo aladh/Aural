@@ -241,6 +241,7 @@ nonisolated struct PathfinderPlaylist: Decodable, Sendable {
         struct Data: Decodable, Sendable {
             let name: String?
             let username: String?
+            let uri: String?
         }
 
         let data: Data?

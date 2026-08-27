@@ -62,7 +62,8 @@ struct RootView: View {
                     item: item,
                     store: catalog.playlistStore,
                     metadata: catalog.metadata,
-                    playback: catalogPlayback
+                    playback: catalogPlayback,
+                    playlistActions: playlistActions(removingFrom: item)
                 )
             } else if catalog.homeLibrary.isLoading(.playlists) {
                 LoadingState(label: "Loading playlist")
@@ -86,7 +87,8 @@ struct RootView: View {
                     item: item,
                     store: catalog.albumStore,
                     metadata: catalog.metadata,
-                    playback: catalogPlayback
+                    playback: catalogPlayback,
+                    playlistActions: playlistActions()
                 )
             } else {
                 unavailableMedia("Album", destination: .albums)
@@ -116,7 +118,8 @@ struct RootView: View {
                 metadata: catalog.metadata,
                 playback: catalogPlayback,
                 searchText: $searchText,
-                onSelect: select
+                onSelect: select,
+                playlistActions: playlistActions()
             )
         case .liked:
             TrackCollectionView(
@@ -132,7 +135,8 @@ struct RootView: View {
                 isLoading: catalog.homeLibrary.isLoading(.likedTracks),
                 emptyIcon: "heart",
                 emptyTitle: "No liked songs",
-                emptyMessage: "Songs you save on Spotify will appear here."
+                emptyMessage: "Songs you save on Spotify will appear here.",
+                playlistActions: playlistActions()
             )
             .task(id: catalogPlayback.accountEpoch) {
                 guard catalogPlayback.isConnected else { return }
@@ -227,6 +231,20 @@ struct RootView: View {
 
     private var catalogPlayback: CatalogPlaybackAccess {
         CatalogPlaybackAccess(player: player)
+    }
+
+    private func playlistActions(removingFrom openPlaylist: CatalogItem? = nil) -> TrackPlaylistActions {
+        TrackPlaylistActions(
+            editablePlaylists: catalog.playlistMutations.editableLibraryPlaylists,
+            canRemoveOccurrences: openPlaylist.map { catalog.playlistMutations.isOpenPlaylistEditable($0) } ?? false,
+            addToPlaylist: { playlist, tracks in
+                catalog.playlistMutations.addTracks(tracks, to: playlist)
+            },
+            removeOccurrences: { ids in
+                guard let openPlaylist else { return }
+                catalog.playlistMutations.removeOccurrences(selectedIDs: Set(ids), from: openPlaylist)
+            }
+        )
     }
 
     private var selectionBinding: Binding<SidebarSelection?> {

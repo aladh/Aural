@@ -38,8 +38,8 @@ public struct CatalogTrack: Identifiable, Equatable, Sendable {
 }
 
 /// One card in the home shelves or a library grid.
-public struct CatalogItem: Identifiable, Sendable {
-    public enum Kind: String, Sendable {
+public struct CatalogItem: Identifiable, Equatable, Sendable {
+    public enum Kind: String, Equatable, Sendable {
         case album = "Album"
         case artist = "Artist"
         case playlist = "Playlist"
@@ -53,14 +53,26 @@ public struct CatalogItem: Identifiable, Sendable {
     public let subtitle: String
     public let artworkURL: URL?
     public let kind: Kind
+    /// Playlist owner `spotify:user:` URI when known. Absent for non-playlists and for
+    /// restored stubs that have not loaded ownership metadata yet.
+    public let ownerURI: String?
 
-    public init(id: String, uri: String, title: String, subtitle: String, artworkURL: URL?, kind: Kind) {
+    public init(
+        id: String,
+        uri: String,
+        title: String,
+        subtitle: String,
+        artworkURL: URL?,
+        kind: Kind,
+        ownerURI: String? = nil
+    ) {
         self.id = id
         self.uri = uri
         self.title = title
         self.subtitle = subtitle
         self.artworkURL = artworkURL
         self.kind = kind
+        self.ownerURI = ownerURI
     }
 }
 

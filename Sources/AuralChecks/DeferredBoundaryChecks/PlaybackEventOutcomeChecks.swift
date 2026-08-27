@@ -242,6 +242,7 @@ private func outcomeEnvironment(
         lifecycle: IdleLifecycle(),
         clock: StickyClock(),
         catalog: IdleCatalog(),
+        playlistMutations: UnavailablePlaylistMutations(),
         trackAttributes: IdleAttributes()
     )
 }
