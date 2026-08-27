@@ -63,20 +63,32 @@ extension PlaybackStore {
     /// before the next cluster update streams in.
     func refreshQueueSnapshot() {
         let epoch = accountEpoch
+        let capturedEngineEpoch = engineGeneration
         effects.replace(.queueSnapshot, with: Task { [weak self] in
             guard let self,
                   let json = await self.coordinator.queueSnapshotJSON(),
                   !Task.isCancelled,
-                  self.accountEpoch == epoch,
+                  !self.isTearingDown,
                   self.isConnected,
+                  self.accountEpoch == epoch,
+                  self.engineGeneration == capturedEngineEpoch,
                   let data = json.data(using: .utf8),
                   let state = try? JSONDecoder().decode(RustQueueState.self, from: data)
             else { return }
+            // Watermark is callback identity, not reducer-owned queue provenance. A stale
+            // snapshot with a nil `sessionGeneration` can still record revision, so captured
+            // account/engine lifetime must still match before `accept`.
             guard self.acceptsConnectQueueCallback(
                 generation: state.sessionGeneration,
                 revision: state.revision
             ) else { return }
-            self.receive(state, revision: state.revision, mayAdoptPlaybackIdentity: false)
+            self.receive(
+                state,
+                revision: state.revision,
+                mayAdoptPlaybackIdentity: false,
+                accountEpoch: epoch,
+                engineEpoch: capturedEngineEpoch
+            )
         })
     }
 
@@ -91,9 +103,10 @@ extension PlaybackStore {
         refreshQueueSnapshot()
         catalog.metadata.retainTracks(from: .queue, for: Set(queueNextEntries.map(\.uri) + [trackURI]))
         let cachedTracks = queueNextEntries.compactMap { catalog.metadata.knownTrack(for: $0.uri) }
+        let epoch = accountEpoch
+        let capturedEngineEpoch = engineGeneration
         effects.replace(.queueRefresh, with: Task { [weak self] in
             guard let self else { return }
-            let epoch = self.accountEpoch
             guard let snapshot = await self.queueService.refresh(
                 fallbackEntries: self.queueNextEntries,
                 cachedTracks: cachedTracks,
@@ -101,11 +114,11 @@ extension PlaybackStore {
                 accountEpoch: epoch,
                 onUpdate: { [weak self] update in
                     guard let self, !Task.isCancelled,
-                          self.isConnected, self.accountEpoch == epoch else { return }
-                    self.apply(update)
+                          !self.isTearingDown, self.isConnected else { return }
+                    self.apply(update, engineEpoch: capturedEngineEpoch)
                 }
-            ), !Task.isCancelled, self.isConnected, self.accountEpoch == epoch else { return }
-            self.apply(snapshot)
+            ), !Task.isCancelled, !self.isTearingDown, self.isConnected else { return }
+            self.apply(snapshot, engineEpoch: capturedEngineEpoch)
         })
     }
 
@@ -114,11 +127,8 @@ extension PlaybackStore {
         effects.cancel(.queueSnapshot)
     }
 
-    func apply(_ snapshot: ProvenanceQueueSnapshot) {
-        var retainedURIs = Set(snapshot.entries.map(\.uri))
-        if let contextURI = snapshot.contextURI { retainedURIs.insert(contextURI) }
-        catalog.metadata.retainTracks(from: .queue, for: retainedURIs)
-        send(
+    func apply(_ snapshot: ProvenanceQueueSnapshot, engineEpoch: UInt64) {
+        let accepted = send(
             .queue(PlaybackQueueSnapshot(
                 entries: snapshot.entries.map {
                     PlaybackQueueItem(id: $0.id, uri: $0.uri, provider: $0.provider)
@@ -131,8 +141,14 @@ extension PlaybackStore {
             )),
             source: .engineQueue,
             revision: snapshot.revision,
+            engineEpoch: engineEpoch,
+            accountEpoch: snapshot.accountEpoch,
             receivedAt: snapshot.receivedAt
         )
+        guard accepted else { return }
+        var retainedURIs = Set(snapshot.entries.map(\.uri))
+        if let contextURI = snapshot.contextURI { retainedURIs.insert(contextURI) }
+        catalog.metadata.retainTracks(from: .queue, for: retainedURIs)
         catalog.metadata.replaceTracks(snapshot.tracks, from: .queue)
     }
 

@@ -192,11 +192,16 @@ extension PlaybackStore {
     func refreshPosition() {
         guard isConnected, showsPauseControl, isActiveDevice else { return }
         let epoch = accountEpoch
+        let capturedEngineEpoch = engineGeneration
         effects.replace(.positionRefresh, with: Task { [weak self] in
             guard let self else { return }
             let position = await self.coordinator.positionMilliseconds()
-            guard !Task.isCancelled, self.accountEpoch == epoch, self.isConnected else { return }
-            self.setTiming(position: TimeInterval(position) / 1_000)
+            guard !Task.isCancelled, !self.isTearingDown, self.isConnected else { return }
+            _ = self.setTiming(
+                position: TimeInterval(position) / 1_000,
+                accountEpoch: epoch,
+                engineEpoch: capturedEngineEpoch
+            )
         })
     }
 

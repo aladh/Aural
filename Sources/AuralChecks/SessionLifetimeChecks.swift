@@ -135,6 +135,13 @@ func runSessionLifetimeChecks(_ check: CheckRunner) {
         check.equal("the new generation accepts a restarted revision", watermark.revision, 1)
 
         watermark.reset()
+        check.check(
+            "a missing generation still records revision against a later engine epoch",
+            watermark.accept(generation: nil, revision: 9, engineEpoch: 4)
+        )
+        check.equal("the unstamped generation leaves the previous generation at zero", watermark.generation, 0)
+        check.equal("the recorded revision would block a later restarted callback", watermark.revision, 9)
+        watermark.reset()
         check.equal("reset clears the callback generation", watermark.generation, 0)
         check.equal("reset clears the callback revision", watermark.revision, 0)
         check.check(

@@ -179,24 +179,42 @@ In `PlaybackStore+Commands`, `commandStarted` must be accepted before a command 
 Successful `commandFinished` does not clear `notice`. Command errors keep the existing
 `.commandError` lifetime.
 
-No other command sites were migrated. Queue add, metadata, and catalog loads remain follow-ups for
-issue 16.
+No other command sites were migrated in #19/#27. Queue add remains a non-transport notice path.
+
+## Issue 16 boundary (implemented)
+
+Asynchronous playback outcomes that mutate `PlaybackState` re-enter through `PlaybackStore.send`
+stamped with the **captured** account and engine identity from when the work started, not the
+store's current epochs at completion. `PlaybackReducer` rejects a lower account or engine epoch.
+`send(...) == true` gates history metadata enrichment and catalog queue `retainTracks` /
+`replaceTracks`. Teardown and task-cancellation guards remain; they are not replaced by identity
+stamping.
+
+- Track metadata resolution sends `.trackMetadata`. `PlaybackHistoryStore.applyMetadata` runs only
+  after that event is accepted.
+- Position refresh sends `.timing` with captured identity. Stale and cancelled refreshes are inert.
+- Queue adoption stamps `ProvenanceQueueSnapshot.accountEpoch` and the captured engine epoch.
+  Catalog retain/replace runs only after the queue event is accepted. A cached queue snapshot's
+  synchronous track presentation and `adoptTrackMetadata` path uses that same captured identity;
+  `send(...) == true` gates history enrichment and starting a resolver. Merge/provenance policy is
+  unchanged. `ConnectQueueCallbackWatermark` remains a distinct callback-identity gate.
+- Command finishes still send `.commandFinished` and are governed by `playbackCommandFollowUp` plus
+  the typed `PlaybackCommandFailure` boundary from #17. Captured identity is now also stamped on
+  that send so a stale finish cannot ride a newer store epoch.
+
+Unmigrated on purpose: queue-add notices, preference persistence, sleep/wake reconnect, catalog
+home load, and the unstructured Connect `acceptConnect` `Task` (it now stamps identity on apply
+and still keeps the teardown guard). No generic `Effect` type, TCA, or second queue watermark.
 
 ## Follow-up for issue 16
 
-Route remaining playback outcomes through `PlaybackEvent` without a framework:
+Remaining non-goals from the original routing work, if revisited later:
 
-- Keep using `send(...) == true` for remaining non-command dependent side effects (metadata,
-  history, preferences, `accountStore.receiveEngineConnection`). Command-finish completions,
-  notices, and reconnect are governed by `playbackCommandFollowUp` and
-  `.reportFailure(reconnect:)`.
-- Prefer new `PlaybackEvent` cases over `setTransport` / `setNotice` after awaits where that makes
-  success, failure, and stale results the same function.
+- Keep using `send(...) == true` for other non-command-dependent side effects such as device
+  preference writes and `accountStore.receiveEngineConnection`.
 - Do not add engine revision gates outside `PlaybackReducer`.
 - Leave `ConnectQueueCallbackWatermark` as a callback watermark.
-- Do not introduce `Effect<Action, Failure>`. A private `PlaybackStore` helper that shares the
-  command start/finish + epoch + `send` Bool pattern is enough if duplication hurts.
-- Add reducer/workflow checks for each newly routed outcome (stale, cancelled, failed, success).
+- Do not introduce `Effect<Action, Failure>`.
 
 ## Follow-up for issue 17
 

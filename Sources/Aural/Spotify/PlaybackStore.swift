@@ -345,22 +345,26 @@ final class PlaybackStore {
     }
 
     /// The only mutation entrance for the atomic playback snapshot.
-    /// Engine callbacks pass their payload `sessionGeneration` as `engineEpoch`. Other events
-    /// omit it and use `engineGeneration`, which mirrors `state.engineEpoch` after `reduce`.
+    /// Engine callbacks pass their payload `sessionGeneration` as `engineEpoch`. Asynchronous
+    /// outcomes pass the account and engine identity captured when the work started so
+    /// `PlaybackReducer` rejects stale results. Unstamped events use `accountEpoch` and
+    /// `engineGeneration`, which mirrors `state.engineEpoch` after `reduce`.
     @discardableResult
     func send(
         _ event: PlaybackEvent,
         source: PlaybackEventSource,
         revision: UInt64? = nil,
         engineEpoch: UInt64? = nil,
+        accountEpoch: UInt64? = nil,
         receivedAt: Date = Date()
     ) -> Bool {
+        let stampedAccountEpoch = accountEpoch ?? self.accountEpoch
         let stampedEngineEpoch = engineEpoch ?? engineGeneration
         var next = state
         let accepted = PlaybackReducer.reduce(
             &next,
             envelope: PlaybackEventEnvelope(
-                accountEpoch: accountEpoch,
+                accountEpoch: stampedAccountEpoch,
                 engineEpoch: stampedEngineEpoch,
                 source: source,
                 revision: revision,
@@ -374,35 +378,43 @@ final class PlaybackStore {
             return true
         }
         AuralLog.playback.debug(
-            "Rejected event; source=\(String(describing: source), privacy: .public); account=\(self.accountEpoch, privacy: .public); engine=\(stampedEngineEpoch, privacy: .public); revision=\(String(describing: revision), privacy: .public)"
+            "Rejected event; source=\(String(describing: source), privacy: .public); account=\(stampedAccountEpoch, privacy: .public); engine=\(stampedEngineEpoch, privacy: .public); revision=\(String(describing: revision), privacy: .public)"
         )
         return false
     }
 
+    @discardableResult
     func setPresentation(
         track: CurrentTrack?,
         transport: PlaybackTransportState? = nil,
         timing: PlaybackTiming? = nil,
-        source: PlaybackEventSource = .user
-    ) {
+        source: PlaybackEventSource = .user,
+        accountEpoch: UInt64? = nil,
+        engineEpoch: UInt64? = nil
+    ) -> Bool {
         send(
             .presentation(PlaybackPresentationSnapshot(
                 currentTrack: track,
                 transport: transport ?? state.transport,
                 timing: timing ?? state.timing
             )),
-            source: source
+            source: source,
+            engineEpoch: engineEpoch,
+            accountEpoch: accountEpoch
         )
     }
 
+    @discardableResult
     func setTrackMetadata(
         uri: String,
         title: String?,
         artist: String?,
         artworkURL: URL?,
         duration: TimeInterval,
-        provenance: MetadataProvenance
-    ) {
+        provenance: MetadataProvenance,
+        accountEpoch: UInt64? = nil,
+        engineEpoch: UInt64? = nil
+    ) -> Bool {
         send(
             .trackMetadata(PlaybackTrackMetadata(
                 uri: uri,
@@ -412,7 +424,9 @@ final class PlaybackStore {
                 duration: duration,
                 source: provenance
             )),
-            source: .metadata
+            source: .metadata,
+            engineEpoch: engineEpoch,
+            accountEpoch: accountEpoch
         )
     }
 
@@ -432,10 +446,19 @@ final class PlaybackStore {
         }
     }
 
-    func setTiming(position: TimeInterval, duration: TimeInterval? = nil, anchoredAt: Date = Date()) {
+    @discardableResult
+    func setTiming(
+        position: TimeInterval,
+        duration: TimeInterval? = nil,
+        anchoredAt: Date = Date(),
+        accountEpoch: UInt64? = nil,
+        engineEpoch: UInt64? = nil
+    ) -> Bool {
         send(
             .timing(position: position, duration: duration ?? self.duration, anchoredAt: anchoredAt),
-            source: .user
+            source: .user,
+            engineEpoch: engineEpoch,
+            accountEpoch: accountEpoch
         )
     }
 

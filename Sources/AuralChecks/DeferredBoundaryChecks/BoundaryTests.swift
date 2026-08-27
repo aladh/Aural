@@ -18,6 +18,7 @@ enum BoundaryChecksMain {
         await runWorkflowChecks(runner)
         await runCommandEffectRegistryChecks(runner)
         await runPlaybackCommandFailureChecks(runner)
+        await runPlaybackEventOutcomeChecks(runner)
 
         if !runner.succeeded {
             print(runner.failures.joined(separator: "\n"))

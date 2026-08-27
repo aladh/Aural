@@ -207,7 +207,9 @@ extension PlaybackStore {
                 accepted: succeeded,
                 notice: notice
             ),
-            source: .command
+            source: .command,
+            engineEpoch: capturedEngineEpoch,
+            accountEpoch: capturedAccountEpoch
         )
         switch playbackCommandFollowUp(
             finishAccepted: finished,
