@@ -655,13 +655,12 @@ func runRepeatTransitionChecks(_ runner: CheckRunner) async {
         )
         seedReadyRemote(cancelStore)
         cancelStore.cycleRepeat()
-        let pendingReady = await waitUntil { cancelStore.state.pendingCommands[.options] != nil }
-        runner.check("remote repeat is pending before cancellation", pendingReady)
+        let sendStarted = await waitUntil { await sleeping.sends.count == 1 }
+        runner.check("cancelled repeat send started", sendStarted)
+        runner.check("remote repeat is pending before cancellation", cancelStore.state.pendingCommands[.options] != nil)
         if let commandID = cancelStore.state.pendingCommands[.options]?.id {
             cancelStore.effects.cancel(.command(commandID))
         }
-        let sendStarted = await waitUntil { await sleeping.sends.count == 1 }
-        runner.check("cancelled repeat send started", sendStarted)
         let cancellationSettled = await waitUntil { await sleeping.completedSends == 1 }
         runner.check("cancelled repeat transport exits", cancellationSettled)
         runner.equal("cancelled repeat keeps the optimistic mode", cancelStore.repeatMode, RepeatMode.context)
@@ -674,8 +673,9 @@ func runRepeatTransitionChecks(_ runner: CheckRunner) async {
         )
         seedReadyRemote(teardownStore)
         teardownStore.cycleRepeat()
-        let teardownPending = await waitUntil { teardownStore.state.pendingCommands[.options] != nil }
-        runner.check("repeat is pending before teardown", teardownPending)
+        let teardownSendStarted = await waitUntil { await teardownRemote.sends.count == 1 }
+        runner.check("teardown repeat send started", teardownSendStarted)
+        runner.check("repeat is pending before teardown", teardownStore.state.pendingCommands[.options] != nil)
         await teardownStore.shutdownForTermination()
         let teardownSettled = await waitUntil { await teardownRemote.completedSends == 1 }
         runner.check("teardown repeat transport exits", teardownSettled)
