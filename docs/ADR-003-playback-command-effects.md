@@ -194,7 +194,9 @@ stamping.
   after that event is accepted.
 - Position refresh sends `.timing` with captured identity. Stale and cancelled refreshes are inert.
 - Queue adoption stamps `ProvenanceQueueSnapshot.accountEpoch` and the captured engine epoch.
-  Catalog retain/replace runs only after the queue event is accepted. Merge/provenance policy is
+  Catalog retain/replace runs only after the queue event is accepted. A cached queue snapshot's
+  synchronous track presentation and `adoptTrackMetadata` path uses that same captured identity;
+  `send(...) == true` gates history enrichment and starting a resolver. Merge/provenance policy is
   unchanged. `ConnectQueueCallbackWatermark` remains a distinct callback-identity gate.
 - Command finishes still send `.commandFinished` and are governed by `playbackCommandFollowUp` plus
   the typed `PlaybackCommandFailure` boundary from #17. Captured identity is now also stamped on

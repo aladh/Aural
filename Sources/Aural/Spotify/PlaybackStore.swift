@@ -388,7 +388,9 @@ final class PlaybackStore {
         track: CurrentTrack?,
         transport: PlaybackTransportState? = nil,
         timing: PlaybackTiming? = nil,
-        source: PlaybackEventSource = .user
+        source: PlaybackEventSource = .user,
+        accountEpoch: UInt64? = nil,
+        engineEpoch: UInt64? = nil
     ) -> Bool {
         send(
             .presentation(PlaybackPresentationSnapshot(
@@ -396,7 +398,9 @@ final class PlaybackStore {
                 transport: transport ?? state.transport,
                 timing: timing ?? state.timing
             )),
-            source: source
+            source: source,
+            engineEpoch: engineEpoch,
+            accountEpoch: accountEpoch
         )
     }
 

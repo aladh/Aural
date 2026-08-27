@@ -181,7 +181,9 @@ extension PlaybackStore {
                     duration: trackDuration,
                     anchoredAt: environment.clock.now()
                 ),
-                source: .engineQueue
+                source: .engineQueue,
+                accountEpoch: epoch,
+                engineEpoch: engineEpoch
             )
             if accepted {
                 history.applyMetadata(
@@ -195,13 +197,20 @@ extension PlaybackStore {
             // Cluster updates deliberately ship uris without names; resolve against
             // whatever the catalog already loaded so the bar never stays blank.
             if changedTrack {
-                setPresentation(
+                let accepted = setPresentation(
                     track: CurrentTrack(uri: track.uri),
                     timing: PlaybackTiming(anchoredAt: environment.clock.now()),
-                    source: .engineQueue
+                    source: .engineQueue,
+                    accountEpoch: epoch,
+                    engineEpoch: engineEpoch
                 )
+                guard accepted else { return }
             }
-            adoptTrackMetadata(for: track.uri)
+            adoptTrackMetadata(
+                for: track.uri,
+                accountEpoch: epoch,
+                engineEpoch: engineEpoch
+            )
         }
     }
 
@@ -212,46 +221,59 @@ extension PlaybackStore {
     /// catalog is the source: without this, any start that bypasses a track row (grid cards,
     /// remote starts, cold context plays) plays audio into a bar that still reads
     /// "Nothing playing" and never flips its transport.
-    private func adoptTrackMetadata(for uri: String, force: Bool = false) {
+    private func adoptTrackMetadata(
+        for uri: String,
+        force: Bool = false,
+        accountEpoch: UInt64? = nil,
+        engineEpoch: UInt64? = nil
+    ) {
         if !force, hasCurrentTrackMetadata { return }
 
         if let track = catalog.metadata.knownTrack(for: uri) {
-            effects.cancel(.trackMetadata)
             let accepted = setTrackMetadata(
                 uri: uri,
                 title: track.title,
                 artist: track.artist,
                 artworkURL: track.artworkURL,
                 duration: track.duration > 0 ? track.duration : duration,
-                provenance: .catalog
+                provenance: .catalog,
+                accountEpoch: accountEpoch,
+                engineEpoch: engineEpoch
             )
-            if accepted {
-                history.applyMetadata(
-                    uri: uri,
-                    title: track.title,
-                    artist: track.artist,
-                    artworkURL: track.artworkURL
-                )
-            }
+            guard accepted else { return }
+            effects.cancel(.trackMetadata)
+            history.applyMetadata(
+                uri: uri,
+                title: track.title,
+                artist: track.artist,
+                artworkURL: track.artworkURL
+            )
             return
         }
 
         // A URI is not metadata. Keep the transport context internally, but leave the UI in its
         // neutral state until either the queue callback or a loaded catalog supplies real names.
-        setTrackMetadata(
+        let accepted = setTrackMetadata(
             uri: uri,
             title: nil,
             artist: nil,
             artworkURL: nil,
             duration: duration,
-            provenance: .none
+            provenance: .none,
+            accountEpoch: accountEpoch,
+            engineEpoch: engineEpoch
         )
-        resolveTrackMetadata(for: uri)
+        guard accepted else { return }
+        resolveTrackMetadata(for: uri, accountEpoch: accountEpoch, engineEpoch: engineEpoch)
     }
 
-    private func resolveTrackMetadata(for uri: String) {
-        let epoch = accountEpoch
-        let capturedEngineEpoch = engineGeneration
+    private func resolveTrackMetadata(
+        for uri: String,
+        accountEpoch: UInt64? = nil,
+        engineEpoch: UInt64? = nil
+    ) {
+        let epoch = accountEpoch ?? self.accountEpoch
+        let capturedEngineEpoch = engineEpoch ?? engineGeneration
         effects.replace(.trackMetadata, with: Task { [weak self] in
             do {
                 guard let self else { return }

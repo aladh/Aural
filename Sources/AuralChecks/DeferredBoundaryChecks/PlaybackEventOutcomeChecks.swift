@@ -41,6 +41,50 @@ private final class GatedPositionEngine: LocalPlaybackEngine, @unchecked Sendabl
     }
 }
 
+private final class GatedQueueSnapshotEngine: LocalPlaybackEngine, @unchecked Sendable {
+    private let lock = NSLock()
+    private let gate = DispatchSemaphore(value: 0)
+    private var didStart = false
+    private var json: String?
+
+    var hasStarted: Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        return didStart
+    }
+
+    func events() -> AsyncStream<RustPlaybackEventEnvelope> {
+        AsyncStream { $0.finish() }
+    }
+
+    func authorizeStreaming(with _: String) -> Int32 { 0 }
+    func initialize() -> PlaybackEngineResult { .ok }
+    func execute(_: LocalPlaybackOperation) -> PlaybackEngineResult { .ok }
+    func positionMilliseconds() -> UInt32 { 0 }
+    func queueSnapshotJSON() -> String? {
+        lock.lock()
+        didStart = true
+        lock.unlock()
+        gate.wait()
+        lock.lock()
+        defer { lock.unlock() }
+        return json
+    }
+    func configureHighQualityPlayback() {}
+    func shutdown() -> PlaybackEngineResult { .ok }
+    func cleanup() {}
+    func clearStreamingCredentials() {}
+    func disconnect() -> PlaybackEngineResult { .ok }
+    func forceReconnect() -> Int32 { 0 }
+
+    func release(_ json: String) {
+        lock.lock()
+        self.json = json
+        lock.unlock()
+        gate.signal()
+    }
+}
+
 private final class IdleLocalEngine: LocalPlaybackEngine, @unchecked Sendable {
     func events() -> AsyncStream<RustPlaybackEventEnvelope> {
         AsyncStream { $0.finish() }
@@ -234,7 +278,12 @@ private func fixtureQueueSnapshot(
 }
 
 @MainActor
-private func seedReadyLocalPlayback(_ player: PlaybackStore, uri: String) {
+private func seedReadyLocalPlayback(
+    _ player: PlaybackStore,
+    uri: String,
+    title: String? = "Now",
+    metadataSource: MetadataProvenance = .catalog
+) {
     let device = PlaybackDevice(id: "mac", name: "Mac", type: "computer", isActive: true)
     _ = player.send(.session(.ready), source: .account)
     _ = player.send(
@@ -250,10 +299,10 @@ private func seedReadyLocalPlayback(_ player: PlaybackStore, uri: String) {
         .presentation(PlaybackPresentationSnapshot(
             currentTrack: CurrentTrack(
                 uri: uri,
-                title: "Now",
-                artist: "Artist",
+                title: title,
+                artist: title == nil ? nil : "Artist",
                 duration: 200,
-                metadataSource: .catalog
+                metadataSource: metadataSource
             ),
             transport: .playing,
             timing: PlaybackTiming(
@@ -264,6 +313,17 @@ private func seedReadyLocalPlayback(_ player: PlaybackStore, uri: String) {
         )),
         source: .user
     )
+}
+
+private func queueSnapshotJSON(
+    uri: String,
+    name: String = "",
+    artist: String = "",
+    revision: UInt64 = 1
+) -> String {
+    """
+    {"track":{"uri":"\(uri)","name":"\(name)","artist":"\(artist)","image_url":"","duration_ms":180000},"next_tracks":[],"revision":\(revision)}
+    """
 }
 
 @MainActor
@@ -506,5 +566,48 @@ func runPlaybackEventOutcomeChecks(_ runner: CheckRunner) async {
             cancelled.catalog.metadata.knownTrack(for: "spotify:track:cancelled-queue")
         )
         await cancelled.shutdownForTermination()
+    }
+
+    await runner.suite("Queue snapshot track identity uses captured lifetime") {
+        let namedEngine = GatedQueueSnapshotEngine()
+        let namedRemote = GatedMetadataRemote()
+        let named = PlaybackStore(
+            environment: outcomeEnvironment(local: namedEngine, remote: namedRemote)
+        )
+        let uri = "spotify:track:same"
+        seedReadyLocalPlayback(named, uri: uri)
+        named.recordPlayed(uri)
+        named.refreshQueueSnapshot()
+        runner.check("named queue snapshot fetch starts", await waitUntil { namedEngine.hasStarted })
+        bumpEngine(named)
+        namedEngine.release(queueSnapshotJSON(uri: uri, name: "Stale snapshot", artist: "Stale artist"))
+        try? await Task.sleep(nanoseconds: 20_000_000)
+        runner.equal("stale named snapshot cannot replace now-playing title", named.state.currentTrack?.title, "Now")
+        runner.equal("stale named snapshot cannot replace now-playing artist", named.state.currentTrack?.artist, "Artist")
+        runner.equal("stale named snapshot does not enrich history", named.history.entries.first?.title, "Unknown track")
+        runner.nil_("stale named snapshot does not start metadata resolution", await namedRemote.requestedURI)
+        await named.shutdownForTermination()
+
+        let missingEngine = GatedQueueSnapshotEngine()
+        let missingRemote = GatedMetadataRemote()
+        let missing = PlaybackStore(
+            environment: outcomeEnvironment(local: missingEngine, remote: missingRemote)
+        )
+        seedReadyLocalPlayback(missing, uri: uri, title: nil, metadataSource: .none)
+        missing.recordPlayed(uri)
+        missing.refreshQueueSnapshot()
+        runner.check("nameless queue snapshot fetch starts", await waitUntil { missingEngine.hasStarted })
+        bumpEngine(missing)
+        missingEngine.release(queueSnapshotJSON(uri: uri))
+        try? await Task.sleep(nanoseconds: 20_000_000)
+        runner.nil_("stale nameless snapshot cannot install a title", missing.state.currentTrack?.title)
+        runner.equal("stale nameless snapshot keeps the current URI", missing.state.currentTrack?.uri, uri)
+        runner.equal(
+            "stale nameless snapshot does not enrich history",
+            missing.history.entries.first?.title,
+            "Unknown track"
+        )
+        runner.nil_("stale nameless snapshot does not launch a metadata resolver", await missingRemote.requestedURI)
+        await missing.shutdownForTermination()
     }
 }
