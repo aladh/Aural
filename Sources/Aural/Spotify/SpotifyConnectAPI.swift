@@ -12,7 +12,7 @@ nonisolated enum SpotifyConnectAPIError: Error, LocalizedError, Equatable {
         case .malformedResponse:
             "Spotify returned an unreadable response"
         case let .requestFailed(status):
-            "Spotify rejected the command (\(SpotifyHTTPFailure.description(status: status)))"
+            "Spotify rejected the command (HTTP \(status))"
         }
     }
 }

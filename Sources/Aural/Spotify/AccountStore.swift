@@ -12,8 +12,10 @@ final class AccountStore {
     private(set) var phase: PlaybackSessionPhase = .signedOut {
         didSet {
             guard oldValue != phase else { return }
+            let from = sessionPhaseLogLabel(oldValue)
+            let to = sessionPhaseLogLabel(phase)
             AuralLog.account.info(
-                "Session phase changed: \(oldValue.diagnosticLabel, privacy: .public) -> \(self.phase.diagnosticLabel, privacy: .public); epoch=\(self.epoch, privacy: .public)"
+                "Session phase changed: \(from, privacy: .public) -> \(to, privacy: .public); epoch=\(self.epoch, privacy: .public)"
             )
             onPhaseChange?(phase)
         }
@@ -293,5 +295,17 @@ final class AccountStore {
 
     private func isCurrent(generation: UInt64, epoch: UInt64) -> Bool {
         !Task.isCancelled && connectionGeneration == generation && self.epoch == epoch
+    }
+}
+
+/// Public log category for a session phase. Failed phases keep their user-facing text off logs.
+func sessionPhaseLogLabel(_ phase: PlaybackSessionPhase) -> String {
+    switch phase {
+    case .signedOut: "signedOut"
+    case .authorizing: "authorizing"
+    case .connecting: "connecting"
+    case .ready: "ready"
+    case .recovering: "recovering"
+    case .failed: "failed"
     }
 }

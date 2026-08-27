@@ -13,7 +13,7 @@ nonisolated struct GrantedClientToken: Sendable, Equatable {
     var expiresAt: Date
 }
 
-nonisolated enum ClientTokenError: Error, LocalizedError {
+nonisolated enum ClientTokenError: Error, LocalizedError, Equatable {
     case requestFailed(Int)
     case malformedResponse
     /// Spotify wants a proof-of-work answer before granting. Neither libspot nor go-librespot
@@ -24,7 +24,7 @@ nonisolated enum ClientTokenError: Error, LocalizedError {
     var errorDescription: String? {
         switch self {
         case let .requestFailed(status):
-            "Could not obtain a Spotify client token (\(SpotifyHTTPFailure.description(status: status)))"
+            "Could not obtain a Spotify client token (HTTP \(status))"
         case .malformedResponse:
             "The Spotify client token response could not be read"
         case .challenged:

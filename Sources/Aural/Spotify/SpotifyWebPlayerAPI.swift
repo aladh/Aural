@@ -9,7 +9,7 @@ nonisolated enum SpotifyWebPlayerAPIError: Error, LocalizedError, Equatable {
         case .malformedResponse:
             "Spotify returned an unreadable queue"
         case let .requestFailed(status):
-            "Spotify rejected the queue request (\(SpotifyHTTPFailure.description(status: status)))"
+            "Spotify rejected the queue request (HTTP \(status))"
         }
     }
 

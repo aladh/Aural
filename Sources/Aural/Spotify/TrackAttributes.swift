@@ -229,7 +229,7 @@ nonisolated enum TrackAttributesAPIError: Error, LocalizedError, Equatable {
         case .emptyResponse:
             "Spotify returned no response"
         case let .requestFailed(status):
-            "Spotify rejected the attribute request (\(SpotifyHTTPFailure.description(status: status)))"
+            "Spotify rejected the attribute request (HTTP \(status))"
         }
     }
 }

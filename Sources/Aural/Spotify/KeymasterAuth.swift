@@ -65,7 +65,7 @@ nonisolated enum KeymasterAuthError: Error, LocalizedError, Equatable {
         case .noAuthorizationCode:
             "The Spotify redirect carried no authorization code"
         case let .tokenExchangeFailed(status):
-            "Token exchange failed (\(SpotifyHTTPFailure.description(status: status)))"
+            "Token exchange failed (HTTP \(status))"
         case .malformedTokenResponse:
             "The token response could not be read"
         case .grantRevoked:

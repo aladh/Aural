@@ -19,7 +19,7 @@ nonisolated enum PartnerAPIError: Error, LocalizedError, Equatable {
     var errorDescription: String? {
         switch self {
         case let .requestFailed(status):
-            "Spotify rejected the request (\(SpotifyHTTPFailure.description(status: status)))"
+            "Spotify rejected the request (HTTP \(status))"
         case let .persistedQueryNotFound(operation):
             "Spotify no longer recognises the stored query for \(operation)"
         case let .mutationRejected(operation):
@@ -583,7 +583,7 @@ nonisolated struct PartnerAPI: Sendable {
     ) -> PartnerAPIError {
         debugLog(
             "PartnerAPI",
-            "\(operation.name) failed (\(SpotifyHTTPFailure.description(status: status))); response omitted"
+            "\(operation.name) failed (HTTP \(status)); response omitted"
         )
         return PartnerAPIError.requestFailed(status)
     }

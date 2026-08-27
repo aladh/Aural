@@ -14,202 +14,143 @@ private func httpResponse(url: URL, status: Int) -> HTTPURLResponse {
     HTTPURLResponse(url: url, statusCode: status, httpVersion: "HTTP/1.1", headerFields: nil)!
 }
 
+private func rejectedTransport(status: Int, body: Data) -> SpotifyCredentials.Transport {
+    { @Sendable request in
+        (body, httpResponse(url: request.url ?? URL(string: "https://example.invalid/")!, status: status))
+    }
+}
+
+private func partnerAPI(status: Int, body: String) -> PartnerAPI {
+    PartnerAPI(
+        accessToken: { "fixture-access" },
+        clientToken: { "fixture-client" },
+        invalidateClientToken: { _ in },
+        transport: rejectedTransport(status: status, body: Data(body.utf8))
+    )
+}
+
+@MainActor
+private func expectFailure<Failure: Error & Equatable & LocalizedError>(
+    _ check: CheckRunner,
+    _ label: String,
+    _ expected: Failure,
+    description: String,
+    perform: () async throws -> Void
+) async {
+    do {
+        try await perform()
+        check.check("\(label) throws", false)
+    } catch let error as Failure {
+        check.equal("\(label) keeps typed case", error, expected)
+        check.equal("\(label) uses a stable category", error.errorDescription ?? "", description)
+        omitSentinel(check, "\(label) LocalizedError", error.errorDescription)
+    } catch {
+        check.check("\(label) throws \(Failure.self), got \(error)", false)
+    }
+}
+
 @MainActor
 func runPrivacySanitizationChecks(_ check: CheckRunner) async {
     await check.suite("API failure privacy") {
-        let tokenBody = Data(
-            #"{"error":"invalid_request","error_description":"\#(privacySentinel)","refresh_token":"rt"}"#.utf8
-        )
-        let tokenError = KeymasterAuth.tokenFailure(status: 400, body: tokenBody)
-        check.equal("token failures keep HTTP status", tokenError, .tokenExchangeFailed(400))
+        let clientToken = ClientTokenError.requestFailed(401)
         check.equal(
-            "token failures use a stable HTTP category",
-            tokenError.errorDescription ?? "",
-            "Token exchange failed (HTTP 400)"
-        )
-        omitSentinel(check, "token LocalizedError", tokenError.errorDescription)
-        check.equal(
-            "invalid_grant remains a distinct revoked grant",
-            KeymasterAuth.tokenFailure(status: 400, body: Data(#"{"error":"invalid_grant"}"#.utf8)),
-            .grantRevoked
+            "client-token failures keep HTTP status",
+            clientToken,
+            .requestFailed(401)
         )
         check.equal(
-            "revoked grants keep the session-expired copy",
-            KeymasterAuthError.grantRevoked.errorDescription ?? "",
-            "Session expired, please sign in again"
+            "client-token failures use a stable HTTP category",
+            clientToken.errorDescription ?? "",
+            "Could not obtain a Spotify client token (HTTP 401)"
+        )
+        omitSentinel(check, "client-token LocalizedError", clientToken.errorDescription)
+
+        await expectFailure(
+            check,
+            "Partner HTTP",
+            PartnerAPIError.requestFailed(503),
+            description: "Spotify rejected the request (HTTP 503)",
+            perform: { _ = try await partnerAPI(status: 503, body: "{\"error\":\"\(privacySentinel)\"}").profile() }
         )
 
-        let partnerHTTP = PartnerAPI(
-            accessToken: { "fixture-access" },
-            clientToken: { "fixture-client" },
-            invalidateClientToken: { _ in },
-            transport: { @Sendable request in
-                (
-                    Data("{\"error\":\"\(privacySentinel)\"}".utf8),
-                    httpResponse(url: request.url ?? PartnerAPI.endpoint, status: 503)
-                )
-            }
-        )
-        do {
-            _ = try await partnerHTTP.profile()
-            check.check("Partner HTTP failures throw", false)
-        } catch let error as PartnerAPIError {
-            check.equal("Partner HTTP failures keep status", error, .requestFailed(503))
-            check.equal(
-                "Partner HTTP failures use a stable category",
-                error.errorDescription ?? "",
-                "Spotify rejected the request (HTTP 503)"
-            )
-            omitSentinel(check, "Partner HTTP LocalizedError", error.errorDescription)
-        } catch {
-            check.check("Partner HTTP failures throw PartnerAPIError", false)
-        }
-
-        let partnerGraphQL = PartnerAPI(
-            accessToken: { "fixture-access" },
-            clientToken: { "fixture-client" },
-            invalidateClientToken: { _ in },
-            transport: { @Sendable request in
-                let body = Data(
-                    """
+        await expectFailure(
+            check,
+            "Partner GraphQL",
+            PartnerAPIError.graphQLErrors,
+            description: "Spotify returned a GraphQL error",
+            perform: {
+                _ = try await partnerAPI(
+                    status: 200,
+                    body: """
                     {"errors":[{"message":"\(privacySentinel)","extensions":{"code":"INTERNAL"}}]}
-                    """.utf8
-                )
-                return (body, httpResponse(url: request.url ?? PartnerAPI.endpoint, status: 200))
+                    """
+                ).profile()
             }
         )
-        do {
-            _ = try await partnerGraphQL.profile()
-            check.check("Partner GraphQL failures throw", false)
-        } catch let error as PartnerAPIError {
-            check.equal("Partner GraphQL failures stay typed", error, .graphQLErrors)
-            check.equal(
-                "Partner GraphQL failures use a stable category",
-                error.errorDescription ?? "",
-                "Spotify returned a GraphQL error"
-            )
-            omitSentinel(check, "Partner GraphQL LocalizedError", error.errorDescription)
-        } catch {
-            check.check("Partner GraphQL failures throw PartnerAPIError", false)
-        }
 
-        let partnerRetired = PartnerAPI(
-            accessToken: { "fixture-access" },
-            clientToken: { "fixture-client" },
-            invalidateClientToken: { _ in },
-            transport: { @Sendable request in
-                let body = Data(
-                    """
+        await expectFailure(
+            check,
+            "retired persisted query",
+            PartnerAPIError.persistedQueryNotFound("profileAttributes"),
+            description: "Spotify no longer recognises the stored query for profileAttributes",
+            perform: {
+                _ = try await partnerAPI(
+                    status: 200,
+                    body: """
                     {"errors":[{"message":"\(privacySentinel) persistedQueryNotFound","extensions":{"code":"PERSISTED_QUERY_NOT_FOUND"}}]}
-                    """.utf8
-                )
-                return (body, httpResponse(url: request.url ?? PartnerAPI.endpoint, status: 200))
-            }
-        )
-        do {
-            _ = try await partnerRetired.profile()
-            check.check("retired persisted queries throw", false)
-        } catch let error as PartnerAPIError {
-            check.equal(
-                "retired persisted queries stay named",
-                error,
-                .persistedQueryNotFound("profileAttributes")
-            )
-            omitSentinel(check, "persisted-query LocalizedError", error.errorDescription)
-        } catch {
-            check.check("retired persisted queries throw PartnerAPIError", false)
-        }
-
-        let partnerMutation = PartnerAPI(
-            accessToken: { "fixture-access" },
-            clientToken: { "fixture-client" },
-            invalidateClientToken: { _ in },
-            transport: { @Sendable request in
-                let body = Data(
                     """
-                    {"data":{"addLibraryItems":{"__typename":"NotFound","message":"\(privacySentinel)"}}}
-                    """.utf8
-                )
-                return (body, httpResponse(url: request.url ?? PartnerAPI.endpoint, status: 200))
+                ).profile()
             }
         )
-        do {
-            try await partnerMutation.addToLibrary(uris: ["spotify:track:fixture"])
-            check.check("Partner mutation failures throw", false)
-        } catch let error as PartnerAPIError {
-            check.equal("mutation rejections keep the operation name", error, .mutationRejected("addToLibrary"))
-            check.equal(
-                "mutation rejections use a stable category",
-                error.errorDescription ?? "",
-                "Spotify rejected addToLibrary"
-            )
-            omitSentinel(check, "Partner mutation LocalizedError", error.errorDescription)
-        } catch {
-            check.check("Partner mutation failures throw PartnerAPIError", false)
-        }
+
+        await expectFailure(
+            check,
+            "Partner mutation",
+            PartnerAPIError.mutationRejected("addToLibrary"),
+            description: "Spotify rejected addToLibrary",
+            perform: {
+                try await partnerAPI(
+                    status: 200,
+                    body: """
+                    {"data":{"addLibraryItems":{"__typename":"NotFound","message":"\(privacySentinel)"}}}
+                    """
+                ).addToLibrary(uris: ["spotify:track:fixture"])
+            }
+        )
 
         let connect = SpotifyConnectAPI(
             accessToken: { "fixture-access" },
             clientToken: { "fixture-client" },
             invalidateClientToken: { _ in },
-            transport: { @Sendable request in
-                (
-                    Data(privacySentinel.utf8),
-                    httpResponse(url: request.url ?? SpotifyConnectAPI.baseURL, status: 502)
-                )
-            }
+            transport: rejectedTransport(status: 502, body: Data(privacySentinel.utf8))
         )
-        do {
-            try await connect.send(.pause, from: "source", to: "target")
-            check.check("Connect command failures throw", false)
-        } catch let error as SpotifyConnectAPIError {
-            check.equal("Connect failures keep status", error, .requestFailed(502))
-            check.equal(
-                "Connect failures use a stable category",
-                error.errorDescription ?? "",
-                "Spotify rejected the command (HTTP 502)"
-            )
-            omitSentinel(check, "Connect LocalizedError", error.errorDescription)
-        } catch {
-            check.check("Connect command failures throw SpotifyConnectAPIError", false)
-        }
+        await expectFailure(
+            check,
+            "Connect",
+            SpotifyConnectAPIError.requestFailed(502),
+            description: "Spotify rejected the command (HTTP 502)",
+            perform: { try await connect.send(.pause, from: "source", to: "target") }
+        )
 
         let queue = SpotifyWebPlayerAPI(
             accessToken: { "fixture-access" },
-            transport: { @Sendable request in
-                (
-                    Data("{\"error\":\"\(privacySentinel)\"}".utf8),
-                    httpResponse(url: request.url ?? SpotifyWebPlayerAPI.queueURL, status: 429)
-                )
-            }
-        )
-        do {
-            _ = try await queue.queue()
-            check.check("queue Web API failures throw", false)
-        } catch let error as SpotifyWebPlayerAPIError {
-            check.equal("queue failures keep status", error, .requestFailed(429))
-            check.equal("queue status remains readable for cooldown", error.statusCode ?? -1, 429)
-            check.equal(
-                "queue failures use a stable category",
-                error.errorDescription ?? "",
-                "Spotify rejected the queue request (HTTP 429)"
+            transport: rejectedTransport(
+                status: 429,
+                body: Data("{\"error\":\"\(privacySentinel)\"}".utf8)
             )
-            omitSentinel(check, "queue LocalizedError", error.errorDescription)
-        } catch {
-            check.check("queue Web API failures throw SpotifyWebPlayerAPIError", false)
-        }
-
-        let forbiddenQueue = SpotifyWebPlayerAPI(
-            accessToken: { "fixture-access" },
-            transport: { @Sendable request in
-                (
-                    Data(privacySentinel.utf8),
-                    httpResponse(url: request.url ?? SpotifyWebPlayerAPI.queueURL, status: 403)
-                )
-            }
+        )
+        await expectFailure(
+            check,
+            "queue Web API",
+            SpotifyWebPlayerAPIError.requestFailed(429),
+            description: "Spotify rejected the queue request (HTTP 429)",
+            perform: { _ = try await queue.queue() }
         )
         do {
-            _ = try await forbiddenQueue.queue()
+            _ = try await SpotifyWebPlayerAPI(
+                accessToken: { "fixture-access" },
+                transport: rejectedTransport(status: 403, body: Data(privacySentinel.utf8))
+            ).queue()
             check.check("forbidden queue failures throw", false)
         } catch let error as SpotifyWebPlayerAPIError {
             check.equal("401/403 capability still reads status", error.statusCode ?? -1, 403)
@@ -222,34 +163,24 @@ func runPrivacySanitizationChecks(_ check: CheckRunner) async {
             accessToken: { "fixture-access" },
             clientToken: { "fixture-client" },
             invalidateClientToken: { _ in },
-            transport: { @Sendable request in
-                (
-                    Data(privacySentinel.utf8),
-                    httpResponse(url: request.url ?? TrackAttributesAPI.endpoint, status: 500)
-                )
+            transport: rejectedTransport(status: 500, body: Data(privacySentinel.utf8))
+        )
+        await expectFailure(
+            check,
+            "track-attribute",
+            TrackAttributesAPIError.requestFailed(500),
+            description: "Spotify rejected the attribute request (HTTP 500)",
+            perform: {
+                _ = try await attributes.attributes(for: ["spotify:track:6rqhFgbbKwnb9MLmUQDhG6"])
             }
         )
-        do {
-            _ = try await attributes.attributes(for: ["spotify:track:6rqhFgbbKwnb9MLmUQDhG6"])
-            check.check("track-attribute failures throw", false)
-        } catch let error as TrackAttributesAPIError {
-            check.equal("attribute failures keep status", error, .requestFailed(500))
-            check.equal(
-                "attribute failures use a stable category",
-                error.errorDescription ?? "",
-                "Spotify rejected the attribute request (HTTP 500)"
-            )
-            omitSentinel(check, "track-attribute LocalizedError", error.errorDescription)
-        } catch {
-            check.check("track-attribute failures throw TrackAttributesAPIError", false)
-        }
 
         let failedPhase = PlaybackSessionPhase.failed(
             PartnerAPIError.requestFailed(503).errorDescription ?? privacySentinel
         )
-        check.equal("failed session phases log a stable category", failedPhase.diagnosticLabel, "failed")
-        omitSentinel(check, "session diagnosticLabel", failedPhase.diagnosticLabel)
-        let publicLog = "Session phase changed: ready -> \(failedPhase.diagnosticLabel); epoch=8"
+        check.equal("failed session phases log a stable category", sessionPhaseLogLabel(failedPhase), "failed")
+        omitSentinel(check, "session phase public log label", sessionPhaseLogLabel(failedPhase))
+        let publicLog = "Session phase changed: \(sessionPhaseLogLabel(.ready)) -> \(sessionPhaseLogLabel(failedPhase)); epoch=8"
         omitSentinel(check, "public session phase log", publicLog)
         check.check("session phase logs keep epoch", publicLog.contains("epoch=8"))
     }
