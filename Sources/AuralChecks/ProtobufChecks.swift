@@ -77,17 +77,51 @@ func runProtobufChecks(_ check: CheckRunner) {
             )
         }
 
-        // Ten bytes are the whole varint alphabet; the tenth byte's top bit is the cliff.
-        let maximalVarint = Data([0x08]) + Data(repeating: 0xFF, count: 9) + Data([0x01])
+        // Ten bytes fill a UInt64. Shared decoder: field 1, wire type 0, then nine
+        // saturated chunks and a tenth byte. Payload 0 or 1 at shift 63 is valid;
+        // 2...127 and any tenth-byte continuation must fail closed.
+        let nineSaturatedChunks = Data(repeating: 0xFF, count: 9)
+        func field1Varint(_ trailing: [UInt8]) -> Data {
+            Data([0x08]) + nineSaturatedChunks + Data(trailing)
+        }
+
         check.equal(
             "ten-byte varint decodes to UInt64.max",
-            ProtobufReader.firstVarint(field: 1, in: maximalVarint),
+            ProtobufReader.firstVarint(field: 1, in: field1Varint([0x01])),
             UInt64.max
         )
-        let overlongVarint = Data([0x08]) + Data(repeating: 0xFF, count: 10)
+        check.equal(
+            "ten-byte varint with a clear high bit stays in range",
+            ProtobufReader.firstVarint(field: 1, in: field1Varint([0x00])),
+            UInt64.max >> 1
+        )
+
+        for payload: UInt8 in 0x02...0x7F {
+            check.nil_(
+                "tenth-byte terminal payload 0x\(String(payload, radix: 16)) overflows",
+                ProtobufReader.firstVarint(field: 1, in: field1Varint([payload]))
+            )
+        }
+
+        for continuation: UInt8 in [0x80, 0x81, 0xFF] {
+            check.check(
+                "tenth-byte continuation 0x\(String(continuation, radix: 16)) stops the read",
+                ProtobufReader.fields(in: field1Varint([continuation])).isEmpty
+            )
+            check.check(
+                "eleventh byte after 0x\(String(continuation, radix: 16)) stops the read",
+                ProtobufReader.fields(in: field1Varint([continuation, 0x00])).isEmpty
+            )
+        }
+
+        let overflowing = nineSaturatedChunks + Data([0x02])
         check.check(
-            "eleven-byte varint stops the read",
-            ProtobufReader.fields(in: overlongVarint).isEmpty
+            "overflowing tag varint stops the read",
+            ProtobufReader.fields(in: overflowing).isEmpty
+        )
+        check.check(
+            "overflowing length varint stops the read",
+            ProtobufReader.fields(in: Data([0x0A]) + overflowing).isEmpty
         )
 
         // An accessor of one shape must ignore fields of another shape.

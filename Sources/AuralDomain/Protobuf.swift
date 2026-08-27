@@ -194,13 +194,22 @@ public struct ProtobufReader {
 
     private mutating func readVarint() -> UInt64? {
         var result: UInt64 = 0
-        var shift: UInt64 = 0
+        var shift = 0
 
         while index < data.endIndex {
             let byte = data[index]
             index = data.index(after: index)
 
-            result |= UInt64(byte & 0x7F) << shift
+            let payload = UInt64(byte & 0x7F)
+            // A UInt64 holds 64 bits: nine 7-bit chunks, then one bit at shift 63.
+            // Reject before shifting so a tenth-byte payload 2...127 cannot trap,
+            // wrap, or decode as a truncated value. A continuation at shift 63
+            // would need an eleventh byte and is likewise invalid.
+            guard shift < 64, payload <= UInt64.max >> shift else {
+                return nil
+            }
+
+            result |= payload << shift
             if byte & 0x80 == 0 {
                 return result
             }
