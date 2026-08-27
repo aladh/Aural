@@ -110,9 +110,8 @@ from `Cargo.lock`, and the scripts rebuild every generated input.
   boundaries.
 - [Product and acceptance contract](product-and-acceptance-contract.md) records UX invariants and
   safe live-account testing.
-- [ADR 001](ADR-001-playback-engine.md) records the playback-engine boundary and upstream choice.
-- [ADR 002](ADR-002-playback-state-and-dependencies.md) records playback state and dependency
-  ownership.
+- [Architecture decision records](architecture-decisions.md) indexes accepted architecture
+  boundaries, ownership decisions, and their status.
 - [CONTRIBUTING.md](../CONTRIBUTING.md) defines verification and public-repository hygiene.
 - [PRIVACY.md](../PRIVACY.md), [SECURITY.md](../SECURITY.md), and
   [THIRD_PARTY_NOTICES.md](../THIRD_PARTY_NOTICES.md) cover data handling, reporting, and
