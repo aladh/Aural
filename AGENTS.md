@@ -125,13 +125,15 @@ does not mean crude, and polish does not mean decoration.
 
 1. Run `git status --short` and preserve unrelated user changes. Never reset or overwrite them.
 2. Read the documents relevant to the task:
-   - [README.md](README.md): supported features, requirements, build, release, architecture.
+   - [README.md](README.md): project identity, capabilities, requirements, getting started, and
+     limitations. Keep the experimental and unofficial warnings prominent.
    - [Product and acceptance contract](docs/product-and-acceptance-contract.md): intentional UX
      behavior and safe live-account testing. Treat this as the product specification.
    - [Development setup](docs/development-setup.md): fresh clone, generated state, recovery.
    - [Architecture decision records](docs/architecture-decisions.md): accepted boundaries,
      ownership decisions, and the index of ADRs relevant to the task.
-   - [CONTRIBUTING.md](CONTRIBUTING.md): checks, fixtures, public-repository hygiene.
+   - [CONTRIBUTING.md](CONTRIBUTING.md): checks, fixtures, packaging, architecture overview, and
+     public-repository hygiene.
 3. Inspect the implementation and its nearest checks before editing. Search with `rg`/`rg --files`.
 4. Make the smallest cohesive change that fixes the underlying behavior, not just its visible
    symptom.
