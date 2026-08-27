@@ -59,7 +59,8 @@ pub(crate) unsafe fn c_string_arg(ptr: *const c_char) -> Option<String> {
 ///
 /// No callback may run with its slot lock held: it re-enters Swift, which can call straight
 /// back into Rust. Taking the pointer out here makes that structural instead of a
-/// `drop(guard)` that every call site has to remember.
+/// `drop(guard)` that every call site has to remember. The export panic barrier does not
+/// make an invalid callback pointer safe, and it does not wrap these outbound calls.
 pub(crate) fn registered_callback<F: Copy>(slot: &Mutex<Option<F>>) -> Option<F> {
     *slot.lock().unwrap_or_else(|e| e.into_inner())
 }
@@ -144,23 +145,82 @@ pub(crate) fn shutdown_spirc(context: &str) {
     }
 }
 
+/// Defined fallback when an FFI export panics: command `i32`s become [`ERROR_GENERAL`].
+pub(crate) fn ffi_command(export: &'static str, work: impl FnOnce() -> i32) -> i32 {
+    ffi_catch(export, ERROR_GENERAL, work)
+}
+
+/// Defined fallback when an FFI flag query panics: conservative `0` / false.
+pub(crate) fn ffi_query_i32(export: &'static str, work: impl FnOnce() -> i32) -> i32 {
+    ffi_catch(export, 0, work)
+}
+
+/// Defined fallback when an FFI `u32` query panics: conservative `0`.
+pub(crate) fn ffi_query_u32(export: &'static str, work: impl FnOnce() -> u32) -> u32 {
+    ffi_catch(export, 0, work)
+}
+
+/// Defined fallback when an FFI `u8` query panics: conservative `0`.
+pub(crate) fn ffi_query_u8(export: &'static str, work: impl FnOnce() -> u8) -> u8 {
+    ffi_catch(export, 0, work)
+}
+
+/// Defined fallback when an FFI `bool` query panics: conservative `false`.
+pub(crate) fn ffi_query_bool(export: &'static str, work: impl FnOnce() -> bool) -> bool {
+    ffi_catch(export, false, work)
+}
+
+/// Defined fallback when an owned-string export panics: a null pointer.
+pub(crate) fn ffi_owned_string(
+    export: &'static str,
+    work: impl FnOnce() -> *mut c_char,
+) -> *mut c_char {
+    ffi_catch(export, std::ptr::null_mut(), work)
+}
+
+/// Defined fallback when a void export panics: a no-op completion.
+pub(crate) fn ffi_void(export: &'static str, work: impl FnOnce()) {
+    ffi_catch(export, (), work)
+}
+
+/// Contains a panic originating in `work` so it cannot unwind across the C ABI.
+///
+/// `AssertUnwindSafe` is used because FFI bodies capture raw pointers and process-wide
+/// locks, which are not `UnwindSafe`. That wrapper does not make invalid foreign pointers
+/// defined; it only stops a Rust panic from crossing into Swift. After a panic, existing
+/// poisoned-lock recovery (`into_inner`) remains the recovery path. The process panic hook
+/// is left untouched, and the panic payload is not copied into logs.
+fn ffi_catch<T>(export: &'static str, fallback: T, work: impl FnOnce() -> T) -> T {
+    match std::panic::catch_unwind(std::panic::AssertUnwindSafe(work)) {
+        Ok(value) => value,
+        Err(_) => {
+            log::error!("FFI export {export} panicked; returning defined fallback");
+            fallback
+        }
+    }
+}
+
 /// Frees a C string allocated by this library.
 #[no_mangle]
 pub extern "C" fn aural_playback_free_string(s: *mut c_char) {
-    if !s.is_null() {
-        unsafe {
-            let _ = CString::from_raw(s);
+    ffi_void("aural_playback_free_string", || {
+        if !s.is_null() {
+            unsafe {
+                let _ = CString::from_raw(s);
+            }
         }
-    }
+    })
 }
 
 /// Registers a callback to receive queue updates (as JSON string).
 #[no_mangle]
 pub extern "C" fn aural_playback_register_queue_callback(callback: extern "C" fn(*const c_char)) {
-    *CONTROL_CALLBACKS
-        .queue
-        .lock()
-        .unwrap_or_else(|e| e.into_inner()) = Some(callback);
+    ffi_void("aural_playback_register_queue_callback", || {
+        *CONTROL_CALLBACKS
+            .queue
+            .lock()
+            .unwrap_or_else(|e| e.into_inner()) = Some(callback);
+    })
 }
 
 /// Registers a callback to receive playback state updates (as JSON string).
@@ -168,10 +228,12 @@ pub extern "C" fn aural_playback_register_queue_callback(callback: extern "C" fn
 pub extern "C" fn aural_playback_register_playback_state_callback(
     callback: extern "C" fn(*const c_char),
 ) {
-    *CONTROL_CALLBACKS
-        .playback_state
-        .lock()
-        .unwrap_or_else(|e| e.into_inner()) = Some(callback);
+    ffi_void("aural_playback_register_playback_state_callback", || {
+        *CONTROL_CALLBACKS
+            .playback_state
+            .lock()
+            .unwrap_or_else(|e| e.into_inner()) = Some(callback);
+    })
 }
 
 /// Registers a callback to receive volume change notifications.
@@ -179,10 +241,12 @@ pub extern "C" fn aural_playback_register_playback_state_callback(
 /// The callback receives the new volume (0-65535).
 #[no_mangle]
 pub extern "C" fn aural_playback_register_volume_callback(callback: extern "C" fn(u16)) {
-    *CONTROL_CALLBACKS
-        .volume
-        .lock()
-        .unwrap_or_else(|e| e.into_inner()) = Some(callback);
+    ffi_void("aural_playback_register_volume_callback", || {
+        *CONTROL_CALLBACKS
+            .volume
+            .lock()
+            .unwrap_or_else(|e| e.into_inner()) = Some(callback);
+    })
 }
 
 /// Registers a callback to receive loading notifications.
@@ -191,10 +255,12 @@ pub extern "C" fn aural_playback_register_volume_callback(callback: extern "C" f
 /// The callback receives JSON with track_uri and position_ms.
 #[no_mangle]
 pub extern "C" fn aural_playback_register_loading_callback(callback: extern "C" fn(*const c_char)) {
-    *CONTROL_CALLBACKS
-        .loading
-        .lock()
-        .unwrap_or_else(|e| e.into_inner()) = Some(callback);
+    ffi_void("aural_playback_register_loading_callback", || {
+        *CONTROL_CALLBACKS
+            .loading
+            .lock()
+            .unwrap_or_else(|e| e.into_inner()) = Some(callback);
+    })
 }
 
 /// Registers a callback fired when this device stops being the active Connect device.
@@ -204,10 +270,12 @@ pub extern "C" fn aural_playback_register_loading_callback(callback: extern "C" 
 /// treat it as a connection failure - read the connection snapshot for that.
 #[no_mangle]
 pub extern "C" fn aural_playback_register_became_inactive_callback(callback: extern "C" fn()) {
-    *CONTROL_CALLBACKS
-        .became_inactive
-        .lock()
-        .unwrap_or_else(|e| e.into_inner()) = Some(callback);
+    ffi_void("aural_playback_register_became_inactive_callback", || {
+        *CONTROL_CALLBACKS
+            .became_inactive
+            .lock()
+            .unwrap_or_else(|e| e.into_inner()) = Some(callback);
+    })
 }
 
 /// Registers a callback fired when this device becomes the active Connect device.
@@ -217,10 +285,12 @@ pub extern "C" fn aural_playback_register_became_inactive_callback(callback: ext
 /// can be sent.
 #[no_mangle]
 pub extern "C" fn aural_playback_register_became_active_callback(callback: extern "C" fn()) {
-    *CONTROL_CALLBACKS
-        .became_active
-        .lock()
-        .unwrap_or_else(|e| e.into_inner()) = Some(callback);
+    ffi_void("aural_playback_register_became_active_callback", || {
+        *CONTROL_CALLBACKS
+            .became_active
+            .lock()
+            .unwrap_or_else(|e| e.into_inner()) = Some(callback);
+    })
 }
 
 /// Registers a callback to receive session client changed notifications.
@@ -228,10 +298,15 @@ pub extern "C" fn aural_playback_register_became_active_callback(callback: exter
 pub extern "C" fn aural_playback_register_session_client_changed_callback(
     callback: extern "C" fn(*const c_char),
 ) {
-    *CONTROL_CALLBACKS
-        .session_client_changed
-        .lock()
-        .unwrap_or_else(|e| e.into_inner()) = Some(callback);
+    ffi_void(
+        "aural_playback_register_session_client_changed_callback",
+        || {
+            *CONTROL_CALLBACKS
+                .session_client_changed
+                .lock()
+                .unwrap_or_else(|e| e.into_inner()) = Some(callback);
+        },
+    )
 }
 
 /// Registers a callback to receive set queue notifications.
@@ -241,10 +316,12 @@ pub extern "C" fn aural_playback_register_session_client_changed_callback(
 pub extern "C" fn aural_playback_register_set_queue_callback(
     callback: extern "C" fn(*const c_char),
 ) {
-    *CONTROL_CALLBACKS
-        .set_queue
-        .lock()
-        .unwrap_or_else(|e| e.into_inner()) = Some(callback);
+    ffi_void("aural_playback_register_set_queue_callback", || {
+        *CONTROL_CALLBACKS
+            .set_queue
+            .lock()
+            .unwrap_or_else(|e| e.into_inner()) = Some(callback);
+    })
 }
 
 /// Registers a callback to receive active device ID changes from cluster updates.
@@ -253,10 +330,12 @@ pub extern "C" fn aural_playback_register_set_queue_callback(
 pub extern "C" fn aural_playback_register_active_device_callback(
     callback: extern "C" fn(*const c_char),
 ) {
-    *CONTROL_CALLBACKS
-        .active_device
-        .lock()
-        .unwrap_or_else(|e| e.into_inner()) = Some(callback);
+    ffi_void("aural_playback_register_active_device_callback", || {
+        *CONTROL_CALLBACKS
+            .active_device
+            .lock()
+            .unwrap_or_else(|e| e.into_inner()) = Some(callback);
+    })
 }
 
 /// Registers a callback to receive the Connect device list from cluster updates.
@@ -266,10 +345,12 @@ pub extern "C" fn aural_playback_register_active_device_callback(
 /// actually changes, not on every cluster tick.
 #[no_mangle]
 pub extern "C" fn aural_playback_register_devices_callback(callback: extern "C" fn(*const c_char)) {
-    *CONTROL_CALLBACKS
-        .devices
-        .lock()
-        .unwrap_or_else(|e| e.into_inner()) = Some(callback);
+    ffi_void("aural_playback_register_devices_callback", || {
+        *CONTROL_CALLBACKS
+            .devices
+            .lock()
+            .unwrap_or_else(|e| e.into_inner()) = Some(callback);
+    })
 }
 
 /// Registers a callback to receive connection state change notifications.
@@ -279,10 +360,12 @@ pub extern "C" fn aural_playback_register_devices_callback(callback: extern "C" 
 pub extern "C" fn aural_playback_register_connection_state_callback(
     callback: extern "C" fn(*const c_char),
 ) {
-    *CONTROL_CALLBACKS
-        .connection_state
-        .lock()
-        .unwrap_or_else(|e| e.into_inner()) = Some(callback);
+    ffi_void("aural_playback_register_connection_state_callback", || {
+        *CONTROL_CALLBACKS
+            .connection_state
+            .lock()
+            .unwrap_or_else(|e| e.into_inner()) = Some(callback);
+    })
 }
 
 /// Registers a callback to receive raw PCM audio data (f32, 44100Hz, stereo interleaved).
@@ -292,7 +375,9 @@ pub extern "C" fn aural_playback_register_connection_state_callback(
 pub extern "C" fn aural_playback_register_audio_data_callback(
     callback: extern "C" fn(*const f32, usize),
 ) {
-    proxy_sink::register_audio_data_callback(callback);
+    ffi_void("aural_playback_register_audio_data_callback", || {
+        proxy_sink::register_audio_data_callback(callback);
+    })
 }
 
 /// Registers a callback for audio control events (start/stop/clear).
@@ -300,15 +385,20 @@ pub extern "C" fn aural_playback_register_audio_data_callback(
 /// Events: 0 = stop, 1 = start/resume, 2 = clear/flush
 #[no_mangle]
 pub extern "C" fn aural_playback_register_audio_control_callback(callback: extern "C" fn(u8)) {
-    proxy_sink::register_audio_control_callback(callback);
+    ffi_void("aural_playback_register_audio_control_callback", || {
+        proxy_sink::register_audio_control_callback(callback);
+    })
 }
 
 /// Returns the current connection state as a JSON string.
 /// Caller must free the returned string using aural_playback_free_string().
 #[no_mangle]
 pub extern "C" fn aural_playback_get_connection_state() -> *mut c_char {
-    match serde_json::to_string(&build_connection_state_info()) {
-        Ok(json) => into_owned_c_string(json),
-        Err(_) => std::ptr::null_mut(),
-    }
+    ffi_owned_string(
+        "aural_playback_get_connection_state",
+        || match serde_json::to_string(&build_connection_state_info()) {
+            Ok(json) => into_owned_c_string(json),
+            Err(_) => std::ptr::null_mut(),
+        },
+    )
 }

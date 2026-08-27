@@ -34,18 +34,22 @@ pub(crate) fn clear_credentials_at(dir: &std::path::Path) {
 /// so that the next launch cannot connect the account that just logged out.
 #[no_mangle]
 pub extern "C" fn aural_playback_clear_streaming_credentials() {
-    clear_credentials_at(&credentials_cache_dir());
+    ffi_void("aural_playback_clear_streaming_credentials", || {
+        clear_credentials_at(&credentials_cache_dir());
+    })
 }
 
 /// The Spotify account id the last successful streaming grant authenticated as, or null.
 /// Free with `aural_playback_free_string`.
 #[no_mangle]
 pub extern "C" fn aural_playback_last_grant_account() -> *mut c_char {
-    let account = LAST_GRANT_ACCOUNT
-        .lock()
-        .unwrap_or_else(|e| e.into_inner())
-        .clone();
-    account.map_or(std::ptr::null_mut(), into_owned_c_string)
+    ffi_owned_string("aural_playback_last_grant_account", || {
+        let account = LAST_GRANT_ACCOUNT
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .clone();
+        account.map_or(std::ptr::null_mut(), into_owned_c_string)
+    })
 }
 
 /// Completes the one-time streaming authorization with a token Swift has already minted:
@@ -64,51 +68,56 @@ pub extern "C" fn aural_playback_last_grant_account() -> *mut c_char {
 /// playback down entirely; see `plans/streaming-auth-needs-a-first-party-client-id.md`.
 #[no_mangle]
 pub extern "C" fn aural_playback_authorize_streaming(access_token: *const c_char) -> i32 {
-    let started_generation = LOGOUT_GENERATION.load(Ordering::SeqCst);
+    ffi_command("aural_playback_authorize_streaming", || {
+        let started_generation = LOGOUT_GENERATION.load(Ordering::SeqCst);
 
-    let token = match unsafe { c_string_arg(access_token) } {
-        Some(t) if !t.is_empty() => t,
-        _ => {
-            debug!("Streaming authorization error: no access token");
+        let token = match unsafe { c_string_arg(access_token) } {
+            Some(t) if !t.is_empty() => t,
+            _ => {
+                debug!("Streaming authorization error: no access token");
+                return -1;
+            }
+        };
+        debug!("Streaming authorization: token received, connecting");
+
+        // Connect once so librespot writes the AP credentials into the cache. Every init after
+        // this connects from that cache with no token at all.
+        let result = match block_on_export(async {
+            let device_id = format!("aural_{}", std::process::id());
+            let (session, credentials) = create_session(&device_id, Some(&token))?;
+            session
+                .connect(credentials, true)
+                .await
+                .map_err(|e| format!("Connect failed: {:?}", e))?;
+            // Recorded before shutdown: this is the account the browser was signed into, which
+            // Swift compares against the Web API account before accepting the grant.
+            *LAST_GRANT_ACCOUNT.lock().unwrap_or_else(|e| e.into_inner()) =
+                Some(session.username().to_string());
+            session.shutdown();
+            Ok::<(), String>(())
+        }) {
+            Ok(result) => result,
+            Err(code) => return code,
+        };
+
+        if let Err(e) = result {
+            debug!("Streaming authorization connect error: {}", e);
             return -1;
         }
-    };
-    debug!("Streaming authorization: token received, connecting");
 
-    // Connect once so librespot writes the AP credentials into the cache. Every init after
-    // this connects from that cache with no token at all.
-    let result = RUNTIME.block_on(async {
-        let device_id = format!("aural_{}", std::process::id());
-        let (session, credentials) = create_session(&device_id, Some(&token))?;
-        session
-            .connect(credentials, true)
-            .await
-            .map_err(|e| format!("Connect failed: {:?}", e))?;
-        // Recorded before shutdown: this is the account the browser was signed into, which
-        // Swift compares against the Web API account before accepting the grant.
-        *LAST_GRANT_ACCOUNT.lock().unwrap_or_else(|e| e.into_inner()) =
-            Some(session.username().to_string());
-        session.shutdown();
-        Ok::<(), String>(())
-    });
+        // Rechecked *after* the write, not before: librespot persists from inside
+        // Session::connect, so a logout landing mid-connect would wipe the cache and this run
+        // would then recreate it behind logout's back. Against LOGOUT_GENERATION, not the
+        // session one: an ordinary rebuild during the browser wait is not a supersession.
+        if run_is_superseded(started_generation, LOGOUT_GENERATION.load(Ordering::SeqCst)) {
+            debug!("Streaming authorization superseded; removing the credentials it wrote");
+            clear_credentials_at(&credentials_cache_dir());
+            return -2;
+        }
 
-    if let Err(e) = result {
-        debug!("Streaming authorization connect error: {}", e);
-        return -1;
-    }
-
-    // Rechecked *after* the write, not before: librespot persists from inside
-    // Session::connect, so a logout landing mid-connect would wipe the cache and this run
-    // would then recreate it behind logout's back. Against LOGOUT_GENERATION, not the
-    // session one: an ordinary rebuild during the browser wait is not a supersession.
-    if run_is_superseded(started_generation, LOGOUT_GENERATION.load(Ordering::SeqCst)) {
-        debug!("Streaming authorization superseded; removing the credentials it wrote");
-        clear_credentials_at(&credentials_cache_dir());
-        return -2;
-    }
-
-    debug!("Streaming authorization complete");
-    0
+        debug!("Streaming authorization complete");
+        0
+    })
 }
 
 /// Creates a new (unconnected) Session with the given device ID.
@@ -345,44 +354,46 @@ pub(crate) fn spawn_reconnection_loop(intent: RecoveryIntent) {
 /// - 2: No session initialized (nothing to reconnect)
 #[no_mangle]
 pub extern "C" fn aural_playback_force_reconnect() -> i32 {
-    // Clear sleeping flag - we're explicitly waking up
-    SLEEPING.store(false, Ordering::SeqCst);
+    ffi_command("aural_playback_force_reconnect", || {
+        // Clear sleeping flag - we're explicitly waking up
+        SLEEPING.store(false, Ordering::SeqCst);
 
-    // Record wake timestamp for timing analysis
-    let wake_ts = current_timestamp_ms();
-    WAKE_TIMESTAMP_MS.store(wake_ts, Ordering::SeqCst);
-    debug!(
-        "[WAKE +0ms] aural_playback_force_reconnect called at {}",
-        wake_ts
-    );
-
-    // Check if we even have a session
-    if SESSION.lock().unwrap_or_else(|e| e.into_inner()).is_none() {
+        // Record wake timestamp for timing analysis
+        let wake_ts = current_timestamp_ms();
+        WAKE_TIMESTAMP_MS.store(wake_ts, Ordering::SeqCst);
         debug!(
-            "[WAKE +{}ms] Force reconnect: no session initialized",
+            "[WAKE +0ms] aural_playback_force_reconnect called at {}",
+            wake_ts
+        );
+
+        // Check if we even have a session
+        if SESSION.lock().unwrap_or_else(|e| e.into_inner()).is_none() {
+            debug!(
+                "[WAKE +{}ms] Force reconnect: no session initialized",
+                elapsed_since_wake_ms()
+            );
+            return 2;
+        }
+
+        // Check if already reconnecting
+        if RECONNECTING.load(Ordering::SeqCst) {
+            debug!(
+                "[WAKE +{}ms] Force reconnect: reconnection already in progress",
+                elapsed_since_wake_ms()
+            );
+            return 1;
+        }
+
+        debug!(
+            "[WAKE +{}ms] Force reconnect: triggering reconnection",
             elapsed_since_wake_ms()
         );
-        return 2;
-    }
 
-    // Check if already reconnecting
-    if RECONNECTING.load(Ordering::SeqCst) {
-        debug!(
-            "[WAKE +{}ms] Force reconnect: reconnection already in progress",
-            elapsed_since_wake_ms()
-        );
-        return 1;
-    }
+        mark_disconnected("Reconnecting after system wake");
+        spawn_reconnection_loop(RecoveryIntent::capture());
 
-    debug!(
-        "[WAKE +{}ms] Force reconnect: triggering reconnection",
-        elapsed_since_wake_ms()
-    );
-
-    mark_disconnected("Reconnecting after system wake");
-    spawn_reconnection_loop(RecoveryIntent::capture());
-
-    0
+        0
+    })
 }
 
 /// Performs full cleanup for reconnection.
@@ -437,47 +448,53 @@ pub(crate) fn do_reconnect_cleanup() {
 /// Returns 0 on success, -1 on error.
 #[no_mangle]
 pub extern "C" fn aural_playback_init_player(access_token: *const c_char) -> i32 {
-    // Initialize env_logger to capture librespot's log output (only once)
-    static LOGGER_INIT: std::sync::Once = std::sync::Once::new();
-    LOGGER_INIT.call_once(|| {
-        // try_init rather than init: Builder::init panics if another logger is already
-        // installed, which would be a panic unwinding straight into Swift.
-        let _ = env_logger::Builder::from_env(env_logger::Env::default())
-            .format_timestamp_millis()
-            .try_init();
-    });
+    ffi_command("aural_playback_init_player", || {
+        // Initialize env_logger to capture librespot's log output (only once)
+        static LOGGER_INIT: std::sync::Once = std::sync::Once::new();
+        LOGGER_INIT.call_once(|| {
+            // try_init rather than init: Builder::init panics if another logger is already
+            // installed, which would be a panic unwinding straight into Swift.
+            let _ = env_logger::Builder::from_env(env_logger::Env::default())
+                .format_timestamp_millis()
+                .try_init();
+        });
 
-    // Print RUST_LOG env var for debugging
-    let rust_log = std::env::var("RUST_LOG").unwrap_or_else(|_| "(not set)".to_string());
-    debug!("RUST_LOG={}", rust_log);
+        // Print RUST_LOG env var for debugging
+        let rust_log = std::env::var("RUST_LOG").unwrap_or_else(|_| "(not set)".to_string());
+        debug!("RUST_LOG={}", rust_log);
 
-    // Reset shutdown and sleeping flags in case we're reinitializing
-    SHUTTING_DOWN.store(false, Ordering::SeqCst);
-    SLEEPING.store(false, Ordering::SeqCst);
+        // Reset shutdown and sleeping flags in case we're reinitializing
+        SHUTTING_DOWN.store(false, Ordering::SeqCst);
+        SLEEPING.store(false, Ordering::SeqCst);
 
-    // A null token means "connect from the cached streaming credentials", which is the normal
-    // case: only the first init after the one-time grant carries a token.
-    let token_str = unsafe { c_string_arg(access_token) };
+        // A null token means "connect from the cached streaming credentials", which is the normal
+        // case: only the first init after the one-time grant carries a token.
+        let token_str = unsafe { c_string_arg(access_token) };
 
-    // Check if we already have a session
-    {
-        let session_guard = SESSION.lock().unwrap_or_else(|e| e.into_inner());
-        if session_guard.is_some() {
-            // Already initialized
-            return 0;
+        // Check if we already have a session
+        {
+            let session_guard = SESSION.lock().unwrap_or_else(|e| e.into_inner());
+            if session_guard.is_some() {
+                // Already initialized
+                return 0;
+            }
         }
-    }
 
-    let result =
-        RUNTIME.block_on(async { init_player_async(token_str.as_deref(), false, false).await });
+        let result = match block_on_export(async {
+            init_player_async(token_str.as_deref(), false, false).await
+        }) {
+            Ok(result) => result,
+            Err(code) => return code,
+        };
 
-    match result {
-        Ok(_) => 0,
-        Err(_e) => {
-            debug!("Player init error: {}", _e);
-            -1
+        match result {
+            Ok(_) => 0,
+            Err(_e) => {
+                debug!("Player init error: {}", _e);
+                -1
+            }
         }
-    }
+    })
 }
 
 /// Helper function to create a new Player instance

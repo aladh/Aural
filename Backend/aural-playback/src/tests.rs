@@ -498,6 +498,10 @@ fn connection_snapshot_json_keeps_legacy_fields_and_adds_generation() {
 
 /// Compile-time ABI contract. The release archive is also checked with `nm`; these assignments
 /// make signature drift fail in the fast Rust test suite before reaching the linker check.
+///
+/// [`exported_c_functions_enter_through_the_panic_barrier`] extends this with a source-level
+/// check that every `extern "C"` body starts at a panic-barrier helper, so a new symbol cannot
+/// skip the boundary by being added only here.
 #[test]
 fn exported_c_function_signatures_are_stable() {
     let _: extern "C" fn(*mut c_char) = aural_playback_free_string;
@@ -561,4 +565,247 @@ fn exported_c_function_signatures_are_stable() {
     let _: extern "C" fn(extern "C" fn(*const f32, usize)) =
         aural_playback_register_audio_data_callback;
     let _: extern "C" fn(extern "C" fn(u8)) = aural_playback_register_audio_control_callback;
+}
+
+#[test]
+fn ffi_command_panic_returns_general_error() {
+    assert_eq!(
+        ffi_command("test_command", || panic!("token-payload-must-not-abort")),
+        ERROR_GENERAL
+    );
+}
+
+#[test]
+fn ffi_query_panic_returns_conservative_zero_or_false() {
+    assert_eq!(
+        ffi_query_i32("test_flag", || panic!("token-payload-must-not-abort")),
+        0
+    );
+    assert_eq!(
+        ffi_query_u32("test_u32", || panic!("token-payload-must-not-abort")),
+        0
+    );
+    assert_eq!(
+        ffi_query_u8("test_u8", || panic!("token-payload-must-not-abort")),
+        0
+    );
+    assert!(!ffi_query_bool("test_bool", || panic!(
+        "token-payload-must-not-abort"
+    )));
+}
+
+#[test]
+fn ffi_owned_string_panic_returns_null() {
+    let ptr = ffi_owned_string("test_string", || panic!("token-payload-must-not-abort"));
+    assert!(ptr.is_null());
+}
+
+#[test]
+fn ffi_void_panic_is_a_noop() {
+    ffi_void("test_void", || panic!("token-payload-must-not-abort"));
+}
+
+#[test]
+fn ffi_helpers_return_the_work_value_when_they_do_not_panic() {
+    assert_eq!(ffi_command("ok_command", || 7), 7);
+    assert_eq!(ffi_query_i32("ok_flag", || 1), 1);
+    assert_eq!(ffi_query_u32("ok_u32", || 42), 42);
+    assert_eq!(ffi_query_u8("ok_u8", || 2), 2);
+    assert!(ffi_query_bool("ok_bool", || true));
+    assert!(ffi_owned_string("ok_string", std::ptr::null_mut).is_null());
+    let mut completed = false;
+    ffi_void("ok_void", || completed = true);
+    assert!(completed);
+}
+
+#[test]
+fn block_on_export_runs_on_a_non_runtime_thread() {
+    assert_eq!(block_on_export(async { 9u8 }), Ok(9));
+}
+
+#[test]
+fn block_on_export_refuses_a_tokio_owned_thread() {
+    let refused = RUNTIME.block_on(async { block_on_export(async { 0i32 }) });
+    assert_eq!(refused, Err(ERROR_GENERAL));
+}
+
+const FFI_PANIC_BARRIERS: &[&str] = &[
+    "ffi_command",
+    "ffi_query_i32",
+    "ffi_query_u32",
+    "ffi_query_u8",
+    "ffi_query_bool",
+    "ffi_owned_string",
+    "ffi_void",
+];
+
+/// Structural ABI companion to [`exported_c_function_signatures_are_stable`].
+///
+/// Walks Rust sources rather than line numbers: every `pub extern "C"` export must enter
+/// through a named panic-barrier helper, and only `runtime.rs` may call `RUNTIME.block_on`.
+#[test]
+fn exported_c_functions_enter_through_the_panic_barrier() {
+    let src_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
+    let mut exports = Vec::new();
+    for entry in std::fs::read_dir(&src_dir).expect("src dir") {
+        let path = entry.expect("dir entry").path();
+        if path.extension().and_then(|ext| ext.to_str()) != Some("rs") {
+            continue;
+        }
+        let source = std::fs::read_to_string(&path).expect("read rust source");
+        let file_name = path.file_name().and_then(|name| name.to_str());
+        if file_name != Some("runtime.rs") && file_name != Some("tests.rs") {
+            assert!(
+                !source.contains("RUNTIME.block_on"),
+                "{} must call block_on_export rather than RUNTIME.block_on",
+                path.display()
+            );
+        }
+        exports.extend(exported_c_functions(&source));
+    }
+
+    exports.sort_by(|a, b| a.0.cmp(&b.0));
+    assert!(
+        !exports.is_empty(),
+        "expected to find exported C functions in aural-playback sources"
+    );
+    for (name, barrier) in &exports {
+        assert!(
+            FFI_PANIC_BARRIERS.contains(&barrier.as_str()),
+            "{name} enters through {barrier}, which is not a panic-barrier helper"
+        );
+    }
+}
+
+fn exported_c_functions(source: &str) -> Vec<(String, String)> {
+    let bytes = source.as_bytes();
+    let needle = b"pub extern \"C\" fn ";
+    let mut found = Vec::new();
+    let mut search_from = 0;
+    while let Some(rel) = source[search_from..].find("pub extern \"C\" fn ") {
+        let start = search_from + rel;
+        let name_start = start + needle.len();
+        let name_end = source[name_start..]
+            .find(|c: char| !c.is_ascii_alphanumeric() && c != '_')
+            .map(|idx| name_start + idx)
+            .unwrap_or(source.len());
+        let name = source[name_start..name_end].to_string();
+        let brace = match next_unquoted(bytes, name_end, b'{') {
+            Some(idx) => idx,
+            None => panic!("export {name} has no function body"),
+        };
+        let first = first_identifier_in_block(bytes, brace + 1);
+        found.push((name, first));
+        search_from = brace + 1;
+    }
+    found
+}
+
+fn next_unquoted(bytes: &[u8], from: usize, target: u8) -> Option<usize> {
+    let mut i = from;
+    while i < bytes.len() {
+        match scan_code_byte(bytes, i) {
+            Scan::Skip(next) => i = next,
+            Scan::Byte(b, next) => {
+                if b == target {
+                    return Some(i);
+                }
+                i = next;
+            }
+        }
+    }
+    None
+}
+
+fn first_identifier_in_block(bytes: &[u8], from: usize) -> String {
+    let i = skip_ws_and_comments(bytes, from);
+    if i >= bytes.len() {
+        panic!("function body ended before a call");
+    }
+    match bytes[i] {
+        b'a'..=b'z' | b'A'..=b'Z' | b'_' => {
+            let start = i;
+            let mut end = i + 1;
+            while end < bytes.len() && (bytes[end].is_ascii_alphanumeric() || bytes[end] == b'_') {
+                end += 1;
+            }
+            std::str::from_utf8(&bytes[start..end])
+                .expect("identifier")
+                .to_string()
+        }
+        _ => panic!(
+            "function body must start with a panic-barrier helper call, found {:?}",
+            bytes[i] as char
+        ),
+    }
+}
+
+fn skip_ws_and_comments(bytes: &[u8], mut i: usize) -> usize {
+    loop {
+        while i < bytes.len() && bytes[i].is_ascii_whitespace() {
+            i += 1;
+        }
+        if i + 1 < bytes.len() && bytes[i] == b'/' && bytes[i + 1] == b'/' {
+            i += 2;
+            while i < bytes.len() && bytes[i] != b'\n' {
+                i += 1;
+            }
+            continue;
+        }
+        if i + 1 < bytes.len() && bytes[i] == b'/' && bytes[i + 1] == b'*' {
+            i += 2;
+            while i + 1 < bytes.len() && !(bytes[i] == b'*' && bytes[i + 1] == b'/') {
+                i += 1;
+            }
+            i = i.saturating_add(2).min(bytes.len());
+            continue;
+        }
+        return i;
+    }
+}
+
+enum Scan {
+    Skip(usize),
+    Byte(u8, usize),
+}
+
+fn scan_code_byte(bytes: &[u8], i: usize) -> Scan {
+    if i + 1 < bytes.len() && bytes[i] == b'/' && bytes[i + 1] == b'/' {
+        let mut j = i + 2;
+        while j < bytes.len() && bytes[j] != b'\n' {
+            j += 1;
+        }
+        return Scan::Skip(j);
+    }
+    if i + 1 < bytes.len() && bytes[i] == b'/' && bytes[i + 1] == b'*' {
+        let mut j = i + 2;
+        while j + 1 < bytes.len() && !(bytes[j] == b'*' && bytes[j + 1] == b'/') {
+            j += 1;
+        }
+        return Scan::Skip(j.saturating_add(2).min(bytes.len()));
+    }
+    if bytes[i] == b'"' {
+        return Scan::Skip(skip_quoted(bytes, i, b'"'));
+    }
+    if bytes[i] == b'\'' {
+        return Scan::Skip(skip_quoted(bytes, i, b'\''));
+    }
+    Scan::Byte(bytes[i], i + 1)
+}
+
+fn skip_quoted(bytes: &[u8], start: usize, quote: u8) -> usize {
+    let mut i = start + 1;
+    let mut escape = false;
+    while i < bytes.len() {
+        let b = bytes[i];
+        if escape {
+            escape = false;
+        } else if b == b'\\' {
+            escape = true;
+        } else if b == quote {
+            return i + 1;
+        }
+        i += 1;
+    }
+    bytes.len()
 }
