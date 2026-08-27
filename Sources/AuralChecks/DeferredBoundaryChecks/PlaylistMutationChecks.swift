@@ -331,7 +331,10 @@ func runPlaylistMutationChecks(_ runner: CheckRunner) async {
             runner.check("post-remove playlist fixture decodes", false)
         }
         await services.completePark()
-        _ = await waitUntil { catalog.playlistStore.tracks.map(\.id) == ["uid-b"] }
+        _ = await waitUntil {
+            catalog.playlistStore.tracks.map(\.id) == ["uid-b"]
+                && feedback.message?.text == "Removed from Owned Mix"
+        }
         runner.equal("success refreshes only the open playlist", catalog.playlistStore.tracks.map(\.id), ["uid-b"])
         runner.equal("selection-stable remaining occurrence is uid-b", catalog.playlistStore.tracks.first?.id, "uid-b")
         runner.equal("successful remove reports through the presenter", feedback.message?.text, "Removed from Owned Mix")
