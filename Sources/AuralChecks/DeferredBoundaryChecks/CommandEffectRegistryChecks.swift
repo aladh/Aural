@@ -25,14 +25,16 @@ func runCommandEffectRegistryChecks(_ runner: CheckRunner) async {
         let commandID = UUID()
         let finishedWithoutCancel = CancellationFlag()
 
-        let superseded = Task {
-            try? await Task.sleep(nanoseconds: 60_000_000_000)
-            if !Task.isCancelled {
+        let superseded: Task<Void, Never> = Task { [weak finishedWithoutCancel] in
+            do {
+                try await Task.sleep(nanoseconds: 60_000_000_000)
+            } catch {}
+            if let finishedWithoutCancel, !Task.isCancelled {
                 finishedWithoutCancel.mark()
             }
         }
         effects.replace(.command(commandID), with: superseded)
-        effects.replace(.command(commandID), with: Task {})
+        effects.replace(.command(commandID), with: Task<Void, Never> {})
         await superseded.value
         runner.check("replacing a command token cancels the superseded task", !finishedWithoutCancel.isSet)
     }
@@ -42,17 +44,25 @@ func runCommandEffectRegistryChecks(_ runner: CheckRunner) async {
         let commandSurvived = CancellationFlag()
         let lifecycleCancelled = CancellationFlag()
 
-        let command = Task {
-            try? await Task.sleep(nanoseconds: 60_000_000_000)
-            if !Task.isCancelled {
+        let command: Task<Void, Never> = Task { [weak commandSurvived] in
+            do {
+                try await Task.sleep(nanoseconds: 60_000_000_000)
+            } catch {}
+            if let commandSurvived, !Task.isCancelled {
                 commandSurvived.mark()
             }
         }
-        let lifecycle = Task {
+        // Explicit Task<Void, Never>: `try? await` or `actor?.markLifecycle()` as the
+        // closure result infers Task<Void?, Never>, which replace(_:) does not accept.
+        let lifecycle: Task<Void, Never> = Task { [weak lifecycleCancelled] in
             await withTaskCancellationHandler {
-                try? await Task.sleep(nanoseconds: 60_000_000_000)
+                do {
+                    try await Task.sleep(nanoseconds: 60_000_000_000)
+                } catch {}
             } onCancel: {
-                lifecycleCancelled.mark()
+                if let lifecycleCancelled {
+                    lifecycleCancelled.mark()
+                }
             }
         }
         effects.replace(.command(UUID()), with: command)
