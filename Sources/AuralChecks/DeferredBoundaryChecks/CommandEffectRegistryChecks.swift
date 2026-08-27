@@ -25,11 +25,11 @@ func runCommandEffectRegistryChecks(_ runner: CheckRunner) async {
         let commandID = UUID()
         let finishedWithoutCancel = CancellationFlag()
 
-        let superseded: Task<Void, Never> = Task { [weak finishedWithoutCancel] in
+        let superseded: Task<Void, Never> = Task {
             do {
                 try await Task.sleep(nanoseconds: 60_000_000_000)
             } catch {}
-            if let finishedWithoutCancel, !Task.isCancelled {
+            if !Task.isCancelled {
                 finishedWithoutCancel.mark()
             }
         }
@@ -44,25 +44,23 @@ func runCommandEffectRegistryChecks(_ runner: CheckRunner) async {
         let commandSurvived = CancellationFlag()
         let lifecycleCancelled = CancellationFlag()
 
-        let command: Task<Void, Never> = Task { [weak commandSurvived] in
+        let command: Task<Void, Never> = Task {
             do {
                 try await Task.sleep(nanoseconds: 60_000_000_000)
             } catch {}
-            if let commandSurvived, !Task.isCancelled {
+            if !Task.isCancelled {
                 commandSurvived.mark()
             }
         }
-        // Explicit Task<Void, Never>: `try? await` or `actor?.markLifecycle()` as the
-        // closure result infers Task<Void?, Never>, which replace(_:) does not accept.
-        let lifecycle: Task<Void, Never> = Task { [weak lifecycleCancelled] in
+        // Explicit Task<Void, Never>: `try? await` as the closure result infers
+        // Task<Void?, Never>, which replace(_:) does not accept.
+        let lifecycle: Task<Void, Never> = Task {
             await withTaskCancellationHandler {
                 do {
                     try await Task.sleep(nanoseconds: 60_000_000_000)
                 } catch {}
             } onCancel: {
-                if let lifecycleCancelled {
-                    lifecycleCancelled.mark()
-                }
+                lifecycleCancelled.mark()
             }
         }
         effects.replace(.command(UUID()), with: command)
