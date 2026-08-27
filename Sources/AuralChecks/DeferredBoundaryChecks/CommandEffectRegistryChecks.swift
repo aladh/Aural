@@ -18,6 +18,26 @@ private final class CancellationFlag: @unchecked Sendable {
     }
 }
 
+/// Work duration if cancellation fails. `awaitBounded` still fails the check well before 60s.
+private let cancellationWorkNanoseconds: UInt64 = 50_000_000
+private let cancellationWaitNanoseconds: UInt64 = 200_000_000
+
+private func awaitBounded(_ task: Task<Void, Never>) async -> Bool {
+    await withTaskGroup(of: Bool.self) { group in
+        group.addTask {
+            await task.value
+            return true
+        }
+        group.addTask {
+            try? await Task.sleep(nanoseconds: cancellationWaitNanoseconds)
+            return false
+        }
+        let finished = await group.next() ?? false
+        group.cancelAll()
+        return finished
+    }
+}
+
 @MainActor
 func runCommandEffectRegistryChecks(_ runner: CheckRunner) async {
     await runner.suite("PlaybackEffectRegistry cancel in flight") {
@@ -27,7 +47,7 @@ func runCommandEffectRegistryChecks(_ runner: CheckRunner) async {
 
         let superseded: Task<Void, Never> = Task {
             do {
-                try await Task.sleep(nanoseconds: 60_000_000_000)
+                try await Task.sleep(nanoseconds: cancellationWorkNanoseconds)
             } catch {}
             if !Task.isCancelled {
                 finishedWithoutCancel.mark()
@@ -35,7 +55,7 @@ func runCommandEffectRegistryChecks(_ runner: CheckRunner) async {
         }
         effects.replace(.command(commandID), with: superseded)
         effects.replace(.command(commandID), with: Task<Void, Never> {})
-        await superseded.value
+        runner.check("the superseded task ends without waiting out a long sleep", await awaitBounded(superseded))
         runner.check("replacing a command token cancels the superseded task", !finishedWithoutCancel.isSet)
     }
 
@@ -46,18 +66,16 @@ func runCommandEffectRegistryChecks(_ runner: CheckRunner) async {
 
         let command: Task<Void, Never> = Task {
             do {
-                try await Task.sleep(nanoseconds: 60_000_000_000)
+                try await Task.sleep(nanoseconds: cancellationWorkNanoseconds)
             } catch {}
             if !Task.isCancelled {
                 commandSurvived.mark()
             }
         }
-        // Explicit Task<Void, Never>: `try? await` as the closure result infers
-        // Task<Void?, Never>, which replace(_:) does not accept.
         let lifecycle: Task<Void, Never> = Task {
             await withTaskCancellationHandler {
                 do {
-                    try await Task.sleep(nanoseconds: 60_000_000_000)
+                    try await Task.sleep(nanoseconds: cancellationWorkNanoseconds)
                 } catch {}
             } onCancel: {
                 lifecycleCancelled.mark()
@@ -67,7 +85,7 @@ func runCommandEffectRegistryChecks(_ runner: CheckRunner) async {
         effects.replace(.lifecycle, with: lifecycle)
 
         effects.cancelAccountScoped()
-        await command.value
+        runner.check("account-scoped command cancellation is bounded", await awaitBounded(command))
         runner.check("account teardown cancels in-flight commands", !commandSurvived.isSet)
         runner.check(
             "process-lifetime listeners are not cancelled with account-scoped work",
@@ -75,7 +93,7 @@ func runCommandEffectRegistryChecks(_ runner: CheckRunner) async {
         )
 
         effects.cancel(.lifecycle)
-        await lifecycle.value
+        runner.check("explicit lifecycle cancellation is bounded", await awaitBounded(lifecycle))
         runner.check("an explicit lifecycle cancel still stops the listener", lifecycleCancelled.isSet)
     }
 }

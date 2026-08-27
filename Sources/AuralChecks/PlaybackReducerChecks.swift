@@ -278,6 +278,14 @@ func runPlaybackReducerChecks(_ check: CheckRunner) {
         check.equal("a matching authoritative snapshot keeps the expected state", state.transport, .paused)
         check.nil_("a matching authoritative snapshot reconciles the command", state.pendingCommands[.transport])
 
+        let afterReconcile = state
+        let lateFinishAccepted = PlaybackReducer.reduce(
+            &state,
+            envelope: envelope(source: .command, event: .commandFinished(id: pauseID, accepted: true, notice: nil))
+        )
+        check.check("a late finish after snapshot reconciliation is rejected", !lateFinishAccepted)
+        check.equal("a late finish cannot mutate already-reconciled state", state, afterReconcile)
+
         let resumeID = UUID(uuidString: "00000000-0000-0000-0000-000000000011")!
         _ = PlaybackReducer.reduce(
             &state,
@@ -355,7 +363,11 @@ func runPlaybackReducerChecks(_ check: CheckRunner) {
             &state,
             envelope: envelope(source: .command, event: .commandFinished(id: recoveryID, accepted: true, notice: nil))
         )
-        check.nil_("an accepted acknowledgement clears a prior failure notice", state.notice)
+        check.equal(
+            "an accepted acknowledgement does not clear an unrelated prior notice",
+            state.notice?.message,
+            "Pause failed"
+        )
         check.equal("an accepted acknowledgement keeps its optimistic transport", state.transport, .paused)
     }
 

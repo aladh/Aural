@@ -592,10 +592,7 @@ public enum PlaybackReducer {
                 return false
             }
             candidate.pendingCommands[pair.key] = nil
-            if accepted {
-                // Success is atomic: drop a prior failure notice without a second store mutation.
-                candidate.notice = nil
-            } else {
+            if !accepted {
                 if pair.key == .transport, let rollback = pair.value.rollbackTransport {
                     candidate.transport = rollback
                 }

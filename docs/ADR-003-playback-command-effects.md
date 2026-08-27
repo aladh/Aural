@@ -40,8 +40,9 @@ Transport commands today:
    even when that send was rejected.
 
 The representative workflow is **local pause**: optimistic pause, success, remote-style failure
-rollback, local reconnect-required, cancel-in-flight, account-epoch invalidation, and a finish
-that `send` rejects after an engine-epoch bump.
+rollback, local reconnect-required, cancel-in-flight, account-epoch invalidation, a finish that
+`PlaybackStore.send` rejects after an engine-epoch bump, and a matching paused snapshot that
+reconciles the pending command before the coordinator returns.
 
 ## Options considered
 
@@ -51,9 +52,10 @@ The registry stays a small `@MainActor` dictionary of tasks. The store continues
 to start work. The reducer continues to decide *whether* a result may mutate state. Callers gate
 dependent work on `send(...) == true`.
 
-This is the production path, with one tightly scoped correction: command start/finish side effects
-now require an accepted send. Successful `commandFinished` also clears `notice` in the reducer so
-success is atomic and `setNotice(nil)` is not a second mutation.
+This is the production path, with two tightly scoped corrections: command start still requires an
+accepted send, and command-finish follow-ups use `playbackCommandFollowUp` so a matching engine
+snapshot cannot drop success completions. Command-error notices keep their existing timed lifetime;
+successful acknowledgements do not clear unrelated notices.
 
 ### 2. Tiny Aural-specific command runner
 
@@ -67,7 +69,7 @@ explicit. It does not help engine event streams, metadata, queue refresh, or not
 which already use the registry. Promoting it into `AuralDomain` would either leak coordinator types
 into the domain or invent a generic effect type this ADR rejects.
 
-The prototype lives only in `AuralChecks` (`TinyRunnerRuntime`).
+The tiny-runner sketch is not retained as executable code.
 
 ### 3. The Composable Architecture (current 1.x)
 
@@ -124,7 +126,7 @@ The package was **not** added to `Package.swift`. The check-suite `TCAStyleRunti
 | Cancel / cancel-in-flight | Unique `.command(UUID)` owns one task. Same-token `replace` cancels. A **second pause is refused**, not replaced. Kind-level `cancelInFlight: true` would change product behavior. | One plan; a second request is refused. `cancel` drops the plan. | `.cancellable(id:)` can cancel; `cancelInFlight: true` **replaces** the in-flight pause. Matching Aural requires returning `.none` while pending and not setting `cancelInFlight`. |
 | Account-epoch invalidation | `cancelAccountScoped()` plus captured epoch before `send`. | Drop the plan, then reset. Still need the epoch check. | `.cancel(id:)` plus a custom epoch guard. TCA does not know Aural account epochs. |
 | Reducer-owned engine/revision gates | Unchanged. Effects must not reimplement them. | Same: still call `PlaybackReducer`. | Wrapping `PlaybackReducer` inside `Reduce` duplicates the store's `send` or moves Core types into a TCA feature. |
-| Rejected `send` / stale events | Dependent reconnect, completion, and extra notices run only if `send` returns true. | Same gating. | Actions always enter the TCA reducer. Stale work is `.none` without mutation only if the wrapper checks `PlaybackReducer.reduce == false` before returning follow-up `Effect`s. That *is* Aural's `send` Bool, reimplemented. |
+| Rejected `send` / stale events | `playbackCommandFollowUp` treats matching-snapshot rejection as success and epoch/superseded rejection as inert. | Same. | Actions always enter the TCA reducer. Stale work is `.none` without mutation only if the wrapper checks `PlaybackReducer.reduce == false` before returning follow-up `Effect`s. That *is* Aural's `send` Bool, reimplemented. |
 | Optimistic success / rollback | `commandStarted` / `commandFinished` already in the domain reducer. | Same events. | Same events if TCA defers to `PlaybackReducer`; duplicated if TCA state is a parallel model. |
 | Local reconnect-required | Engine result flag on the coordinator; reconnect is **not** reducer state. Gate on accepted finish. | Same. | Follow-up `.run { await connect() }` from the failure action. Still a Core side effect. |
 | Remote failure | `async throws` collapsed to a string notice today (#17). Rollback is reducer-owned. | Same until typed errors exist. | `Result` in `Action` helps tests; still needs a domain error at the coordinator boundary. |
@@ -151,21 +153,32 @@ Reasons:
    coordinator, and named task cancellation. TCA’s remaining value is `TestStore` and
    `cancelInFlight` sugar. The former needs a TCA app; the latter **disagrees** with the pending-kind
    refusal policy unless carefully disabled.
-3. A tiny runner helps tests for this one workflow and is recorded in checks. Promoting it would
-   either become a generic Effect (rejected) or a second way to start the same tasks.
+3. A tiny command runner helps tests for this one workflow on paper. Promoting it would either
+   become a generic Effect (rejected) or a second way to start the same tasks.
 4. Domain tests already replay pause/resume/superseded-ack/rollback without any effect runtime.
-   Workflow coverage belongs next to `PlaybackReducer` and the registry, not behind a framework.
+   After this decision, keep one registry-shaped pause workflow plus the `cancelInFlight`
+   divergence note, not three executable runtimes.
 
 ## Production change justified by the spike
 
-In `PlaybackStore+Commands`, `commandStarted` / `commandFinished` must be accepted before a
-command task starts, a completion fires, a detailed notice is shown, or `connect()` runs after a
-reconnect-required local result. Successful `commandFinished` clears `notice` in `PlaybackReducer`.
+In `PlaybackStore+Commands`, `commandStarted` must be accepted before a command task starts.
+`commandFinished` follow-ups (completion, detailed notice, reconnect) go through
+`playbackCommandFollowUp`:
+
+- Reducer-accepted success reports success.
+- Reducer-accepted failure may reconnect.
+- A rejected finish on the same account/engine lifetime with no pending command is already-reconciled
+  success (matching transport snapshot) and still reports success, without reconnect.
+- Epoch changes, teardown, cancellation, and superseded ids stay inert and do not call
+  `completion(false)` for a successful already-reconciled command.
+
+Successful `commandFinished` does not clear `notice`. Command errors keep the existing
+`.commandError` lifetime.
 
 No other command sites were migrated. Queue add, metadata, and catalog loads remain follow-ups for
-#16.
+issue 16.
 
-## Follow-up for #16
+## Follow-up for issue 16
 
 Route remaining playback outcomes through `PlaybackEvent` without a framework:
 
@@ -179,7 +192,7 @@ Route remaining playback outcomes through `PlaybackEvent` without a framework:
   command start/finish + epoch + `send` Bool pattern is enough if duplication hurts.
 - Add reducer/workflow checks for each newly routed outcome (stale, cancelled, failed, success).
 
-## Follow-up for #17
+## Follow-up for issue 17
 
 Replace stringly command control flow at the **coordinator / store boundary**, not via TCA `Result`
 actions:
@@ -197,7 +210,8 @@ actions:
 
 - `Package.swift` still has no TCA (or other) effect-framework dependency.
 - Agents must not plan a TCA migration from this spike.
-- The check-suite prototypes are characterization tools; they are not a second production runtime.
+- The check-suite keeps one registry-shaped pause workflow. Rejected effect runtimes are not
+  executable architecture.
 
 Revisit only if Aural replaces `PlaybackStore` wholesale, or if a measured need appears for
 `TestStore`-style exhaustiveness that the existing check executables cannot provide.
