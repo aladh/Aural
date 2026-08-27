@@ -38,47 +38,51 @@ nonisolated final class RustPlaybackEngine: LocalPlaybackEngine, @unchecked Send
     }
 
     func initialize() -> PlaybackEngineResult {
-        PlaybackEngineResult(rawValue: PlaybackCore.initialize().rawValue)
+        engineResult(PlaybackCore.initialize())
     }
 
     func execute(_ operation: LocalPlaybackOperation) -> PlaybackEngineResult {
-        let result: PlaybackCore.Result = switch operation {
-        case let .playURI(uri): PlaybackCore.play(uri: uri)
-        case let .playTracks(tracks): PlaybackCore.play(tracks: tracks)
-        case .pause: PlaybackCore.pause()
-        case .resume: PlaybackCore.resume()
-        case .next: PlaybackCore.next()
-        case .previous: PlaybackCore.previous()
-        case let .seek(milliseconds): PlaybackCore.seek(to: milliseconds)
-        case let .shuffle(enabled): PlaybackCore.setShuffle(enabled)
+        switch operation {
+        case let .playURI(uri): engineResult(PlaybackCore.play(uri: uri))
+        case let .playTracks(tracks): engineResult(PlaybackCore.play(tracks: tracks))
+        case .pause: engineResult(PlaybackCore.pause())
+        case .resume: engineResult(PlaybackCore.resume())
+        case .next: engineResult(PlaybackCore.next())
+        case .previous: engineResult(PlaybackCore.previous())
+        case let .seek(milliseconds): engineResult(PlaybackCore.seek(to: milliseconds))
+        case let .shuffle(enabled): engineResult(PlaybackCore.setShuffle(enabled))
         case let .repeatOptions(context, track, rollbackContext, rollbackTrack):
-            PlaybackCore.Result(
-                rawValue: executeRepeat(
-                    context: context,
-                    track: track,
-                    rollbackContext: rollbackContext,
-                    rollbackTrack: rollbackTrack
-                ).rawValue
+            executeRepeat(
+                context: context,
+                track: track,
+                rollbackContext: rollbackContext,
+                rollbackTrack: rollbackTrack
             )
-        case let .addToQueue(uri): PlaybackCore.addToQueue(uri: uri)
-        case .transferToLocal: PlaybackCore.transferToLocal()
-        case let .transferToDevice(id): PlaybackCore.transferPlayback(to: id)
+        case let .addToQueue(uri): engineResult(PlaybackCore.addToQueue(uri: uri))
+        case .transferToLocal: engineResult(PlaybackCore.transferToLocal())
+        case let .transferToDevice(id): engineResult(PlaybackCore.transferPlayback(to: id))
         }
-        return PlaybackEngineResult(rawValue: result.rawValue)
     }
 
     func positionMilliseconds() -> UInt32 { PlaybackCore.positionMilliseconds() }
     func queueSnapshotJSON() -> String? { PlaybackCore.queueSnapshotJSON() }
     func configureHighQualityPlayback() { PlaybackCore.configureHighQualityPlayback() }
     func shutdown() -> PlaybackEngineResult {
-        PlaybackEngineResult(rawValue: PlaybackCore.shutdown().rawValue)
+        engineResult(PlaybackCore.shutdown())
     }
     func cleanup() { PlaybackCore.cleanup() }
     func clearStreamingCredentials() { PlaybackCore.clearStreamingCredentials() }
     func disconnect() -> PlaybackEngineResult {
-        PlaybackEngineResult(rawValue: PlaybackCore.disconnect().rawValue)
+        engineResult(PlaybackCore.disconnect())
     }
     func forceReconnect() -> Int32 { PlaybackCore.forceReconnect() }
+
+    /// Copies a non-optional FFI result into the Swift engine wrapper. Do not reconstruct
+    /// `PlaybackCore.Result` from `PlaybackEngineResult.rawValue`: the imported open C enum
+    /// has a failable raw-value initializer.
+    private func engineResult(_ result: PlaybackCore.Result) -> PlaybackEngineResult {
+        PlaybackEngineResult(rawValue: result.rawValue)
+    }
 
     private func executeRepeat(
         context: Bool,
@@ -91,8 +95,8 @@ nonisolated final class RustPlaybackEngine: LocalPlaybackEngine, @unchecked Send
                 from: RepeatFlags(context: rollbackContext, track: rollbackTrack),
                 to: RepeatFlags(context: context, track: track)
             ),
-            setContext: { PlaybackEngineResult(rawValue: PlaybackCore.setRepeat(context: $0).rawValue) },
-            setTrack: { PlaybackEngineResult(rawValue: PlaybackCore.setRepeatTrack($0).rawValue) }
+            setContext: { engineResult(PlaybackCore.setRepeat(context: $0)) },
+            setTrack: { engineResult(PlaybackCore.setRepeatTrack($0)) }
         )
     }
 
