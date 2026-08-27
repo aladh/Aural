@@ -12,12 +12,19 @@ import OSLog
 extension PlaybackStore {
     // MARK: - Queue panel
 
-    /// Appends a track to the play queue, as the official client's context menu does.
+    /// Appends tracks to the play queue, as the official client's context menu does.
     ///
     /// Deliberately not routed through `performCommand`: queue adds are independent of
     /// transport state, and serializing them behind the pending flag would silently
-    /// drop a second quick add.
+    /// drop a second quick add. Multiple URIs are sent in visible order as sequential
+    /// `add_to_queue` commands; presentation is not edited locally.
     func addToQueue(uri: String) {
+        addToQueue(uris: [uri])
+    }
+
+    func addToQueue(uris: [String]) {
+        let ordered = uris.filter { !$0.isEmpty }
+        guard !ordered.isEmpty else { return }
         guard canStartPlayback else {
             feedback.failure("Connect Spotify before adding to the queue.")
             return
@@ -34,12 +41,14 @@ extension PlaybackStore {
                 defer { self?.effects.complete(effectID) }
                 do {
                     guard let self else { return }
-                    try await self.coordinator.performRemote(.addToQueue(uri), from: from, to: to)
+                    for uri in ordered {
+                        try await self.coordinator.performRemote(.addToQueue(uri), from: from, to: to)
+                    }
                     guard !Task.isCancelled, self.accountEpoch == epoch, self.isConnected else { return }
-                    self.feedback.success("Added to Queue")
+                    self.feedback.success(Self.addedToQueueMessage(count: ordered.count))
                 } catch {
                     guard let self, !Task.isCancelled, self.accountEpoch == epoch, self.isConnected else { return }
-                    self.feedback.failure("Could not add that track to the queue.")
+                    self.feedback.failure(Self.addToQueueFailureMessage(count: ordered.count))
                 }
             })
             return
@@ -52,14 +61,99 @@ extension PlaybackStore {
         effects.replace(effectID, with: Task { [weak self] in
             defer { self?.effects.complete(effectID) }
             guard let self else { return }
-            let result = await self.coordinator.performLocal(.addToQueue(uri))
-            guard !Task.isCancelled, self.accountEpoch == epoch, self.isConnected else { return }
-            if result.isOK {
-                self.feedback.success("Added to Queue")
-            } else {
-                self.feedback.failure("Could not add that track to the queue.")
+            for uri in ordered {
+                let result = await self.coordinator.performLocal(.addToQueue(uri))
+                guard result.isOK else {
+                    guard !Task.isCancelled, self.accountEpoch == epoch, self.isConnected else { return }
+                    self.feedback.failure(Self.addToQueueFailureMessage(count: ordered.count))
+                    return
+                }
             }
+            guard !Task.isCancelled, self.accountEpoch == epoch, self.isConnected else { return }
+            self.feedback.success(Self.addedToQueueMessage(count: ordered.count))
         })
+    }
+
+    func removeUpcomingQueueOccurrences(selectedIDs: Set<String>) {
+        let presentationEntries = queueNextEntries
+        switch queueRemoval(selectedIDs: selectedIDs, visibleUpcoming: presentationEntries) {
+        case let .failure(reason):
+            if reason == .nothingSelected { return }
+            feedback.failure(reason.feedbackMessage)
+            return
+        case let .success(replacement):
+            switch commandRoute {
+            case .waitingForLocalIdentity:
+                feedback.failure(QueueMutationRefusal.joiningConnect.feedbackMessage)
+                return
+            case .local:
+                feedback.failure(QueueMutationRefusal.localOwnerUnsupported.feedbackMessage)
+                return
+            case let .remote(from, to):
+                let effectID = PlaybackEffectID.queueCommand(UUID())
+                let epoch = accountEpoch
+                let engineEpoch = engineGeneration
+                let beforeEntries = presentationEntries
+                effects.replace(effectID, with: Task { [weak self] in
+                    defer { self?.effects.complete(effectID) }
+                    do {
+                        guard let self else { return }
+                        try await self.coordinator.performRemote(
+                            .setQueue(
+                                next: replacement.next,
+                                prev: replacement.prev,
+                                queueRevision: replacement.queueRevision
+                            ),
+                            from: from,
+                            to: to
+                        )
+                        guard !Task.isCancelled, self.accountEpoch == epoch, self.isConnected else { return }
+                        guard self.engineGeneration == engineEpoch else { return }
+                        self.feedback.success(Self.removedFromQueueMessage(count: replacement.removedCount))
+                    } catch {
+                        guard let self, !Task.isCancelled, self.accountEpoch == epoch, self.isConnected else { return }
+                        guard self.queueNextEntries == beforeEntries else { return }
+                        self.feedback.failure("Spotify couldn’t update the queue.")
+                    }
+                })
+            }
+        }
+    }
+
+    func queueRemoval(
+        selectedIDs: Set<String>,
+        visibleUpcoming: [QueueEntry]
+    ) -> Result<QueueReplacement, QueueMutationRefusal> {
+        QueueMutationPolicy.evaluateRemoval(
+            selectedIDs: selectedIDs,
+            visibleUpcoming: visibleUpcoming,
+            nowPlayingID: hasCurrentTrack ? "now-playing" : nil,
+            historyIDs: Set(history.entries.map(\.id)),
+            mutation: queueMutation,
+            route: commandRoute,
+            isConnected: isConnected && !isTearingDown,
+            accountEpoch: accountEpoch,
+            engineEpoch: engineGeneration
+        )
+    }
+
+    func canRemoveUpcomingQueue(selectedIDs: Set<String>) -> Bool {
+        if case .success = queueRemoval(selectedIDs: selectedIDs, visibleUpcoming: queueNextEntries) {
+            return true
+        }
+        return false
+    }
+
+    private static func addedToQueueMessage(count: Int) -> String {
+        count == 1 ? "Added to Queue" : "Added \(count) songs to Queue"
+    }
+
+    private static func addToQueueFailureMessage(count: Int) -> String {
+        count == 1 ? "Could not add that track to the queue." : "Could not add those tracks to the queue."
+    }
+
+    private static func removedFromQueueMessage(count: Int) -> String {
+        count == 1 ? "Removed from Queue" : "Removed \(count) songs from Queue"
     }
 
     /// Pulls the backend's last-known queue so the panel opens with content even

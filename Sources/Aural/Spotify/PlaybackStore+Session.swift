@@ -60,6 +60,7 @@ extension PlaybackStore {
         hasReceivedPlaybackSnapshot = false
         catalog.reset()
         history.reset()
+        queueMutation = nil
         shuffleHistoryCache = [:]
         send(.reset(session: cumulative.finalPhase), source: .account)
 

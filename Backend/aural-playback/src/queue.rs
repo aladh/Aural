@@ -123,7 +123,32 @@ pub(crate) fn to_queue_item(track: &ProvidedTrack) -> QueueItem {
         duration_ms: 0,
         album_name: String::new(),
         provider: track.provider.clone(),
+        uid: track.uid.clone(),
     }
+}
+
+pub(crate) fn to_protocol_track(track: &ProvidedTrack) -> ProtocolQueueTrack {
+    ProtocolQueueTrack {
+        uri: track.uri.clone(),
+        uid: track.uid.clone(),
+        provider: track.provider.clone(),
+    }
+}
+
+pub(crate) fn collect_protocol_tracks(tracks: &[ProvidedTrack]) -> Vec<ProtocolQueueTrack> {
+    tracks.iter().map(to_protocol_track).collect()
+}
+
+pub(crate) fn queue_replacement_disallowed(player_state: &PlayerState) -> (bool, bool) {
+    let Some(restrictions) = player_state.restrictions.as_ref() else {
+        return (false, false);
+    };
+    (
+        !restrictions.disallow_set_queue_reasons.is_empty(),
+        !restrictions
+            .disallow_removing_from_next_tracks_reasons
+            .is_empty(),
+    )
 }
 
 /// Collects the playable tracks of one queue side, stopping at the first delimiter.
@@ -175,6 +200,11 @@ pub(crate) fn process_and_send_queue(player_state: PlayerState) {
         return;
     };
 
+    let protocol_next_tracks = collect_protocol_tracks(&player_state.next_tracks);
+    let protocol_prev_tracks = collect_protocol_tracks(&player_state.prev_tracks);
+    let queue_revision = player_state.queue_revision.clone();
+    let (disallow_set_queue, disallow_removing_from_next_tracks) =
+        queue_replacement_disallowed(&player_state);
     let current_track = player_state.track.into_option().and_then(|t| {
         debug!("current track[0] uri='{}' provider='{}'", t.uri, t.provider);
         if t.uri.starts_with("spotify:track:") {
@@ -199,6 +229,11 @@ pub(crate) fn process_and_send_queue(player_state: PlayerState) {
         track: current_track,
         next_tracks,
         prev_tracks,
+        protocol_next_tracks,
+        protocol_prev_tracks,
+        queue_revision,
+        disallow_set_queue,
+        disallow_removing_from_next_tracks,
     });
 
     // Remembered as well as sent. A callback is a one-shot, and Swift has recovery paths that

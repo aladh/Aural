@@ -13,7 +13,7 @@ struct CatalogPlaybackAccess {
     let playURI: @MainActor (String) -> Void
     let playTrack: @MainActor (CatalogTrack) -> Void
     let playPlaylist: @MainActor (CatalogItem) -> Void
-    let addToQueue: @MainActor (String) -> Void
+    let addToQueue: @MainActor ([String]) -> Void
 
     @MainActor
     init(player: PlaybackStore) {
@@ -27,6 +27,6 @@ struct CatalogPlaybackAccess {
         playURI = { [weak player] uri in player?.play(uri: uri) }
         playTrack = { [weak player] track in player?.play(track: track) }
         playPlaylist = { [weak player] item in player?.playPlaylist(item) }
-        addToQueue = { [weak player] uri in player?.addToQueue(uri: uri) }
+        addToQueue = { [weak player] uris in player?.addToQueue(uris: uris) }
     }
 }

@@ -19,6 +19,9 @@ could still combine values from different account, engine, command, queue, or se
   Every suspended account operation revalidates its generation and epoch before mutation.
 - `QueueService` owns source precedence and context identity. Metadata enrichment cannot reorder a
   queue, and stale or provisional results cannot erase a newer authoritative snapshot.
+  Connect `set_queue` replacement reads a mutation snapshot (`next`/`prev` protocol tracks,
+  `queue_revision`, restriction flags) that QueueService updates only from Connect intake, not
+  from Web API metadata enrichment.
 - Home/library, search, and selected-playlist work have separate stores, request scopes, and
   account-epoch snapshots. The metadata repository independently rejects cross-account writes.
   Playlist add/remove is a focused `PlaylistMutating` port injected beside read-only

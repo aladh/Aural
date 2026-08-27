@@ -110,9 +110,11 @@ struct TrackTable: View {
                     play(track)
                 }
                 .disabled(!playback.canStartPlayback)
+            }
 
+            if !selectedTracks.isEmpty {
                 Button("Add to Queue", systemImage: "text.line.first.and.arrowtriangle.forward") {
-                    playback.addToQueue(track.uri)
+                    playback.addToQueue(QueueMutationSelection.addURIs(from: selectedTracks))
                 }
                 .disabled(!playback.canStartPlayback)
             }

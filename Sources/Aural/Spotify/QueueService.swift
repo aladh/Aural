@@ -84,6 +84,7 @@ actor QueueService {
     private var webCapability = WebCapability.unknown
     private var webRetryNotBefore: Date?
     private var snapshot: ProvenanceQueueSnapshot?
+    private var mutation: QueueMutationSnapshot?
 
     init(
         webQueue: any WebQueueClient,
@@ -103,15 +104,24 @@ actor QueueService {
         webCapability = .unknown
         webRetryNotBefore = nil
         snapshot = nil
+        mutation = nil
         await metadata.reset()
     }
+
+    func mutationSnapshot() -> QueueMutationSnapshot? { mutation }
 
     func acceptConnect(
         _ entries: [QueueEntry],
         accountEpoch requestedEpoch: UInt64,
         sourceRevision: UInt64? = nil,
         contextURI incomingContextURI: String?,
-        provisional: Bool = false
+        provisional: Bool = false,
+        engineEpoch: UInt64 = 0,
+        protocolNext: [QueueProtocolTrack] = [],
+        protocolPrev: [QueueProtocolTrack] = [],
+        queueRevision: String = "",
+        disallowSetQueue: Bool = false,
+        disallowRemovingFromNextTracks: Bool = false
     ) -> ProvenanceQueueSnapshot? {
         guard requestedEpoch == accountEpoch else { return nil }
         if let sourceRevision {
@@ -133,6 +143,19 @@ actor QueueService {
             tracks: []
         )
         snapshot = mergeQueueSnapshots(current: snapshot, incoming: incoming)
+        mutation = QueueMutationSnapshot(
+            accountEpoch: accountEpoch,
+            engineEpoch: engineEpoch,
+            sourceRevision: sourceRevision ?? revision,
+            source: provisional ? .provisional : .connect,
+            completeness: protocolNext.isEmpty && !entries.isEmpty ? .partial : (provisional ? .partial : .complete),
+            provisional: provisional,
+            next: protocolNext,
+            prev: protocolPrev,
+            queueRevision: queueRevision,
+            disallowSetQueue: disallowSetQueue,
+            disallowRemovingFromNextTracks: disallowRemovingFromNextTracks
+        )
         return snapshot
     }
 

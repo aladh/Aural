@@ -531,6 +531,11 @@ fn queue_snapshot_json_keeps_legacy_fields_and_adds_ordering() {
         track: None,
         next_tracks: Vec::new(),
         prev_tracks: Vec::new(),
+        protocol_next_tracks: Vec::new(),
+        protocol_prev_tracks: Vec::new(),
+        queue_revision: String::new(),
+        disallow_set_queue: false,
+        disallow_removing_from_next_tracks: false,
     })
     .expect("serialize queue snapshot");
 
@@ -539,6 +544,11 @@ fn queue_snapshot_json_keeps_legacy_fields_and_adds_ordering() {
     assert!(json["track"].is_null());
     assert_eq!(json["next_tracks"], serde_json::json!([]));
     assert_eq!(json["prev_tracks"], serde_json::json!([]));
+    assert_eq!(json["protocol_next_tracks"], serde_json::json!([]));
+    assert_eq!(json["protocol_prev_tracks"], serde_json::json!([]));
+    assert_eq!(json["queue_revision"], "");
+    assert_eq!(json["disallow_set_queue"], false);
+    assert_eq!(json["disallow_removing_from_next_tracks"], false);
 }
 
 #[test]
@@ -575,19 +585,29 @@ fn devices_snapshot_wraps_legacy_devices_with_ordering() {
 }
 
 fn provided_track(uri: &str, provider: &str) -> ProvidedTrack {
+    provided_track_with_uid(uri, provider, "")
+}
+
+fn provided_track_with_uid(uri: &str, provider: &str, uid: &str) -> ProvidedTrack {
     ProvidedTrack {
         uri: uri.to_string(),
         provider: provider.to_string(),
+        uid: uid.to_string(),
         ..Default::default()
     }
 }
 
 #[test]
 fn queue_conversion_preserves_identity_and_provider_only() {
-    let item = to_queue_item(&provided_track("spotify:track:abc", "queue"));
+    let item = to_queue_item(&provided_track_with_uid(
+        "spotify:track:abc",
+        "queue",
+        "occ-1",
+    ));
 
     assert_eq!(item.uri, "spotify:track:abc");
     assert_eq!(item.provider, "queue");
+    assert_eq!(item.uid, "occ-1");
     assert!(item.name.is_empty());
     assert!(item.artist.is_empty());
     assert!(item.image_url.is_empty());
@@ -608,6 +628,39 @@ fn queue_conversion_stops_at_delimiter_and_filters_non_tracks() {
     assert_eq!(items.len(), 1);
     assert_eq!(items[0].uri, "spotify:track:first");
     assert_eq!(items[0].provider, "queue");
+}
+
+#[test]
+fn protocol_queue_tracks_keep_delimiter_and_occurrence_uids() {
+    let tracks = vec![
+        provided_track_with_uid("spotify:track:first", "queue", "q0"),
+        provided_track_with_uid("spotify:delimiter", "delimiter", ""),
+        provided_track_with_uid("spotify:track:autoplay-hidden", "autoplay", "a0"),
+    ];
+    let protocol = collect_protocol_tracks(&tracks);
+    assert_eq!(protocol.len(), 3);
+    assert_eq!(protocol[0].uid, "q0");
+    assert_eq!(protocol[1].uri, "spotify:delimiter");
+    assert_eq!(protocol[2].provider, "autoplay");
+}
+
+#[test]
+fn queue_replacement_reads_player_restrictions() {
+    let mut allowed = PlayerState::new();
+    assert_eq!(queue_replacement_disallowed(&allowed), (false, false));
+
+    allowed
+        .restrictions
+        .mut_or_insert_default()
+        .disallow_set_queue_reasons = vec!["not_allowed".to_string()];
+    assert_eq!(queue_replacement_disallowed(&allowed), (true, false));
+
+    let mut removing = PlayerState::new();
+    removing
+        .restrictions
+        .mut_or_insert_default()
+        .disallow_removing_from_next_tracks_reasons = vec!["restricted".to_string()];
+    assert_eq!(queue_replacement_disallowed(&removing), (false, true));
 }
 
 #[test]

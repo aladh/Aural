@@ -50,6 +50,21 @@ ADRs; historical measurements belong in the performance baseline.
 - Queue order comes from the playback source of truth. Catalog and Web API metadata may enrich
   names but must not reorder the queue. Resolvable entries should progressively replace fallback
   labels rather than remaining misleadingly `Unknown`.
+- Upcoming queue rows use a native selectable list. Delete/Backspace and **Remove from Queue**
+  remove only selected *upcoming* occurrences by queue identity, never by track URI. The now-playing
+  row and History tab are not removable queue entries. Play from the queue remains a deliberate
+  primary action (Return/double-click), not a single-click.
+- Queue replacement is a Spotify Connect `set_queue` of remaining protocol `next_tracks` plus the
+  current `prev_tracks`/provider metadata. Aural does not edit presentation state to fake success.
+  Removal is gated on a complete Connect mutation snapshot, account/engine epoch, owner, and
+  player `disallow_set_queue` / `disallow_removing_from_next_tracks` reasons. Partial, provisional,
+  web-API-only, restricted, stale, cancelled, and rejected results leave the visible queue intact
+  and report through `TransientFeedbackPresenter`.
+- Local-owner removal is disabled: librespot `Spirc` at the pinned revision exposes `add_to_queue`
+  only, and inbound `SetQueue` is not a public local command. The follow-up is a tested Spirc
+  replacement export (or proven same-device HTTP `set_queue`), not a second owner. Add to Queue
+  remains available for local and remote owners, including multiple selected tracks in visible
+  order.
 
 ## Playlist behavior
 

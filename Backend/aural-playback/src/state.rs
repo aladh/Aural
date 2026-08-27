@@ -413,6 +413,16 @@ pub(crate) struct QueueItem {
     pub(crate) album_name: String,
     /// Track provider: "context", "queue", "autoplay", or "unavailable"
     pub(crate) provider: String,
+    /// Connect occurrence uid when the cluster supplied one. Empty when unknown.
+    pub(crate) uid: String,
+}
+
+/// Unfiltered Connect queue row used for `set_queue` replacement.
+#[derive(Serialize, Clone, Debug, PartialEq, Eq)]
+pub(crate) struct ProtocolQueueTrack {
+    pub(crate) uri: String,
+    pub(crate) uid: String,
+    pub(crate) provider: String,
 }
 
 #[derive(Serialize)]
@@ -422,6 +432,11 @@ pub(crate) struct QueueState {
     pub(crate) track: Option<QueueItem>,
     pub(crate) next_tracks: Vec<QueueItem>,
     pub(crate) prev_tracks: Vec<QueueItem>,
+    pub(crate) protocol_next_tracks: Vec<ProtocolQueueTrack>,
+    pub(crate) protocol_prev_tracks: Vec<ProtocolQueueTrack>,
+    pub(crate) queue_revision: String,
+    pub(crate) disallow_set_queue: bool,
+    pub(crate) disallow_removing_from_next_tracks: bool,
 }
 
 #[derive(Serialize)]

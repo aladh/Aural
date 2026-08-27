@@ -51,16 +51,39 @@ nonisolated struct RustQueueState: Decodable, Sendable {
     struct QueueItem: Decodable, Sendable {
         let uri: String
         let provider: String
+        var uid: String?
+
+        enum CodingKeys: String, CodingKey {
+            case uri, provider, uid
+        }
+    }
+
+    struct ProtocolTrack: Decodable, Sendable {
+        let uri: String
+        let uid: String
+        let provider: String
     }
 
     let track: Item?
     let nextTracks: [QueueItem]?
+    let prevTracks: [QueueItem]?
+    var protocolNextTracks: [ProtocolTrack]?
+    var protocolPrevTracks: [ProtocolTrack]?
+    var queueRevision: String?
+    var disallowSetQueue: Bool?
+    var disallowRemovingFromNextTracks: Bool?
     var revision: UInt64?
     var sessionGeneration: UInt64?
 
     enum CodingKeys: String, CodingKey {
         case track
         case nextTracks = "next_tracks"
+        case prevTracks = "prev_tracks"
+        case protocolNextTracks = "protocol_next_tracks"
+        case protocolPrevTracks = "protocol_prev_tracks"
+        case queueRevision = "queue_revision"
+        case disallowSetQueue = "disallow_set_queue"
+        case disallowRemovingFromNextTracks = "disallow_removing_from_next_tracks"
         case revision
         case sessionGeneration = "session_generation"
     }
@@ -152,6 +175,8 @@ final class PlaybackStore {
     /// `state.sourceRevisions[.engineQueue]`, which tracks provenance snapshots after merge.
     @ObservationIgnored var connectQueueCallback = ConnectQueueCallbackWatermark()
     @ObservationIgnored var shuffleHistoryCache: [String: TimeInterval] = [:]
+    /// Connect protocol queue used for `set_queue`. Distinct from presentation merge.
+    @ObservationIgnored var queueMutation: QueueMutationSnapshot?
 
     init(
         environment: PlaybackEnvironment = .live,

@@ -135,6 +135,12 @@ extension PlaybackStore {
         let entries = nextTracks.enumerated().map { index, item in
             QueueEntry(uri: item.uri, provider: item.provider, occurrence: index)
         }
+        let protocolNext = (state.protocolNextTracks ?? []).map {
+            QueueProtocolTrack(uri: $0.uri, uid: $0.uid, provider: $0.provider)
+        }
+        let protocolPrev = (state.protocolPrevTracks ?? []).map {
+            QueueProtocolTrack(uri: $0.uri, uid: $0.uid, provider: $0.provider)
+        }
         let epoch = capturedAccountEpoch ?? accountEpoch
         let engineEpoch = capturedEngineEpoch ?? engineGeneration
         Task { [weak self] in
@@ -145,9 +151,16 @@ extension PlaybackStore {
                     accountEpoch: epoch,
                     sourceRevision: revision,
                     contextURI: state.track?.uri ?? self.trackURI,
-                    provisional: state.track == nil && entries.isEmpty
+                    provisional: state.track == nil && entries.isEmpty,
+                    engineEpoch: engineEpoch,
+                    protocolNext: protocolNext,
+                    protocolPrev: protocolPrev,
+                    queueRevision: state.queueRevision ?? "",
+                    disallowSetQueue: state.disallowSetQueue ?? false,
+                    disallowRemovingFromNextTracks: state.disallowRemovingFromNextTracks ?? false
                   )
             else { return }
+            self.queueMutation = await self.queueService.mutationSnapshot()
             self.apply(snapshot, engineEpoch: engineEpoch)
         }
 
