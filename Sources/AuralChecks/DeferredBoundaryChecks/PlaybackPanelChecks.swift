@@ -3,6 +3,7 @@
 //  Aural
 //
 
+import AuralDomain
 import Foundation
 @testable import AuralCore
 
