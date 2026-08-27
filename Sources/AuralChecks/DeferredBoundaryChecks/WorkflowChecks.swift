@@ -609,7 +609,10 @@ func runWorkflowChecks(_ runner: CheckRunner) async {
             catalog: WorkflowCatalog(),
             trackAttributes: WorkflowAttributes()
         )
-        let player = PlaybackStore(environment: environment)
+        let player = PlaybackStore(
+            environment: environment,
+            feedback: TransientFeedbackPresenter(clock: environment.clock)
+        )
         await player.restore()
         runner.equal("stored grant restores the real store", player.phase, .ready)
         runner.equal("engine initializes once", engine.count("initialize"), 1)

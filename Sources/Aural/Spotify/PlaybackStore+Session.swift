@@ -35,6 +35,7 @@ extension PlaybackStore {
 
     func endSession(clearGrant: Bool, finalPhase: Phase) async {
         guard terminationGate.allowsCommands else { return }
+        feedback.dismiss()
         let requested = SessionTeardownIntent(clearGrant: clearGrant, finalPhase: finalPhase)
         let shouldStart = teardown.request(requested)
         let cumulative = teardown.intent ?? requested
@@ -119,6 +120,7 @@ extension PlaybackStore {
     func shutdownForTermination() async {
         guard terminationGate.begin() else { return }
         guard !isTearingDown else { return }
+        feedback.dismiss()
         isTearingDown = true
         accountEpoch &+= 1
         engineGeneration &+= 1

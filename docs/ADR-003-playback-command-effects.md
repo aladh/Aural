@@ -179,7 +179,9 @@ In `PlaybackStore+Commands`, `commandStarted` must be accepted before a command 
 Successful `commandFinished` does not clear `notice`. Command errors keep the existing
 `.commandError` lifetime.
 
-No other command sites were migrated in #19/#27. Queue add remains a non-transport notice path.
+No other command sites were migrated in #19/#27. Queue add remains a non-transport command path;
+its transient mutation feedback now uses the app-composed `TransientFeedbackPresenter` rather than
+`PlaybackNotice` / status text.
 
 ## Issue 16 boundary (implemented)
 
@@ -202,9 +204,10 @@ stamping.
   the typed `PlaybackCommandFailure` boundary from #17. Captured identity is now also stamped on
   that send so a stale finish cannot ride a newer store epoch.
 
-Unmigrated on purpose: queue-add notices, preference persistence, sleep/wake reconnect, catalog
-home load, and the unstructured Connect `acceptConnect` `Task` (it now stamps identity on apply
-and still keeps the teardown guard). No generic `Effect` type, TCA, or second queue watermark.
+Unmigrated on purpose: preference persistence, sleep/wake reconnect, catalog home load, and the
+unstructured Connect `acceptConnect` `Task` (it now stamps identity on apply and still keeps the
+teardown guard). Queue-add *mutation* feedback is presented by `TransientFeedbackPresenter` and
+does not enter `PlaybackState`. No generic `Effect` type, TCA, or second queue watermark.
 
 ## Follow-up for issue 16
 

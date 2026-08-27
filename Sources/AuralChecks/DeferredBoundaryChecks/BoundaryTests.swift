@@ -23,6 +23,7 @@ enum BoundaryChecksMain {
         await runCommandEffectRegistryChecks(runner)
         await runPlaybackCommandFailureChecks(runner)
         await runPlaybackEventOutcomeChecks(runner)
+        await runTransientFeedbackChecks(runner)
 
         if !runner.succeeded {
             print(runner.failures.joined(separator: "\n"))

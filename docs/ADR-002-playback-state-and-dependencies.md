@@ -26,6 +26,9 @@ could still combine values from different account, engine, command, queue, or se
 - The `AuralApp` scene in `AuralCore` is the production composition root; the shipping `AuralApp`
   target is a deliberately thin launcher. Views receive feature stores or narrow immutable
   playback values/actions. Stores and views do not construct production APIs or call the C bridge.
+  `TransientFeedbackPresenter` is composed once there and injected into `PlaybackStore` and
+  `RootView`. Transient mutation success/info/failure is not `PlaybackState` and is not a
+  NotificationCenter or generic event bus.
 
 `AuralDomain`, `AuralCore`, `AuralChecks`, and `AuralBoundaryChecks` are separate SwiftPM products.
 The two check executables do not ship. A separate infrastructure target is not created solely for

@@ -89,17 +89,20 @@ final class AuralAppDelegate: NSObject, NSApplicationDelegate {
 struct AuralApp: App {
     @NSApplicationDelegateAdaptor(AuralAppDelegate.self) private var appDelegate
     @State private var player: PlaybackStore
+    @State private var feedback: TransientFeedbackPresenter
     @AppStorage(AccentColorOption.storageKey) private var accentColor =
         AccentColorOption.defaultValue
 
     init() {
         let environment = PlaybackEnvironment.live
-        _player = State(initialValue: PlaybackStore(environment: environment))
+        let feedback = TransientFeedbackPresenter(clock: environment.clock)
+        _feedback = State(initialValue: feedback)
+        _player = State(initialValue: PlaybackStore(environment: environment, feedback: feedback))
     }
 
     var body: some Scene {
         Window("Aural", id: "main") {
-            RootView(player: player, catalog: player.catalog)
+            RootView(player: player, catalog: player.catalog, feedback: feedback)
                 .frame(minWidth: 960, minHeight: 640)
                 .accentColor(accentColor.color)
                 .tint(accentColor.color)

@@ -19,13 +19,13 @@ extension PlaybackStore {
     /// drop a second quick add.
     func addToQueue(uri: String) {
         guard canStartPlayback else {
-            showTransientCommandError("Connect Spotify before adding to the queue.")
+            feedback.failure("Connect Spotify before adding to the queue.")
             return
         }
 
         switch commandRoute {
         case .waitingForLocalIdentity:
-            showTransientCommandError("Aural is still joining Spotify Connect.")
+            feedback.failure("Aural is still joining Spotify Connect.")
             return
         case let .remote(from, to):
             let effectID = PlaybackEffectID.queueCommand(UUID())
@@ -36,9 +36,10 @@ extension PlaybackStore {
                     guard let self else { return }
                     try await self.coordinator.performRemote(.addToQueue(uri), from: from, to: to)
                     guard !Task.isCancelled, self.accountEpoch == epoch, self.isConnected else { return }
+                    self.feedback.success("Added to Queue")
                 } catch {
                     guard let self, !Task.isCancelled, self.accountEpoch == epoch, self.isConnected else { return }
-                    self.showTransientCommandError("Could not add that track to the queue.")
+                    self.feedback.failure("Could not add that track to the queue.")
                 }
             })
             return
@@ -53,8 +54,10 @@ extension PlaybackStore {
             guard let self else { return }
             let result = await self.coordinator.performLocal(.addToQueue(uri))
             guard !Task.isCancelled, self.accountEpoch == epoch, self.isConnected else { return }
-            if !result.isOK {
-                self.showTransientCommandError("Could not add that track to the queue.")
+            if result.isOK {
+                self.feedback.success("Added to Queue")
+            } else {
+                self.feedback.failure("Could not add that track to the queue.")
             }
         })
     }

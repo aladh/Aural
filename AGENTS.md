@@ -177,6 +177,9 @@ The normal quality gate enforces several of these mechanically. Treat all of the
   and non-transport results stay inert. Views render state and invoke narrow actions.
 - Production dependencies are assembled once in `PlaybackEnvironment.live`. Views and feature
   stores must not instantiate Spotify APIs, auth singletons, or the Rust engine directly.
+- `TransientFeedbackPresenter` is the app/root-composed owner for transient mutation success,
+  informational, and failure messages. Do not put those messages in `PlaybackState`, and do not
+  add a generic event bus or per-feature banners.
 - Every suspended account-scoped operation must capture and revalidate its generation/account
   epoch before applying a result. Selection-scoped and request-scoped work needs equivalent stale
   result protection and cancellation.
