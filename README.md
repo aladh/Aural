@@ -173,8 +173,7 @@ Design records and implementation notes:
 
 - [Development setup and clean recovery](docs/development-setup.md)
 - [Product and acceptance contract](docs/product-and-acceptance-contract.md)
-- [Playback engine ADR](docs/ADR-001-playback-engine.md)
-- [Playback state and dependency ownership ADR](docs/ADR-002-playback-state-and-dependencies.md)
+- [Architecture decision records](docs/architecture-decisions.md)
 - [Private extended-metadata protocol](docs/extended-metadata.md)
 - [Performance and acceptance baseline](docs/performance-baseline-2026-08-23.md)
 - [Research notes](RESEARCH.md)

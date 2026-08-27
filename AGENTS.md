@@ -30,6 +30,26 @@ Current product constraints:
 - Keep the experimental and unofficial-project warnings prominent in public documentation and
   releases.
 
+## Engineering principles
+
+- **DRY (Don't Repeat Yourself):** keep each piece of knowledge and product policy in one canonical
+  place. Remove duplicated behavior that can drift, but do not force superficially similar code
+  through an abstraction when the underlying responsibilities or lifetimes differ.
+- **KISS (Keep It Simple):** prefer the smallest direct design that makes ownership, state, and
+  failure behavior obvious. Fewer concepts, dependencies, layers, and execution paths are usually
+  easier to verify and maintain.
+- **YAGNI (You Aren't Gonna Need It):** do not add extension points, configuration, portability,
+  frameworks, or generalized infrastructure for hypothetical requirements. Build for a concrete
+  current need and leave the code easy to change when a real need arrives.
+- **“Make the change easy, then make the easy change.” — Kent Beck:** when a requested change fights
+  the current structure, first make the smallest behavior-preserving refactor that creates a clean
+  seam. Then implement the behavior through that seam. Keep both steps reviewable and verify the
+  invariant before and after.
+
+These principles reinforce one another, but they are not slogans to apply mechanically. In
+particular, DRY does not justify premature abstraction, KISS does not justify hiding edge cases, and
+YAGNI does not justify leaving a known correctness or operability gap.
+
 ## Aural's taste and judgment
 
 Rules catch regressions; taste decides among several technically valid solutions. Aural should have
@@ -109,8 +129,8 @@ does not mean crude, and polish does not mean decoration.
    - [Product and acceptance contract](docs/product-and-acceptance-contract.md): intentional UX
      behavior and safe live-account testing. Treat this as the product specification.
    - [Development setup](docs/development-setup.md): fresh clone, generated state, recovery.
-   - [ADR 001](docs/ADR-001-playback-engine.md): playback-engine boundary.
-   - [ADR 002](docs/ADR-002-playback-state-and-dependencies.md): atomic state, epochs, ownership.
+   - [Architecture decision records](docs/architecture-decisions.md): accepted boundaries,
+     ownership decisions, and the index of ADRs relevant to the task.
    - [CONTRIBUTING.md](CONTRIBUTING.md): checks, fixtures, public-repository hygiene.
 3. Inspect the implementation and its nearest checks before editing. Search with `rg`/`rg --files`.
 4. Make the smallest cohesive change that fixes the underlying behavior, not just its visible
