@@ -43,6 +43,7 @@ private enum QueueRemoteFailure: Error { case boom }
 private actor QueueRemoteClient: RemotePlaybackClient {
     enum Behavior: Sendable {
         case succeed
+        case fail
         case failAfter(Int)
         case park
     }
