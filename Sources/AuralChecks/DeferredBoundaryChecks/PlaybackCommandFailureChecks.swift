@@ -91,15 +91,11 @@ private final class IdleAccount: AccountSession, @unchecked Sendable {
     private var storedAuthorizeCount = 0
 
     var authorizeCount: Int {
-        lock.lock()
-        defer { lock.unlock() }
-        return storedAuthorizeCount
+        lock.withLock { storedAuthorizeCount }
     }
 
     func authorizeInteractively() async throws -> KeymasterTokens {
-        lock.lock()
-        storedAuthorizeCount += 1
-        lock.unlock()
+        lock.withLock { storedAuthorizeCount += 1 }
         throw CancellationError()
     }
     func hasGrant() async -> Bool { false }
@@ -154,6 +150,7 @@ private struct IdleCatalog: CatalogProviding {
 
 private let commandWaitNanoseconds: UInt64 = 2_000_000_000
 
+@MainActor
 private func waitUntil(_ condition: @MainActor () async -> Bool) async -> Bool {
     await withTaskGroup(of: Bool.self) { group in
         group.addTask { @MainActor in
@@ -173,6 +170,7 @@ private func waitUntil(_ condition: @MainActor () async -> Bool) async -> Bool {
     }
 }
 
+@MainActor
 private func localCommandOutcome(
     _ coordinator: PlaybackCoordinator,
     _ runner: CheckRunner,
@@ -343,6 +341,7 @@ func runPlaybackCommandFailureChecks(_ runner: CheckRunner) async {
     await runner.suite("Store local command outcomes") {
         let action = "Pause was rejected"
 
+        @MainActor
         func runLocal(_ result: PlaybackEngineResult, account: IdleAccount = IdleAccount()) async -> (
             completions: [Bool],
             notice: String?,
@@ -387,6 +386,7 @@ func runPlaybackCommandFailureChecks(_ runner: CheckRunner) async {
     await runner.suite("Store remote rejection and cancellation") {
         let action = "Pause was rejected"
 
+        @MainActor
         func prepareRemoteStore(remote: ScriptedRemoteClient) -> PlaybackStore {
             let player = PlaybackStore(
                 environment: commandEnvironment(
