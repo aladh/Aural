@@ -8,26 +8,24 @@
 import Foundation
 import AuralDomain
 
-nonisolated enum PartnerAPIError: Error, LocalizedError {
-    case requestFailed(Int, String)
+nonisolated enum PartnerAPIError: Error, LocalizedError, Equatable {
+    case requestFailed(Int)
     case persistedQueryNotFound(String)
-    case graphQLErrors([String])
+    case graphQLErrors
     case emptyPayload
     /// A write Spotify answered with HTTP 200 and a failure `__typename`.
-    case mutationRejected(String, String)
+    case mutationRejected(String)
 
     var errorDescription: String? {
         switch self {
-        case let .requestFailed(status, detail):
-            detail.isEmpty
-                ? "Spotify rejected the request (HTTP \(status))"
-                : "Spotify rejected the request (HTTP \(status)): \(detail)"
+        case let .requestFailed(status):
+            "Spotify rejected the request (HTTP \(status))"
         case let .persistedQueryNotFound(operation):
             "Spotify no longer recognises the stored query for \(operation)"
-        case let .mutationRejected(operation, reason):
-            "Spotify rejected \(operation): \(reason)"
-        case let .graphQLErrors(messages):
-            messages.joined(separator: "; ")
+        case let .mutationRejected(operation):
+            "Spotify rejected \(operation)"
+        case .graphQLErrors:
+            "Spotify returned a GraphQL error"
         case .emptyPayload:
             "Spotify returned no data"
         }
@@ -480,8 +478,8 @@ nonisolated struct PartnerAPI: Sendable {
             variables: PathfinderLibraryWriteVariables(libraryItemUris: uris),
         )
 
-        if let failure = response.failure {
-            throw PartnerAPIError.mutationRejected(operation.name, failure)
+        if response.failure != nil {
+            throw PartnerAPIError.mutationRejected(operation.name)
         }
     }
 
@@ -536,8 +534,8 @@ nonisolated struct PartnerAPI: Sendable {
     ) async throws {
         let response: PathfinderMutationResponse = try await query(operation, variables: variables)
 
-        if let failure = response.failure {
-            throw PartnerAPIError.mutationRejected(operation.name, failure)
+        if response.failure != nil {
+            throw PartnerAPIError.mutationRejected(operation.name)
         }
     }
 
@@ -555,7 +553,7 @@ nonisolated struct PartnerAPI: Sendable {
         }
 
         guard sent.status == 200 else {
-            throw Self.failure(operation: operation, status: sent.status, body: sent.body)
+            throw Self.failure(operation: operation, status: sent.status)
         }
 
         return try decode(sent.body, operation: operation)
@@ -582,15 +580,12 @@ nonisolated struct PartnerAPI: Sendable {
     private static func failure(
         operation: PathfinderOperation,
         status: Int,
-        body data: Data,
     ) -> PartnerAPIError {
-        // The body is the useful half of a rejection and was previously discarded. A 400
-        // from this API names the variable it wanted and its type — the playlist page broke
-        // on a missing `enableWatchFeedEntrypoint` and reported only "HTTP 400", sending the
-        // next person to read code rather than the answer they had already been handed.
-        let detail = String(decoding: data.prefix(500), as: UTF8.self)
-        debugLog("PartnerAPI", "\(operation.name) failed (HTTP \(status)); response omitted")
-        return PartnerAPIError.requestFailed(status, detail)
+        debugLog(
+            "PartnerAPI",
+            "\(operation.name) failed (HTTP \(status)); response omitted"
+        )
+        return PartnerAPIError.requestFailed(status)
     }
 
     /// Builds the request body: operation name, variables, and the persisted-query hash. No
@@ -643,7 +638,7 @@ nonisolated struct PartnerAPI: Sendable {
             if retired {
                 throw PartnerAPIError.persistedQueryNotFound(operation.name)
             }
-            throw PartnerAPIError.graphQLErrors(errors.compactMap(\.message))
+            throw PartnerAPIError.graphQLErrors
         }
 
         return try JSONDecoder().decode(Envelope.self, from: data)

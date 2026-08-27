@@ -96,6 +96,22 @@ func runAuthFlowChecks(_ check: CheckRunner) {
             serverErrorKeepsGrant = true
         }
         check.check("server errors are transient", serverErrorKeepsGrant)
+
+        let sentinel = "AURAL_PRIVACY_SENTINEL_token-body_7f3c"
+        let refused = KeymasterAuth.tokenFailure(
+            status: 400,
+            body: Data(#"{"error":"invalid_request","error_description":"\#(sentinel)"}"#.utf8)
+        )
+        check.equal("non-revocation token failures keep HTTP status", refused, .tokenExchangeFailed(400))
+        check.equal(
+            "token failures surface a stable HTTP category",
+            refused.errorDescription ?? "",
+            "Token exchange failed (HTTP 400)"
+        )
+        check.check(
+            "token failure descriptions omit the response body",
+            refused.errorDescription?.contains(sentinel) == false
+        )
     }
 
     check.suite("Redirect validation") {
@@ -123,9 +139,32 @@ func runAuthFlowChecks(_ check: CheckRunner) {
         do {
             _ = try code(from: "error=access_denied&state=expected", state: "expected")
         } catch {
-            denied = (error as? KeymasterAuthError) == .authorizationDenied("access_denied")
+            denied = (error as? KeymasterAuthError) == .authorizationDenied
         }
         check.check("user denial is reported as such", denied)
+
+        let deniedSentinel = "AURAL_PRIVACY_SENTINEL_oauth-error_4c1a"
+        var deniedDescription: String?
+        do {
+            _ = try code(from: "error=\(deniedSentinel)&state=expected", state: "expected")
+            check.check("authorization denial with sentinel text throws", false)
+        } catch let error as LocalizedError {
+            deniedDescription = error.errorDescription
+        } catch {
+            check.check(
+                "authorization denial with sentinel text is LocalizedError, got \(error)",
+                false
+            )
+        }
+        check.equal(
+            "authorization denial uses a stable category",
+            deniedDescription ?? "",
+            "Spotify declined the authorization"
+        )
+        check.check(
+            "authorization denial omits redirect error text",
+            deniedDescription?.contains(deniedSentinel) == false
+        )
 
         var missingCode = false
         do {

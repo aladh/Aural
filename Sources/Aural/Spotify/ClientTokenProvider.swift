@@ -13,7 +13,7 @@ nonisolated struct GrantedClientToken: Sendable, Equatable {
     var expiresAt: Date
 }
 
-nonisolated enum ClientTokenError: Error, LocalizedError {
+nonisolated enum ClientTokenError: Error, LocalizedError, Equatable {
     case requestFailed(Int)
     case malformedResponse
     /// Spotify wants a proof-of-work answer before granting. Neither libspot nor go-librespot

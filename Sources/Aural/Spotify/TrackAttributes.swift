@@ -72,7 +72,7 @@ nonisolated struct TrackAttributesAPI: Sendable {
         }
 
         guard sent.status == 200 else {
-            throw Self.failure(status: sent.status, body: sent.body)
+            throw TrackAttributesAPIError.requestFailed(sent.status)
         }
 
         return Self.decodeResponse(sent.body)
@@ -97,10 +97,6 @@ nonisolated struct TrackAttributesAPI: Sendable {
         }
 
         return (data, http.statusCode, request.value(forHTTPHeaderField: "Client-Token"))
-    }
-
-    private static func failure(status: Int, body data: Data) -> TrackAttributesAPIError {
-        .requestFailed(status, String(decoding: data.prefix(300), as: UTF8.self))
     }
 
     // MARK: - Request encoding
@@ -224,18 +220,16 @@ nonisolated struct TrackAttributesAPI: Sendable {
     }
 }
 
-nonisolated enum TrackAttributesAPIError: Error, LocalizedError {
+nonisolated enum TrackAttributesAPIError: Error, LocalizedError, Equatable {
     case emptyResponse
-    case requestFailed(Int, String)
+    case requestFailed(Int)
 
     var errorDescription: String? {
         switch self {
         case .emptyResponse:
             "Spotify returned no response"
-        case let .requestFailed(status, detail):
-            detail.isEmpty
-                ? "Spotify rejected the attribute request (HTTP \(status))"
-                : "Spotify rejected the attribute request (HTTP \(status)): \(detail)"
+        case let .requestFailed(status):
+            "Spotify rejected the attribute request (HTTP \(status))"
         }
     }
 }
