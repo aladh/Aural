@@ -307,6 +307,18 @@ private func invokeKeyboardQueueDelete(player: PlaybackStore, selectedIDs: Set<S
     player.removeUpcomingQueueOccurrences(selectedIDs: selectedIDs)
 }
 
+private func connectQueueEnvelope(
+    sequence: UInt64,
+    revision: UInt64,
+    sessionGeneration: UInt64
+) -> RustPlaybackEventEnvelope {
+    RustPlaybackEventEnvelope(
+        sequence: sequence,
+        receivedAt: Date(timeIntervalSince1970: 1_800_000_000),
+        event: .queue(connectQueueState(revision: revision, sessionGeneration: sessionGeneration))
+    )
+}
+
 private func connectQueueState(revision: UInt64, sessionGeneration: UInt64) -> RustQueueState {
     let next = [
         ("spotify:track:dup", "q0"),
@@ -809,7 +821,13 @@ func runQueueManagementChecks(_ runner: CheckRunner) async {
         seedRemoteOwner(player)
         await player.queueService.reset(accountEpoch: player.accountEpoch)
         await player.queueService.parkNextConnectAccept()
-        player.receive(connectQueueState(revision: 1, sessionGeneration: player.engineGeneration))
+        player.receive(
+            connectQueueEnvelope(
+                sequence: 1,
+                revision: 1,
+                sessionGeneration: player.engineGeneration
+            )
+        )
         runner.check(
             "connect accept parked after actor hop",
             await waitUntil { await player.queueService.connectAcceptIsParked() }
@@ -824,7 +842,13 @@ func runQueueManagementChecks(_ runner: CheckRunner) async {
 
         await player.queueService.reset(accountEpoch: player.accountEpoch)
         await player.queueService.parkNextConnectAccept()
-        player.receive(connectQueueState(revision: 2, sessionGeneration: player.engineGeneration))
+        player.receive(
+            connectQueueEnvelope(
+                sequence: 2,
+                revision: 2,
+                sessionGeneration: player.engineGeneration
+            )
+        )
         runner.check(
             "teardown accept parked",
             await waitUntil { await player.queueService.connectAcceptIsParked() }
