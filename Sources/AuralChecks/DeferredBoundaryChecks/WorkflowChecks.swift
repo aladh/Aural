@@ -78,7 +78,7 @@ private actor RateLimitedWebQueue: WebQueueClient {
 
     func queue() async throws -> [CatalogTrack] {
         requestCount += 1
-        throw SpotifyWebPlayerAPIError.requestFailed(429, "fixture response omitted")
+        throw SpotifyWebPlayerAPIError.requestFailed(429)
     }
 }
 

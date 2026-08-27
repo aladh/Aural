@@ -24,7 +24,7 @@ nonisolated enum ClientTokenError: Error, LocalizedError {
     var errorDescription: String? {
         switch self {
         case let .requestFailed(status):
-            "Could not obtain a Spotify client token (HTTP \(status))"
+            "Could not obtain a Spotify client token (\(SpotifyHTTPFailure.description(status: status)))"
         case .malformedResponse:
             "The Spotify client token response could not be read"
         case .challenged:

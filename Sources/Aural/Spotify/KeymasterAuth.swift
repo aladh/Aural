@@ -43,9 +43,9 @@ nonisolated enum KeymasterAuthError: Error, LocalizedError, Equatable {
     case authorizationURLFailed
     case browserOpenFailed
     case stateMismatch
-    case authorizationDenied(String)
+    case authorizationDenied
     case noAuthorizationCode
-    case tokenExchangeFailed(String)
+    case tokenExchangeFailed(Int)
     case malformedTokenResponse
     /// The refresh token is permanently dead — revoked, or expired under Spotify's six-month
     /// policy. Distinct from `tokenExchangeFailed` because it is the one token failure that
@@ -60,12 +60,12 @@ nonisolated enum KeymasterAuthError: Error, LocalizedError, Equatable {
             "Could not open the browser for Spotify authorization"
         case .stateMismatch:
             "The Spotify redirect did not match this request"
-        case let .authorizationDenied(reason):
-            "Spotify declined the authorization: \(reason)"
+        case .authorizationDenied:
+            "Spotify declined the authorization"
         case .noAuthorizationCode:
             "The Spotify redirect carried no authorization code"
-        case let .tokenExchangeFailed(message):
-            "Token exchange failed: \(message)"
+        case let .tokenExchangeFailed(status):
+            "Token exchange failed (\(SpotifyHTTPFailure.description(status: status)))"
         case .malformedTokenResponse:
             "The token response could not be read"
         case .grantRevoked:
@@ -189,9 +189,13 @@ nonisolated enum KeymasterAuth {
     /// costs a sign-in.
     ///
     /// The `{error, error_description}` shape is RFC 6749 §5.2 and was read off this same
-    /// endpoint by the Web API half that used to live in `SpotifyAuth`. The *keymaster* client
-    /// id's revocation response has not been observed directly — nothing here can revoke a
-    /// grant on demand to look at it — so this trusts the endpoint rather than a measurement.
+    /// endpoint by the Web API half that used to live in `SpotifyAuth`. Only the `error` code is
+    /// inspected, and only `invalid_grant` is retained as a distinct case. The raw body is not
+    /// kept on the thrown error.
+    ///
+    /// The *keymaster* client id's revocation response has not been observed directly — nothing
+    /// here can revoke a grant on demand to look at it — so this trusts the endpoint rather than
+    /// a measurement.
     static func tokenFailure(status: Int, body: Data) -> KeymasterAuthError {
         struct TokenErrorResponse: Decodable {
             let error: String
@@ -203,8 +207,7 @@ nonisolated enum KeymasterAuth {
             return .grantRevoked
         }
 
-        let message = String(data: body, encoding: .utf8) ?? "unreadable response"
-        return .tokenExchangeFailed("HTTP \(status): \(message)")
+        return .tokenExchangeFailed(status)
     }
 
     /// Builds the authorization URL. The redirect must match the port actually listening.
@@ -239,8 +242,8 @@ nonisolated enum KeymasterAuth {
             throw KeymasterAuthError.stateMismatch
         }
 
-        if let error = items.first(where: { $0.name == "error" })?.value {
-            throw KeymasterAuthError.authorizationDenied(error)
+        if items.first(where: { $0.name == "error" })?.value != nil {
+            throw KeymasterAuthError.authorizationDenied
         }
 
         guard let code = items.first(where: { $0.name == "code" })?.value, !code.isEmpty else {

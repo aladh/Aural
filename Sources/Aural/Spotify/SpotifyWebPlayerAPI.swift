@@ -1,22 +1,20 @@
 import Foundation
 
-nonisolated enum SpotifyWebPlayerAPIError: Error, LocalizedError {
+nonisolated enum SpotifyWebPlayerAPIError: Error, LocalizedError, Equatable {
     case malformedResponse
-    case requestFailed(Int, String)
+    case requestFailed(Int)
 
     var errorDescription: String? {
         switch self {
         case .malformedResponse:
             "Spotify returned an unreadable queue"
-        case let .requestFailed(status, detail):
-            detail.isEmpty
-                ? "Spotify rejected the queue request (HTTP \(status))"
-                : "Spotify rejected the queue request (HTTP \(status)): \(detail)"
+        case let .requestFailed(status):
+            "Spotify rejected the queue request (\(SpotifyHTTPFailure.description(status: status)))"
         }
     }
 
     var statusCode: Int? {
-        guard case let .requestFailed(status, _) = self else { return nil }
+        guard case let .requestFailed(status) = self else { return nil }
         return status
     }
 }
@@ -53,10 +51,7 @@ nonisolated struct SpotifyWebPlayerAPI: Sendable {
             throw SpotifyWebPlayerAPIError.malformedResponse
         }
         guard http.statusCode == 200 else {
-            throw SpotifyWebPlayerAPIError.requestFailed(
-                http.statusCode,
-                String(decoding: data.prefix(300), as: UTF8.self)
-            )
+            throw SpotifyWebPlayerAPIError.requestFailed(http.statusCode)
         }
         return try Self.decodeQueue(data)
     }

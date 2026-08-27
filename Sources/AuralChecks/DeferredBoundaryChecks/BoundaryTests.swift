@@ -16,6 +16,7 @@ enum BoundaryChecksMain {
         runTrackAttributeChecks(runner)
         runFixtureContractChecks(runner)
         runPCMWriteSpaceChecks(runner)
+        await runPrivacySanitizationChecks(runner)
         await runWorkflowChecks(runner)
         await runCommandEffectRegistryChecks(runner)
         await runPlaybackCommandFailureChecks(runner)

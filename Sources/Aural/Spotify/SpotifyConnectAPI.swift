@@ -1,9 +1,9 @@
 import Foundation
 
-nonisolated enum SpotifyConnectAPIError: Error, LocalizedError {
+nonisolated enum SpotifyConnectAPIError: Error, LocalizedError, Equatable {
     case invalidTrackURI
     case malformedResponse
-    case requestFailed(Int, String)
+    case requestFailed(Int)
 
     var errorDescription: String? {
         switch self {
@@ -11,10 +11,8 @@ nonisolated enum SpotifyConnectAPIError: Error, LocalizedError {
             "Spotify returned an invalid track identifier"
         case .malformedResponse:
             "Spotify returned an unreadable response"
-        case let .requestFailed(status, detail):
-            detail.isEmpty
-                ? "Spotify rejected the command (HTTP \(status))"
-                : "Spotify rejected the command (HTTP \(status)): \(detail)"
+        case let .requestFailed(status):
+            "Spotify rejected the command (\(SpotifyHTTPFailure.description(status: status)))"
         }
     }
 }
@@ -242,7 +240,7 @@ nonisolated struct SpotifyConnectAPI: Sendable {
         let sent = try await credentials.retryingRefusedToken {
             try await request(method: "POST", path: path, body: body)
         }
-        try validate(sent)
+        try validate(sent.status)
     }
 
     func trackMetadata(for uri: String) async throws -> SpotifyConnectTrackMetadata {
@@ -258,7 +256,7 @@ nonisolated struct SpotifyConnectAPI: Sendable {
         let sent = try await credentials.retryingRefusedToken {
             try await request(method: "GET", url: url, body: nil)
         }
-        try validate(sent)
+        try validate(sent.status)
 
         guard let response = try? JSONDecoder().decode(SpotifyConnectTrackResponse.self, from: sent.body),
               let title = response.name, !title.isEmpty
@@ -314,16 +312,13 @@ nonisolated struct SpotifyConnectAPI: Sendable {
             throw SpotifyConnectAPIError.malformedResponse
         }
         guard http.statusCode < 400 else {
-            throw SpotifyConnectAPIError.requestFailed(http.statusCode, "Metadata preflight failed")
+            throw SpotifyConnectAPIError.requestFailed(http.statusCode)
         }
     }
 
-    private func validate(_ attempt: (body: Data, status: Int)) throws {
-        guard (200 ..< 300).contains(attempt.status) else {
-            throw SpotifyConnectAPIError.requestFailed(
-                attempt.status,
-                String(decoding: attempt.body.prefix(300), as: UTF8.self)
-            )
+    private func validate(_ status: Int) throws {
+        guard (200 ..< 300).contains(status) else {
+            throw SpotifyConnectAPIError.requestFailed(status)
         }
     }
 

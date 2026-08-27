@@ -7,6 +7,19 @@ public enum PlaybackSessionPhase: Equatable, Sendable {
     case ready
     case recovering
     case failed(String)
+
+    /// Privacy-safe category for public diagnostics. Failed phases carry user-facing text that
+    /// must not be interpolated into Unified Logging.
+    public var diagnosticLabel: String {
+        switch self {
+        case .signedOut: "signedOut"
+        case .authorizing: "authorizing"
+        case .connecting: "connecting"
+        case .ready: "ready"
+        case .recovering: "recovering"
+        case .failed: "failed"
+        }
+    }
 }
 
 public struct PlaybackDevice: Equatable, Sendable {

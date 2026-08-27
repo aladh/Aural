@@ -24,6 +24,22 @@ func runSessionLifetimeChecks(_ check: CheckRunner) {
         check.equal("revocation cannot downgrade grant clearing", logoutFirst.intent, logout)
     }
 
+    check.suite("Session phase public diagnostics") {
+        check.equal("signed-out label", PlaybackSessionPhase.signedOut.diagnosticLabel, "signedOut")
+        check.equal("authorizing label", PlaybackSessionPhase.authorizing.diagnosticLabel, "authorizing")
+        check.equal("connecting label", PlaybackSessionPhase.connecting.diagnosticLabel, "connecting")
+        check.equal("ready label", PlaybackSessionPhase.ready.diagnosticLabel, "ready")
+        check.equal("recovering label", PlaybackSessionPhase.recovering.diagnosticLabel, "recovering")
+
+        let sentinel = "AURAL_PRIVACY_SENTINEL_session-phase_9b2e"
+        let failed = PlaybackSessionPhase.failed(sentinel)
+        check.equal("failed phases collapse to a stable category", failed.diagnosticLabel, "failed")
+        check.check("public phase labels omit failed-phase text", !failed.diagnosticLabel.contains(sentinel))
+        let logged = "Session phase changed: \(PlaybackSessionPhase.ready.diagnosticLabel) -> \(failed.diagnosticLabel); epoch=4"
+        check.check("public phase-change text omits failed-phase content", !logged.contains(sentinel))
+        check.check("epoch remains observable", logged.contains("epoch=4"))
+    }
+
     check.suite("Catalog request lifetime") {
         let captured = AccountScopedRequestIdentity(
             requestID: 7,

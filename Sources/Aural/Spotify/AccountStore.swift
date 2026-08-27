@@ -13,7 +13,7 @@ final class AccountStore {
         didSet {
             guard oldValue != phase else { return }
             AuralLog.account.info(
-                "Session phase changed: \(String(describing: oldValue), privacy: .public) -> \(String(describing: self.phase), privacy: .public); epoch=\(self.epoch, privacy: .public)"
+                "Session phase changed: \(oldValue.diagnosticLabel, privacy: .public) -> \(self.phase.diagnosticLabel, privacy: .public); epoch=\(self.epoch, privacy: .public)"
             )
             onPhaseChange?(phase)
         }
