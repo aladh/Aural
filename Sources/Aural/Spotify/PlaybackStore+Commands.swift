@@ -45,19 +45,21 @@ extension PlaybackStore {
         effects.replace(effectID, with: Task { [weak self] in
             defer { self?.effects.complete(effectID) }
             guard let self else { return }
-            let result = await self.coordinator.performLocal(operation)
-            guard !Task.isCancelled, self.accountEpoch == epoch, !self.isTearingDown else { return }
-            self.applyCommandOutcome(
-                commandID: commandID,
-                kind: kind,
-                capturedAccountEpoch: epoch,
-                capturedEngineEpoch: engineEpoch,
-                succeeded: result.isOK,
-                failure: failure,
-                detailedFailure: "\(failure) (\(result.rawValue))",
-                requiresReconnect: result.requiresReconnect,
-                completion: completion
-            )
+            do {
+                let outcome = try await self.coordinator.performLocalCommand(operation)
+                guard !Task.isCancelled, self.accountEpoch == epoch, !self.isTearingDown else { return }
+                self.applyCommandOutcome(
+                    commandID: commandID,
+                    kind: kind,
+                    capturedAccountEpoch: epoch,
+                    capturedEngineEpoch: engineEpoch,
+                    outcome: outcome,
+                    action: failure,
+                    completion: completion
+                )
+            } catch {
+                return
+            }
         })
     }
 
@@ -153,9 +155,9 @@ extension PlaybackStore {
         let effectID = PlaybackEffectID.command(commandID)
         effects.replace(effectID, with: Task { [weak self] in
             defer { self?.effects.complete(effectID) }
+            guard let self else { return }
             do {
-                guard let self else { return }
-                try await self.coordinator.performRemoteOperation { remote in
+                let outcome = try await self.coordinator.performRemoteCommand { remote in
                     try await operation(remote, sourceID, targetID)
                 }
                 guard !Task.isCancelled, self.accountEpoch == epoch, !self.isTearingDown else { return }
@@ -164,26 +166,12 @@ extension PlaybackStore {
                     kind: kind,
                     capturedAccountEpoch: epoch,
                     capturedEngineEpoch: engineEpoch,
-                    succeeded: true,
-                    failure: failure,
-                    detailedFailure: failure,
-                    requiresReconnect: false,
+                    outcome: outcome,
+                    action: failure,
                     completion: completion
                 )
             } catch {
-                guard let self, !Task.isCancelled, self.accountEpoch == epoch,
-                      !self.isTearingDown else { return }
-                self.applyCommandOutcome(
-                    commandID: commandID,
-                    kind: kind,
-                    capturedAccountEpoch: epoch,
-                    capturedEngineEpoch: engineEpoch,
-                    succeeded: false,
-                    failure: failure,
-                    detailedFailure: "\(failure): \(error.localizedDescription)",
-                    requiresReconnect: false,
-                    completion: completion
-                )
+                return
             }
         })
     }
@@ -196,17 +184,30 @@ extension PlaybackStore {
         kind: PlaybackCommandKind,
         capturedAccountEpoch: UInt64,
         capturedEngineEpoch: UInt64,
-        succeeded: Bool,
-        failure: String,
-        detailedFailure: String,
-        requiresReconnect: Bool,
+        outcome: Result<Void, PlaybackCommandFailure>,
+        action: String,
         completion: @escaping @MainActor (Bool) -> Void
     ) {
+        let succeeded: Bool
+        let requiresReconnect: Bool
+        let notice: PlaybackNotice?
+        switch outcome {
+        case .success:
+            succeeded = true
+            requiresReconnect = false
+            notice = nil
+        case let .failure(failure):
+            succeeded = false
+            requiresReconnect = failure == .reconnectRequired
+            notice = PlaybackNotice(
+                message: PlaybackCommandPresentation.noticeMessage(for: failure, action: action)
+            )
+        }
         let finished = send(
             .commandFinished(
                 id: commandID,
                 accepted: succeeded,
-                notice: succeeded ? nil : PlaybackNotice(message: failure)
+                notice: notice
             ),
             source: .command
         )
@@ -225,7 +226,9 @@ extension PlaybackStore {
         case .reportSuccess:
             completion(true)
         case let .reportFailure(reconnect):
-            showTransientCommandError(detailedFailure)
+            if let notice {
+                showTransientCommandError(notice.message)
+            }
             completion(false)
             if reconnect {
                 connect()
