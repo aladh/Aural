@@ -1,4 +1,5 @@
 @preconcurrency import AppKit
+import AuralDomain
 import Foundation
 
 nonisolated struct PlaybackEngineResult: Equatable, Sendable {
@@ -19,7 +20,7 @@ nonisolated enum LocalPlaybackOperation: Sendable {
     case previous
     case seek(UInt32)
     case shuffle(Bool)
-    case repeatOptions(context: Bool, track: Bool, rollbackContext: Bool, rollbackTrack: Bool)
+    case repeatOptions(RepeatTransitionPlan)
     case addToQueue(String)
     case transferToLocal
     case transferToDevice(String)

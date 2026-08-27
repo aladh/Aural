@@ -158,6 +158,34 @@ public struct RepeatTransitionPlan: Equatable, Sendable {
     }
 }
 
+/// How a failed repeat command should treat the optimistic control.
+///
+/// Distinguishes the known context → track intermediate (off) from the requested
+/// target and from unrelated newer authoritative state. Uses the existing
+/// `.enginePlayback` source revision plus visible mode — not a parallel watermark.
+public enum RepeatCommandFailureDisposition: Equatable, Sendable {
+    case restorePrevious
+    case keepVisible
+}
+
+public func reconcileRepeatCommandFailure(
+    visibleMode: RepeatMode,
+    previousMode: RepeatMode,
+    targetMode: RepeatMode,
+    enginePlaybackRevisionChanged: Bool
+) -> RepeatCommandFailureDisposition {
+    if !enginePlaybackRevisionChanged {
+        return visibleMode == targetMode ? .restorePrevious : .keepVisible
+    }
+    if visibleMode == targetMode {
+        return .keepVisible
+    }
+    if previousMode == .context, targetMode == .track, visibleMode == .off {
+        return .restorePrevious
+    }
+    return .keepVisible
+}
+
 /// One row in the queue panel. Queue updates carry uris only, so display names
 /// resolve against the catalog at render time.
 public struct QueueEntry: Identifiable, Equatable, Sendable {

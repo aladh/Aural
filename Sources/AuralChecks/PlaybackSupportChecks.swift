@@ -85,6 +85,80 @@ func runPlaybackSupportChecks(_ check: CheckRunner) {
             RepeatTransitionPlan.planning(from: RepeatMode.off.flags, to: RepeatMode.off.flags).mutations,
             []
         )
+
+        let bothTrue = RepeatFlags(context: true, track: true)
+        check.equal("both-true flags still display as track", RepeatMode(context: true, track: true), .track)
+        check.equal(
+            "display track flags are not a both-true pair",
+            RepeatMode.track.flags,
+            RepeatFlags(context: false, track: true)
+        )
+        check.equal(
+            "both-true track → off sends both flags off",
+            RepeatTransitionPlan.planning(from: bothTrue, to: RepeatMode.off.flags).mutations,
+            [
+                RepeatFlagMutation(flag: .context, enabled: false),
+                RepeatFlagMutation(flag: .track, enabled: false),
+            ]
+        )
+        check.equal(
+            "ordinary track → off still sends only track off",
+            RepeatTransitionPlan.planning(from: RepeatMode.track.flags, to: RepeatMode.off.flags).mutations,
+            [RepeatFlagMutation(flag: .track, enabled: false)]
+        )
+    }
+
+    check.suite("Repeat command failure reconciliation") {
+        check.equal(
+            "no later snapshot restores while the optimistic target is visible",
+            reconcileRepeatCommandFailure(
+                visibleMode: .track,
+                previousMode: .context,
+                targetMode: .track,
+                enginePlaybackRevisionChanged: false
+            ),
+            .restorePrevious
+        )
+        check.equal(
+            "no later snapshot keeps a visible mode that is no longer the target",
+            reconcileRepeatCommandFailure(
+                visibleMode: .off,
+                previousMode: .context,
+                targetMode: .track,
+                enginePlaybackRevisionChanged: false
+            ),
+            .keepVisible
+        )
+        check.equal(
+            "a later target snapshot is preserved",
+            reconcileRepeatCommandFailure(
+                visibleMode: .track,
+                previousMode: .context,
+                targetMode: .track,
+                enginePlaybackRevisionChanged: true
+            ),
+            .keepVisible
+        )
+        check.equal(
+            "context → track intermediate off restores previous context",
+            reconcileRepeatCommandFailure(
+                visibleMode: .off,
+                previousMode: .context,
+                targetMode: .track,
+                enginePlaybackRevisionChanged: true
+            ),
+            .restorePrevious
+        )
+        check.equal(
+            "unrelated newer authoritative repeat is preserved",
+            reconcileRepeatCommandFailure(
+                visibleMode: .track,
+                previousMode: .off,
+                targetMode: .context,
+                enginePlaybackRevisionChanged: true
+            ),
+            .keepVisible
+        )
     }
 
     check.suite("Play history") {

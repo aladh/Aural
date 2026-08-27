@@ -2,28 +2,26 @@ import AuralDomain
 
 /// Repeat-specific application of `RepeatTransitionPlan` for the local FFI and
 /// remote Connect paths. Not a generic transaction or two-phase command type.
+///
+/// Local FFI is a synchronous `PlaybackEngineResult` (including reconnect
+/// codes). Remote Connect is `async throws` mapped later to
+/// `PlaybackCommandFailure.remoteRejected`. Those vocabularies and runtimes
+/// stay distinct; sharing only the tiny `index > 0` loop would be a generic
+/// two-phase runner this type exists to avoid.
 enum RepeatTransitionApplication {
     /// Applies forward mutations in plan order. A first-step failure returns that
     /// result with no compensation. After a later step fails, compensation runs
     /// best-effort (its results are ignored) and the failed step's result is returned.
     static func apply(
         _ plan: RepeatTransitionPlan,
-        setContext: (Bool) -> PlaybackEngineResult,
-        setTrack: (Bool) -> PlaybackEngineResult
+        send: (RepeatFlagMutation) -> PlaybackEngineResult
     ) -> PlaybackEngineResult {
-        func apply(_ mutation: RepeatFlagMutation) -> PlaybackEngineResult {
-            switch mutation.flag {
-            case .context: setContext(mutation.enabled)
-            case .track: setTrack(mutation.enabled)
-            }
-        }
-
         for (index, mutation) in plan.mutations.enumerated() {
-            let result = apply(mutation)
+            let result = send(mutation)
             guard result.isOK else {
                 if index > 0 {
                     for item in plan.compensation {
-                        _ = apply(item)
+                        _ = send(item)
                     }
                 }
                 return result

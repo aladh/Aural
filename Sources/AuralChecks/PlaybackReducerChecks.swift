@@ -430,6 +430,55 @@ func runPlaybackReducerChecks(_ check: CheckRunner) {
             "Could not update repeat"
         )
         check.equal("engine playback revision is recorded for identity-safe rollback", state.sourceRevisions[.enginePlayback], 7)
+        check.equal("an engine snapshot without raw flags uses the display mode flags", state.options.repeatFlags, RepeatMode.track.flags)
+
+        let bothTrueID = UUID(uuidString: "00000000-0000-0000-0000-000000000022")!
+        var flagged = PlaybackState(accountEpoch: 1, engineEpoch: 1, session: .ready)
+        _ = PlaybackReducer.reduce(
+            &flagged,
+            envelope: envelope(
+                source: .enginePlayback,
+                revision: 1,
+                event: .enginePlayback(EnginePlaybackSnapshot(
+                    transport: .paused,
+                    trackURI: nil,
+                    timing: PlaybackTiming(anchoredAt: traceDate),
+                    shuffle: false,
+                    repeatMode: .track,
+                    repeatFlags: RepeatFlags(context: true, track: true)
+                ))
+            )
+        )
+        check.equal("a both-true snapshot still displays as track", flagged.options.repeatMode, .track)
+        check.equal(
+            "a both-true snapshot retains the raw context bit",
+            flagged.options.repeatFlags,
+            RepeatFlags(context: true, track: true)
+        )
+        _ = PlaybackReducer.reduce(
+            &flagged,
+            envelope: envelope(
+                source: .command,
+                event: .commandStarted(PendingPlaybackCommand(
+                    id: bothTrueID,
+                    kind: .options,
+                    expectedTransport: nil,
+                    startedAt: traceDate
+                ))
+            )
+        )
+        _ = PlaybackReducer.reduce(
+            &flagged,
+            envelope: envelope(
+                source: .command,
+                event: .commandFinished(id: bothTrueID, accepted: false, notice: PlaybackNotice(message: "Could not update repeat"))
+            )
+        )
+        check.equal(
+            "a rejected options finish does not drop retained both-true flags",
+            flagged.options.repeatFlags,
+            RepeatFlags(context: true, track: true)
+        )
     }
 
     check.suite("Remote paused playback ownership") {

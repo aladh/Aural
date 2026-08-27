@@ -211,21 +211,16 @@ extension PlaybackStore {
     func cycleRepeat() {
         guard canStartPlayback else { return }
         let previousMode = repeatMode
-        let previousFlags = previousMode.flags
+        let previousFlags = state.options.repeatFlags
         let nextMode = previousMode.next
-        setRepeatMode(nextMode)
         let nextFlags = nextMode.flags
+        setRepeat(mode: nextMode, flags: nextFlags)
         let plan = RepeatTransitionPlan.planning(from: previousFlags, to: nextFlags)
         let enginePlaybackRevision = state.sourceRevisions[.enginePlayback]
         performRoutedOperation(
             "Could not update repeat",
             kind: .options,
-            local: .repeatOptions(
-                context: nextFlags.context,
-                track: nextFlags.track,
-                rollbackContext: previousFlags.context,
-                rollbackTrack: previousFlags.track
-            ),
+            local: .repeatOptions(plan),
             remote: { api, from, to in
                 try await RepeatTransitionApplication.applyRemote(plan) { mutation in
                     try await api.send(.repeatMutation(mutation), from: from, to: to)
@@ -233,12 +228,16 @@ extension PlaybackStore {
             }
         ) { [weak self] accepted in
             guard let self, !accepted else { return }
-            // Rollback is identity-safe: a later accepted engine playback snapshot
-            // (source revision) or a newer visible mode must not be overwritten.
-            let laterEngineSnapshot =
-                self.state.sourceRevisions[.enginePlayback] != enginePlaybackRevision
-            guard !laterEngineSnapshot, self.repeatMode == nextMode else { return }
-            self.setRepeatMode(previousMode)
+            let disposition = reconcileRepeatCommandFailure(
+                visibleMode: self.repeatMode,
+                previousMode: previousMode,
+                targetMode: nextMode,
+                enginePlaybackRevisionChanged:
+                    self.state.sourceRevisions[.enginePlayback] != enginePlaybackRevision
+            )
+            if disposition == .restorePrevious {
+                self.setRepeat(mode: previousMode, flags: previousFlags)
+            }
         }
     }
 

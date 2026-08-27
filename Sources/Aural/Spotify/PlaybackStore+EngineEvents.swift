@@ -81,10 +81,11 @@ extension PlaybackStore {
             isPlaying: transport == .playing,
             now: receivedAt
         )
-        let repeatSnapshot = RepeatMode(
-            context: state.repeatContext ?? repeatMode.flags.context,
-            track: state.repeatTrack ?? repeatMode.flags.track
+        let flags = RepeatFlags(
+            context: state.repeatContext ?? self.state.options.repeatFlags.context,
+            track: state.repeatTrack ?? self.state.options.repeatFlags.track
         )
+        let repeatSnapshot = RepeatMode(context: flags.context, track: flags.track)
         let accepted = send(
             .enginePlayback(EnginePlaybackSnapshot(
                 transport: transport,
@@ -95,7 +96,8 @@ extension PlaybackStore {
                     anchoredAt: receivedAt
                 ),
                 shuffle: state.shuffle,
-                repeatMode: repeatSnapshot
+                repeatMode: repeatSnapshot,
+                repeatFlags: flags
             )),
             source: .enginePlayback,
             revision: revision,

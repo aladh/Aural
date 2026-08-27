@@ -51,13 +51,7 @@ nonisolated final class RustPlaybackEngine: LocalPlaybackEngine, @unchecked Send
         case .previous: engineResult(PlaybackCore.previous())
         case let .seek(milliseconds): engineResult(PlaybackCore.seek(to: milliseconds))
         case let .shuffle(enabled): engineResult(PlaybackCore.setShuffle(enabled))
-        case let .repeatOptions(context, track, rollbackContext, rollbackTrack):
-            executeRepeat(
-                context: context,
-                track: track,
-                rollbackContext: rollbackContext,
-                rollbackTrack: rollbackTrack
-            )
+        case let .repeatOptions(plan): executeRepeat(plan)
         case let .addToQueue(uri): engineResult(PlaybackCore.addToQueue(uri: uri))
         case .transferToLocal: engineResult(PlaybackCore.transferToLocal())
         case let .transferToDevice(id): engineResult(PlaybackCore.transferPlayback(to: id))
@@ -84,20 +78,13 @@ nonisolated final class RustPlaybackEngine: LocalPlaybackEngine, @unchecked Send
         PlaybackEngineResult(rawValue: result.rawValue)
     }
 
-    private func executeRepeat(
-        context: Bool,
-        track: Bool,
-        rollbackContext: Bool,
-        rollbackTrack: Bool
-    ) -> PlaybackEngineResult {
-        RepeatTransitionApplication.apply(
-            .planning(
-                from: RepeatFlags(context: rollbackContext, track: rollbackTrack),
-                to: RepeatFlags(context: context, track: track)
-            ),
-            setContext: { engineResult(PlaybackCore.setRepeat(context: $0)) },
-            setTrack: { engineResult(PlaybackCore.setRepeatTrack($0)) }
-        )
+    private func executeRepeat(_ plan: RepeatTransitionPlan) -> PlaybackEngineResult {
+        RepeatTransitionApplication.apply(plan) { mutation in
+            switch mutation.flag {
+            case .context: engineResult(PlaybackCore.setRepeat(context: mutation.enabled))
+            case .track: engineResult(PlaybackCore.setRepeatTrack(mutation.enabled))
+            }
+        }
     }
 
     func events() -> AsyncStream<RustPlaybackEventEnvelope> {

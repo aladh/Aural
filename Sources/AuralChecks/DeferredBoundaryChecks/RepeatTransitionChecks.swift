@@ -43,19 +43,13 @@ private final class RepeatLocalEngine: LocalPlaybackEngine, @unchecked Sendable 
         lock.lock()
         storedOperations.append(operation)
         lock.unlock()
-        guard case let .repeatOptions(context, track, rollbackContext, rollbackTrack) = operation else {
+        guard case let .repeatOptions(plan) = operation else {
             return .ok
         }
-        let plan = RepeatTransitionPlan.planning(
-            from: RepeatFlags(context: rollbackContext, track: rollbackTrack),
-            to: RepeatFlags(context: context, track: track)
-        )
         let counter = RepeatMutationCounter()
-        return RepeatTransitionApplication.apply(
-            plan,
-            setContext: { enabled in self.record(.init(flag: .context, enabled: enabled), plan: plan, counter: counter) },
-            setTrack: { enabled in self.record(.init(flag: .track, enabled: enabled), plan: plan, counter: counter) }
-        )
+        return RepeatTransitionApplication.apply(plan) { mutation in
+            self.record(mutation, plan: plan, counter: counter)
+        }
     }
     func positionMilliseconds() -> UInt32 { 0 }
     func queueSnapshotJSON() -> String? { nil }
@@ -92,6 +86,7 @@ private actor ScriptedRepeatRemote: RemotePlaybackClient {
     private let holdAfterCount: Int?
     private var hold: CheckedContinuation<Void, Never>?
     private(set) var sends: [RepeatSend] = []
+    private(set) var completedSends = 0
 
     init(
         failAtCounts: Set<Int> = [],
@@ -105,6 +100,7 @@ private actor ScriptedRepeatRemote: RemotePlaybackClient {
 
     func send(_ command: SpotifyConnectCommand, from _: String, to _: String) async throws {
         sends.append(RepeatSend(endpoint: command.endpoint, enabled: booleanValue(command)))
+        defer { completedSends += 1 }
         if sleepUntilCancelled {
             try await Task.sleep(nanoseconds: 60_000_000_000)
             return
@@ -275,6 +271,27 @@ private func seedReadyLocal(_ player: PlaybackStore) {
 }
 
 @MainActor
+private func sendRepeatSnapshot(
+    _ player: PlaybackStore,
+    mode: RepeatMode,
+    flags: RepeatFlags? = nil,
+    revision: UInt64
+) {
+    _ = player.send(
+        .enginePlayback(EnginePlaybackSnapshot(
+            transport: .paused,
+            trackURI: nil,
+            timing: PlaybackTiming(anchoredAt: Date(timeIntervalSince1970: 1_800_000_000)),
+            shuffle: false,
+            repeatMode: mode,
+            repeatFlags: flags ?? mode.flags
+        )),
+        source: .enginePlayback,
+        revision: revision
+    )
+}
+
+@MainActor
 func runRepeatTransitionChecks(_ runner: CheckRunner) async {
     runner.suite("Local repeat transition application") {
         func record(
@@ -286,23 +303,13 @@ func runRepeatTransitionChecks(_ runner: CheckRunner) async {
             var calls: [RepeatFlagMutation] = []
             var count = 0
             let plan = RepeatTransitionPlan.planning(from: from.flags, to: to.flags)
-            let result = RepeatTransitionApplication.apply(
-                plan,
-                setContext: { enabled in
-                    count += 1
-                    calls.append(RepeatFlagMutation(flag: .context, enabled: enabled))
-                    if count == failAtCount { return .error }
-                    if compensationFails, count > plan.mutations.count { return .error }
-                    return .ok
-                },
-                setTrack: { enabled in
-                    count += 1
-                    calls.append(RepeatFlagMutation(flag: .track, enabled: enabled))
-                    if count == failAtCount { return .error }
-                    if compensationFails, count > plan.mutations.count { return .error }
-                    return .ok
-                }
-            )
+            let result = RepeatTransitionApplication.apply(plan) { mutation in
+                count += 1
+                calls.append(mutation)
+                if count == failAtCount { return .error }
+                if compensationFails, count > plan.mutations.count { return .error }
+                return .ok
+            }
             return (calls, result)
         }
 
@@ -515,17 +522,7 @@ func runRepeatTransitionChecks(_ runner: CheckRunner) async {
         let held = await waitUntil { await remote.sends.count == 1 }
         runner.check("repeat send is held before failure", held)
         runner.equal("optimistic repeat is context before the snapshot", player.repeatMode, RepeatMode.context)
-        _ = player.send(
-            .enginePlayback(EnginePlaybackSnapshot(
-                transport: .paused,
-                trackURI: nil,
-                timing: PlaybackTiming(anchoredAt: Date(timeIntervalSince1970: 1_800_000_000)),
-                shuffle: false,
-                repeatMode: .context
-            )),
-            source: .enginePlayback,
-            revision: 3
-        )
+        sendRepeatSnapshot(player, mode: .context, revision: 3)
         runner.equal("engine snapshot keeps context repeat", player.repeatMode, RepeatMode.context)
         await remote.releaseHold()
         let finished = await waitUntil { player.state.pendingCommands[.options] == nil }
@@ -533,6 +530,122 @@ func runRepeatTransitionChecks(_ runner: CheckRunner) async {
         runner.equal("a later failure does not clobber the engine repeat snapshot", player.repeatMode, RepeatMode.context)
         runner.equal("the failed command still reports Could not update repeat", player.transientCommandError, "Could not update repeat")
         await player.shutdownForTermination()
+    }
+
+    await runner.suite("Raw both-true flags plan both-off; ordinary track is one send") {
+        let bothTrueRemote = ScriptedRepeatRemote()
+        let bothTruePlayer = playbackStore(
+            repeatEnvironment(local: RepeatLocalEngine(), remote: bothTrueRemote)
+        )
+        seedReadyRemote(bothTruePlayer)
+        bothTruePlayer.setRepeat(mode: .track, flags: RepeatFlags(context: true, track: true))
+        runner.equal("both-true still displays as track", bothTruePlayer.repeatMode, RepeatMode.track)
+        runner.equal(
+            "both-true raw flags are retained on options",
+            bothTruePlayer.state.options.repeatFlags,
+            RepeatFlags(context: true, track: true)
+        )
+        bothTruePlayer.cycleRepeat()
+        let bothFinished = await waitUntil { bothTruePlayer.state.pendingCommands[.options] == nil }
+        runner.check("both-true track → off finishes", bothFinished)
+        runner.equal(
+            "both-true track → off clears both flags",
+            await bothTrueRemote.sends,
+            [
+                RepeatSend(endpoint: .repeatContext, enabled: false),
+                RepeatSend(endpoint: .repeatTrack, enabled: false),
+            ]
+        )
+        runner.equal("both-true track → off shows off", bothTruePlayer.repeatMode, RepeatMode.off)
+        await bothTruePlayer.shutdownForTermination()
+
+        let ordinaryRemote = ScriptedRepeatRemote()
+        let ordinaryPlayer = playbackStore(
+            repeatEnvironment(local: RepeatLocalEngine(), remote: ordinaryRemote)
+        )
+        seedReadyRemote(ordinaryPlayer)
+        ordinaryPlayer.setRepeatMode(.track)
+        ordinaryPlayer.cycleRepeat()
+        let ordinaryFinished = await waitUntil { ordinaryPlayer.state.pendingCommands[.options] == nil }
+        runner.check("ordinary track → off finishes", ordinaryFinished)
+        runner.equal(
+            "ordinary track → off still sends only track off",
+            await ordinaryRemote.sends,
+            [RepeatSend(endpoint: .repeatTrack, enabled: false)]
+        )
+        await ordinaryPlayer.shutdownForTermination()
+    }
+
+    await runner.suite("Context → track intermediate off restores previous context") {
+        let remote = ScriptedRepeatRemote(failAtCounts: [2], holdAfterCount: 2)
+        let player = playbackStore(
+            repeatEnvironment(local: RepeatLocalEngine(), remote: remote)
+        )
+        seedReadyRemote(player)
+        player.setRepeatMode(.context)
+        player.cycleRepeat()
+        let held = await waitUntil { await remote.sends.count == 2 }
+        runner.check("second mutation is held after context-off", held)
+        sendRepeatSnapshot(
+            player,
+            mode: .off,
+            flags: RepeatFlags(context: false, track: false),
+            revision: 4
+        )
+        runner.equal("intermediate engine sample shows off", player.repeatMode, RepeatMode.off)
+        await remote.releaseHold()
+        let finished = await waitUntil { player.state.pendingCommands[.options] == nil }
+        runner.check("compensated second-step failure finishes", finished)
+        runner.equal(
+            "compensation still ran after the intermediate off snapshot",
+            await remote.sends,
+            [
+                RepeatSend(endpoint: .repeatContext, enabled: false),
+                RepeatSend(endpoint: .repeatTrack, enabled: true),
+                RepeatSend(endpoint: .repeatContext, enabled: true),
+            ]
+        )
+        runner.equal("intermediate off plus successful compensation restores context UI", player.repeatMode, RepeatMode.context)
+        runner.equal(
+            "restored context flags match the captured previous pair",
+            player.state.options.repeatFlags,
+            RepeatMode.context.flags
+        )
+        runner.equal("the failed command still reports Could not update repeat", player.transientCommandError, "Could not update repeat")
+        await player.shutdownForTermination()
+    }
+
+    await runner.suite("Target and unrelated snapshots survive repeat failure") {
+        let targetRemote = ScriptedRepeatRemote(failAtCounts: [2], holdAfterCount: 2)
+        let targetPlayer = playbackStore(
+            repeatEnvironment(local: RepeatLocalEngine(), remote: targetRemote)
+        )
+        seedReadyRemote(targetPlayer)
+        targetPlayer.setRepeatMode(.context)
+        targetPlayer.cycleRepeat()
+        let targetHeld = await waitUntil { await targetRemote.sends.count == 2 }
+        runner.check("target snapshot is injected before second-step failure", targetHeld)
+        sendRepeatSnapshot(targetPlayer, mode: .track, revision: 5)
+        await targetRemote.releaseHold()
+        let targetFinished = await waitUntil { targetPlayer.state.pendingCommands[.options] == nil }
+        runner.check("target snapshot failure finishes", targetFinished)
+        runner.equal("a later target track snapshot remains track", targetPlayer.repeatMode, RepeatMode.track)
+        await targetPlayer.shutdownForTermination()
+
+        let unrelatedRemote = ScriptedRepeatRemote(failAtCounts: [1], holdAfterCount: 1)
+        let unrelatedPlayer = playbackStore(
+            repeatEnvironment(local: RepeatLocalEngine(), remote: unrelatedRemote)
+        )
+        seedReadyRemote(unrelatedPlayer)
+        unrelatedPlayer.cycleRepeat()
+        let unrelatedHeld = await waitUntil { await unrelatedRemote.sends.count == 1 }
+        runner.check("unrelated snapshot is injected before first-step failure", unrelatedHeld)
+        sendRepeatSnapshot(unrelatedPlayer, mode: .track, revision: 6)
+        await unrelatedRemote.releaseHold()
+        let unrelatedFinished = await waitUntil { unrelatedPlayer.state.pendingCommands[.options] == nil }
+        runner.check("unrelated snapshot failure finishes", unrelatedFinished)
+        runner.equal("unrelated newer authoritative track remains preserved", unrelatedPlayer.repeatMode, RepeatMode.track)
+        await unrelatedPlayer.shutdownForTermination()
     }
 
     await runner.suite("Repeat cancellation and teardown stay inert") {
@@ -547,8 +660,10 @@ func runRepeatTransitionChecks(_ runner: CheckRunner) async {
         if let commandID = cancelStore.state.pendingCommands[.options]?.id {
             cancelStore.effects.cancel(.command(commandID))
         }
-        _ = await waitUntil { await sleeping.sends.count == 1 }
-        try? await Task.sleep(nanoseconds: 20_000_000)
+        let sendStarted = await waitUntil { await sleeping.sends.count == 1 }
+        runner.check("cancelled repeat send started", sendStarted)
+        let cancellationSettled = await waitUntil { await sleeping.completedSends == 1 }
+        runner.check("cancelled repeat transport exits", cancellationSettled)
         runner.equal("cancelled repeat keeps the optimistic mode", cancelStore.repeatMode, RepeatMode.context)
         runner.nil_("cancelled repeat has no notice", cancelStore.transientCommandError)
         await cancelStore.shutdownForTermination()
@@ -562,7 +677,8 @@ func runRepeatTransitionChecks(_ runner: CheckRunner) async {
         let teardownPending = await waitUntil { teardownStore.state.pendingCommands[.options] != nil }
         runner.check("repeat is pending before teardown", teardownPending)
         await teardownStore.shutdownForTermination()
-        try? await Task.sleep(nanoseconds: 20_000_000)
+        let teardownSettled = await waitUntil { await teardownRemote.completedSends == 1 }
+        runner.check("teardown repeat transport exits", teardownSettled)
         runner.nil_("teardown leaves no pending options command", teardownStore.state.pendingCommands[.options])
         runner.nil_("teardown repeat has no command notice", teardownStore.transientCommandError)
     }
