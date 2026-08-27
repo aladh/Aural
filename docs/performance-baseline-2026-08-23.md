@@ -69,4 +69,5 @@ deterministic full-store workflow checks.
   validation
 
 Run `./Scripts/check.sh` for the normal gate, `./Scripts/check-clean.sh` for the clean gate, and
-`./Scripts/export-diagnostics.sh 15m` for a bounded privacy-safe Unified Logging report.
+`./Scripts/export-diagnostics.sh 15m` for a bounded local Unified Logging report that must be
+reviewed before sharing.

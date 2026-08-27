@@ -289,7 +289,7 @@ All commands run from the repository root.
 ./Scripts/package-app.sh --debug
 ./Scripts/package-app.sh --release
 
-# Privacy-filtered local telemetry bundle
+# Bounded local diagnostic export; review before sharing
 ./Scripts/export-diagnostics.sh
 ```
 

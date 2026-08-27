@@ -25,8 +25,9 @@ playback services, plus artwork hosts returned by Spotify. It has no Aural-opera
   artwork cache when the main window closes.
 - Spotify/librespot session credentials may be cached under the app's local cache directory so the
   playback device can reconnect.
-- Apple Unified Logging stores privacy-safe operational events. Aural's logging contract excludes
-  tokens, OAuth redirects, raw API bodies, and raw user payloads.
+- Apple Unified Logging stores local operational events. The intended contract excludes tokens,
+  OAuth redirects, raw API bodies, and raw user payloads; treat logs and diagnostic exports as
+  potentially sensitive and review them before sharing.
 
 Generated data remains on the Mac unless the user deliberately shares it. Aural does not include
 analytics, advertising, crash-reporting SDKs, or telemetry sent to the project maintainers.

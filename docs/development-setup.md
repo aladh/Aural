@@ -93,7 +93,7 @@ The following are reproducible, ignored outputs and may be deleted at any time:
 - `.build/` and `Backend/aural-playback/target/` — Swift and Rust build products;
 - `Backend/lib/*.a` — the generated Rust static library consumed by SwiftPM;
 - `Aural.app/` and `dist/` — local packages and archives;
-- `diagnostics/` — privacy-filtered local diagnostic exports;
+- `diagnostics/` — local diagnostic exports that must be reviewed before sharing;
 - `AuralArtwork/` — the bounded artwork cache;
 - `.DS_Store` and `.swiftpm/` — local tooling metadata.
 
