@@ -80,7 +80,7 @@ public struct AccountScopedRequestIdentity: Equatable, Sendable {
     }
 }
 
-/// MainActor Connect queue *callback* watermark. Distinct from provenance-snapshot revisions
+/// Connect queue *callback* watermark. Distinct from provenance-snapshot revisions
 /// recorded on `PlaybackEventSource.engineQueue`. `engineEpoch` is only a stale-engine floor:
 /// adopting that epoch elsewhere must not clear a newer callback generation.
 public struct ConnectQueueCallbackWatermark: Equatable, Sendable {
