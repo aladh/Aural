@@ -65,9 +65,9 @@ git pull --ff-only
 ./script/build_and_run.sh
 ```
 
-Useful build modes are documented in [README.md](../README.md#build-and-run). The Codex environment
-also tracks a **Run** action in `.codex/environments/environment.toml` that invokes the normal build
-and launch script.
+Useful build modes are documented in [CONTRIBUTING.md](../CONTRIBUTING.md#build-and-run). The Codex
+environment also tracks a **Run** action in `.codex/environments/environment.toml` that invokes the
+normal build and launch script.
 
 Before a pull request, inspect the staged changes and run:
 
@@ -83,7 +83,8 @@ For a tagged release, first update both version fields in `Packaging/Info.plist`
 the change, then create an annotated `vMAJOR.MINOR.PATCH` tag matching
 `CFBundleShortVersionString`. CI uses an ad-hoc signature so the build does not depend on an
 interactive development keychain. The tag workflow builds and publishes the ARM64 artifact; see
-[Tagged releases](../README.md#tagged-releases) for its signing status and validation guarantees.
+[Tagged releases](../CONTRIBUTING.md#tagged-releases) for its signing status and validation
+guarantees.
 
 ## Generated local state
 
@@ -92,7 +93,7 @@ The following are reproducible, ignored outputs and may be deleted at any time:
 - `.build/` and `Backend/aural-playback/target/` — Swift and Rust build products;
 - `Backend/lib/*.a` — the generated Rust static library consumed by SwiftPM;
 - `Aural.app/` and `dist/` — local packages and archives;
-- `diagnostics/` — privacy-filtered local diagnostic exports;
+- `diagnostics/` — local diagnostic exports that must be reviewed before sharing;
 - `AuralArtwork/` — the bounded artwork cache;
 - `.DS_Store` and `.swiftpm/` — local tooling metadata.
 
@@ -106,13 +107,14 @@ from `Cargo.lock`, and the scripts rebuild every generated input.
 
 ## Where decisions live
 
-- [README.md](../README.md) describes features, requirements, architecture, packaging, and project
-  boundaries.
+- [README.md](../README.md) is the public landing page: identity, capabilities, requirements,
+  getting started, limitations, and the experimental/unofficial warnings.
 - [Product and acceptance contract](product-and-acceptance-contract.md) records UX invariants and
   safe live-account testing.
 - [Architecture decision records](architecture-decisions.md) indexes accepted architecture
   boundaries, ownership decisions, and their status.
-- [CONTRIBUTING.md](../CONTRIBUTING.md) defines verification and public-repository hygiene.
+- [CONTRIBUTING.md](../CONTRIBUTING.md) defines verification, packaging, architecture overview, and
+  public-repository hygiene.
 - [PRIVACY.md](../PRIVACY.md), [SECURITY.md](../SECURITY.md), and
   [THIRD_PARTY_NOTICES.md](../THIRD_PARTY_NOTICES.md) cover data handling, reporting, and
   attribution.
