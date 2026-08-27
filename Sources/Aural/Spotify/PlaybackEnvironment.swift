@@ -5,6 +5,7 @@ nonisolated struct PlaybackEngineResult: Equatable, Sendable {
     let rawValue: Int32
 
     static let ok = PlaybackEngineResult(rawValue: 0)
+    static let error = PlaybackEngineResult(rawValue: -1)
     var isOK: Bool { rawValue == 0 }
     var requiresReconnect: Bool { rawValue == -2 || rawValue == -3 }
 }
@@ -307,6 +308,17 @@ actor PlaybackCoordinator {
         local.execute(operation)
     }
 
+    /// Maps a local engine integer into a typed command outcome. Throws only if this task
+    /// was cancelled; operational failures are `Result` values.
+    func performLocalCommand(
+        _ operation: LocalPlaybackOperation
+    ) async throws(CancellationError) -> Result<Void, PlaybackCommandFailure> {
+        if Task.isCancelled { throw CancellationError() }
+        let outcome = PlaybackCommandFailure.from(engineResult: local.execute(operation))
+        if Task.isCancelled { throw CancellationError() }
+        return outcome
+    }
+
     func authorizeStreaming(with token: String) async -> Int32 {
         local.authorizeStreaming(with: token)
     }
@@ -343,9 +355,24 @@ actor PlaybackCoordinator {
         try await metadataService.metadata(for: uri)
     }
 
-    func performRemoteOperation(
+    /// Maps an arbitrary remote `Error` into a typed command outcome. `CancellationError`
+    /// (including cancellation surfaced as another error while `Task.isCancelled`) is rethrown
+    /// and is never an operational failure.
+    func performRemoteCommand(
         _ operation: @escaping @Sendable (any RemotePlaybackClient) async throws -> Void
-    ) async throws {
-        try await operation(remote)
+    ) async throws(CancellationError) -> Result<Void, PlaybackCommandFailure> {
+        if Task.isCancelled { throw CancellationError() }
+        do {
+            try await operation(remote)
+        } catch is CancellationError {
+            throw CancellationError()
+        } catch {
+            if Task.isCancelled {
+                throw CancellationError()
+            }
+            return .failure(.remoteRejected)
+        }
+        if Task.isCancelled { throw CancellationError() }
+        return .success(())
     }
 }

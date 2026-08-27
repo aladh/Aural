@@ -131,8 +131,8 @@ and a semantic comparison only; no TCA-shaped runtime or dependency remains.
 | Reducer-owned engine/revision gates | Unchanged. Effects must not reimplement them. | Same: still call `PlaybackReducer`. | Wrapping `PlaybackReducer` inside `Reduce` duplicates the store's `send` or moves Core types into a TCA feature. |
 | Rejected `send` / stale events | `playbackCommandFollowUp` treats matching-snapshot rejection as success and epoch/superseded rejection as inert. | Same. | Actions always enter the TCA reducer. Stale work is `.none` without mutation only if the wrapper checks `PlaybackReducer.reduce == false` before returning follow-up `Effect`s. That *is* Aural's `send` Bool, reimplemented. |
 | Optimistic success / rollback | `commandStarted` / `commandFinished` already in the domain reducer. | Same events. | Same events if TCA defers to `PlaybackReducer`; duplicated if TCA state is a parallel model. |
-| Local reconnect-required | Engine result flag on the coordinator; reconnect is **not** reducer state. Gate on accepted finish. | Same. | Follow-up `.run { await connect() }` from the failure action. Still a Core side effect. |
-| Remote failure | `async throws` collapsed to a string notice today (#17). Rollback is reducer-owned. | Same until typed errors exist. | `Result` in `Action` helps tests; still needs a domain error at the coordinator boundary. |
+| Local reconnect-required | Typed `.reconnectRequired` from the coordinator; reconnect is **not** reducer state. Gate on accepted finish. | Same. | Follow-up `.run { await connect() }` from the failure action. Still a Core side effect. |
+| Remote failure | Typed `PlaybackCommandFailure` at the coordinator boundary (#17). Rollback is reducer-owned. | Same. | `Result` in `Action` helps tests; Aural already has a Core-scoped command failure without TCA. |
 | MainActor / Sendable | Store and registry are `@MainActor`. Coordinator is an actor. Command closures hop back to the store. No new isolation model. | Same. | TCA `Store` / `@Dependency` / `Effect.run` (cooperative pool, `send` hops to the store) is a second isolation story beside `PlaybackEnvironment.live` and the coordinator actor. `PlaybackStore` is not a TCA `Store`. |
 | Deterministic tests | Reducer traces in `AuralChecks`; one scripted registry-shaped pause runtime in the spike; real `Task` cancel in `AuralBoundaryChecks`. | Scripted `deliver` is the nicest local ergonomics, but only for this workflow. | `TestStore` is excellent **if** the app is TCA. Adopting it for one command path still requires the package, macros, and wrapping the existing reducer. |
 | Call-site boilerplate | Explicit `Task`, epoch capture, `send` Bool. Honest about lifetimes. | Moves the same checks into a helper. | `@Reducer` + `Effect` + dependencies + cancel IDs for every feature. |
@@ -200,17 +200,13 @@ Route remaining playback outcomes through `PlaybackEvent` without a framework:
 
 ## Follow-up for issue 17
 
-Replace stringly command control flow at the **coordinator / store boundary**, not via TCA `Result`
-actions:
-
-- Map `PlaybackEngineResult` (`isOK`, `requiresReconnect`) and remote `throws` into a small
-  `PlaybackCommandFailure` (or equivalent) with cases such as rejected, reconnectRequired,
-  remoteRejected, unavailable — not one app-wide error enum.
-- Preserve `CancellationError` as cancellation, distinct from failure.
-- Derive user-facing notice text at the store/presentation boundary from those cases.
-- Tests should assert cases, not `localizedDescription` substrings.
-- Do not put Spotify/Rust codes into `AuralDomain` unless they are truly domain behavior; mapping
-  stays in Core.
+Issue 17 is implemented at the **coordinator / store boundary**, not via TCA `Result` actions.
+`PlaybackCoordinator.performLocalCommand` / `performRemoteCommand` return
+`Result<Void, PlaybackCommandFailure>` and throw only `CancellationError`. Cases are `rejected`,
+`reconnectRequired`, `remoteRejected`, and `unavailable`. `PlaybackStore+Commands` branches on
+those cases. Notices use the already-sanitized action string and never append engine codes or
+remote `localizedDescription` text. Mapping stays in Core. `playbackCommandFollowUp` and
+`PlaybackEffectRegistry` are unchanged.
 
 ## Consequences
 

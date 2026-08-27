@@ -339,10 +339,20 @@ func runWorkflowChecks(_ runner: CheckRunner) async {
         let remote = RecordingRemoteClient()
         let coordinator = PlaybackCoordinator(local: local, remote: remote)
 
-        let localResult = await coordinator.performLocal(.pause)
+        let localResult: Result<Void, PlaybackCommandFailure>
+        do {
+            localResult = try await coordinator.performLocalCommand(.pause)
+        } catch {
+            runner.check("fake local command succeeds", false)
+            return
+        }
         try? await coordinator.performRemote(.shuffle(true), from: "source", to: "target")
 
-        runner.check("fake local command succeeds", localResult.isOK)
+        if case .success = localResult {
+            runner.check("fake local command succeeds", true)
+        } else {
+            runner.check("fake local command succeeds", false)
+        }
         runner.equal("one local command recorded", local.operations.count, 1)
         if case .pause? = local.operations.first {
             runner.check("pause command reaches injected engine", true)
