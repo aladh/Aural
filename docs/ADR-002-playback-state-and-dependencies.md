@@ -42,8 +42,9 @@ or SwiftUI. Concrete app boundaries and injected coordinator/queue workflows run
 Ordered engine *playback*, *connection*, and *device* callbacks are applied only when
 `PlaybackReducer.reduce` accepts the stamped envelope. `PlaybackStore.engineGeneration` mirrors
 `state.engineEpoch` after that success; intake must not guess a newer generation. Connect *queue
-callback* revisions stay a distinct MainActor watermark because provenance-snapshot revisions
-recorded on `.engineQueue` are a different namespace.
+callback* identity is a distinct generation+revision watermark; adopting an engine epoch in
+`reduce` does not clear it, because provenance-snapshot revisions on `.engineQueue` are a
+different namespace.
 
 Adding a new callback, queue provider, or account-scoped request now requires an explicit epoch,
 revision/provenance rule, effect owner, and cancellation rule. This is intentional friction at the

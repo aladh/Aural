@@ -40,21 +40,15 @@ extension PlaybackStore {
         }
     }
 
-    /// MainActor dedupe for Connect queue *callbacks*. Does not adopt `engineGeneration`; that
-    /// mirror moves only after a successful `reduce`.
+    /// MainActor dedupe for Connect queue *callbacks*. Records generation and revision together
+    /// and does not adopt `engineGeneration`.
     func acceptsConnectQueueCallback(generation: UInt64?, revision: UInt64?) -> Bool {
         guard !isTearingDown else { return false }
-        if let generation {
-            guard generation >= engineGeneration else { return false }
-            if generation > engineGeneration {
-                lastQueueRevision = 0
-            }
-        }
-        if let revision {
-            guard revision > lastQueueRevision else { return false }
-            lastQueueRevision = revision
-        }
-        return true
+        return connectQueueCallback.accept(
+            generation: generation,
+            revision: revision,
+            engineEpoch: engineGeneration
+        )
     }
 
     func present(_ track: CatalogTrack) {

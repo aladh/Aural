@@ -175,11 +175,9 @@ final class PlaybackStore {
     @ObservationIgnored var terminationGate = PlaybackTerminationGate()
     @ObservationIgnored var lastEngineEventSequence: UInt64 = 0
     @ObservationIgnored var engineGeneration: UInt64 = 0
-    /// MainActor watermark for Connect *callback* revisions. This is not `state.sourceRevisions[.engineQueue]`:
-    /// that namespace is provenance-snapshot revisions owned by `QueueService` after merge. The two
-    /// counters can share numeric values but must not gate each other. `engineGeneration` is only a
-    /// mirror of `state.engineEpoch` after a successful `reduce`.
-    @ObservationIgnored var lastQueueRevision: UInt64 = 0
+    /// MainActor watermark for Connect *callback* identity. Distinct from
+    /// `state.sourceRevisions[.engineQueue]`, which tracks provenance snapshots after merge.
+    @ObservationIgnored var connectQueueCallback = ConnectQueueCallbackWatermark()
     @ObservationIgnored var shuffleHistoryCache: [String: TimeInterval] = [:]
     var transientCommandError: String? { state.notice?.message }
 
@@ -371,12 +369,8 @@ final class PlaybackStore {
             )
         )
         if accepted {
-            let previousEngineEpoch = state.engineEpoch
             state = next
             engineGeneration = next.engineEpoch
-            if next.engineEpoch > previousEngineEpoch {
-                lastQueueRevision = 0
-            }
             return true
         }
         AuralLog.playback.debug(

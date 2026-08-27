@@ -53,7 +53,7 @@ extension PlaybackStore {
         isTearingDown = true
         accountEpoch &+= 1
         engineGeneration &+= 1
-        lastQueueRevision = 0
+        connectQueueCallback.reset()
         catalogSession.update(accountEpoch: accountEpoch, isAvailable: false)
         effects.cancelAccountScoped()
         hasReceivedPlaybackSnapshot = false
@@ -122,7 +122,7 @@ extension PlaybackStore {
         isTearingDown = true
         accountEpoch &+= 1
         engineGeneration &+= 1
-        lastQueueRevision = 0
+        connectQueueCallback.reset()
         catalogSession.update(accountEpoch: accountEpoch, isAvailable: false)
         effects.cancelAccountScoped()
         send(.reset(session: .signedOut), source: .account)

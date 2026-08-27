@@ -79,3 +79,43 @@ public struct AccountScopedRequestIdentity: Equatable, Sendable {
             && !isCancelled
     }
 }
+
+/// MainActor Connect queue *callback* watermark. Distinct from provenance-snapshot revisions
+/// recorded on `PlaybackEventSource.engineQueue`. `engineEpoch` is only a stale-engine floor:
+/// adopting that epoch elsewhere must not clear a newer callback generation.
+public struct ConnectQueueCallbackWatermark: Equatable, Sendable {
+    public private(set) var generation: UInt64
+    public private(set) var revision: UInt64
+
+    public init(generation: UInt64 = 0, revision: UInt64 = 0) {
+        self.generation = generation
+        self.revision = revision
+    }
+
+    public mutating func reset() {
+        generation = 0
+        revision = 0
+    }
+
+    @discardableResult
+    public mutating func accept(
+        generation: UInt64?,
+        revision: UInt64?,
+        engineEpoch: UInt64
+    ) -> Bool {
+        var next = self
+        if let generation {
+            guard generation >= max(next.generation, engineEpoch) else { return false }
+            if generation > next.generation {
+                next.generation = generation
+                next.revision = 0
+            }
+        }
+        if let revision {
+            guard revision > next.revision else { return false }
+            next.revision = revision
+        }
+        self = next
+        return true
+    }
+}
