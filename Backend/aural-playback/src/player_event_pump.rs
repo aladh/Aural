@@ -2,28 +2,30 @@ use crate::*;
 
 /// What the event listener should do with one `recv` result.
 ///
-/// `event_present` is `event.is_some()`. A closed channel must stop even when the listener
-/// generation is stale: skipping `None` would spin. A `Some` event from a replaced generation
-/// is ignored so a draining predecessor cannot write position, track, or activity for a
-/// session that no longer exists.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// `None` (a closed channel) must stop even when the listener generation is stale: skipping
+/// that result would spin. A `Some` event from a replaced generation is ignored so a draining
+/// predecessor cannot write position, track, or activity for a session that no longer exists.
+/// `Apply` carries the event so the loop does not re-open the option after the policy decision.
+///
+/// `PlayerEvent` is `Debug` + `Clone` only, so this enum does not derive `Copy`/`Eq`.
+#[derive(Debug, Clone)]
 pub(crate) enum PlayerEventDisposition {
-    Apply,
+    Apply(PlayerEvent),
     IgnoreSuperseded,
     ChannelClosed,
 }
 
 pub(crate) fn player_event_disposition(
-    event_present: bool,
+    event: Option<PlayerEvent>,
     listener_generation: u64,
     current_generation: u64,
 ) -> PlayerEventDisposition {
-    if !event_present {
-        PlayerEventDisposition::ChannelClosed
-    } else if listener_may_act(listener_generation, current_generation) {
-        PlayerEventDisposition::Apply
-    } else {
-        PlayerEventDisposition::IgnoreSuperseded
+    match event {
+        None => PlayerEventDisposition::ChannelClosed,
+        Some(_) if !listener_may_act(listener_generation, current_generation) => {
+            PlayerEventDisposition::IgnoreSuperseded
+        }
+        Some(event) => PlayerEventDisposition::Apply(event),
     }
 }
 
@@ -63,19 +65,16 @@ pub(crate) fn start_player_event_pump(
                     // would keep writing position, track, playing and active-device state
                     // belonging to a session that no longer exists.
                     //
-                    // `event.is_some()` matters: a closed channel must still reach
-                    // ChannelClosed and break. Skipping on `None` would spin.
+                    // `None` must still reach ChannelClosed and break. Skipping it would spin.
                     match player_event_disposition(
-                        event.is_some(),
+                        event,
                         generation,
                         SESSION_GENERATION.load(Ordering::SeqCst),
                     ) {
                         PlayerEventDisposition::IgnoreSuperseded => continue,
                         PlayerEventDisposition::ChannelClosed => break,
-                        PlayerEventDisposition::Apply => {
-                            if let Some(event) = event {
-                                apply_player_event(event, generation);
-                            }
+                        PlayerEventDisposition::Apply(event) => {
+                            apply_player_event(event, generation);
                         }
                     }
                 }
@@ -292,10 +291,15 @@ fn apply_player_event(event: PlayerEvent, event_listener_generation: u64) {
         // against a perfectly healthy session.
         PlayerEvent::SessionDisconnected {
             connection_id,
-            user_name,
+            user_name: _,
         } => {
-            debug!("[WAKE +{}ms] became inactive (SessionDisconnected): connection_id={}, user={}, listener_generation={}",
-                   elapsed_since_wake_ms(), connection_id, user_name, event_listener_generation);
+            // Account identifiers stay out of public logs; connection_id is session context.
+            debug!(
+                "[WAKE +{}ms] became inactive (SessionDisconnected): connection_id={}, listener_generation={}",
+                elapsed_since_wake_ms(),
+                connection_id,
+                event_listener_generation
+            );
 
             // Capture before clearing: the recovery decision below needs to
             // know what was playing, and set_active_device wipes half of it.
@@ -350,13 +354,12 @@ fn apply_player_event(event: PlayerEvent, event_listener_generation: u64) {
         // the session was already connected before activation.
         PlayerEvent::SessionConnected {
             connection_id,
-            user_name,
+            user_name: _,
         } => {
             debug!(
-                "[WAKE +{}ms] became active (SessionConnected): connection_id={}, user={}",
+                "[WAKE +{}ms] became active (SessionConnected): connection_id={}",
                 elapsed_since_wake_ms(),
-                connection_id,
-                user_name
+                connection_id
             );
             set_active_device(true);
             with_connection(|c| c.session_connection_id = Some(connection_id));
@@ -413,36 +416,40 @@ pub(crate) fn check_and_send_volume(volume: u32) {
 mod player_event_pump_policy {
     use super::*;
 
+    fn sample_event() -> PlayerEvent {
+        PlayerEvent::VolumeChanged { volume: 1 }
+    }
+
     #[test]
     fn a_closed_channel_stops_even_if_the_generation_is_current() {
-        assert_eq!(
-            player_event_disposition(false, 4, 4),
-            PlayerEventDisposition::ChannelClosed
-        );
+        match player_event_disposition(None, 4, 4) {
+            PlayerEventDisposition::ChannelClosed => {}
+            other => panic!("expected ChannelClosed, got {other:?}"),
+        }
     }
 
     #[test]
     fn a_closed_channel_stops_even_if_the_generation_is_superseded() {
-        assert_eq!(
-            player_event_disposition(false, 3, 4),
-            PlayerEventDisposition::ChannelClosed
-        );
+        match player_event_disposition(None, 3, 4) {
+            PlayerEventDisposition::ChannelClosed => {}
+            other => panic!("expected ChannelClosed, got {other:?}"),
+        }
     }
 
     #[test]
     fn a_superseded_event_is_ignored() {
-        assert_eq!(
-            player_event_disposition(true, 3, 4),
-            PlayerEventDisposition::IgnoreSuperseded
-        );
+        match player_event_disposition(Some(sample_event()), 3, 4) {
+            PlayerEventDisposition::IgnoreSuperseded => {}
+            other => panic!("expected IgnoreSuperseded, got {other:?}"),
+        }
     }
 
     #[test]
     fn a_current_generation_event_is_applied() {
-        assert_eq!(
-            player_event_disposition(true, 4, 4),
-            PlayerEventDisposition::Apply
-        );
+        match player_event_disposition(Some(sample_event()), 4, 4) {
+            PlayerEventDisposition::Apply(PlayerEvent::VolumeChanged { volume: 1 }) => {}
+            other => panic!("expected Apply(VolumeChanged), got {other:?}"),
+        }
     }
 
     #[test]
