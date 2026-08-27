@@ -164,6 +164,84 @@ fn a_paused_local_player_is_not_resumed() {
 }
 
 #[test]
+fn resume_load_plan_prefers_context_then_track_at_the_resume_position() {
+    let plan = ResumeLoadPlan::capture(
+        93606,
+        0,
+        Some("spotify:playlist:ctx".to_string()),
+        Some("spotify:track:one".to_string()),
+    );
+    assert_eq!(
+        plan.targets(),
+        vec![
+            ResumeLoadTarget::Context {
+                uri: "spotify:playlist:ctx".to_string(),
+                track_hint: Some("spotify:track:one".to_string()),
+                position_ms: 93606,
+            },
+            ResumeLoadTarget::Track {
+                uri: "spotify:track:one".to_string(),
+                position_ms: 93606,
+            },
+        ]
+    );
+}
+
+#[test]
+fn resume_load_plan_skips_empty_context_and_empty_track_fallback() {
+    let plan = ResumeLoadPlan::capture(0, 12087, Some(String::new()), Some(String::new()));
+    assert_eq!(plan.position_ms, 12087);
+    assert!(plan.context_uri.is_none());
+    assert!(
+        plan.targets().is_empty(),
+        "empty context and empty track must not produce a load target"
+    );
+}
+
+#[test]
+fn resume_load_plan_with_only_a_track_loads_that_track() {
+    let plan = ResumeLoadPlan::capture(0, 0, None, Some("spotify:track:solo".to_string()));
+    assert_eq!(
+        plan.targets(),
+        vec![ResumeLoadTarget::Track {
+            uri: "spotify:track:solo".to_string(),
+            position_ms: 0,
+        }]
+    );
+}
+
+#[test]
+fn resume_load_plan_keeps_an_empty_track_as_a_context_hint_only() {
+    let plan = ResumeLoadPlan::capture(
+        10,
+        1,
+        Some("spotify:album:ctx".to_string()),
+        Some(String::new()),
+    );
+    assert_eq!(
+        plan.targets(),
+        vec![ResumeLoadTarget::Context {
+            uri: "spotify:album:ctx".to_string(),
+            track_hint: Some(String::new()),
+            position_ms: 10,
+        }]
+    );
+}
+
+#[test]
+fn playing_event_waits_observe_sequence_advances_and_timeouts() {
+    let _guard = lock_global_state();
+    let previous = PLAYING_EVENT_SEQ.fetch_add(1, Ordering::SeqCst);
+    assert!(playing_event_advanced(previous));
+    assert!(wait_for_playing_event(previous, Duration::ZERO));
+    let current = PLAYING_EVENT_SEQ.load(Ordering::SeqCst);
+    assert!(!playing_event_advanced(current));
+    assert!(!wait_for_playing_event(current, Duration::ZERO));
+    assert!(RUNTIME.block_on(wait_for_playing_event_async(previous, Duration::ZERO)));
+    assert!(!RUNTIME.block_on(wait_for_playing_event_async(current, Duration::ZERO)));
+}
+
+#[test]
 fn health_check_recovers_a_dead_session() {
     assert!(health_check_should_recover(true, false, false, false));
 }
