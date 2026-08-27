@@ -239,12 +239,78 @@ fn no_local_device_id_is_never_active() {
 
 #[test]
 fn credentials_cache_dir_is_absolute_and_app_scoped() {
-    let dir = credentials_cache_dir();
+    let dir = credentials_cache_dir().expect("this environment must expose an absolute HOME");
     assert!(dir.is_absolute(), "cache dir must be absolute: {dir:?}");
     assert!(
         dir.ends_with("Aural/credentials"),
         "cache dir must be app-scoped: {dir:?}"
     );
+}
+
+#[test]
+fn credentials_cache_dir_uses_injected_home_without_tmp_fallback() {
+    let dir = credentials_cache_dir_from_home(Some(std::path::Path::new(
+        "/Users/tester/Library/Containers/app",
+    )))
+    .expect("absolute HOME is usable");
+    assert_eq!(
+        dir,
+        std::path::PathBuf::from(
+            "/Users/tester/Library/Containers/app/Library/Application Support/Aural/credentials"
+        )
+    );
+
+    assert_eq!(
+        credentials_cache_dir_from_home(None),
+        Err(CredentialsCacheError::Missing)
+    );
+    assert_eq!(
+        credentials_cache_dir_from_home(Some(std::path::Path::new(""))),
+        Err(CredentialsCacheError::Missing)
+    );
+    assert_eq!(
+        credentials_cache_dir_from_home(Some(std::path::Path::new("Library"))),
+        Err(CredentialsCacheError::Relative)
+    );
+    for shared in [
+        "/tmp",
+        "/tmp/",
+        "/tmp/aural",
+        "/private/tmp",
+        "/private/tmp/",
+        "/private/tmp/aural",
+        "/var/tmp",
+        "/private/var/tmp",
+        "/var/../tmp",
+        "/Users/../tmp",
+        "/foo/../private/tmp",
+        "/private/./tmp",
+    ] {
+        assert_eq!(
+            credentials_cache_dir_from_home(Some(std::path::Path::new(shared))),
+            Err(CredentialsCacheError::SharedTemporary),
+            "shared temporary HOME must fail closed: {shared}"
+        );
+    }
+}
+
+#[cfg(unix)]
+#[test]
+fn credentials_cache_dir_is_created_private() {
+    use std::os::unix::fs::PermissionsExt;
+    let dir = std::env::temp_dir().join(format!("aural-creds-mode-{}-private", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    ensure_private_credentials_dir(&dir).expect("create private cache dir");
+    let mode = std::fs::metadata(&dir)
+        .expect("cache dir metadata")
+        .permissions()
+        .mode()
+        & 0o777;
+    assert_eq!(
+        mode, 0o700,
+        "credential cache must not be group- or world-accessible"
+    );
+    let _ = std::fs::remove_dir_all(&dir);
 }
 
 #[test]

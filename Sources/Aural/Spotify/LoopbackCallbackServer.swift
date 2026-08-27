@@ -235,29 +235,39 @@ actor LoopbackCallbackServer {
                 }
 
                 guard let components = parseRequestLine(text) else {
-                    completion(.failure(ServerError.malformedRequest))
-                    connection.cancel()
+                    // A complete request line that is not GET /login must not finish the
+                    // one-shot waiter: otherwise GET / or a lookalike wins the first-callback
+                    // race and the real redirect is dropped.
+                    reply(on: connection, status: "404 Not Found", body: "Not Found")
                     return
                 }
 
                 let body = "<html><body>Aural is authorized. You can close this tab.</body></html>"
-                let response = """
-                HTTP/1.1 200 OK\r
-                Content-Type: text/html; charset=utf-8\r
-                Content-Length: \(body.utf8.count)\r
-                Connection: close\r
-                \r
-                \(body)
-                """
-
-                connection.send(content: Data(response.utf8), completion: .contentProcessed { _ in
-                    connection.cancel()
-                })
+                reply(on: connection, status: "200 OK", body: body, contentType: "text/html; charset=utf-8")
                 completion(.success(components))
             }
         }
 
         read(Data())
+    }
+
+    private nonisolated static func reply(
+        on connection: NWConnection,
+        status: String,
+        body: String,
+        contentType: String = "text/plain; charset=utf-8"
+    ) {
+        let response = """
+        HTTP/1.1 \(status)\r
+        Content-Type: \(contentType)\r
+        Content-Length: \(body.utf8.count)\r
+        Connection: close\r
+        \r
+        \(body)
+        """
+        connection.send(content: Data(response.utf8), completion: .contentProcessed { _ in
+            connection.cancel()
+        })
     }
 
     /// Pulls the query out of an HTTP request line: `GET /login?code=…&state=… HTTP/1.1`.

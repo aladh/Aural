@@ -258,12 +258,17 @@ func runLoopbackParsingChecks(_ check: CheckRunner) {
         let parsed = LoopbackCallbackServer.parseRequestLine(
             "GET /login?code=abc&state=xyz HTTP/1.1\r\nHost: 127.0.0.1\n"
         )
-        check.notNil("GET line parses", parsed)
+        check.notNil("CRLF GET line parses", parsed)
         if let parsed {
             check.equal("path", parsed.path, "/login")
             check.equal("code parameter", parsed.queryItems?.first(where: { $0.name == "code" })?.value, "abc")
             check.equal("state parameter", parsed.queryItems?.first(where: { $0.name == "state" })?.value, "xyz")
         }
+
+        let lf = LoopbackCallbackServer.parseRequestLine(
+            "GET /login?code=abc&state=xyz HTTP/1.1\nHost: 127.0.0.1\n"
+        )
+        check.equal("LF terminator yields the same path", lf?.path, "/login")
 
         // A request split across TCP reads may arrive with no trailing newline yet.
         let splitLine = LoopbackCallbackServer.parseRequestLine("GET /login?code=abc HTTP/1.1")
@@ -292,6 +297,180 @@ func runLoopbackParsingChecks(_ check: CheckRunner) {
             check.equal("query-less path", bare.path, "/login")
             check.nil_("no parameters without a query", bare.queryItems)
         }
+
+        check.nil_(
+            "root path rejected",
+            LoopbackCallbackServer.parseRequestLine("GET / HTTP/1.1\n")
+        )
+        check.nil_(
+            "root path with query cannot win",
+            LoopbackCallbackServer.parseRequestLine("GET /?code=abc&state=xyz HTTP/1.1\n")
+        )
+        check.nil_(
+            "prefix lookalike rejected",
+            LoopbackCallbackServer.parseRequestLine("GET /login/extra?code=abc HTTP/1.1\n")
+        )
+        check.nil_(
+            "suffix lookalike rejected",
+            LoopbackCallbackServer.parseRequestLine("GET /loginn?code=abc HTTP/1.1\n")
+        )
+        check.nil_(
+            "encoded extra segment rejected",
+            LoopbackCallbackServer.parseRequestLine("GET /login%2Fextra?code=abc HTTP/1.1\n")
+        )
+        check.nil_(
+            "empty HTTP version rejected",
+            LoopbackCallbackServer.parseRequestLine("GET /login?code=abc HTTP/\n")
+        )
+        check.nil_(
+            "suffixed HTTP version rejected",
+            LoopbackCallbackServer.parseRequestLine("GET /login?code=abc HTTP/1.1junk\n")
+        )
+    }
+}
+
+@MainActor
+func runLoopbackServerChecks(_ check: CheckRunner) async {
+    await check.suite("Loopback callback server path") {
+        let server = LoopbackCallbackServer()
+        let port: UInt16
+        do {
+            port = try await server.start()
+        } catch {
+            check.check("loopback listener starts", false)
+            return
+        }
+
+        let session = URLSession(configuration: .ephemeral)
+        async let callback = server.waitForCallback(timeout: .seconds(5))
+
+        let rejectedRoot = await httpStatus(session: session, url: URL(string: "http://127.0.0.1:\(port)/")!)
+        check.equal("GET / is not found", rejectedRoot, 404)
+        let rejectedLookalike = await httpStatus(
+            session: session,
+            url: URL(string: "http://127.0.0.1:\(port)/login/extra?code=steal&state=steal")!
+        )
+        check.equal("GET /login/extra is not found", rejectedLookalike, 404)
+
+        let accepted = await httpStatus(
+            session: session,
+            url: URL(string: "http://127.0.0.1:\(port)/login?code=ok&state=s")!
+        )
+        check.equal("GET /login is accepted", accepted, 200)
+
+        do {
+            let components = try await callback
+            check.equal("accepted target is /login", components.path, "/login")
+            check.equal(
+                "code survives rejected predecessors",
+                components.queryItems?.first(where: { $0.name == "code" })?.value,
+                "ok"
+            )
+        } catch {
+            check.check("rejected targets do not finish the waiter", false)
+        }
+    }
+}
+
+private func httpStatus(session: URLSession, url: URL) async -> Int {
+    do {
+        let (_, response) = try await session.data(from: url)
+        return (response as? HTTPURLResponse)?.statusCode ?? -1
+    } catch {
+        return -1
+    }
+}
+
+@MainActor
+func runAuthCookieCleanupChecks(_ check: CheckRunner) async {
+    check.suite("Sign Out cookie cleanup") {
+        func cookie(_ name: String, domain: String, path: String = "/") -> HTTPCookie {
+            HTTPCookie(properties: [
+                .name: name,
+                .value: "token",
+                .domain: domain,
+                .path: path,
+            ])!
+        }
+
+        let spotify = cookie("sp_dc", domain: "accounts.spotify.com")
+        let apex = cookie("sp_key", domain: "spotify.com")
+        let lookalike = cookie("sp_dc", domain: "notspotify.com")
+        let unrelated = cookie("sid", domain: "example.com")
+        let deleted = AuthCookieCleanup.cookiesToDelete(in: [unrelated, lookalike, apex, spotify])
+        check.equal(
+            "only Spotify cookies are selected",
+            Set(deleted.map(\.name)),
+            Set(["sp_dc", "sp_key"])
+        )
+        check.equal(
+            "a second selection of the remainder is empty",
+            AuthCookieCleanup.cookiesToDelete(in: [unrelated, lookalike]).map(\.name),
+            []
+        )
+        check.equal(
+            "selection is idempotent",
+            AuthCookieCleanup.cookiesToDelete(in: deleted).map(\.name),
+            deleted.map(\.name)
+        )
+    }
+
+    await check.suite("Sign Out cookie cleanup follows grant clear") {
+        let store = MemoryKeymasterStore()
+        let counter = CleanupCounter()
+        let session = KeymasterSession(
+            store: store,
+            refresher: { _ in throw KeymasterAuthError.grantRevoked },
+            cookieCleanup: { counter.increment() }
+        )
+        let tokens = KeymasterTokens(
+            accessToken: "at",
+            refreshToken: "rt",
+            expiresAt: Date().addingTimeInterval(3_600),
+            username: "listener"
+        )
+        do {
+            try await session.adopt(tokens)
+            check.check("adopt writes the grant", true)
+        } catch {
+            check.check("adopt writes the grant", false)
+        }
+        await session.clear()
+        check.equal("clearing the grant removes Spotify cookies", counter.count, 1)
+        await session.clear()
+        check.equal("a second clear is still safe", counter.count, 2)
+        check.nil_("the grant does not return after cookie cleanup", store.stored)
+    }
+}
+
+private final class MemoryKeymasterStore: KeymasterTokenStoring, @unchecked Sendable {
+    var stored: KeymasterTokens?
+
+    func load() -> KeymasterTokens? { stored }
+
+    func save(_ tokens: KeymasterTokens) throws {
+        stored = tokens
+    }
+
+    func clear() {
+        stored = nil
+    }
+}
+
+private final class CleanupCounter: @unchecked Sendable {
+    private let lock = NSLock()
+    private var value = 0
+
+    func increment() {
+        lock.lock()
+        value += 1
+        lock.unlock()
+    }
+
+    var count: Int {
+        lock.lock()
+        defer { lock.unlock() }
+        return value
     }
 }
 
