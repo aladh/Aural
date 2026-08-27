@@ -11,7 +11,7 @@ import OSLog
 
 extension PlaybackStore {
     func performCommand(
-        _ failure: String,
+        _ action: String,
         expecting expectedPlaybackState: Bool? = nil,
         operation: LocalPlaybackOperation,
         kind: PlaybackCommandKind = .transport,
@@ -54,7 +54,7 @@ extension PlaybackStore {
                     capturedAccountEpoch: epoch,
                     capturedEngineEpoch: engineEpoch,
                     outcome: outcome,
-                    action: failure,
+                    action: action,
                     completion: completion
                 )
             } catch {
@@ -64,7 +64,7 @@ extension PlaybackStore {
     }
 
     func performRoutedCommand(
-        _ failure: String,
+        _ action: String,
         kind: PlaybackCommandKind = .transport,
         expecting expectedPlaybackState: Bool? = nil,
         local: LocalPlaybackOperation,
@@ -72,7 +72,7 @@ extension PlaybackStore {
         completion: @escaping @MainActor (Bool) -> Void = { _ in }
     ) {
         performRoutedOperation(
-            failure,
+            action,
             kind: kind,
             expecting: expectedPlaybackState,
             local: local,
@@ -82,7 +82,7 @@ extension PlaybackStore {
     }
 
     func performRoutedOperation(
-        _ failure: String,
+        _ action: String,
         kind: PlaybackCommandKind = .transport,
         expecting expectedPlaybackState: Bool? = nil,
         local: LocalPlaybackOperation,
@@ -93,7 +93,7 @@ extension PlaybackStore {
         case .local:
             AuralLog.commands.info("Routing \(String(describing: kind), privacy: .public) command locally")
             performCommand(
-                failure,
+                action,
                 expecting: expectedPlaybackState,
                 operation: local,
                 kind: kind,
@@ -108,7 +108,7 @@ extension PlaybackStore {
                 "Routing \(String(describing: kind), privacy: .public) command remotely; source=\(from, privacy: .private(mask: .hash)); target=\(to, privacy: .private(mask: .hash))"
             )
             performRemoteOperation(
-                failure,
+                action,
                 kind: kind,
                 expecting: expectedPlaybackState,
                 from: from,
@@ -120,7 +120,7 @@ extension PlaybackStore {
     }
 
     private func performRemoteOperation(
-        _ failure: String,
+        _ action: String,
         kind: PlaybackCommandKind,
         expecting expectedPlaybackState: Bool?,
         from sourceID: String,
@@ -167,7 +167,7 @@ extension PlaybackStore {
                     capturedAccountEpoch: epoch,
                     capturedEngineEpoch: engineEpoch,
                     outcome: outcome,
-                    action: failure,
+                    action: action,
                     completion: completion
                 )
             } catch {
@@ -199,9 +199,7 @@ extension PlaybackStore {
         case let .failure(failure):
             succeeded = false
             requiresReconnect = failure == .reconnectRequired
-            notice = PlaybackNotice(
-                message: PlaybackCommandPresentation.noticeMessage(for: failure, action: action)
-            )
+            notice = PlaybackNotice(message: action)
         }
         let finished = send(
             .commandFinished(

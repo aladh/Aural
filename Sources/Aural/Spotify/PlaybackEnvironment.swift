@@ -5,6 +5,7 @@ nonisolated struct PlaybackEngineResult: Equatable, Sendable {
     let rawValue: Int32
 
     static let ok = PlaybackEngineResult(rawValue: 0)
+    static let error = PlaybackEngineResult(rawValue: -1)
     var isOK: Bool { rawValue == 0 }
     var requiresReconnect: Bool { rawValue == -2 || rawValue == -3 }
 }

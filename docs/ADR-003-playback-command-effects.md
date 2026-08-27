@@ -204,9 +204,9 @@ Issue 17 is implemented at the **coordinator / store boundary**, not via TCA `Re
 `PlaybackCoordinator.performLocalCommand` / `performRemoteCommand` return
 `Result<Void, PlaybackCommandFailure>` and throw only `CancellationError`. Cases are `rejected`,
 `reconnectRequired`, `remoteRejected`, and `unavailable`. `PlaybackStore+Commands` branches on
-those cases; `PlaybackCommandPresentation` derives notices from the action string plus the case
-and never appends engine codes or remote `localizedDescription` text. Mapping stays in Core.
-`playbackCommandFollowUp` and `PlaybackEffectRegistry` are unchanged.
+those cases. Notices use the already-sanitized action string and never append engine codes or
+remote `localizedDescription` text. Mapping stays in Core. `playbackCommandFollowUp` and
+`PlaybackEffectRegistry` are unchanged.
 
 ## Consequences
 

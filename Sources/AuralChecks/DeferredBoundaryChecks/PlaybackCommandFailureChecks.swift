@@ -202,11 +202,11 @@ func runPlaybackCommandFailureChecks(_ runner: CheckRunner) async {
         case .failure:
             runner.check("local success is a typed success", false)
         }
-        switch PlaybackCommandFailure.from(engineResult: PlaybackEngineResult(rawValue: -1)) {
+        switch PlaybackCommandFailure.from(engineResult: .error) {
         case .success:
-            runner.check("engine error -1 is rejected", false)
+            runner.check("engine error is rejected", false)
         case let .failure(failure):
-            runner.equal("engine error -1 is rejected", failure, .rejected)
+            runner.equal("engine error is rejected", failure, .rejected)
         }
         switch PlaybackCommandFailure.from(engineResult: PlaybackEngineResult(rawValue: -2)) {
         case .success:
@@ -226,16 +226,6 @@ func runPlaybackCommandFailureChecks(_ runner: CheckRunner) async {
         case let .failure(failure):
             runner.equal("an unrecognized engine code is unavailable", failure, .unavailable)
         }
-        runner.equal(
-            "rejected notices keep the action string",
-            PlaybackCommandPresentation.noticeMessage(for: .rejected, action: "Pause was rejected"),
-            "Pause was rejected"
-        )
-        runner.equal(
-            "remote rejection notices keep the action string",
-            PlaybackCommandPresentation.noticeMessage(for: .remoteRejected, action: "Pause was rejected"),
-            "Pause was rejected"
-        )
     }
 
     await runner.suite("Coordinator local command outcomes") {
@@ -252,7 +242,7 @@ func runPlaybackCommandFailureChecks(_ runner: CheckRunner) async {
         }
 
         let rejectedCoordinator = PlaybackCoordinator(
-            local: ScriptedLocalEngine(result: PlaybackEngineResult(rawValue: -1)),
+            local: ScriptedLocalEngine(result: .error),
             remote: ScriptedRemoteClient(.succeed)
         )
         if let rejected = await localCommandOutcome(rejectedCoordinator, runner, label: "local rejection") {
@@ -358,7 +348,7 @@ func runPlaybackCommandFailureChecks(_ runner: CheckRunner) async {
         runner.equal("local success does not reconnect", success.authorizeCount, 0)
         await success.player.shutdownForTermination()
 
-        let rejected = await runLocal(PlaybackEngineResult(rawValue: -1))
+        let rejected = await runLocal(.error)
         runner.equal("local rejection completion", rejected.completions, [false])
         runner.equal("local rejection uses the action notice", rejected.notice, action)
         runner.equal("local rejection does not reconnect", rejected.authorizeCount, 0)

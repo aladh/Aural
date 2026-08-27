@@ -22,20 +22,9 @@ nonisolated enum PlaybackCommandFailure: Error, Equatable, Sendable {
         if engineResult.requiresReconnect {
             return .failure(.reconnectRequired)
         }
-        if engineResult.rawValue == -1 {
+        if engineResult == .error {
             return .failure(.rejected)
         }
         return .failure(.unavailable)
-    }
-}
-
-/// User-facing command copy. Action strings stay specific ("Pause was rejected"); cases never
-/// append engine codes or remote `localizedDescription` text.
-nonisolated enum PlaybackCommandPresentation {
-    static func noticeMessage(for failure: PlaybackCommandFailure, action: String) -> String {
-        switch failure {
-        case .rejected, .reconnectRequired, .remoteRejected, .unavailable:
-            action
-        }
     }
 }
