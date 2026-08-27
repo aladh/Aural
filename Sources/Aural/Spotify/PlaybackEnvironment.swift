@@ -312,9 +312,9 @@ actor PlaybackCoordinator {
     func performLocalCommand(
         _ operation: LocalPlaybackOperation
     ) async throws(CancellationError) -> Result<Void, PlaybackCommandFailure> {
-        try Task.checkCancellation()
+        if Task.isCancelled { throw CancellationError() }
         let outcome = PlaybackCommandFailure.from(engineResult: local.execute(operation))
-        try Task.checkCancellation()
+        if Task.isCancelled { throw CancellationError() }
         return outcome
     }
 
@@ -360,7 +360,7 @@ actor PlaybackCoordinator {
     func performRemoteCommand(
         _ operation: @escaping @Sendable (any RemotePlaybackClient) async throws -> Void
     ) async throws(CancellationError) -> Result<Void, PlaybackCommandFailure> {
-        try Task.checkCancellation()
+        if Task.isCancelled { throw CancellationError() }
         do {
             try await operation(remote)
         } catch is CancellationError {
@@ -371,7 +371,7 @@ actor PlaybackCoordinator {
             }
             return .failure(.remoteRejected)
         }
-        try Task.checkCancellation()
+        if Task.isCancelled { throw CancellationError() }
         return .success(())
     }
 }

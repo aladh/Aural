@@ -2,9 +2,10 @@ import Foundation
 
 /// Operational failures for playback *commands* at the coordinator/store boundary.
 ///
-/// Infrastructure codes stay in `PlaybackEngineResult`. Cancellation is not a case here:
-/// command methods throw only `CancellationError`.
-nonisolated enum PlaybackCommandFailure: Equatable, Sendable {
+/// `Error` is required by `Result`'s `Failure` bound. Command methods still return these
+/// cases in `Result` and throw only `CancellationError`. Infrastructure codes stay in
+/// `PlaybackEngineResult`.
+nonisolated enum PlaybackCommandFailure: Error, Equatable, Sendable {
     /// The local engine declined the command without invalidating the session.
     case rejected
     /// The local session must be reinitialized before another local command can succeed.
