@@ -481,6 +481,16 @@ func runWorkflowChecks(_ runner: CheckRunner) async {
             "occ-4"
         )
         runner.equal("same-context Web refresh stays Connect-owned", keptOrder.source, .connect)
+        runner.equal(
+            "same-context Web refresh does not copy the Web revision onto Connect order",
+            keptOrder.revision,
+            connectUID.revision
+        )
+        runner.equal(
+            "same-context Web refresh does not copy Web receivedAt onto Connect order",
+            keptOrder.receivedAt,
+            connectUID.receivedAt
+        )
         let changedURI = workflowQueueSnapshot(
             revision: 6,
             contextURI: "spotify:track:changed",
@@ -533,6 +543,27 @@ func runWorkflowChecks(_ runner: CheckRunner) async {
             "occ-4"
         )
         runner.equal("QueueService Web refresh stays Connect-owned", refreshed?.source, .connect)
+        runner.equal("QueueService Web refresh keeps the Connect ordering revision", refreshed?.revision, 1)
+        let laterConnect = await orderedService.acceptConnect(
+            [
+                QueueEntry(uri: "spotify:track:same", provider: "connect", occurrence: 0, uid: "occ-a"),
+                QueueEntry(uri: "spotify:track:same", provider: "connect", occurrence: 1, uid: "occ-b"),
+                QueueEntry(uri: "spotify:track:tail", provider: "connect", occurrence: 2, uid: "occ-c"),
+            ],
+            accountEpoch: 3,
+            sourceRevision: 2,
+            contextURI: "spotify:track:same"
+        )
+        runner.equal(
+            "a later Connect revision still replaces order after a Web refresh",
+            laterConnect?.snapshot.entries.map(\.uri),
+            ["spotify:track:same", "spotify:track:same", "spotify:track:tail"]
+        )
+        runner.equal(
+            "later Connect occurrences keep distinct uids",
+            laterConnect?.snapshot.entries.map(\.uid),
+            ["occ-a", "occ-b", "occ-c"]
+        )
         runner.equal(
             "Web refresh does not rewrite the Connect mutation snapshot",
             await orderedService.mutationSnapshot()?.next.map(\.uid),

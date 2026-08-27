@@ -674,7 +674,8 @@ public enum PlaybackReducer {
 
 /// The one queue-ordering precedence policy used by both the reducer and live queue service.
 /// Complete Connect occurrence order is authoritative for a playback context. Web API and
-/// catalog metadata may enrich labels, but they must not reorder or replace that list.
+/// catalog metadata may enrich labels, but they must not reorder or replace that list, and
+/// they must not copy their revision or receivedAt onto the Connect ordering snapshot.
 public func mergePlaybackQueueSnapshots(
     current: PlaybackQueueSnapshot,
     incoming: PlaybackQueueSnapshot
@@ -692,6 +693,8 @@ public func mergePlaybackQueueSnapshots(
     return incoming.completeness >= current.completeness ? incoming : current
 }
 
+/// Same-context Web snapshots may ride along for metadata elsewhere. They do not become
+/// the occurrence list, and they do not share a revision/receivedAt clock with Connect.
 private func preservingConnectOccurrenceOrder(
     current: PlaybackQueueSnapshot,
     incoming: PlaybackQueueSnapshot
@@ -699,12 +702,7 @@ private func preservingConnectOccurrenceOrder(
     let currentConnect = current.source == .connect && current.completeness == .complete
     let incomingConnect = incoming.source == .connect && incoming.completeness == .complete
     if currentConnect, incoming.source == .webAPI {
-        var kept = current
-        kept.revision = max(current.revision, incoming.revision)
-        if incoming.receivedAt > current.receivedAt {
-            kept.receivedAt = incoming.receivedAt
-        }
-        return kept
+        return current
     }
     if incomingConnect, current.source == .webAPI {
         return incoming

@@ -21,7 +21,8 @@ could still combine values from different account, engine, command, queue, or se
   for `set_queue`. Metadata enrichment cannot reorder a queue, and stale or provisional results
   cannot erase a newer authoritative snapshot. Same-context Web API `/me/player/queue` snapshots
   may enrich labels only; complete Connect occurrence order remains authoritative and is not
-  replaced by Web entry order. Connect `set_queue` replacement reads that mutation snapshot
+  replaced by Web entry order. A same-context Web snapshot must not copy its revision or
+  receivedAt onto that Connect ordering snapshot; those clocks stay distinct per source. Connect `set_queue` replacement reads that mutation snapshot
   (`next`/`prev` protocol tracks, including Connect occurrence uids and the incoming metadata map,
   `queue_revision`, restriction flags). QueueService updates it from Connect intake and from a
   committed remote replacement, not from Web metadata enrichment. `PlaybackStore.queueMutation` is

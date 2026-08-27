@@ -667,6 +667,16 @@ func runPlaybackReducerChecks(_ check: CheckRunner) {
             connectQueue.entries.map(\.uri)
         )
         check.equal("Web refresh does not take ownership of Connect order", state.queue.source, .connect)
+        check.equal(
+            "a high-revision Web refresh does not overwrite the Connect ordering revision",
+            state.queue.revision,
+            connectQueue.revision
+        )
+        check.equal(
+            "a high-revision Web refresh does not overwrite Connect receivedAt",
+            state.queue.receivedAt,
+            connectQueue.receivedAt
+        )
 
         let exactNewer = queue([item("c")], source: .webAPI, completeness: .complete, revision: 2)
         _ = PlaybackReducer.reduce(&state, envelope: envelope(source: .engineQueue, revision: 6, event: .queue(exactNewer)))
@@ -692,7 +702,12 @@ func runPlaybackReducerChecks(_ check: CheckRunner) {
         )
         _ = PlaybackReducer.reduce(&state, envelope: envelope(source: .engineQueue, revision: 9, event: .queue(duplicates)))
         check.equal("duplicate queue uris preserve source order", state.queue.entries.map(\.uri), ["spotify:track:same", "spotify:track:same", "spotify:track:tail"])
-        check.notEqual("duplicate queue occurrences retain distinct identities", state.queue.entries[0].id, state.queue.entries[1].id)
+        check.equal("the later Connect occurrence list keeps its own revision", state.queue.revision, 3)
+        let duplicateIDs = state.queue.entries.map(\.id)
+        check.check(
+            "duplicate queue occurrences retain distinct identities",
+            duplicateIDs.count == 3 && Set(duplicateIDs).count == duplicateIDs.count
+        )
 
         var newContext = queue(
             [item("new-context", provider: "queue")],
