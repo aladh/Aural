@@ -348,7 +348,11 @@ func runWorkflowChecks(_ runner: CheckRunner) async {
         }
         try? await coordinator.performRemote(.shuffle(true), from: "source", to: "target")
 
-        runner.equal("fake local command succeeds", localResult, .success(()))
+        if case .success = localResult {
+            runner.check("fake local command succeeds", true)
+        } else {
+            runner.check("fake local command succeeds", false)
+        }
         runner.equal("one local command recorded", local.operations.count, 1)
         if case .pause? = local.operations.first {
             runner.check("pause command reaches injected engine", true)

@@ -208,31 +208,36 @@ private func commandEnvironment(
 @MainActor
 func runPlaybackCommandFailureChecks(_ runner: CheckRunner) async {
     runner.suite("Playback command failure mapping") {
-        runner.equal(
-            "local success is a typed success",
-            PlaybackCommandFailure.from(engineResult: .ok),
-            .success(())
-        )
-        runner.equal(
-            "engine error -1 is rejected",
-            PlaybackCommandFailure.from(engineResult: PlaybackEngineResult(rawValue: -1)),
-            .failure(.rejected)
-        )
-        runner.equal(
-            "session disconnected is reconnect-required",
-            PlaybackCommandFailure.from(engineResult: PlaybackEngineResult(rawValue: -2)),
-            .failure(.reconnectRequired)
-        )
-        runner.equal(
-            "session not connected is reconnect-required",
-            PlaybackCommandFailure.from(engineResult: PlaybackEngineResult(rawValue: -3)),
-            .failure(.reconnectRequired)
-        )
-        runner.equal(
-            "an unrecognized engine code is unavailable",
-            PlaybackCommandFailure.from(engineResult: PlaybackEngineResult(rawValue: -99)),
-            .failure(.unavailable)
-        )
+        switch PlaybackCommandFailure.from(engineResult: .ok) {
+        case .success:
+            runner.check("local success is a typed success", true)
+        case .failure:
+            runner.check("local success is a typed success", false)
+        }
+        switch PlaybackCommandFailure.from(engineResult: PlaybackEngineResult(rawValue: -1)) {
+        case .success:
+            runner.check("engine error -1 is rejected", false)
+        case let .failure(failure):
+            runner.equal("engine error -1 is rejected", failure, .rejected)
+        }
+        switch PlaybackCommandFailure.from(engineResult: PlaybackEngineResult(rawValue: -2)) {
+        case .success:
+            runner.check("session disconnected is reconnect-required", false)
+        case let .failure(failure):
+            runner.equal("session disconnected is reconnect-required", failure, .reconnectRequired)
+        }
+        switch PlaybackCommandFailure.from(engineResult: PlaybackEngineResult(rawValue: -3)) {
+        case .success:
+            runner.check("session not connected is reconnect-required", false)
+        case let .failure(failure):
+            runner.equal("session not connected is reconnect-required", failure, .reconnectRequired)
+        }
+        switch PlaybackCommandFailure.from(engineResult: PlaybackEngineResult(rawValue: -99)) {
+        case .success:
+            runner.check("an unrecognized engine code is unavailable", false)
+        case let .failure(failure):
+            runner.equal("an unrecognized engine code is unavailable", failure, .unavailable)
+        }
         runner.equal(
             "rejected notices keep the action string",
             PlaybackCommandPresentation.noticeMessage(for: .rejected, action: "Pause was rejected"),
@@ -251,7 +256,11 @@ func runPlaybackCommandFailureChecks(_ runner: CheckRunner) async {
             remote: ScriptedRemoteClient(.succeed)
         )
         if let success = await localCommandOutcome(successCoordinator, runner, label: "local success") {
-            runner.equal("local success", success, .success(()))
+            if case .success = success {
+                runner.check("local success", true)
+            } else {
+                runner.check("local success", false)
+            }
         }
 
         let rejectedCoordinator = PlaybackCoordinator(
@@ -259,7 +268,11 @@ func runPlaybackCommandFailureChecks(_ runner: CheckRunner) async {
             remote: ScriptedRemoteClient(.succeed)
         )
         if let rejected = await localCommandOutcome(rejectedCoordinator, runner, label: "local rejection") {
-            runner.equal("local rejection", rejected, .failure(.rejected))
+            if case let .failure(failure) = rejected {
+                runner.equal("local rejection", failure, .rejected)
+            } else {
+                runner.check("local rejection", false)
+            }
         }
 
         let reconnectCoordinator = PlaybackCoordinator(
@@ -271,7 +284,11 @@ func runPlaybackCommandFailureChecks(_ runner: CheckRunner) async {
             runner,
             label: "local reconnect-required"
         ) {
-            runner.equal("local reconnect-required", reconnect, .failure(.reconnectRequired))
+            if case let .failure(failure) = reconnect {
+                runner.equal("local reconnect-required", failure, .reconnectRequired)
+            } else {
+                runner.check("local reconnect-required", false)
+            }
         }
     }
 
@@ -282,7 +299,11 @@ func runPlaybackCommandFailureChecks(_ runner: CheckRunner) async {
         ).performRemoteCommand { remote in
             try await remote.send(.pause, from: "from", to: "to")
         }
-        runner.equal("remote success", success, Optional.some(.success(())))
+        if case .success? = success {
+            runner.check("remote success", true)
+        } else {
+            runner.check("remote success", false)
+        }
 
         let rejected = try? await PlaybackCoordinator(
             local: ScriptedLocalEngine(result: .ok),
@@ -290,7 +311,11 @@ func runPlaybackCommandFailureChecks(_ runner: CheckRunner) async {
         ).performRemoteCommand { remote in
             try await remote.send(.pause, from: "from", to: "to")
         }
-        runner.equal("remote rejection", rejected, Optional.some(.failure(.remoteRejected)))
+        if case let .failure(failure)? = rejected {
+            runner.equal("remote rejection", failure, .remoteRejected)
+        } else {
+            runner.check("remote rejection", false)
+        }
 
         let coordinator = PlaybackCoordinator(
             local: ScriptedLocalEngine(result: .ok),
