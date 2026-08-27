@@ -43,7 +43,7 @@ public enum LoopbackRequestParser {
         return parseOriginFormCallbackTarget(String(parts[1]))
     }
 
-    /// RFC 9112 `HTTP-version`: `HTTP/` plus a numeric major, optionally `.` minor.
+    /// RFC 9112 `HTTP-version`: `HTTP/` plus ASCII DIGIT major, optionally `.` minor.
     static func isHTTPVersion(_ token: Substring) -> Bool {
         guard token.hasPrefix("HTTP/") else { return false }
         let version = token.dropFirst(5)
