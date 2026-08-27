@@ -246,6 +246,14 @@ private func outcomeEnvironment(
     )
 }
 
+@MainActor
+private func playbackStore(_ environment: PlaybackEnvironment) -> PlaybackStore {
+    PlaybackStore(
+        environment: environment,
+        feedback: TransientFeedbackPresenter(clock: environment.clock)
+    )
+}
+
 private func fixtureTrack(_ uri: String, title: String) -> CatalogTrack {
     CatalogTrack(
         id: uri,
@@ -365,7 +373,7 @@ private func startTrackResolution(_ player: PlaybackStore, uri: String) {
 func runPlaybackEventOutcomeChecks(_ runner: CheckRunner) async {
     await runner.suite("Track metadata outcomes re-enter through PlaybackEvent") {
         let successRemote = GatedMetadataRemote()
-        let success = PlaybackStore(environment: outcomeEnvironment(remote: successRemote))
+        let success = playbackStore(outcomeEnvironment(remote: successRemote))
         startTrackResolution(success, uri: "spotify:track:success")
         runner.check("metadata lookup starts", await waitUntil { await successRemote.requestedURI == "spotify:track:success" })
         success.recordPlayed("spotify:track:success")
@@ -379,7 +387,7 @@ func runPlaybackEventOutcomeChecks(_ runner: CheckRunner) async {
         await success.shutdownForTermination()
 
         let staleEngineRemote = GatedMetadataRemote()
-        let staleEngine = PlaybackStore(environment: outcomeEnvironment(remote: staleEngineRemote))
+        let staleEngine = playbackStore(outcomeEnvironment(remote: staleEngineRemote))
         startTrackResolution(staleEngine, uri: "spotify:track:stale-engine")
         runner.check("stale-engine metadata lookup starts", await waitUntil { await staleEngineRemote.requestedURI != nil })
         bumpEngine(staleEngine)
@@ -390,7 +398,7 @@ func runPlaybackEventOutcomeChecks(_ runner: CheckRunner) async {
         await staleEngine.shutdownForTermination()
 
         let staleAccountRemote = GatedMetadataRemote()
-        let staleAccount = PlaybackStore(environment: outcomeEnvironment(remote: staleAccountRemote))
+        let staleAccount = playbackStore(outcomeEnvironment(remote: staleAccountRemote))
         startTrackResolution(staleAccount, uri: "spotify:track:stale-account")
         runner.check("stale-account metadata lookup starts", await waitUntil { await staleAccountRemote.requestedURI != nil })
         staleAccount.recordPlayed("spotify:track:stale-account")
@@ -411,7 +419,7 @@ func runPlaybackEventOutcomeChecks(_ runner: CheckRunner) async {
         await staleAccount.shutdownForTermination()
 
         let cancelRemote = GatedMetadataRemote()
-        let cancelled = PlaybackStore(environment: outcomeEnvironment(remote: cancelRemote))
+        let cancelled = playbackStore(outcomeEnvironment(remote: cancelRemote))
         startTrackResolution(cancelled, uri: "spotify:track:cancelled")
         runner.check("cancelled metadata lookup starts", await waitUntil { await cancelRemote.requestedURI != nil })
         cancelled.recordPlayed("spotify:track:cancelled")
@@ -423,7 +431,7 @@ func runPlaybackEventOutcomeChecks(_ runner: CheckRunner) async {
         await cancelled.shutdownForTermination()
 
         let rejectedRemote = GatedMetadataRemote()
-        let rejected = PlaybackStore(environment: outcomeEnvironment(remote: rejectedRemote))
+        let rejected = playbackStore(outcomeEnvironment(remote: rejectedRemote))
         startTrackResolution(rejected, uri: "spotify:track:original")
         runner.check("reducer-rejection metadata lookup starts", await waitUntil { await rejectedRemote.requestedURI == "spotify:track:original" })
         rejected.recordPlayed("spotify:track:original")
@@ -444,8 +452,8 @@ func runPlaybackEventOutcomeChecks(_ runner: CheckRunner) async {
 
     await runner.suite("Position refresh outcomes re-enter through timing") {
         let successEngine = GatedPositionEngine()
-        let success = PlaybackStore(
-            environment: outcomeEnvironment(local: successEngine, remote: ImmediateMetadataRemote())
+        let success = playbackStore(
+            outcomeEnvironment(local: successEngine, remote: ImmediateMetadataRemote())
         )
         seedReadyLocalPlayback(success, uri: "spotify:track:playing")
         success.refreshPosition()
@@ -458,8 +466,8 @@ func runPlaybackEventOutcomeChecks(_ runner: CheckRunner) async {
         await success.shutdownForTermination()
 
         let staleAccountEngine = GatedPositionEngine()
-        let staleAccount = PlaybackStore(
-            environment: outcomeEnvironment(local: staleAccountEngine, remote: ImmediateMetadataRemote())
+        let staleAccount = playbackStore(
+            outcomeEnvironment(local: staleAccountEngine, remote: ImmediateMetadataRemote())
         )
         seedReadyLocalPlayback(staleAccount, uri: "spotify:track:playing")
         staleAccount.refreshPosition()
@@ -476,8 +484,8 @@ func runPlaybackEventOutcomeChecks(_ runner: CheckRunner) async {
         await staleAccount.shutdownForTermination()
 
         let staleEngineEngine = GatedPositionEngine()
-        let staleEngine = PlaybackStore(
-            environment: outcomeEnvironment(local: staleEngineEngine, remote: ImmediateMetadataRemote())
+        let staleEngine = playbackStore(
+            outcomeEnvironment(local: staleEngineEngine, remote: ImmediateMetadataRemote())
         )
         seedReadyLocalPlayback(staleEngine, uri: "spotify:track:playing")
         staleEngine.refreshPosition()
@@ -489,8 +497,8 @@ func runPlaybackEventOutcomeChecks(_ runner: CheckRunner) async {
         await staleEngine.shutdownForTermination()
 
         let cancelEngine = GatedPositionEngine()
-        let cancelled = PlaybackStore(
-            environment: outcomeEnvironment(local: cancelEngine, remote: ImmediateMetadataRemote())
+        let cancelled = playbackStore(
+            outcomeEnvironment(local: cancelEngine, remote: ImmediateMetadataRemote())
         )
         seedReadyLocalPlayback(cancelled, uri: "spotify:track:playing")
         cancelled.refreshPosition()
@@ -503,7 +511,7 @@ func runPlaybackEventOutcomeChecks(_ runner: CheckRunner) async {
     }
 
     await runner.suite("Queue adoption is stamped and gates catalog metadata") {
-        let player = PlaybackStore(environment: outcomeEnvironment(remote: ImmediateMetadataRemote()))
+        let player = playbackStore(outcomeEnvironment(remote: ImmediateMetadataRemote()))
         _ = player.send(.session(.ready), source: .account)
         player.catalogSession.update(accountEpoch: player.accountEpoch, isAvailable: true)
 
@@ -550,8 +558,8 @@ func runPlaybackEventOutcomeChecks(_ runner: CheckRunner) async {
         await player.shutdownForTermination()
 
         let webQueue = SuspendedWebQueue()
-        let cancelled = PlaybackStore(
-            environment: outcomeEnvironment(remote: ImmediateMetadataRemote(), webQueue: webQueue)
+        let cancelled = playbackStore(
+            outcomeEnvironment(remote: ImmediateMetadataRemote(), webQueue: webQueue)
         )
         _ = cancelled.send(.session(.ready), source: .account)
         cancelled.catalogSession.update(accountEpoch: cancelled.accountEpoch, isAvailable: true)
@@ -571,8 +579,8 @@ func runPlaybackEventOutcomeChecks(_ runner: CheckRunner) async {
     await runner.suite("Queue snapshot track identity uses captured lifetime") {
         let namedEngine = GatedQueueSnapshotEngine()
         let namedRemote = GatedMetadataRemote()
-        let named = PlaybackStore(
-            environment: outcomeEnvironment(local: namedEngine, remote: namedRemote)
+        let named = playbackStore(
+            outcomeEnvironment(local: namedEngine, remote: namedRemote)
         )
         let uri = "spotify:track:same"
         seedReadyLocalPlayback(named, uri: uri)
@@ -590,8 +598,8 @@ func runPlaybackEventOutcomeChecks(_ runner: CheckRunner) async {
 
         let missingEngine = GatedQueueSnapshotEngine()
         let missingRemote = GatedMetadataRemote()
-        let missing = PlaybackStore(
-            environment: outcomeEnvironment(local: missingEngine, remote: missingRemote)
+        let missing = playbackStore(
+            outcomeEnvironment(local: missingEngine, remote: missingRemote)
         )
         seedReadyLocalPlayback(missing, uri: uri, title: nil, metadataSource: .none)
         missing.recordPlayed(uri)
@@ -611,8 +619,8 @@ func runPlaybackEventOutcomeChecks(_ runner: CheckRunner) async {
         await missing.shutdownForTermination()
 
         let watermarkEngine = GatedQueueSnapshotEngine()
-        let watermarkStore = PlaybackStore(
-            environment: outcomeEnvironment(local: watermarkEngine, remote: ImmediateMetadataRemote())
+        let watermarkStore = playbackStore(
+            outcomeEnvironment(local: watermarkEngine, remote: ImmediateMetadataRemote())
         )
         seedReadyLocalPlayback(watermarkStore, uri: uri)
         let before = watermarkStore.connectQueueCallback

@@ -35,7 +35,6 @@ struct RootView: View {
             }
             .overlay(alignment: .bottom) {
                 TransientFeedbackBanner(feedback: feedback)
-                    .allowsHitTesting(false)
             }
 
             NowPlayingBar(player: player, showsSidePanel: $showsSidePanel)

@@ -194,6 +194,14 @@ private func commandEnvironment(
 }
 
 @MainActor
+private func playbackStore(_ environment: PlaybackEnvironment) -> PlaybackStore {
+    PlaybackStore(
+        environment: environment,
+        feedback: TransientFeedbackPresenter(clock: environment.clock)
+    )
+}
+
+@MainActor
 func runPlaybackCommandFailureChecks(_ runner: CheckRunner) async {
     runner.suite("Playback command failure mapping") {
         switch PlaybackCommandFailure.from(engineResult: .ok) {
@@ -331,8 +339,8 @@ func runPlaybackCommandFailureChecks(_ runner: CheckRunner) async {
             authorizeCount: Int,
             player: PlaybackStore
         ) {
-            let player = PlaybackStore(
-                environment: commandEnvironment(
+            let player = playbackStore(
+                commandEnvironment(
                     local: ScriptedLocalEngine(result: result),
                     remote: ScriptedRemoteClient(.succeed),
                     account: account
@@ -371,8 +379,8 @@ func runPlaybackCommandFailureChecks(_ runner: CheckRunner) async {
 
         @MainActor
         func prepareRemoteStore(remote: ScriptedRemoteClient) -> PlaybackStore {
-            let player = PlaybackStore(
-                environment: commandEnvironment(
+            let player = playbackStore(
+                commandEnvironment(
                     local: ScriptedLocalEngine(result: .ok),
                     remote: remote
                 )

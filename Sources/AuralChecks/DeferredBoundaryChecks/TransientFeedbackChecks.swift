@@ -292,7 +292,7 @@ private func containsToken(_ source: String, _ token: String) -> Bool {
 
 @MainActor
 func runTransientFeedbackChecks(_ runner: CheckRunner) async {
-    runner.suite("Transient feedback kinds, replacement, and dismissal") {
+    await runner.suite("Transient feedback kinds, replacement, and dismissal") {
         let clock = UncooperativeParkedClock()
         let feedback = TransientFeedbackPresenter(clock: clock, duration: 4)
 
@@ -318,6 +318,7 @@ func runTransientFeedbackChecks(_ runner: CheckRunner) async {
         feedback.dismiss()
         runner.nil_("explicit dismiss clears the current message", feedback.message)
         clock.releaseAll()
+        await yieldPasses()
         runner.nil_("released sleeps after dismiss stay empty", feedback.message)
     }
 
@@ -379,6 +380,8 @@ func runTransientFeedbackChecks(_ runner: CheckRunner) async {
         )
         runner.equal("disconnected add is a failure", feedback.message?.kind, .failure)
         runner.nil_("disconnected add does not use playback notice", player.transientCommandError)
+        await player.endSession(clearGrant: false, finalPhase: .signedOut)
+        runner.nil_("account teardown clears leftover mutation feedback", feedback.message)
         clock.releaseAll()
         await player.shutdownForTermination()
     }
@@ -510,6 +513,7 @@ func runTransientFeedbackChecks(_ runner: CheckRunner) async {
             let queue = try auralSourceFile("Aural/Spotify/PlaybackStore+Queue.swift")
             let commands = try auralSourceFile("Aural/Spotify/PlaybackStore+Commands.swift")
             let presenter = try auralSourceFile("Aural/TransientFeedback.swift")
+            let store = try auralSourceFile("Aural/Spotify/PlaybackStore.swift")
             let domain = try auralSourceFile("AuralDomain/PlaybackState.swift")
 
             runner.check(
@@ -519,9 +523,9 @@ func runTransientFeedbackChecks(_ runner: CheckRunner) async {
                     && containsToken(root, "NowPlayingBar(player: player, showsSidePanel: $showsSidePanel)")
             )
             runner.check(
-                "root overlay and banner disable hit testing",
-                containsToken(root, ".allowsHitTesting(false)")
-                    && containsToken(banner, ".allowsHitTesting(false)")
+                "the banner disables hit testing",
+                containsToken(banner, ".allowsHitTesting(false)")
+                    && !containsToken(root, ".allowsHitTesting(false)")
             )
             runner.check(
                 "the banner does not steal focus or user interaction",
@@ -553,6 +557,12 @@ func runTransientFeedbackChecks(_ runner: CheckRunner) async {
                 containsToken(app, "TransientFeedbackPresenter(clock: environment.clock)")
                     && containsToken(app, "PlaybackStore(environment: environment, feedback: feedback)")
                     && containsToken(app, "RootView(player: player, catalog: player.catalog, feedback: feedback)")
+            )
+            runner.check(
+                "PlaybackStore requires the composed feedback owner",
+                containsToken(store, "feedback: TransientFeedbackPresenter")
+                    && !containsToken(store, "TransientFeedbackPresenter?")
+                    && !containsToken(store, "?? TransientFeedbackPresenter")
             )
             runner.check(
                 "Add to Queue reports through the presenter, not playback notice",

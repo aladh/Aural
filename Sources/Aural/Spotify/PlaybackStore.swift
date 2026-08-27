@@ -155,10 +155,10 @@ final class PlaybackStore {
 
     init(
         environment: PlaybackEnvironment = .live,
-        feedback: TransientFeedbackPresenter? = nil
+        feedback: TransientFeedbackPresenter
     ) {
         self.environment = environment
-        self.feedback = feedback ?? TransientFeedbackPresenter(clock: environment.clock)
+        self.feedback = feedback
         let metadataService = TrackMetadataService(remote: environment.remote)
         self.metadataService = metadataService
         let coordinator = PlaybackCoordinator(
