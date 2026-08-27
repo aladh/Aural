@@ -1,0 +1,56 @@
+name: CodeRabbit approval gate
+
+on:
+  pull_request_target:
+    types: [opened, reopened, synchronize, ready_for_review]
+  pull_request_review:
+    types: [submitted, dismissed]
+
+permissions:
+  contents: read
+  pull-requests: read
+  statuses: write
+
+jobs:
+  approval:
+    name: Verify CodeRabbit approval
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Require CodeRabbit approval for the current head
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          TARGET_URL: ${{ github.server_url }}/${{ github.repository }}/pull/${{ github.event.pull_request.number }}
+        run: |
+          set -euo pipefail
+
+          # Do not check out or execute pull-request code. This privileged workflow only reads
+          # review metadata and publishes a status on the exact pull-request head commit.
+          review_state="$(
+            gh api --paginate "repos/${REPOSITORY}/pulls/${PR_NUMBER}/reviews" \
+              --jq ".[] | select(.user.login == \"coderabbitai[bot]\" and .commit_id == \"${HEAD_SHA}\") | [.submitted_at, .state] | @tsv" \
+              | sort \
+              | tail -n 1 \
+              | cut -f 2
+          )"
+          review_state="${review_state:-MISSING}"
+
+          if [[ "${review_state}" == "APPROVED" ]]; then
+            state="success"
+            description="CodeRabbit approved the current head commit"
+          else
+            state="failure"
+            description="CodeRabbit approval required (current state: ${review_state})"
+          fi
+
+          gh api --method POST "repos/${REPOSITORY}/statuses/${HEAD_SHA}" \
+            -f state="${state}" \
+            -f context="CodeRabbit approval" \
+            -f description="${description}" \
+            -f target_url="${TARGET_URL}"
+
+          [[ "${state}" == "success" ]]
