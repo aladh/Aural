@@ -31,22 +31,47 @@ func runPlaylistEditabilityChecks(_ check: CheckRunner) {
         check.equal(
             "profile URI prefers the explicit user URI",
             PlaylistEditability.userURI(uri: "spotify:user:Ada", username: "ignored"),
-            "spotify:user:ada"
+            "spotify:user:Ada"
         )
         check.equal(
-            "username synthesizes a user URI",
+            "username synthesizes a user URI without changing identifier case",
             PlaylistEditability.userURI(uri: nil, username: "Ada"),
-            "spotify:user:ada"
+            "spotify:user:Ada"
         )
         check.nil_(
             "a track URI is not a user identity",
             PlaylistEditability.userURI(uri: "spotify:track:abc", username: nil)
+        )
+        check.nil_(
+            "an empty identity is not a user URI",
+            PlaylistEditability.normalizeUserURI("   ")
         )
         check.check(
             "matching owner and profile justify a write",
             PlaylistEditability.canJustifyEdit(
                 playlistOwnerURI: "spotify:user:me",
                 profileURI: "spotify:user:me"
+            )
+        )
+        check.check(
+            "identical mixed-case owner and profile remain editable",
+            PlaylistEditability.canJustifyEdit(
+                playlistOwnerURI: "spotify:user:Ada",
+                profileURI: "spotify:user:Ada"
+            )
+        )
+        check.check(
+            "case-only owner and profile differences are not editable",
+            !PlaylistEditability.canJustifyEdit(
+                playlistOwnerURI: "spotify:user:Ada",
+                profileURI: "spotify:user:ada"
+            )
+        )
+        check.check(
+            "synthesized username case must match the profile URI exactly",
+            !PlaylistEditability.canJustifyEdit(
+                playlistOwnerURI: PlaylistEditability.userURI(uri: nil, username: "Ada"),
+                profileURI: "spotify:user:ada"
             )
         )
         check.check(

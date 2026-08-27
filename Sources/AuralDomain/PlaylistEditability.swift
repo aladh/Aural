@@ -16,10 +16,10 @@ public enum PlaylistEditability: Sendable {
         let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return nil }
         if let id = SpotifyURI.id(from: trimmed, kind: "user") {
-            return "spotify:user:\(id.lowercased())"
+            return "spotify:user:\(id)"
         }
         if !trimmed.contains(":") {
-            return "spotify:user:\(trimmed.lowercased())"
+            return "spotify:user:\(trimmed)"
         }
         return nil
     }
