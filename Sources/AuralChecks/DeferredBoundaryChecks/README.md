@@ -9,9 +9,9 @@ The executable pure suites cover protobuf, shuffle, playlist ordering, playback 
 URI/pagination/loopback parsing, deterministic playback reducer traces, and the command-effect
 spike in [ADR 003](../../../docs/ADR-003-playback-command-effects.md). The concrete suite covers
 auth parsing and PKCE, wire codecs, catalog resolution, formatting, injected coordinator/queue
-invalidation workflows, typed playback-command failures, and `PlaybackEffectRegistry` task
-cancellation. Do not move check code back into `Sources/Aural`: test code must not ship in the
-application executable.
+invalidation workflows, typed playback-command failures, `PlaybackEffectRegistry` task
+cancellation, and PCM writer wake/bypass. Do not move check code back into `Sources/Aural`: test
+code must not ship in the application executable.
 
 These checks intentionally use the custom runner rather than XCTest/Swift Testing so the complete
 verification path remains available with the supported Command Line Tools installation.
