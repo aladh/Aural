@@ -51,11 +51,15 @@ ADRs; historical measurements belong in the performance baseline.
   names but must not reorder the queue. Resolvable entries should progressively replace fallback
   labels rather than remaining misleadingly `Unknown`.
 - Upcoming queue rows use a native selectable list. Delete/Backspace and **Remove from Queue**
-  remove only selected *upcoming* occurrences by queue identity, never by track URI. The now-playing
-  row and History tab are not removable queue entries. Play from the queue remains a deliberate
-  primary action (Return/double-click), not a single-click.
+  remove only selected *upcoming* occurrences by queue identity (Connect occurrence uid when
+  present), never by track URI. Duplicate URIs or duplicate UIDs that cannot be proven fail
+  closed. The now-playing row and History tab are not removable queue entries. Play from the queue
+  remains a deliberate primary action (Return/double-click), not a single-click.
 - Queue replacement is a Spotify Connect `set_queue` of remaining protocol `next_tracks` plus the
-  current `prev_tracks`/provider metadata. Aural does not edit presentation state to fake success.
+  current `prev_tracks` and the exact incoming ProvidedTrack metadata map (`metadata`, `uid`,
+  `provider`, and the other player.proto fields the snapshot carried). Aural does not synthesize
+  `is_queued` or edit presentation state to fake success. Sequential Add to Queue is not atomic:
+  feedback reports full success, zero success, or a partial completed count.
   Removal is gated on a complete Connect mutation snapshot, account/engine epoch, owner, and
   player `disallow_set_queue` / `disallow_removing_from_next_tracks` reasons. Partial, provisional,
   web-API-only, restricted, stale, cancelled, and rejected results leave the visible queue intact

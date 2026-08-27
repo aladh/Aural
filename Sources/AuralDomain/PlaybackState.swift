@@ -250,11 +250,17 @@ public struct PlaybackQueueItem: Identifiable, Equatable, Sendable {
     public let id: String
     public let uri: String
     public let provider: String
+    public let uid: String
 
-    public init(id: String, uri: String, provider: String) {
+    public init(id: String, uri: String, provider: String, uid: String = "") {
         self.id = id
         self.uri = uri
         self.provider = provider
+        self.uid = uid
+    }
+
+    public init(_ entry: QueueEntry) {
+        self.init(id: entry.id, uri: entry.uri, provider: entry.provider, uid: entry.uid)
     }
 }
 

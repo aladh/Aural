@@ -43,7 +43,7 @@ private enum QueueRemoteFailure: Error { case boom }
 private actor QueueRemoteClient: RemotePlaybackClient {
     enum Behavior: Sendable {
         case succeed
-        case fail
+        case failAfter(Int)
         case park
     }
 
@@ -64,6 +64,10 @@ private actor QueueRemoteClient: RemotePlaybackClient {
             return
         case .fail:
             throw QueueRemoteFailure.boom
+        case let .failAfter(limit):
+            if commands.count > limit {
+                throw QueueRemoteFailure.boom
+            }
         case .park:
             try await withCheckedThrowingContinuation { parked = $0 }
         }
@@ -189,9 +193,9 @@ private func seedAuthoritativeQueue(_ player: PlaybackStore, revision: UInt64 = 
     let duplicate = "spotify:track:dup"
     let other = "spotify:track:other"
     let entries = [
-        QueueEntry(uri: duplicate, provider: "queue", occurrence: 0),
-        QueueEntry(uri: duplicate, provider: "queue", occurrence: 1),
-        QueueEntry(uri: other, provider: "queue", occurrence: 2),
+        QueueEntry(uri: duplicate, provider: "queue", occurrence: 0, uid: "q0"),
+        QueueEntry(uri: duplicate, provider: "queue", occurrence: 1, uid: "q1"),
+        QueueEntry(uri: other, provider: "queue", occurrence: 2, uid: "q2"),
     ]
     let next = [
         QueueProtocolTrack(uri: duplicate, uid: "q0", provider: "queue"),
@@ -214,7 +218,7 @@ private func seedAuthoritativeQueue(_ player: PlaybackStore, revision: UInt64 = 
     )
     _ = player.send(
         .queue(PlaybackQueueSnapshot(
-            entries: entries.map { PlaybackQueueItem(id: $0.id, uri: $0.uri, provider: $0.provider) },
+            entries: entries.map { PlaybackQueueItem($0) },
             source: .connect,
             completeness: .complete,
             revision: revision,
@@ -257,16 +261,49 @@ private func containsToken(_ source: String, _ token: String) -> Bool {
     source.contains(token)
 }
 
+private func jsonStringMap(_ value: Any?) -> [String: String] {
+    if let typed = value as? [String: String] { return typed }
+    guard let object = value as? [String: Any] else { return [:] }
+    return object.reduce(into: [:]) { result, pair in
+        if let string = pair.value as? String {
+            result[pair.key] = string
+        }
+    }
+}
+
 @MainActor
 func runQueueManagementChecks(_ runner: CheckRunner) async {
     runner.suite("Connect set_queue encoding") {
         runner.noThrow("set_queue encodes remaining next_tracks and required prev_tracks") {
             let command = SpotifyConnectCommand.setQueue(
                 next: [
-                    QueueProtocolTrack(uri: "spotify:track:keep", uid: "q0", provider: "queue"),
-                    QueueProtocolTrack(uri: "spotify:delimiter", uid: "", provider: "delimiter"),
+                    QueueProtocolTrack(
+                        uri: "spotify:track:keep",
+                        uid: "q0",
+                        provider: "queue",
+                        metadata: ["aural.sentinel": "keep-me", "is_queued": "true"]
+                    ),
+                    QueueProtocolTrack(
+                        uri: "spotify:delimiter",
+                        uid: "",
+                        provider: "delimiter",
+                        metadata: ["aural.sentinel": "delimiter-keep"]
+                    ),
+                    QueueProtocolTrack(
+                        uri: "spotify:track:autoplay",
+                        uid: "a0",
+                        provider: "autoplay",
+                        metadata: ["aural.sentinel": "autoplay-keep"]
+                    ),
                 ],
-                prev: [QueueProtocolTrack(uri: "spotify:track:prev", uid: "p0", provider: "context")],
+                prev: [
+                    QueueProtocolTrack(
+                        uri: "spotify:track:prev",
+                        uid: "p0",
+                        provider: "context",
+                        metadata: ["aural.sentinel": "prev-keep"]
+                    ),
+                ],
                 queueRevision: "rev-9"
             )
             let encoded = try JSONEncoder().encode(command)
@@ -275,10 +312,117 @@ func runQueueManagementChecks(_ runner: CheckRunner) async {
             runner.equal("set_queue revision is encoded", object?["queue_revision"] as? String, "rev-9")
             let next = object?["next_tracks"] as? [[String: Any]]
             runner.equal("next_tracks keeps remaining occurrence uid", next?.first?["uid"] as? String, "q0")
-            runner.equal("next_tracks keeps delimiter", next?.last?["uri"] as? String, "spotify:delimiter")
+            runner.equal("next_tracks keeps delimiter", next?[1]["uri"] as? String, "spotify:delimiter")
+            runner.equal("next_tracks keeps autoplay", next?.last?["uri"] as? String, "spotify:track:autoplay")
             let prev = object?["prev_tracks"] as? [[String: Any]]
             runner.equal("prev_tracks are preserved", prev?.first?["uri"] as? String, "spotify:track:prev")
-            runner.equal("queued metadata marks is_queued", (next?.first?["metadata"] as? [String: String])?["is_queued"], "true")
+            runner.equal(
+                "incoming metadata is not synthesized",
+                jsonStringMap(next?.first?["metadata"])["aural.sentinel"] ?? "",
+                "keep-me"
+            )
+            runner.equal(
+                "queued is_queued survives only when present on the snapshot",
+                jsonStringMap(next?.first?["metadata"])["is_queued"] ?? "",
+                "true"
+            )
+            runner.equal(
+                "delimiter sentinel metadata survives encode",
+                jsonStringMap(next?[1]["metadata"])["aural.sentinel"] ?? "",
+                "delimiter-keep"
+            )
+            runner.equal(
+                "autoplay sentinel metadata survives encode",
+                jsonStringMap(next?.last?["metadata"])["aural.sentinel"] ?? "",
+                "autoplay-keep"
+            )
+            runner.equal(
+                "prev_tracks sentinel metadata survives encode",
+                jsonStringMap(prev?.first?["metadata"])["aural.sentinel"] ?? "",
+                "prev-keep"
+            )
+        }
+    }
+
+    runner.suite("Rust protocol JSON round-trips metadata into set_queue") {
+        runner.noThrow("sentinel metadata survives Rust JSON, Swift decode, and Connect encode") {
+            let rustJSON = """
+            {
+              "protocol_next_tracks": [
+                {
+                  "uri": "spotify:track:keep",
+                  "uid": "q0",
+                  "provider": "queue",
+                  "metadata": {"aural.sentinel": "keep-me", "is_queued": "true"},
+                  "album_uri": "spotify:album:fixture",
+                  "artist_uri": "spotify:artist:fixture"
+                },
+                {
+                  "uri": "spotify:delimiter",
+                  "uid": "",
+                  "provider": "delimiter",
+                  "metadata": {"aural.sentinel": "delimiter-keep"}
+                },
+                {
+                  "uri": "spotify:track:autoplay",
+                  "uid": "a0",
+                  "provider": "autoplay",
+                  "metadata": {"aural.sentinel": "autoplay-keep"}
+                }
+              ],
+              "protocol_prev_tracks": [
+                {
+                  "uri": "spotify:track:prev",
+                  "uid": "p0",
+                  "provider": "context",
+                  "metadata": {"aural.sentinel": "prev-keep"},
+                  "removed": ["removed-reason"]
+                }
+              ],
+              "queue_revision": "rev-roundtrip"
+            }
+            """
+            let state = try JSONDecoder().decode(
+                RustQueueState.self,
+                from: Data(rustJSON.utf8)
+            )
+            let next = (state.protocolNextTracks ?? []).map { $0.domainTrack() }
+            let prev = (state.protocolPrevTracks ?? []).map { $0.domainTrack() }
+            runner.equal("decoded next sentinel", next.first?.metadata["aural.sentinel"] ?? "", "keep-me")
+            runner.equal("decoded album_uri", next.first?.albumURI ?? "", "spotify:album:fixture")
+            runner.equal("decoded prev removed", prev.first?.removed ?? [], ["removed-reason"])
+            let encoded = try JSONEncoder().encode(
+                SpotifyConnectCommand.setQueue(
+                    next: next,
+                    prev: prev,
+                    queueRevision: state.queueRevision ?? ""
+                )
+            )
+            let object = try JSONSerialization.jsonObject(with: encoded) as? [String: Any]
+            let encodedNext = object?["next_tracks"] as? [[String: Any]]
+            let encodedPrev = object?["prev_tracks"] as? [[String: Any]]
+            runner.equal(
+                "round-trip next sentinel",
+                jsonStringMap(encodedNext?.first?["metadata"])["aural.sentinel"] ?? "",
+                "keep-me"
+            )
+            runner.equal(
+                "round-trip delimiter sentinel",
+                jsonStringMap(encodedNext?[1]["metadata"])["aural.sentinel"] ?? "",
+                "delimiter-keep"
+            )
+            runner.equal(
+                "round-trip autoplay sentinel",
+                jsonStringMap(encodedNext?.last?["metadata"])["aural.sentinel"] ?? "",
+                "autoplay-keep"
+            )
+            runner.equal(
+                "round-trip prev sentinel",
+                jsonStringMap(encodedPrev?.first?["metadata"])["aural.sentinel"] ?? "",
+                "prev-keep"
+            )
+            runner.equal("round-trip prev removed", encodedPrev?.first?["removed"] as? [String] ?? [], ["removed-reason"])
+            runner.equal("round-trip album_uri", encodedNext?.first?["album_uri"] as? String ?? "", "spotify:album:fixture")
         }
     }
 
@@ -298,6 +442,37 @@ func runQueueManagementChecks(_ runner: CheckRunner) async {
         runner.equal("multi-add reports a batch success", feedback.message?.text, "Added 3 songs to Queue")
         runner.equal("multi-add success is not a playback notice", player.transientCommandError, nil)
         await player.shutdownForTermination()
+    }
+
+    await runner.suite("Ordered multi-add partial failure feedback") {
+        let remote = QueueRemoteClient(.failAfter(2))
+        let feedback = TransientFeedbackPresenter(clock: SystemPlaybackClock(), duration: 4)
+        let player = PlaybackStore(environment: queueEnvironment(remote: remote), feedback: feedback)
+        seedRemoteOwner(player)
+        let before = player.queueNextEntries
+        player.addToQueue(uris: ["spotify:track:one", "spotify:track:two", "spotify:track:three"])
+        runner.check("partial add finished", await waitUntil { feedback.message?.kind == .informational })
+        runner.equal("two commands completed before failure", await remote.sendCount, 3)
+        runner.equal(
+            "partial add reports completed versus requested",
+            feedback.message?.text,
+            "Added 2 of 3 songs to Queue"
+        )
+        runner.equal("partial add does not rewrite presentation", player.queueNextEntries, before)
+        await player.shutdownForTermination()
+
+        let none = QueueRemoteClient(.fail)
+        let noneFeedback = TransientFeedbackPresenter(clock: SystemPlaybackClock(), duration: 4)
+        let nonePlayer = PlaybackStore(environment: queueEnvironment(remote: none), feedback: noneFeedback)
+        seedRemoteOwner(nonePlayer)
+        nonePlayer.addToQueue(uris: ["spotify:track:one", "spotify:track:two"])
+        runner.check("zero-success add finished", await waitUntil { noneFeedback.message?.kind == .failure })
+        runner.equal(
+            "zero completed commands keep the batch failure message",
+            noneFeedback.message?.text,
+            "Could not add those tracks to the queue."
+        )
+        await nonePlayer.shutdownForTermination()
     }
 
     await runner.suite("Duplicate-occurrence deletion and no local edit") {
@@ -470,6 +645,13 @@ func runQueueManagementChecks(_ runner: CheckRunner) async {
             let queue = try auralSourceFile("Aural/Spotify/PlaybackStore+Queue.swift")
             let engine = try auralSourceFile("Aural/Spotify/RustPlaybackEngine.swift")
             let control = try auralSourceFile("Aural/Spotify/PlaybackCore.swift")
+            let engineEvents = try auralSourceFile("Aural/Spotify/PlaybackStore+EngineEvents.swift")
+            let models = try auralSourceFile("AuralDomain/PlaybackPanelModels.swift")
+            runner.check(
+                "Connect intake binds occurrence uids into selectable identity",
+                containsToken(engineEvents, "uid: item.uid ?? \"\"")
+                    && containsToken(models, "uid: String")
+            )
             runner.check(
                 "Add to Queue is available for multi-selection in visible order",
                 containsToken(table, "playback.addToQueue(QueueMutationSelection.addURIs(from: selectedTracks))")

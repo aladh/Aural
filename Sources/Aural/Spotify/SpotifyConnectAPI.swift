@@ -108,12 +108,45 @@ nonisolated struct SpotifyConnectCommand: Encodable, Sendable {
         let uid: String
         let provider: String
         let metadata: [String: String]
+        let removed: [String]
+        let blocked: [String]
+        let restrictions: [String: [String]]
+        let albumURI: String
+        let disallowReasons: [String]
+        let artistURI: String
 
         init(_ track: QueueProtocolTrack) {
             uri = track.uri
             uid = track.uid
             provider = track.provider
-            metadata = track.provider.contains("queue") ? ["is_queued": "true"] : [:]
+            metadata = track.metadata
+            removed = track.removed
+            blocked = track.blocked
+            restrictions = track.restrictions
+            albumURI = track.albumURI
+            disallowReasons = track.disallowReasons
+            artistURI = track.artistURI
+        }
+
+        enum CodingKeys: String, CodingKey {
+            case uri, uid, provider, metadata, removed, blocked, restrictions
+            case albumURI = "album_uri"
+            case disallowReasons = "disallow_reasons"
+            case artistURI = "artist_uri"
+        }
+
+        func encode(to encoder: any Encoder) throws {
+            var container = encoder.container(keyedBy: CodingKeys.self)
+            try container.encode(uri, forKey: .uri)
+            try container.encode(uid, forKey: .uid)
+            try container.encode(provider, forKey: .provider)
+            try container.encode(metadata, forKey: .metadata)
+            if !removed.isEmpty { try container.encode(removed, forKey: .removed) }
+            if !blocked.isEmpty { try container.encode(blocked, forKey: .blocked) }
+            if !restrictions.isEmpty { try container.encode(restrictions, forKey: .restrictions) }
+            if !albumURI.isEmpty { try container.encode(albumURI, forKey: .albumURI) }
+            if !disallowReasons.isEmpty { try container.encode(disallowReasons, forKey: .disallowReasons) }
+            if !artistURI.isEmpty { try container.encode(artistURI, forKey: .artistURI) }
         }
     }
 

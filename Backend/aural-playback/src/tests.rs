@@ -597,6 +597,22 @@ fn provided_track_with_uid(uri: &str, provider: &str, uid: &str) -> ProvidedTrac
     }
 }
 
+fn provided_track_with_metadata(
+    uri: &str,
+    provider: &str,
+    uid: &str,
+    sentinel_key: &str,
+    sentinel_value: &str,
+) -> ProvidedTrack {
+    let mut track = provided_track_with_uid(uri, provider, uid);
+    track
+        .metadata
+        .insert(sentinel_key.to_string(), sentinel_value.to_string());
+    track.album_uri = "spotify:album:fixture".to_string();
+    track.artist_uri = "spotify:artist:fixture".to_string();
+    track
+}
+
 #[test]
 fn queue_conversion_preserves_identity_and_provider_only() {
     let item = to_queue_item(&provided_track_with_uid(
@@ -642,6 +658,96 @@ fn protocol_queue_tracks_keep_delimiter_and_occurrence_uids() {
     assert_eq!(protocol[0].uid, "q0");
     assert_eq!(protocol[1].uri, "spotify:delimiter");
     assert_eq!(protocol[2].provider, "autoplay");
+}
+
+#[test]
+fn protocol_queue_tracks_preserve_incoming_provided_track_metadata() {
+    let tracks = vec![
+        provided_track_with_metadata(
+            "spotify:track:first",
+            "queue",
+            "q0",
+            "aural.sentinel",
+            "keep-me",
+        ),
+        provided_track_with_uid("spotify:delimiter", "delimiter", ""),
+        provided_track_with_metadata(
+            "spotify:track:autoplay-hidden",
+            "autoplay",
+            "a0",
+            "aural.sentinel",
+            "autoplay-keep",
+        ),
+    ];
+    let mut prev = provided_track_with_metadata(
+        "spotify:track:prev",
+        "context",
+        "p0",
+        "aural.sentinel",
+        "prev-keep",
+    );
+    prev.removed = vec!["removed-reason".to_string()];
+    prev.blocked = vec!["blocked-reason".to_string()];
+    prev.disallow_reasons = vec!["disallow-reason".to_string()];
+
+    let next = collect_protocol_tracks(&tracks);
+    assert_eq!(
+        next[0].metadata.get("aural.sentinel").map(String::as_str),
+        Some("keep-me")
+    );
+    assert_eq!(next[0].album_uri, "spotify:album:fixture");
+    assert_eq!(next[0].artist_uri, "spotify:artist:fixture");
+    assert_eq!(next[1].uri, "spotify:delimiter");
+    assert_eq!(
+        next[2].metadata.get("aural.sentinel").map(String::as_str),
+        Some("autoplay-keep")
+    );
+
+    let prev_protocol = to_protocol_track(&prev);
+    assert_eq!(
+        prev_protocol
+            .metadata
+            .get("aural.sentinel")
+            .map(String::as_str),
+        Some("prev-keep")
+    );
+    assert_eq!(prev_protocol.removed, vec!["removed-reason".to_string()]);
+    assert_eq!(prev_protocol.blocked, vec!["blocked-reason".to_string()]);
+    assert_eq!(
+        prev_protocol.disallow_reasons,
+        vec!["disallow-reason".to_string()]
+    );
+
+    let json = serde_json::to_value(QueueState {
+        revision: 1,
+        session_generation: 1,
+        track: None,
+        next_tracks: Vec::new(),
+        prev_tracks: Vec::new(),
+        protocol_next_tracks: next,
+        protocol_prev_tracks: vec![prev_protocol],
+        queue_revision: "rev-1".to_string(),
+        disallow_set_queue: false,
+        disallow_removing_from_next_tracks: false,
+    })
+    .expect("serialize queue snapshot");
+    assert_eq!(
+        json["protocol_next_tracks"][0]["metadata"]["aural.sentinel"],
+        "keep-me"
+    );
+    assert_eq!(json["protocol_next_tracks"][1]["uri"], "spotify:delimiter");
+    assert_eq!(
+        json["protocol_next_tracks"][2]["metadata"]["aural.sentinel"],
+        "autoplay-keep"
+    );
+    assert_eq!(
+        json["protocol_prev_tracks"][0]["metadata"]["aural.sentinel"],
+        "prev-keep"
+    );
+    assert_eq!(
+        json["protocol_prev_tracks"][0]["removed"][0],
+        "removed-reason"
+    );
 }
 
 #[test]

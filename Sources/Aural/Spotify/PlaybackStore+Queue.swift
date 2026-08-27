@@ -39,17 +39,20 @@ extension PlaybackStore {
             let epoch = accountEpoch
             effects.replace(effectID, with: Task { [weak self] in
                 defer { self?.effects.complete(effectID) }
-                do {
-                    guard let self else { return }
-                    for uri in ordered {
+                guard let self else { return }
+                var completed = 0
+                for uri in ordered {
+                    do {
                         try await self.coordinator.performRemote(.addToQueue(uri), from: from, to: to)
+                        completed += 1
+                    } catch {
+                        guard !Task.isCancelled, self.accountEpoch == epoch, self.isConnected else { return }
+                        self.presentAddToQueueFeedback(requested: ordered.count, completed: completed)
+                        return
                     }
-                    guard !Task.isCancelled, self.accountEpoch == epoch, self.isConnected else { return }
-                    self.feedback.success(Self.addedToQueueMessage(count: ordered.count))
-                } catch {
-                    guard let self, !Task.isCancelled, self.accountEpoch == epoch, self.isConnected else { return }
-                    self.feedback.failure(Self.addToQueueFailureMessage(count: ordered.count))
                 }
+                guard !Task.isCancelled, self.accountEpoch == epoch, self.isConnected else { return }
+                self.presentAddToQueueFeedback(requested: ordered.count, completed: completed)
             })
             return
         case .local:
@@ -61,16 +64,18 @@ extension PlaybackStore {
         effects.replace(effectID, with: Task { [weak self] in
             defer { self?.effects.complete(effectID) }
             guard let self else { return }
+            var completed = 0
             for uri in ordered {
                 let result = await self.coordinator.performLocal(.addToQueue(uri))
                 guard result.isOK else {
                     guard !Task.isCancelled, self.accountEpoch == epoch, self.isConnected else { return }
-                    self.feedback.failure(Self.addToQueueFailureMessage(count: ordered.count))
+                    self.presentAddToQueueFeedback(requested: ordered.count, completed: completed)
                     return
                 }
+                completed += 1
             }
             guard !Task.isCancelled, self.accountEpoch == epoch, self.isConnected else { return }
-            self.feedback.success(Self.addedToQueueMessage(count: ordered.count))
+            self.presentAddToQueueFeedback(requested: ordered.count, completed: completed)
         })
     }
 
@@ -127,7 +132,7 @@ extension PlaybackStore {
         QueueMutationPolicy.evaluateRemoval(
             selectedIDs: selectedIDs,
             visibleUpcoming: visibleUpcoming,
-            nowPlayingID: hasCurrentTrack ? "now-playing" : nil,
+            nowPlayingID: "now-playing",
             historyIDs: Set(history.entries.map(\.id)),
             mutation: queueMutation,
             route: commandRoute,
@@ -144,12 +149,18 @@ extension PlaybackStore {
         return false
     }
 
-    private static func addedToQueueMessage(count: Int) -> String {
-        count == 1 ? "Added to Queue" : "Added \(count) songs to Queue"
-    }
-
-    private static func addToQueueFailureMessage(count: Int) -> String {
-        count == 1 ? "Could not add that track to the queue." : "Could not add those tracks to the queue."
+    private func presentAddToQueueFeedback(requested: Int, completed: Int) {
+        guard let report = QueueAddFeedbackPolicy.evaluate(requested: requested, completed: completed) else {
+            return
+        }
+        switch report.kind {
+        case .success:
+            feedback.success(report.message)
+        case .informational:
+            feedback.informational(report.message)
+        case .failure:
+            feedback.failure(report.message)
+        }
     }
 
     private static func removedFromQueueMessage(count: Int) -> String {
@@ -228,7 +239,7 @@ extension PlaybackStore {
         let accepted = send(
             .queue(PlaybackQueueSnapshot(
                 entries: snapshot.entries.map {
-                    PlaybackQueueItem(id: $0.id, uri: $0.uri, provider: $0.provider)
+                    PlaybackQueueItem($0)
                 },
                 source: snapshot.source,
                 completeness: snapshot.completeness,

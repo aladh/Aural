@@ -2,8 +2,8 @@ import AuralDomain
 import Foundation
 
 func runQueueMutationChecks(_ check: CheckRunner) {
-    func entry(_ uri: String, provider: String = "queue", occurrence: Int) -> QueueEntry {
-        QueueEntry(uri: uri, provider: provider, occurrence: occurrence)
+    func entry(_ uri: String, provider: String = "queue", occurrence: Int, uid: String = "") -> QueueEntry {
+        QueueEntry(uri: uri, provider: provider, occurrence: occurrence, uid: uid)
     }
 
     func protocolTrack(_ uri: String, provider: String = "queue", uid: String = "") -> QueueProtocolTrack {
@@ -39,9 +39,9 @@ func runQueueMutationChecks(_ check: CheckRunner) {
     let duplicate = "spotify:track:dup"
     let other = "spotify:track:other"
     let visible = [
-        entry(duplicate, occurrence: 0),
-        entry(duplicate, occurrence: 1),
-        entry(other, occurrence: 2),
+        entry(duplicate, occurrence: 0, uid: "q0"),
+        entry(duplicate, occurrence: 1, uid: "q1"),
+        entry(other, occurrence: 2, uid: "q2"),
     ]
     let protocolNext = [
         protocolTrack(duplicate, uid: "q0"),
@@ -398,5 +398,129 @@ func runQueueMutationChecks(_ check: CheckRunner) {
             ),
             .failure(.incompleteProvenance)
         )
+
+        let driftedUIDs = [
+            protocolTrack(duplicate, uid: "q9"),
+            protocolTrack(duplicate, uid: "q8"),
+            protocolTrack(other, uid: "q7"),
+            protocolTrack("spotify:delimiter", provider: "delimiter"),
+            protocolTrack("spotify:track:autoplay", provider: "autoplay"),
+        ]
+        check.equal(
+            "same URIs at the same indices with different Connect UIDs refuse the old selection",
+            QueueMutationPolicy.evaluateRemoval(
+                selectedIDs: [visible[0].id],
+                visibleUpcoming: visible,
+                nowPlayingID: nil,
+                historyIDs: [],
+                mutation: snapshot(next: driftedUIDs),
+                route: remote,
+                isConnected: true,
+                accountEpoch: 1,
+                engineEpoch: 2
+            ),
+            .failure(.staleIdentities)
+        )
+        check.check(
+            "old UID-bearing identities do not survive a UID-only snapshot rotation",
+            visible[0].id != QueueEntry(
+                uri: duplicate, provider: "queue", occurrence: 0, uid: "q9"
+            ).id
+        )
+
+        let duplicateUIDNext = [
+            protocolTrack(duplicate, uid: "shared"),
+            protocolTrack(other, uid: "shared"),
+            protocolTrack("spotify:delimiter", provider: "delimiter"),
+        ]
+        let duplicateUIDVisible = [
+            entry(duplicate, occurrence: 0, uid: "shared"),
+            entry(other, occurrence: 1, uid: "shared"),
+        ]
+        check.equal(
+            "duplicate Connect UIDs fail closed even when URIs and indices match",
+            QueueMutationPolicy.evaluateRemoval(
+                selectedIDs: [duplicateUIDVisible[0].id],
+                visibleUpcoming: duplicateUIDVisible,
+                nowPlayingID: nil,
+                historyIDs: [],
+                mutation: snapshot(next: duplicateUIDNext),
+                route: remote,
+                isConnected: true,
+                accountEpoch: 1,
+                engineEpoch: 2
+            ),
+            .failure(.staleIdentities)
+        )
+
+        let webUnique = [entry("spotify:track:only", provider: "web-api", occurrence: 0)]
+        let webUniqueProtocol = [
+            protocolTrack("spotify:track:only", uid: "c1", provider: "context"),
+            protocolTrack("spotify:delimiter", provider: "delimiter"),
+        ]
+        switch QueueMutationPolicy.evaluateRemoval(
+            selectedIDs: [webUnique[0].id],
+            visibleUpcoming: webUnique,
+            nowPlayingID: nil,
+            historyIDs: [],
+            mutation: snapshot(next: webUniqueProtocol),
+            route: remote,
+            isConnected: true,
+            accountEpoch: 1,
+            engineEpoch: 2
+        ) {
+        case let .success(replacement):
+            check.equal(
+                "unique-URI Web presentation can bind a unique Connect uid",
+                replacement.next.map(\.uri),
+                ["spotify:delimiter"]
+            )
+        case let .failure(reason):
+            check.check("unique-URI Web fallback should be allowed: \(reason)", false)
+        }
+
+        let webDuplicates = [
+            entry(duplicate, provider: "web-api", occurrence: 0),
+            entry(duplicate, provider: "web-api", occurrence: 1),
+        ]
+        check.equal(
+            "Web presentation without UIDs cannot remove duplicate URI occurrences",
+            QueueMutationPolicy.evaluateRemoval(
+                selectedIDs: [webDuplicates[0].id],
+                visibleUpcoming: webDuplicates,
+                nowPlayingID: nil,
+                historyIDs: [],
+                mutation: snapshot(next: protocolNext),
+                route: remote,
+                isConnected: true,
+                accountEpoch: 1,
+                engineEpoch: 2
+            ),
+            .failure(.staleIdentities)
+        )
+    }
+
+    check.suite("Queue add feedback reports completed command counts") {
+        check.equal(
+            "single add success keeps the existing message",
+            QueueAddFeedbackPolicy.evaluate(requested: 1, completed: 1),
+            QueueAddFeedback(kind: .success, message: "Added to Queue")
+        )
+        check.equal(
+            "batch add success reports the completed count",
+            QueueAddFeedbackPolicy.evaluate(requested: 3, completed: 3),
+            QueueAddFeedback(kind: .success, message: "Added 3 songs to Queue")
+        )
+        check.equal(
+            "zero completed commands are a failure",
+            QueueAddFeedbackPolicy.evaluate(requested: 3, completed: 0),
+            QueueAddFeedback(kind: .failure, message: "Could not add those tracks to the queue.")
+        )
+        check.equal(
+            "partial sequential add reports how many succeeded",
+            QueueAddFeedbackPolicy.evaluate(requested: 5, completed: 2),
+            QueueAddFeedback(kind: .informational, message: "Added 2 of 5 songs to Queue")
+        )
+        check.nil_("invalid counts produce no message", QueueAddFeedbackPolicy.evaluate(requested: 2, completed: 3))
     }
 }

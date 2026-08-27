@@ -62,6 +62,35 @@ nonisolated struct RustQueueState: Decodable, Sendable {
         let uri: String
         let uid: String
         let provider: String
+        var metadata: [String: String]?
+        var removed: [String]?
+        var blocked: [String]?
+        var restrictions: [String: [String]]?
+        var albumURI: String?
+        var disallowReasons: [String]?
+        var artistURI: String?
+
+        enum CodingKeys: String, CodingKey {
+            case uri, uid, provider, metadata, removed, blocked, restrictions
+            case albumURI = "album_uri"
+            case disallowReasons = "disallow_reasons"
+            case artistURI = "artist_uri"
+        }
+
+        func domainTrack() -> QueueProtocolTrack {
+            QueueProtocolTrack(
+                uri: uri,
+                uid: uid,
+                provider: provider,
+                metadata: metadata ?? [:],
+                removed: removed ?? [],
+                blocked: blocked ?? [],
+                restrictions: restrictions ?? [:],
+                albumURI: albumURI ?? "",
+                disallowReasons: disallowReasons ?? [],
+                artistURI: artistURI ?? ""
+            )
+        }
     }
 
     let track: Item?

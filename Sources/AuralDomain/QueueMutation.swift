@@ -1,16 +1,44 @@
 import Foundation
 
 /// One Connect-protocol queue row, including delimiters and autoplay that presentation hides.
-/// Occurrence identity for removal is the index in the upcoming projection, never URI equality.
+/// Occurrence identity for removal is the upcoming projection index bound to a Connect uid
+/// when the snapshot supplies one, never URI equality alone.
 public struct QueueProtocolTrack: Equatable, Sendable {
     public let uri: String
     public let uid: String
     public let provider: String
+    /// Exact incoming Connect metadata map. Must not be synthesized on encode.
+    public let metadata: [String: String]
+    public let removed: [String]
+    public let blocked: [String]
+    /// Repeated-string restriction fields keyed as Connect JSON (`disallow_*_reasons`).
+    public let restrictions: [String: [String]]
+    public let albumURI: String
+    public let disallowReasons: [String]
+    public let artistURI: String
 
-    public init(uri: String, uid: String = "", provider: String) {
+    public init(
+        uri: String,
+        uid: String = "",
+        provider: String,
+        metadata: [String: String] = [:],
+        removed: [String] = [],
+        blocked: [String] = [],
+        restrictions: [String: [String]] = [:],
+        albumURI: String = "",
+        disallowReasons: [String] = [],
+        artistURI: String = ""
+    ) {
         self.uri = uri
         self.uid = uid
         self.provider = provider
+        self.metadata = metadata
+        self.removed = removed
+        self.blocked = blocked
+        self.restrictions = restrictions
+        self.albumURI = albumURI
+        self.disallowReasons = disallowReasons
+        self.artistURI = artistURI
     }
 }
 
@@ -58,7 +86,7 @@ public struct QueueMutationSnapshot: Equatable, Sendable {
 }
 
 /// Why a queue replacement must not be sent. Messages are privacy-safe and stable.
-public enum QueueMutationRefusal: Equatable, Sendable {
+public enum QueueMutationRefusal: Equatable, Sendable, Error {
     case notConnected
     case joiningConnect
     case incompleteProvenance
@@ -105,6 +133,42 @@ public struct QueueReplacement: Equatable, Sendable {
         self.prev = prev
         self.queueRevision = queueRevision
         self.removedCount = removedCount
+    }
+}
+
+/// Sequential `add_to_queue` is not atomic. Feedback reports how many commands completed.
+public enum QueueAddFeedbackKind: Equatable, Sendable {
+    case success
+    case informational
+    case failure
+}
+
+public struct QueueAddFeedback: Equatable, Sendable {
+    public let kind: QueueAddFeedbackKind
+    public let message: String
+}
+
+public enum QueueAddFeedbackPolicy: Sendable {
+    public static func evaluate(requested: Int, completed: Int) -> QueueAddFeedback? {
+        guard requested > 0, completed >= 0, completed <= requested else { return nil }
+        if completed == requested {
+            return QueueAddFeedback(
+                kind: .success,
+                message: requested == 1 ? "Added to Queue" : "Added \(requested) songs to Queue"
+            )
+        }
+        if completed == 0 {
+            return QueueAddFeedback(
+                kind: .failure,
+                message: requested == 1
+                    ? "Could not add that track to the queue."
+                    : "Could not add those tracks to the queue."
+            )
+        }
+        return QueueAddFeedback(
+            kind: .informational,
+            message: "Added \(completed) of \(requested) songs to Queue"
+        )
     }
 }
 
@@ -176,8 +240,35 @@ public enum QueueProtocolProjection: Sendable {
         upcoming(from: protocolNext).map(\.uri) == visible.map(\.uri)
     }
 
-    /// Removes selected upcoming occurrences from the protocol `next` list by index in the
-    /// upcoming projection, preserving delimiters, autoplay, and `prev_tracks`.
+    /// Bound occurrence identity: Connect uid when present, otherwise a unique URI.
+    /// Duplicate UIDs, duplicate URIs without uids, or uid drift fail closed.
+    public static func identitiesAreProven(
+        protocolNext: [QueueProtocolTrack],
+        visible: [QueueEntry]
+    ) -> Bool {
+        let upcoming = upcoming(from: protocolNext)
+        guard upcoming.count == visible.count else { return false }
+        let nonEmptyUIDs = upcoming.map(\.uid).filter { !$0.isEmpty }
+        if Set(nonEmptyUIDs).count != nonEmptyUIDs.count {
+            return false
+        }
+        for (proto, row) in zip(upcoming, visible) {
+            guard proto.uri == row.uri else { return false }
+            if !row.uid.isEmpty {
+                if proto.uid != row.uid { return false }
+                continue
+            }
+            if proto.uid.isEmpty {
+                if upcoming.filter({ $0.uri == proto.uri }).count != 1 { return false }
+            } else if upcoming.filter({ $0.uri == proto.uri }).count != 1 {
+                return false
+            }
+        }
+        return true
+    }
+
+    /// Removes selected upcoming occurrences from the protocol `next` list by proven
+    /// identity, preserving delimiters, autoplay, and `prev_tracks`.
     public static func removingUpcomingOccurrences(
         selectedIDs: Set<String>,
         visibleUpcoming: [QueueEntry],
@@ -189,6 +280,9 @@ public enum QueueProtocolProjection: Sendable {
         )
         guard !selected.isEmpty else { return nil }
         guard matchesVisibleUpcoming(protocolNext: protocolNext, visible: visibleUpcoming) else {
+            return nil
+        }
+        guard identitiesAreProven(protocolNext: protocolNext, visible: visibleUpcoming) else {
             return nil
         }
 
@@ -252,7 +346,15 @@ public enum QueueMutationPolicy: Sendable {
 
         let upcomingIDs = Set(visibleUpcoming.map(\.id))
         let targeted = selectedIDs.intersection(upcomingIDs)
-        if targeted.isEmpty { return .failure(.nowPlayingOrHistory) }
+        if targeted.isEmpty {
+            if let nowPlayingID, selectedIDs.contains(nowPlayingID) {
+                return .failure(.nowPlayingOrHistory)
+            }
+            if !selectedIDs.isDisjoint(with: historyIDs) {
+                return .failure(.nowPlayingOrHistory)
+            }
+            return .failure(.staleIdentities)
+        }
         if targeted != selectedIDs { return .failure(.staleIdentities) }
 
         switch route {
@@ -286,6 +388,12 @@ public enum QueueMutationPolicy: Sendable {
             visible: visibleUpcoming
         ) else {
             return .failure(.incompleteProvenance)
+        }
+        guard QueueProtocolProjection.identitiesAreProven(
+            protocolNext: mutation.next,
+            visible: visibleUpcoming
+        ) else {
+            return .failure(.staleIdentities)
         }
         guard let remaining = QueueProtocolProjection.removingUpcomingOccurrences(
             selectedIDs: targeted,

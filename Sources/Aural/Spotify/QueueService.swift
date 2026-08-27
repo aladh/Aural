@@ -43,8 +43,24 @@ nonisolated func mergeQueueSnapshots(
         completeness: ordering.completeness,
         receivedAt: ordering.receivedAt,
         contextURI: ordering.contextURI,
-        entries: ordering.entries.map {
-            QueueEntry(uri: $0.uri, provider: $0.provider, occurrence: queueOccurrence($0.id))
+        entries: ordering.entries.enumerated().map { index, item in
+            let preservedUID: String
+            if !item.uid.isEmpty {
+                preservedUID = item.uid
+            } else if let current,
+                      current.entries.indices.contains(index),
+                      current.entries[index].uri == item.uri
+            {
+                preservedUID = current.entries[index].uid
+            } else {
+                preservedUID = ""
+            }
+            return QueueEntry(
+                uri: item.uri,
+                provider: item.provider,
+                occurrence: queueOccurrence(item.id),
+                uid: preservedUID
+            )
         },
         tracks: Array(metadata.values)
     )
@@ -53,7 +69,7 @@ nonisolated func mergeQueueSnapshots(
 private extension ProvenanceQueueSnapshot {
     var domainSnapshot: PlaybackQueueSnapshot {
         PlaybackQueueSnapshot(
-            entries: entries.map { PlaybackQueueItem(id: $0.id, uri: $0.uri, provider: $0.provider) },
+            entries: entries.map { PlaybackQueueItem($0) },
             source: source,
             completeness: completeness,
             revision: revision,

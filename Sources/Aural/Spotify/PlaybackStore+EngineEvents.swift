@@ -133,14 +133,10 @@ extension PlaybackStore {
         guard !isTearingDown else { return }
         let nextTracks = state.nextTracks ?? []
         let entries = nextTracks.enumerated().map { index, item in
-            QueueEntry(uri: item.uri, provider: item.provider, occurrence: index)
+            QueueEntry(uri: item.uri, provider: item.provider, occurrence: index, uid: item.uid ?? "")
         }
-        let protocolNext = (state.protocolNextTracks ?? []).map {
-            QueueProtocolTrack(uri: $0.uri, uid: $0.uid, provider: $0.provider)
-        }
-        let protocolPrev = (state.protocolPrevTracks ?? []).map {
-            QueueProtocolTrack(uri: $0.uri, uid: $0.uid, provider: $0.provider)
-        }
+        let protocolNext = (state.protocolNextTracks ?? []).map { $0.domainTrack() }
+        let protocolPrev = (state.protocolPrevTracks ?? []).map { $0.domainTrack() }
         let epoch = capturedAccountEpoch ?? accountEpoch
         let engineEpoch = capturedEngineEpoch ?? engineGeneration
         Task { [weak self] in
