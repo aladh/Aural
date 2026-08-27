@@ -186,9 +186,10 @@ issue 16.
 
 Route remaining playback outcomes through `PlaybackEvent` without a framework:
 
-- Keep using `send(...) == true` for remaining dependent side effects (metadata, history,
-  preferences, `accountStore.receiveEngineConnection`, reconnect). Command-finish follow-ups
-  already use `playbackCommandFollowUp` instead of a blanket send-true gate.
+- Keep using `send(...) == true` for remaining non-command dependent side effects (metadata,
+  history, preferences, `accountStore.receiveEngineConnection`). Command-finish completions,
+  notices, and reconnect are governed by `playbackCommandFollowUp` and
+  `.reportFailure(reconnect:)`.
 - Prefer new `PlaybackEvent` cases over `setTransport` / `setNotice` after awaits where that makes
   success, failure, and stale results the same function.
 - Do not add engine revision gates outside `PlaybackReducer`.
