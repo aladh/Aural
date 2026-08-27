@@ -119,3 +119,42 @@ public struct ConnectQueueCallbackWatermark: Equatable, Sendable {
         return true
     }
 }
+
+/// Dependent work after `PlaybackStore.send(.commandFinished)`.
+///
+/// `PlaybackReducer.reconcileTransport` drops a pending *transport* command when an engine
+/// snapshot already matches `expectedTransport`. The later `commandFinished` is then rejected.
+/// On the same account/engine lifetime that is already-reconciled success, even if the
+/// coordinator later reports failure: the backend has confirmed the optimistic transport.
+/// Showing an error or calling `completion(false)` would roll back that confirmed state.
+/// Account/engine invalidation, teardown, non-transport kinds, and a newer pending id stay inert.
+public enum PlaybackCommandFollowUp: Equatable, Sendable {
+    case reportSuccess
+    case reportFailure(reconnect: Bool)
+    case inert
+}
+
+public func playbackCommandFollowUp(
+    finishAccepted: Bool,
+    operationSucceeded: Bool,
+    requiresReconnect: Bool,
+    commandKind: PlaybackCommandKind,
+    pendingCommandID: UUID?,
+    capturedAccountEpoch: UInt64,
+    capturedEngineEpoch: UInt64,
+    currentAccountEpoch: UInt64,
+    currentEngineEpoch: UInt64,
+    isTearingDown: Bool
+) -> PlaybackCommandFollowUp {
+    if finishAccepted {
+        return operationSucceeded ? .reportSuccess : .reportFailure(reconnect: requiresReconnect)
+    }
+    let sameLifetime =
+        !isTearingDown
+        && capturedAccountEpoch == currentAccountEpoch
+        && capturedEngineEpoch == currentEngineEpoch
+    if sameLifetime, pendingCommandID == nil, commandKind == .transport {
+        return .reportSuccess
+    }
+    return .inert
+}

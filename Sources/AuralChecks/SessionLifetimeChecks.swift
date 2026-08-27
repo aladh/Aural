@@ -1,4 +1,5 @@
 import AuralDomain
+import Foundation
 
 func runSessionLifetimeChecks(_ check: CheckRunner) {
     check.suite("Session teardown coalescing") {
@@ -143,6 +144,82 @@ func runSessionLifetimeChecks(_ check: CheckRunner) {
         check.check(
             "a callback matching the later engine epoch is accepted",
             watermark.accept(generation: 3, revision: 1, engineEpoch: 3)
+        )
+    }
+
+    check.suite("Playback command finish follow-up") {
+        let other = UUID(uuidString: "00000000-0000-0000-0000-000000000032")!
+        func followUp(
+            finishAccepted: Bool,
+            succeeded: Bool,
+            reconnect: Bool = false,
+            kind: PlaybackCommandKind = .transport,
+            pending: UUID? = nil,
+            account: UInt64 = 1,
+            engine: UInt64 = 1,
+            currentAccount: UInt64 = 1,
+            currentEngine: UInt64 = 1,
+            tearingDown: Bool = false
+        ) -> PlaybackCommandFollowUp {
+            playbackCommandFollowUp(
+                finishAccepted: finishAccepted,
+                operationSucceeded: succeeded,
+                requiresReconnect: reconnect,
+                commandKind: kind,
+                pendingCommandID: pending,
+                capturedAccountEpoch: account,
+                capturedEngineEpoch: engine,
+                currentAccountEpoch: currentAccount,
+                currentEngineEpoch: currentEngine,
+                isTearingDown: tearingDown
+            )
+        }
+
+        check.equal("an accepted success reports success", followUp(finishAccepted: true, succeeded: true), .reportSuccess)
+        check.equal(
+            "an accepted reconnect-required failure reports reconnect",
+            followUp(finishAccepted: true, succeeded: false, reconnect: true),
+            .reportFailure(reconnect: true)
+        )
+        check.equal(
+            "a matching snapshot then successful finish still reports success",
+            followUp(finishAccepted: false, succeeded: true, reconnect: true),
+            .reportSuccess
+        )
+        check.equal(
+            "a matching snapshot then late coordinator failure still reports success",
+            followUp(finishAccepted: false, succeeded: false, reconnect: true),
+            .reportSuccess
+        )
+        check.equal(
+            "already-reconciled transport success does not reconnect",
+            followUp(finishAccepted: false, succeeded: false, reconnect: true),
+            .reportSuccess
+        )
+        check.equal(
+            "a non-transport kind with no pending command stays inert",
+            followUp(finishAccepted: false, succeeded: false, reconnect: true, kind: .options),
+            .inert
+        )
+        check.equal(
+            "engine-epoch invalidation stays inert",
+            followUp(finishAccepted: false, succeeded: true, reconnect: true, currentEngine: 2),
+            .inert
+        )
+        check.equal(
+            "account-epoch invalidation stays inert",
+            followUp(finishAccepted: false, succeeded: true, reconnect: true, currentAccount: 2),
+            .inert
+        )
+        check.equal(
+            "a superseded id stays inert",
+            followUp(finishAccepted: false, succeeded: true, pending: other),
+            .inert
+        )
+        check.equal(
+            "teardown stays inert",
+            followUp(finishAccepted: false, succeeded: true, tearingDown: true),
+            .inert
         )
     }
 }

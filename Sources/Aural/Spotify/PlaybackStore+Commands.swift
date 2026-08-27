@@ -27,7 +27,8 @@ extension PlaybackStore {
         }
         let commandID = UUID()
         let epoch = accountEpoch
-        send(
+        let engineEpoch = engineGeneration
+        let started = send(
             .commandStarted(PendingPlaybackCommand(
                 id: commandID,
                 kind: kind,
@@ -36,30 +37,27 @@ extension PlaybackStore {
             )),
             source: .command
         )
+        guard started else {
+            completion(false)
+            return
+        }
         let effectID = PlaybackEffectID.command(commandID)
         effects.replace(effectID, with: Task { [weak self] in
             defer { self?.effects.complete(effectID) }
             guard let self else { return }
             let result = await self.coordinator.performLocal(operation)
             guard !Task.isCancelled, self.accountEpoch == epoch, !self.isTearingDown else { return }
-            self.send(
-                .commandFinished(id: commandID, accepted: result.isOK, notice: result.isOK ? nil : PlaybackNotice(message: failure)),
-                source: .command
+            self.applyCommandOutcome(
+                commandID: commandID,
+                kind: kind,
+                capturedAccountEpoch: epoch,
+                capturedEngineEpoch: engineEpoch,
+                succeeded: result.isOK,
+                failure: failure,
+                detailedFailure: "\(failure) (\(result.rawValue))",
+                requiresReconnect: result.requiresReconnect,
+                completion: completion
             )
-
-            guard !result.isOK else {
-                self.setNotice(nil)
-                completion(true)
-                return
-            }
-
-            let message = "\(failure) (\(result.rawValue))"
-            self.showTransientCommandError(message)
-            completion(false)
-
-            if result.requiresReconnect {
-                self.connect()
-            }
         })
     }
 
@@ -138,7 +136,8 @@ extension PlaybackStore {
         }
         let commandID = UUID()
         let epoch = accountEpoch
-        send(
+        let engineEpoch = engineGeneration
+        let started = send(
             .commandStarted(PendingPlaybackCommand(
                 id: commandID,
                 kind: kind,
@@ -147,6 +146,10 @@ extension PlaybackStore {
             )),
             source: .command
         )
+        guard started else {
+            completion(false)
+            return
+        }
         let effectID = PlaybackEffectID.command(commandID)
         effects.replace(effectID, with: Task { [weak self] in
             defer { self?.effects.complete(effectID) }
@@ -156,24 +159,80 @@ extension PlaybackStore {
                     try await operation(remote, sourceID, targetID)
                 }
                 guard !Task.isCancelled, self.accountEpoch == epoch, !self.isTearingDown else { return }
-                self.send(.commandFinished(id: commandID, accepted: true, notice: nil), source: .command)
-                self.setNotice(nil)
-                completion(true)
+                self.applyCommandOutcome(
+                    commandID: commandID,
+                    kind: kind,
+                    capturedAccountEpoch: epoch,
+                    capturedEngineEpoch: engineEpoch,
+                    succeeded: true,
+                    failure: failure,
+                    detailedFailure: failure,
+                    requiresReconnect: false,
+                    completion: completion
+                )
             } catch {
                 guard let self, !Task.isCancelled, self.accountEpoch == epoch,
                       !self.isTearingDown else { return }
-                self.send(
-                    .commandFinished(
-                        id: commandID,
-                        accepted: false,
-                        notice: PlaybackNotice(message: failure)
-                    ),
-                    source: .command
+                self.applyCommandOutcome(
+                    commandID: commandID,
+                    kind: kind,
+                    capturedAccountEpoch: epoch,
+                    capturedEngineEpoch: engineEpoch,
+                    succeeded: false,
+                    failure: failure,
+                    detailedFailure: "\(failure): \(error.localizedDescription)",
+                    requiresReconnect: false,
+                    completion: completion
                 )
-                self.showTransientCommandError("\(failure): \(error.localizedDescription)")
-                completion(false)
             }
         })
+    }
+
+    /// Local and remote command finishes share this policy so a matching engine snapshot cannot
+    /// drop `play` / `togglePlayback` completions, including when the coordinator later fails.
+    /// Epoch, teardown, non-transport kinds, and superseded ids stay inert.
+    private func applyCommandOutcome(
+        commandID: UUID,
+        kind: PlaybackCommandKind,
+        capturedAccountEpoch: UInt64,
+        capturedEngineEpoch: UInt64,
+        succeeded: Bool,
+        failure: String,
+        detailedFailure: String,
+        requiresReconnect: Bool,
+        completion: @escaping @MainActor (Bool) -> Void
+    ) {
+        let finished = send(
+            .commandFinished(
+                id: commandID,
+                accepted: succeeded,
+                notice: succeeded ? nil : PlaybackNotice(message: failure)
+            ),
+            source: .command
+        )
+        switch playbackCommandFollowUp(
+            finishAccepted: finished,
+            operationSucceeded: succeeded,
+            requiresReconnect: requiresReconnect,
+            commandKind: kind,
+            pendingCommandID: state.pendingCommands[kind]?.id,
+            capturedAccountEpoch: capturedAccountEpoch,
+            capturedEngineEpoch: capturedEngineEpoch,
+            currentAccountEpoch: accountEpoch,
+            currentEngineEpoch: engineGeneration,
+            isTearingDown: isTearingDown
+        ) {
+        case .reportSuccess:
+            completion(true)
+        case let .reportFailure(reconnect):
+            showTransientCommandError(detailedFailure)
+            completion(false)
+            if reconnect {
+                connect()
+            }
+        case .inert:
+            break
+        }
     }
 
     func showTransientCommandError(_ message: String) {

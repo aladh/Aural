@@ -8,6 +8,7 @@ runPlaylistSortingChecks(runner)
 runPlaybackSupportChecks(runner)
 runParsingChecks(runner)
 runPlaybackReducerChecks(runner)
+runPlaybackCommandEffectSpikeChecks(runner)
 runSessionLifetimeChecks(runner)
 
 runner.report()
