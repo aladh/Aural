@@ -21,7 +21,8 @@ struct TransientFeedbackBanner: View {
         .accessibilityRespondsToUserInteraction(false)
         .onChange(of: feedback.message?.id) { _, _ in
             guard let message = feedback.message else { return }
-            AccessibilityNotification.Announcement(spokenText(for: message)).post()
+            var announcement = AccessibilityNotification.Announcement(spokenText(for: message))
+            announcement.post()
         }
     }
 

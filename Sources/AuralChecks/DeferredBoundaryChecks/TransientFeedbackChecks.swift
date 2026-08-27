@@ -235,6 +235,13 @@ private func feedbackEnvironment(
 }
 
 @MainActor
+private func yieldPasses(_ count: Int = 200) async {
+    for _ in 0..<count {
+        await Task.yield()
+    }
+}
+
+@MainActor
 private func waitUntil(_ condition: @MainActor () async -> Bool) async -> Bool {
     let clock = ContinuousClock()
     let deadline = clock.now + .seconds(2)
@@ -342,7 +349,7 @@ func runTransientFeedbackChecks(_ runner: CheckRunner) async {
         let replacementID = stale.message?.id
 
         uncooperative.releaseNext()
-        await Task.yield()
+        _ = await waitUntil { uncooperative.waiterCount == 1 }
         runner.equal(
             "a stale dismissal cannot remove the replacement",
             stale.message?.text,
@@ -351,7 +358,7 @@ func runTransientFeedbackChecks(_ runner: CheckRunner) async {
         runner.equal("replacement identity is unchanged", stale.message?.id, replacementID)
 
         uncooperative.releaseNext()
-        await Task.yield()
+        _ = await waitUntil { stale.message == nil }
         runner.nil_("the current dismissal still expires the replacement", stale.message)
     }
 
@@ -464,10 +471,13 @@ func runTransientFeedbackChecks(_ runner: CheckRunner) async {
         )
         seedRemoteOwner(cancelled)
         cancelled.addToQueue(uri: "spotify:track:cancel")
-        _ = await waitUntil { await parkedRemote.sendCount == 1 }
+        runner.check(
+            "cancelled add started the remote command",
+            await waitUntil { await parkedRemote.sendCount == 1 }
+        )
         cancelled.effects.cancelAccountScoped()
         await parkedRemote.completePark(success: false)
-        await Task.yield()
+        await yieldPasses()
         runner.nil_("cancelled add reports no mutation feedback", cancelledFeedback.message)
         await cancelled.shutdownForTermination()
 
@@ -479,10 +489,13 @@ func runTransientFeedbackChecks(_ runner: CheckRunner) async {
         )
         seedRemoteOwner(staleAccount)
         staleAccount.addToQueue(uri: "spotify:track:stale")
-        _ = await waitUntil { await staleRemote.sendCount == 1 }
+        runner.check(
+            "stale-account add started the remote command",
+            await waitUntil { await staleRemote.sendCount == 1 }
+        )
         staleAccount.accountEpoch &+= 1
         await staleRemote.completePark(success: true)
-        await Task.yield()
+        await yieldPasses()
         runner.nil_("stale-account add reports no mutation feedback", staleFeedback.message)
         await staleAccount.shutdownForTermination()
 
