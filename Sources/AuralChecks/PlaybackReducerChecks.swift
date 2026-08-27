@@ -479,6 +479,93 @@ func runPlaybackReducerChecks(_ check: CheckRunner) {
             flagged.options.repeatFlags,
             RepeatFlags(context: true, track: true)
         )
+
+        var restored = PlaybackState(accountEpoch: 1, engineEpoch: 1, session: .ready)
+        let priorBothTrue = RepeatFlags(context: true, track: true)
+        let intermediateFlags = RepeatFlags(context: false, track: true)
+        _ = PlaybackReducer.reduce(
+            &restored,
+            envelope: envelope(
+                source: .enginePlayback,
+                revision: 1,
+                event: .enginePlayback(EnginePlaybackSnapshot(
+                    transport: .paused,
+                    trackURI: nil,
+                    timing: PlaybackTiming(anchoredAt: traceDate),
+                    shuffle: false,
+                    repeatMode: .track,
+                    repeatFlags: priorBothTrue
+                ))
+            )
+        )
+        _ = PlaybackReducer.reduce(
+            &restored,
+            envelope: envelope(
+                source: .user,
+                event: .options(PlaybackOptions(repeatMode: .off))
+            )
+        )
+        check.equal("optimistic both-true track → off displays off", restored.options.repeatMode, .off)
+        _ = PlaybackReducer.reduce(
+            &restored,
+            envelope: envelope(
+                source: .enginePlayback,
+                revision: 2,
+                event: .enginePlayback(EnginePlaybackSnapshot(
+                    transport: .paused,
+                    trackURI: nil,
+                    timing: PlaybackTiming(anchoredAt: traceDate),
+                    shuffle: false,
+                    repeatMode: .track,
+                    repeatFlags: intermediateFlags
+                ))
+            )
+        )
+        check.equal("intermediate (false, true) still displays as track", restored.options.repeatMode, .track)
+        check.equal(
+            "intermediate snapshot replaces optimistic off flags",
+            restored.options.repeatFlags,
+            intermediateFlags
+        )
+        check.equal(
+            "compensated both-true intermediate restores previous",
+            reconcileRepeatCommandFailure(
+                visibleMode: restored.options.repeatMode,
+                visibleFlags: restored.options.repeatFlags,
+                previousMode: .track,
+                previousFlags: priorBothTrue,
+                targetMode: .off,
+                targetFlags: RepeatMode.off.flags,
+                enginePlaybackRevisionChanged: true
+            ),
+            .restorePrevious
+        )
+        _ = PlaybackReducer.reduce(
+            &restored,
+            envelope: envelope(
+                source: .user,
+                event: .options(PlaybackOptions(repeatMode: .track, repeatFlags: priorBothTrue))
+            )
+        )
+        check.equal("restored repeat mode is track", restored.options.repeatMode, .track)
+        check.equal(
+            "restored raw flags are the captured both-true pair",
+            restored.options.repeatFlags,
+            priorBothTrue
+        )
+        check.equal(
+            "a later track → off from restored flags plans both mutations",
+            RepeatTransitionPlan.planning(from: restored.options.repeatFlags, to: RepeatMode.off.flags).mutations,
+            [
+                RepeatFlagMutation(flag: .context, enabled: false),
+                RepeatFlagMutation(flag: .track, enabled: false),
+            ]
+        )
+        check.equal(
+            "ordinary (false, true) track → off remains one mutation",
+            RepeatTransitionPlan.planning(from: intermediateFlags, to: RepeatMode.off.flags).mutations,
+            [RepeatFlagMutation(flag: .track, enabled: false)]
+        )
     }
 
     check.suite("Remote paused playback ownership") {

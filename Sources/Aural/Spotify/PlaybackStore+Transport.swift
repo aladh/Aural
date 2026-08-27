@@ -230,8 +230,11 @@ extension PlaybackStore {
             guard let self, !accepted else { return }
             let disposition = reconcileRepeatCommandFailure(
                 visibleMode: self.repeatMode,
+                visibleFlags: self.state.options.repeatFlags,
                 previousMode: previousMode,
+                previousFlags: previousFlags,
                 targetMode: nextMode,
+                targetFlags: nextFlags,
                 enginePlaybackRevisionChanged:
                     self.state.sourceRevisions[.enginePlayback] != enginePlaybackRevision
             )

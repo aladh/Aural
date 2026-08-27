@@ -615,6 +615,55 @@ func runRepeatTransitionChecks(_ runner: CheckRunner) async {
         await player.shutdownForTermination()
     }
 
+    await runner.suite("Both-true intermediate snapshot restores previous raw flags") {
+        let remote = ScriptedRepeatRemote(failAtCounts: [2], holdAfterCount: 1)
+        let player = playbackStore(
+            repeatEnvironment(local: RepeatLocalEngine(), remote: remote)
+        )
+        seedReadyRemote(player)
+        let priorBothTrue = RepeatFlags(context: true, track: true)
+        let intermediateFlags = RepeatFlags(context: false, track: true)
+        player.setRepeat(mode: .track, flags: priorBothTrue)
+        player.cycleRepeat()
+        let held = await waitUntil { await remote.sends.count == 1 }
+        runner.check("first both-off mutation is held after context-off", held)
+        sendRepeatSnapshot(player, mode: .track, flags: intermediateFlags, revision: 7)
+        runner.equal("intermediate both-true step still displays as track", player.repeatMode, RepeatMode.track)
+        runner.equal(
+            "intermediate raw flags are context off, track on",
+            player.state.options.repeatFlags,
+            intermediateFlags
+        )
+        await remote.releaseHold()
+        let finished = await waitUntil { player.state.pendingCommands[.options] == nil }
+        runner.check("compensated both-true second-step failure finishes", finished)
+        runner.equal(
+            "compensation restores context after the intermediate track snapshot",
+            await remote.sends,
+            [
+                RepeatSend(endpoint: .repeatContext, enabled: false),
+                RepeatSend(endpoint: .repeatTrack, enabled: false),
+                RepeatSend(endpoint: .repeatContext, enabled: true),
+            ]
+        )
+        runner.equal("store restored previous track after compensation", player.repeatMode, RepeatMode.track)
+        runner.equal(
+            "store restored captured both-true raw flags",
+            player.state.options.repeatFlags,
+            priorBothTrue
+        )
+        runner.equal(
+            "a later track → off from restored flags plans both mutations",
+            RepeatTransitionPlan.planning(from: player.state.options.repeatFlags, to: RepeatMode.off.flags).mutations,
+            [
+                RepeatFlagMutation(flag: .context, enabled: false),
+                RepeatFlagMutation(flag: .track, enabled: false),
+            ]
+        )
+        runner.equal("the failed command still reports Could not update repeat", player.transientCommandError, "Could not update repeat")
+        await player.shutdownForTermination()
+    }
+
     await runner.suite("Target and unrelated snapshots survive repeat failure") {
         let targetRemote = ScriptedRepeatRemote(failAtCounts: [2], holdAfterCount: 2)
         let targetPlayer = playbackStore(

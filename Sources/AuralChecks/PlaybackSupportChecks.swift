@@ -106,58 +106,86 @@ func runPlaybackSupportChecks(_ check: CheckRunner) {
             RepeatTransitionPlan.planning(from: RepeatMode.track.flags, to: RepeatMode.off.flags).mutations,
             [RepeatFlagMutation(flag: .track, enabled: false)]
         )
+        check.equal(
+            "both-true first mutation is the compensated intermediate pair",
+            bothTrue.applying(RepeatFlagMutation(flag: .context, enabled: false)),
+            RepeatFlags(context: false, track: true)
+        )
     }
 
     check.suite("Repeat command failure reconciliation") {
+        func reconcile(
+            visible: RepeatMode,
+            previous: RepeatMode,
+            target: RepeatMode,
+            later: Bool,
+            visibleFlags: RepeatFlags? = nil,
+            previousFlags: RepeatFlags? = nil,
+            targetFlags: RepeatFlags? = nil
+        ) -> RepeatCommandFailureDisposition {
+            reconcileRepeatCommandFailure(
+                visibleMode: visible,
+                visibleFlags: visibleFlags ?? visible.flags,
+                previousMode: previous,
+                previousFlags: previousFlags ?? previous.flags,
+                targetMode: target,
+                targetFlags: targetFlags ?? target.flags,
+                enginePlaybackRevisionChanged: later
+            )
+        }
+
         check.equal(
             "no later snapshot restores while the optimistic target is visible",
-            reconcileRepeatCommandFailure(
-                visibleMode: .track,
-                previousMode: .context,
-                targetMode: .track,
-                enginePlaybackRevisionChanged: false
-            ),
+            reconcile(visible: .track, previous: .context, target: .track, later: false),
             .restorePrevious
         )
         check.equal(
             "no later snapshot keeps a visible mode that is no longer the target",
-            reconcileRepeatCommandFailure(
-                visibleMode: .off,
-                previousMode: .context,
-                targetMode: .track,
-                enginePlaybackRevisionChanged: false
-            ),
+            reconcile(visible: .off, previous: .context, target: .track, later: false),
             .keepVisible
         )
         check.equal(
             "a later target snapshot is preserved",
-            reconcileRepeatCommandFailure(
-                visibleMode: .track,
-                previousMode: .context,
-                targetMode: .track,
-                enginePlaybackRevisionChanged: true
-            ),
+            reconcile(visible: .track, previous: .context, target: .track, later: true),
             .keepVisible
         )
         check.equal(
             "context → track intermediate off restores previous context",
-            reconcileRepeatCommandFailure(
-                visibleMode: .off,
-                previousMode: .context,
-                targetMode: .track,
-                enginePlaybackRevisionChanged: true
-            ),
+            reconcile(visible: .off, previous: .context, target: .track, later: true),
             .restorePrevious
         )
         check.equal(
             "unrelated newer authoritative repeat is preserved",
-            reconcileRepeatCommandFailure(
-                visibleMode: .track,
-                previousMode: .off,
-                targetMode: .context,
-                enginePlaybackRevisionChanged: true
-            ),
+            reconcile(visible: .track, previous: .off, target: .context, later: true),
             .keepVisible
+        )
+
+        let previousBothTrue = RepeatFlags(context: true, track: true)
+        let intermediateTrack = RepeatFlags(context: false, track: true)
+        check.equal(
+            "compensated both-true intermediate restores captured previous raw flags",
+            reconcile(
+                visible: .track,
+                previous: .track,
+                target: .off,
+                later: true,
+                visibleFlags: intermediateTrack,
+                previousFlags: previousBothTrue
+            ),
+            .restorePrevious
+        )
+        check.equal(
+            "restored both-true flags still plan both-off",
+            RepeatTransitionPlan.planning(from: previousBothTrue, to: RepeatMode.off.flags).mutations,
+            [
+                RepeatFlagMutation(flag: .context, enabled: false),
+                RepeatFlagMutation(flag: .track, enabled: false),
+            ]
+        )
+        check.equal(
+            "ordinary track flags still plan a single track-off mutation",
+            RepeatTransitionPlan.planning(from: intermediateTrack, to: RepeatMode.off.flags).mutations,
+            [RepeatFlagMutation(flag: .track, enabled: false)]
         )
     }
 

@@ -54,7 +54,9 @@ ADRs; historical measurements belong in the performance baseline.
   on. If the second mutation fails after the first was accepted, Aural best-effort restores the
   captured previous flags and still reports failure. A later snapshot of the requested target is
   kept; the known intermediate off after a compensated queue → track failure restores queue
-  repeat; unrelated newer authoritative repeat state is left intact.
+  repeat; a compensated both-true track → off failure whose intermediate snapshot is still
+  displayed as track (`context: false`, `track: true`) restores the captured previous track
+  mode and both-true flags; unrelated newer authoritative repeat state is left intact.
 - Queue order comes from the playback source of truth. Catalog and Web API metadata may enrich
   names but must not reorder the queue. Resolvable entries should progressively replace fallback
   labels rather than remaining misleadingly `Unknown`.

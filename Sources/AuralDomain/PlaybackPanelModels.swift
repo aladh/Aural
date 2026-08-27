@@ -102,6 +102,13 @@ public struct RepeatFlags: Equatable, Sendable {
         case .track: track
         }
     }
+
+    public func applying(_ mutation: RepeatFlagMutation) -> RepeatFlags {
+        switch mutation.flag {
+        case .context: RepeatFlags(context: mutation.enabled, track: track)
+        case .track: RepeatFlags(context: context, track: mutation.enabled)
+        }
+    }
 }
 
 /// One Connect/FFI repeat switch. Spotify exposes context and track independently.
@@ -160,9 +167,11 @@ public struct RepeatTransitionPlan: Equatable, Sendable {
 
 /// How a failed repeat command should treat the optimistic control.
 ///
-/// Distinguishes the known context → track intermediate (off) from the requested
-/// target and from unrelated newer authoritative state. Uses the existing
-/// `.enginePlayback` source revision plus visible mode — not a parallel watermark.
+/// Distinguishes known two-step intermediates (context → track off, and
+/// both-true track → off leaving `(false, true)`) from the requested target
+/// and from unrelated newer authoritative state. Uses the existing
+/// `.enginePlayback` source revision plus visible mode/flags — not a parallel
+/// watermark.
 public enum RepeatCommandFailureDisposition: Equatable, Sendable {
     case restorePrevious
     case keepVisible
@@ -170,8 +179,11 @@ public enum RepeatCommandFailureDisposition: Equatable, Sendable {
 
 public func reconcileRepeatCommandFailure(
     visibleMode: RepeatMode,
+    visibleFlags: RepeatFlags,
     previousMode: RepeatMode,
+    previousFlags: RepeatFlags,
     targetMode: RepeatMode,
+    targetFlags: RepeatFlags,
     enginePlaybackRevisionChanged: Bool
 ) -> RepeatCommandFailureDisposition {
     if !enginePlaybackRevisionChanged {
@@ -181,6 +193,13 @@ public func reconcileRepeatCommandFailure(
         return .keepVisible
     }
     if previousMode == .context, targetMode == .track, visibleMode == .off {
+        return .restorePrevious
+    }
+    let plan = RepeatTransitionPlan.planning(from: previousFlags, to: targetFlags)
+    if let first = plan.mutations.first,
+       plan.mutations.count > 1,
+       previousFlags.applying(first) == visibleFlags
+    {
         return .restorePrevious
     }
     return .keepVisible
