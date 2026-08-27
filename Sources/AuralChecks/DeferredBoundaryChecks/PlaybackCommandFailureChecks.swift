@@ -148,26 +148,16 @@ private struct IdleCatalog: CatalogProviding {
     func playlist(id _: String) async throws -> PathfinderPlaylistUnion { throw CommandCheckFailure.unavailable }
 }
 
-private let commandWaitNanoseconds: UInt64 = 2_000_000_000
-
 @MainActor
 private func waitUntil(_ condition: @MainActor () async -> Bool) async -> Bool {
-    await withTaskGroup(of: Bool.self) { group in
-        group.addTask { @MainActor in
-            while await !condition() {
-                if Task.isCancelled { return false }
-                await Task.yield()
-            }
-            return true
-        }
-        group.addTask {
-            try? await Task.sleep(nanoseconds: commandWaitNanoseconds)
-            return false
-        }
-        let finished = await group.next() ?? false
-        group.cancelAll()
-        return finished
+    let clock = ContinuousClock()
+    let deadline = clock.now + .seconds(2)
+    while clock.now < deadline {
+        if Task.isCancelled { return false }
+        if await condition() { return true }
+        await Task.yield()
     }
+    return false
 }
 
 @MainActor
