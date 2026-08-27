@@ -1,5 +1,3 @@
-import Foundation
-
 /// How the push-side PCM writer should proceed for the samples still in this call.
 public enum PCMWriteAdmission: Equatable, Sendable {
     /// Copy this many samples into free ring slots, then continue with any remainder.
@@ -13,11 +11,18 @@ public enum PCMWriteAdmission: Equatable, Sendable {
 /// Bounded backpressure for the librespot player thread.
 ///
 /// A full ring must not wait forever: `stop` / `flush` run on that same thread after `write`
-/// returns, and they are the operations that clear `isRendering` or reset the cursor. The wait
-/// budget is one full buffer of 500 ms slices; after that the write drops instead of wedging.
+/// returns, and they are the operations that clear `isRendering` or reset the cursor.
+///
+/// The budget is a single 500 ms wait. That is long enough for the pull side to resume after a
+/// short `renderQueue` gap, and short enough that pause/stop on the player thread cannot sit
+/// behind a multi-second hang. A stalled consumer is dropped rather than waited out; extra
+/// slices would only delay control. Worst-case same-thread stall is
+/// `maxWriterStallMilliseconds`.
 public struct PCMWriteBackpressure: Equatable, Sendable {
     public static let waitTimeoutMilliseconds = 500
-    public static let maxConsecutiveFullWaits = 4
+    public static let maxConsecutiveFullWaits = 1
+    public static let maxWriterStallMilliseconds =
+        waitTimeoutMilliseconds * maxConsecutiveFullWaits
 
     public private(set) var consecutiveFullWaits = 0
 
@@ -44,44 +49,5 @@ public struct PCMWriteBackpressure: Equatable, Sendable {
         }
         consecutiveFullWaits += 1
         return .waitForSpace
-    }
-}
-
-/// Sticky wake-up used when the writer parks on a full ring.
-///
-/// Control always signals, including the case where `stop` / `flush` run before `wait` is entered.
-/// The pull side should signal only while a writer is actually waiting so normal consume does not
-/// turn the next wait into a spin.
-public final class PCMWriteSpace: @unchecked Sendable {
-    private let condition = NSCondition()
-    private var generation: UInt64 = 0
-    private var observedGeneration: UInt64 = 0
-
-    public init() {}
-
-    /// Returns `true` when a signal arrived, `false` on timeout.
-    @discardableResult
-    public func wait(timeoutMilliseconds: Int) -> Bool {
-        condition.lock()
-        defer { condition.unlock() }
-        if generation != observedGeneration {
-            observedGeneration = generation
-            return true
-        }
-        let deadline = Date().addingTimeInterval(Double(max(timeoutMilliseconds, 0)) / 1000)
-        while generation == observedGeneration {
-            if !condition.wait(until: deadline) {
-                return false
-            }
-        }
-        observedGeneration = generation
-        return true
-    }
-
-    public func signal() {
-        condition.lock()
-        generation &+= 1
-        condition.broadcast()
-        condition.unlock()
     }
 }

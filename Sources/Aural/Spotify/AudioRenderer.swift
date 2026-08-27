@@ -31,7 +31,7 @@ nonisolated enum AudioRendererError: LocalizedError, Sendable {
 ///
 /// The write path may park briefly when the ring is full, but it cannot wait for space
 /// that only `stop` / `flush` / route recreation can create. Those controls also run on
-/// the player thread, so a full buffer uses bounded backpressure and then drops.
+/// the player thread, so a full buffer uses one 500 ms backpressure wait and then drops.
 final nonisolated class AudioRenderer: @unchecked Sendable {
     // MARK: - Constants
 
