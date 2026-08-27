@@ -235,7 +235,7 @@ private func seedAuthoritativeQueue(_ player: PlaybackStore, revision: UInt64 = 
 
 private func waitUntil(
     timeoutNanoseconds: UInt64 = 200_000_000,
-    _ condition: @escaping @Sendable () async -> Bool
+    _ condition: @MainActor () async -> Bool
 ) async -> Bool {
     let deadline = DispatchTime.now().uptimeNanoseconds + timeoutNanoseconds
     while DispatchTime.now().uptimeNanoseconds < deadline {
