@@ -175,10 +175,9 @@ final class PlaybackStore {
     @ObservationIgnored var terminationGate = PlaybackTerminationGate()
     @ObservationIgnored var lastEngineEventSequence: UInt64 = 0
     @ObservationIgnored var engineGeneration: UInt64 = 0
-    @ObservationIgnored var lastPlaybackRevision: UInt64 = 0
-    @ObservationIgnored var lastQueueRevision: UInt64 = 0
-    @ObservationIgnored var lastConnectionRevision: UInt64 = 0
-    @ObservationIgnored var lastDevicesRevision: UInt64 = 0
+    /// MainActor watermark for Connect *callback* identity. Distinct from
+    /// `state.sourceRevisions[.engineQueue]`, which tracks provenance snapshots after merge.
+    @ObservationIgnored var connectQueueCallback = ConnectQueueCallbackWatermark()
     @ObservationIgnored var shuffleHistoryCache: [String: TimeInterval] = [:]
     var transientCommandError: String? { state.notice?.message }
 
@@ -346,18 +345,23 @@ final class PlaybackStore {
     }
 
     /// The only mutation entrance for the atomic playback snapshot.
+    /// Engine callbacks pass their payload `sessionGeneration` as `engineEpoch`. Other events
+    /// omit it and use `engineGeneration`, which mirrors `state.engineEpoch` after `reduce`.
+    @discardableResult
     func send(
         _ event: PlaybackEvent,
         source: PlaybackEventSource,
         revision: UInt64? = nil,
+        engineEpoch: UInt64? = nil,
         receivedAt: Date = Date()
-    ) {
+    ) -> Bool {
+        let stampedEngineEpoch = engineEpoch ?? engineGeneration
         var next = state
         let accepted = PlaybackReducer.reduce(
             &next,
             envelope: PlaybackEventEnvelope(
                 accountEpoch: accountEpoch,
-                engineEpoch: engineGeneration,
+                engineEpoch: stampedEngineEpoch,
                 source: source,
                 revision: revision,
                 receivedAt: receivedAt,
@@ -366,11 +370,13 @@ final class PlaybackStore {
         )
         if accepted {
             state = next
-        } else {
-            AuralLog.playback.debug(
-                "Rejected event; source=\(String(describing: source), privacy: .public); account=\(self.accountEpoch, privacy: .public); engine=\(self.engineGeneration, privacy: .public); revision=\(String(describing: revision), privacy: .public)"
-            )
+            engineGeneration = next.engineEpoch
+            return true
         }
+        AuralLog.playback.debug(
+            "Rejected event; source=\(String(describing: source), privacy: .public); account=\(self.accountEpoch, privacy: .public); engine=\(stampedEngineEpoch, privacy: .public); revision=\(String(describing: revision), privacy: .public)"
+        )
+        return false
     }
 
     func setPresentation(

@@ -90,4 +90,59 @@ func runSessionLifetimeChecks(_ check: CheckRunner) {
             )
         )
     }
+
+    check.suite("Connect queue callback watermark") {
+        var watermark = ConnectQueueCallbackWatermark()
+        check.check(
+            "the first callback is accepted before the engine epoch catches up",
+            watermark.accept(generation: 2, revision: 4, engineEpoch: 1)
+        )
+        check.equal("the callback generation is stored independently", watermark.generation, 2)
+        check.equal("the callback revision is stored", watermark.revision, 4)
+
+        let afterFirst = watermark
+        check.check(
+            "a duplicate revision in the same generation is rejected",
+            !watermark.accept(generation: 2, revision: 4, engineEpoch: 1)
+        )
+        check.equal("a rejected duplicate does not clear the watermark", watermark, afterFirst)
+        check.check(
+            "an older revision in the same generation is rejected",
+            !watermark.accept(generation: 2, revision: 3, engineEpoch: 1)
+        )
+        check.equal("an older revision does not reopen the generation", watermark, afterFirst)
+
+        check.check(
+            "adopting the same engine epoch later does not reset the watermark",
+            !watermark.accept(generation: 2, revision: 1, engineEpoch: 2)
+        )
+        check.equal("the watermark survives the engine epoch catching up", watermark, afterFirst)
+        check.check(
+            "a newer revision in the stored generation is still accepted",
+            watermark.accept(generation: 2, revision: 5, engineEpoch: 2)
+        )
+
+        check.check(
+            "a previous engine generation is rejected after a newer callback generation",
+            !watermark.accept(generation: 1, revision: 9, engineEpoch: 2)
+        )
+        check.check(
+            "a newer callback generation starts a fresh revision namespace",
+            watermark.accept(generation: 3, revision: 1, engineEpoch: 2)
+        )
+        check.equal("the new callback generation is recorded", watermark.generation, 3)
+        check.equal("the new generation accepts a restarted revision", watermark.revision, 1)
+
+        watermark.reset()
+        check.equal("reset clears the callback generation", watermark.generation, 0)
+        check.equal("reset clears the callback revision", watermark.revision, 0)
+        check.check(
+            "a later engine epoch rejects a stale callback generation",
+            !watermark.accept(generation: 2, revision: 1, engineEpoch: 3)
+        )
+        check.check(
+            "a callback matching the later engine epoch is accepted",
+            watermark.accept(generation: 3, revision: 1, engineEpoch: 3)
+        )
+    }
 }

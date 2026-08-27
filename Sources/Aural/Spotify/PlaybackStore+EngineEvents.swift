@@ -16,77 +16,39 @@ extension PlaybackStore {
     func receive(_ envelope: RustPlaybackEventEnvelope) {
         guard envelope.sequence > lastEngineEventSequence else { return }
         lastEngineEventSequence = envelope.sequence
+        // Teardown must win before any ordered-source gate. Recording a revision here and then
+        // bailing in `receive` would consume a snapshot the reducer never accepted.
+        guard !isTearingDown else { return }
 
         switch envelope.event {
         case let .playback(state):
-            guard acceptsEngineEvent(
-                generation: state.sessionGeneration,
-                revision: state.revision,
-                source: .playback
-            ) else { return }
             receive(state, revision: state.revision, receivedAt: envelope.receivedAt)
         case let .queue(state):
-            guard acceptsEngineEvent(
+            guard acceptsConnectQueueCallback(
                 generation: state.sessionGeneration,
-                revision: state.revision,
-                source: .queue
+                revision: state.revision
             ) else { return }
             receive(state, revision: state.revision)
         case let .connection(state):
-            guard acceptsEngineEvent(
-                generation: state.sessionGeneration,
-                revision: state.revision,
-                source: .connection
-            ) else { return }
             receive(state, revision: state.revision, receivedAt: envelope.receivedAt)
         case let .devices(state):
-            guard acceptsEngineEvent(
-                generation: state.sessionGeneration,
+            receive(
+                state.devices,
                 revision: state.revision,
-                source: .devices
-            ) else { return }
-            receive(state.devices, revision: state.revision)
+                engineEpoch: state.sessionGeneration
+            )
         }
     }
 
-    func acceptsEngineEvent(
-        generation: UInt64?,
-        revision: UInt64?,
-        source: EngineRevisionSource
-    ) -> Bool {
-        if let generation {
-            guard generation >= engineGeneration else { return false }
-            if generation > engineGeneration {
-                engineGeneration = generation
-                lastPlaybackRevision = 0
-                lastQueueRevision = 0
-                lastConnectionRevision = 0
-                lastDevicesRevision = 0
-            }
-        }
-        if let revision {
-            let lastRevision = switch source {
-            case .playback: lastPlaybackRevision
-            case .queue: lastQueueRevision
-            case .connection: lastConnectionRevision
-            case .devices: lastDevicesRevision
-            }
-            guard revision > lastRevision else { return false }
-            switch source {
-            case .playback: lastPlaybackRevision = revision
-            case .queue: lastQueueRevision = revision
-            case .connection: lastConnectionRevision = revision
-            case .devices: lastDevicesRevision = revision
-            }
-        }
-        return true
-    }
-
-    enum EngineRevisionSource {
-        case playback
-        case queue
-        case connection
-        case devices
+    /// MainActor dedupe for Connect queue *callbacks*. Records generation and revision together
+    /// and does not adopt `engineGeneration`.
+    func acceptsConnectQueueCallback(generation: UInt64?, revision: UInt64?) -> Bool {
+        guard !isTearingDown else { return false }
+        return connectQueueCallback.accept(
+            generation: generation,
+            revision: revision,
+            engineEpoch: engineGeneration
+        )
     }
 
     func present(_ track: CatalogTrack) {
@@ -109,7 +71,6 @@ extension PlaybackStore {
         let isInitialSnapshot = !hasReceivedPlaybackSnapshot
         let previousTrackURI = trackURI
         let snapshotIsPlaying = state.isPlaying && !(state.isPaused ?? false)
-        hasReceivedPlaybackSnapshot = true
         let transport: PlaybackTransportState = (
             snapshotIsPlaying && !(isInitialSnapshot && isActiveDevice)
         ) ? .playing : (state.trackURI.isEmpty ? .stopped : .paused)
@@ -124,7 +85,7 @@ extension PlaybackStore {
             context: state.repeatContext ?? repeatMode.flags.context,
             track: state.repeatTrack ?? repeatMode.flags.track
         )
-        send(
+        let accepted = send(
             .enginePlayback(EnginePlaybackSnapshot(
                 transport: transport,
                 trackURI: state.trackURI.isEmpty ? nil : state.trackURI,
@@ -138,8 +99,11 @@ extension PlaybackStore {
             )),
             source: .enginePlayback,
             revision: revision,
+            engineEpoch: state.sessionGeneration,
             receivedAt: receivedAt
         )
+        guard accepted else { return }
+        hasReceivedPlaybackSnapshot = true
 
         if !state.trackURI.isEmpty, state.trackURI != previousTrackURI {
             adoptTrackMetadata(for: state.trackURI, force: true)
@@ -306,7 +270,7 @@ extension PlaybackStore {
         })
     }
 
-    func receive(_ devices: [ConnectDevice], revision: UInt64) {
+    func receive(_ devices: [ConnectDevice], revision: UInt64, engineEpoch: UInt64) {
         guard !isTearingDown else { return }
         let snapshot = PlaybackDeviceSnapshot(
             devices: devices.map {
@@ -315,7 +279,13 @@ extension PlaybackStore {
             localDeviceID: localDeviceID,
             revision: revision
         )
-        send(.devices(snapshot), source: .engineDevices, revision: revision)
+        let accepted = send(
+            .devices(snapshot),
+            source: .engineDevices,
+            revision: revision,
+            engineEpoch: engineEpoch
+        )
+        guard accepted else { return }
         if let remote = devices.first(where: { $0.isActive && $0.id != localDeviceID }) {
             lastRemoteDeviceID = remote.id
             Task { await environment.preferences.setLastRemoteDeviceID(remote.id) }
@@ -325,13 +295,16 @@ extension PlaybackStore {
     func receive(_ state: RustConnectionState, revision: UInt64?, receivedAt: Date) {
         guard !isTearingDown else { return }
         let resolvedLocalID = state.deviceID.flatMap { $0.isEmpty ? nil : $0 } ?? localDeviceID
+        let resolvedDeviceName: String
         if let name = state.deviceName, !name.isEmpty {
-            thisDeviceName = name
+            resolvedDeviceName = name
+        } else {
+            resolvedDeviceName = thisDeviceName
         }
         let owner = connectionPlaybackOwner(
             isLocalActive: state.isActiveDevice,
             localDeviceID: resolvedLocalID,
-            localDeviceName: thisDeviceName,
+            localDeviceName: resolvedDeviceName,
             devices: self.state.devices.devices,
             currentTrackURI: self.state.currentTrack?.uri,
             previousOwner: self.state.owner,
@@ -345,7 +318,7 @@ extension PlaybackStore {
         } else {
             session = nil
         }
-        send(
+        let accepted = send(
             .engineConnection(EngineConnectionSnapshot(
                 session: session,
                 owner: owner,
@@ -353,8 +326,11 @@ extension PlaybackStore {
             )),
             source: .engineConnection,
             revision: revision,
+            engineEpoch: state.sessionGeneration,
             receivedAt: receivedAt
         )
+        guard accepted else { return }
+        thisDeviceName = resolvedDeviceName
         accountStore.receiveEngineConnection(
             connected: state.sessionConnected,
             ready: state.spircReady,

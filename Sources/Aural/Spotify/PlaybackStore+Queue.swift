@@ -72,10 +72,9 @@ extension PlaybackStore {
                   let data = json.data(using: .utf8),
                   let state = try? JSONDecoder().decode(RustQueueState.self, from: data)
             else { return }
-            guard self.acceptsEngineEvent(
+            guard self.acceptsConnectQueueCallback(
                 generation: state.sessionGeneration,
-                revision: state.revision,
-                source: .queue
+                revision: state.revision
             ) else { return }
             self.receive(state, revision: state.revision, mayAdoptPlaybackIdentity: false)
         })
