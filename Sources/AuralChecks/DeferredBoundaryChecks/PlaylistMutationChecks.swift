@@ -238,13 +238,19 @@ func runPlaylistMutationChecks(_ runner: CheckRunner) async {
 
         let owned = catalog.homeLibrary.playlists.first { $0.uri == "spotify:playlist:owned" }
         runner.notNil("owned playlist is in the library", owned)
+        guard let owned else {
+            feedback.dismiss()
+            return
+        }
+        await catalog.playlistStore.load(owned)
+        let playlistLoadsBeforeAdd = await services.playlistLoadCount
         let duplicateURI = "spotify:track:dup"
         catalog.playlistMutations.addTracks(
             [
                 fixtureTrack(id: "row-1", uri: duplicateURI),
                 fixtureTrack(id: "row-2", uri: duplicateURI),
             ],
-            to: owned!
+            to: owned
         )
         _ = await waitUntil { await services.isParked }
         let addCall = await services.addCalls.first
@@ -257,10 +263,15 @@ func runPlaylistMutationChecks(_ runner: CheckRunner) async {
             runner.check("post-add playlist fixture decodes", false)
         }
         await services.completePark()
-        _ = await waitUntil { feedback.message?.kind == .success }
+        _ = await waitUntil { catalog.playlistStore.tracks.map(\.id) == ["uid-a", "uid-b", "uid-c"] }
+        runner.equal(
+            "successful add refreshes the open playlist",
+            catalog.playlistStore.tracks.map(\.id),
+            ["uid-a", "uid-b", "uid-c"]
+        )
         runner.equal("successful add reports through the shared presenter", feedback.message?.kind, .success)
         runner.equal("successful add names the playlist", feedback.message?.text, "Added 2 songs to Owned Mix")
-        runner.equal("adding to a closed playlist does not reload it", await services.playlistLoadCount, 0)
+        runner.equal("reconcile reloads only the open playlist", await services.playlistLoadCount, playlistLoadsBeforeAdd + 1)
         runner.equal("library list is not reloaded after add", await services.libraryLoadCount, 1)
         feedback.dismiss()
     }
