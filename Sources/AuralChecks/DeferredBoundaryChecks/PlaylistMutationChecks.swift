@@ -34,6 +34,10 @@ private actor ScriptedPlaylistServices: CatalogProviding, PlaylistMutating {
     var isParked: Bool { !waiters.isEmpty }
     var parkedCount: Int { waiters.count }
 
+    func hasParkedAdds(_ count: Int) -> Bool {
+        addCalls.count == count && waiters.count == count
+    }
+
     func searchTracks(_: String, limit _: Int) async throws -> [PathfinderTrack] {
         throw PlaylistMutationCheckFailure.unavailable
     }
@@ -423,7 +427,7 @@ func runPlaylistMutationChecks(_ runner: CheckRunner) async {
             [fixtureTrack(id: "row-2", uri: "spotify:track:second")],
             to: owned
         )
-        _ = await waitUntil { await services.addCalls.count == 2 && await services.parkedCount == 2 }
+        _ = await waitUntil { await services.hasParkedAdds(2) }
         let sentAdds = await services.addCalls
         runner.equal("both overlapping writes are sent", sentAdds.count, 2)
         runner.equal(
