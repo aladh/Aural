@@ -44,14 +44,16 @@ private final class CommandSession {
         _ event: PlaybackEvent,
         source: PlaybackEventSource = .command,
         revision: UInt64? = nil,
-        engineEpoch: UInt64? = nil
+        engineEpoch: UInt64? = nil,
+        accountEpoch: UInt64? = nil
     ) -> Bool {
+        let stampedAccountEpoch = accountEpoch ?? self.accountEpoch
         let stampedEngineEpoch = engineEpoch ?? engineGeneration
         var next = state
         let accepted = PlaybackReducer.reduce(
             &next,
             envelope: PlaybackEventEnvelope(
-                accountEpoch: accountEpoch,
+                accountEpoch: stampedAccountEpoch,
                 engineEpoch: stampedEngineEpoch,
                 source: source,
                 revision: revision,
@@ -73,7 +75,9 @@ private final class CommandSession {
                 id: commandID,
                 accepted: succeeded,
                 notice: succeeded ? nil : PlaybackNotice(id: pauseNoticeID, message: "Pause was rejected")
-            )
+            ),
+            engineEpoch: capturedEngine,
+            accountEpoch: capturedAccount
         )
         switch playbackCommandFollowUp(
             finishAccepted: finished,

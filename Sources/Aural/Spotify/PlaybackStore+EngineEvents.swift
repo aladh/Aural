@@ -126,25 +126,29 @@ extension PlaybackStore {
     func receive(
         _ state: RustQueueState,
         revision: UInt64?,
-        mayAdoptPlaybackIdentity: Bool = true
+        mayAdoptPlaybackIdentity: Bool = true,
+        accountEpoch capturedAccountEpoch: UInt64? = nil,
+        engineEpoch capturedEngineEpoch: UInt64? = nil
     ) {
         guard !isTearingDown else { return }
         let nextTracks = state.nextTracks ?? []
         let entries = nextTracks.enumerated().map { index, item in
             QueueEntry(uri: item.uri, provider: item.provider, occurrence: index)
         }
-        let epoch = accountEpoch
+        let epoch = capturedAccountEpoch ?? accountEpoch
+        let engineEpoch = capturedEngineEpoch ?? engineGeneration
         Task { [weak self] in
             guard let self,
+                  !self.isTearingDown,
                   let snapshot = await self.queueService.acceptConnect(
                     entries,
                     accountEpoch: epoch,
                     sourceRevision: revision,
                     contextURI: state.track?.uri ?? self.trackURI,
                     provisional: state.track == nil && entries.isEmpty
-                  ), self.accountEpoch == epoch
+                  )
             else { return }
-            self.apply(snapshot)
+            self.apply(snapshot, engineEpoch: engineEpoch)
         }
 
         guard let track = state.track else { return }
@@ -170,7 +174,7 @@ extension PlaybackStore {
                 duration: trackDuration,
                 metadataSource: .engine
             )
-            setPresentation(
+            let accepted = setPresentation(
                 track: current,
                 timing: PlaybackTiming(
                     position: changedTrack ? 0 : position,
@@ -179,12 +183,14 @@ extension PlaybackStore {
                 ),
                 source: .engineQueue
             )
-            history.applyMetadata(
-                uri: track.uri,
-                title: track.name,
-                artist: track.artist,
-                artworkURL: URL(string: track.imageURL)
-            )
+            if accepted {
+                history.applyMetadata(
+                    uri: track.uri,
+                    title: track.name,
+                    artist: track.artist,
+                    artworkURL: URL(string: track.imageURL)
+                )
+            }
         } else if changedTrack || !hasCurrentTrackMetadata {
             // Cluster updates deliberately ship uris without names; resolve against
             // whatever the catalog already loaded so the bar never stays blank.
@@ -211,7 +217,7 @@ extension PlaybackStore {
 
         if let track = catalog.metadata.knownTrack(for: uri) {
             effects.cancel(.trackMetadata)
-            setTrackMetadata(
+            let accepted = setTrackMetadata(
                 uri: uri,
                 title: track.title,
                 artist: track.artist,
@@ -219,12 +225,14 @@ extension PlaybackStore {
                 duration: track.duration > 0 ? track.duration : duration,
                 provenance: .catalog
             )
-            history.applyMetadata(
-                uri: uri,
-                title: track.title,
-                artist: track.artist,
-                artworkURL: track.artworkURL
-            )
+            if accepted {
+                history.applyMetadata(
+                    uri: uri,
+                    title: track.title,
+                    artist: track.artist,
+                    artworkURL: track.artworkURL
+                )
+            }
             return
         }
 
@@ -243,20 +251,23 @@ extension PlaybackStore {
 
     private func resolveTrackMetadata(for uri: String) {
         let epoch = accountEpoch
+        let capturedEngineEpoch = engineGeneration
         effects.replace(.trackMetadata, with: Task { [weak self] in
             do {
                 guard let self else { return }
                 let metadata = try await self.coordinator.metadata(for: uri)
-                guard !Task.isCancelled, self.accountEpoch == epoch,
-                      self.isConnected, self.trackURI == uri else { return }
-                self.setTrackMetadata(
+                guard !Task.isCancelled, !self.isTearingDown else { return }
+                let accepted = self.setTrackMetadata(
                     uri: uri,
                     title: metadata.title,
                     artist: metadata.artist,
                     artworkURL: metadata.artworkURL,
                     duration: metadata.duration > 0 ? metadata.duration : self.duration,
-                    provenance: .connect
+                    provenance: .connect,
+                    accountEpoch: epoch,
+                    engineEpoch: capturedEngineEpoch
                 )
+                guard accepted else { return }
                 self.history.applyMetadata(
                     uri: uri,
                     title: metadata.title,
@@ -264,7 +275,7 @@ extension PlaybackStore {
                     artworkURL: metadata.artworkURL
                 )
             } catch {
-                guard !Task.isCancelled, self?.accountEpoch == epoch else { return }
+                guard !Task.isCancelled, self?.isTearingDown == false else { return }
                 debugLog("SpotifyConnectAPI", "Track metadata resolution failed: \(String(describing: type(of: error)))")
             }
         })

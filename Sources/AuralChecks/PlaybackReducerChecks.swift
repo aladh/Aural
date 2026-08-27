@@ -540,6 +540,93 @@ func runPlaybackReducerChecks(_ check: CheckRunner) {
         check.equal("metadata fields arrive as one coherent value", state.currentTrack?.title, "Resolved")
         check.equal("metadata provenance is retained", state.currentTrack?.metadataSource, .connect)
         check.equal("metadata duration updates playback timing atomically", state.timing.duration, 245)
+
+        let beforeStaleMetadataAccount = state
+        let staleMetadataAccount = PlaybackReducer.reduce(
+            &state,
+            envelope: envelope(
+                account: 0,
+                source: .metadata,
+                event: .trackMetadata(PlaybackTrackMetadata(
+                    uri: newTrack.uri,
+                    title: "Late",
+                    artist: "Late",
+                    artworkURL: nil,
+                    duration: 1,
+                    source: .connect
+                ))
+            )
+        )
+        check.check("metadata from a previous account is rejected", !staleMetadataAccount)
+        check.equal("stale-account metadata is inert", state, beforeStaleMetadataAccount)
+
+        let beforeStaleMetadataEngine = state
+        let staleMetadataEngine = PlaybackReducer.reduce(
+            &state,
+            envelope: envelope(
+                engine: 0,
+                source: .metadata,
+                event: .trackMetadata(PlaybackTrackMetadata(
+                    uri: newTrack.uri,
+                    title: "Late engine",
+                    artist: "Late engine",
+                    artworkURL: nil,
+                    duration: 1,
+                    source: .connect
+                ))
+            )
+        )
+        check.check("metadata from a previous engine is rejected", !staleMetadataEngine)
+        check.equal("stale-engine metadata is inert", state, beforeStaleMetadataEngine)
+    }
+
+    check.suite("Timing outcomes use reducer identity") {
+        var state = PlaybackState(
+            accountEpoch: 2,
+            engineEpoch: 3,
+            session: .ready,
+            transport: .playing,
+            currentTrack: CurrentTrack(uri: "spotify:track:now", title: "Now", metadataSource: .catalog),
+            timing: PlaybackTiming(position: 10, duration: 200, anchoredAt: traceDate)
+        )
+
+        let accepted = PlaybackReducer.reduce(
+            &state,
+            envelope: envelope(
+                account: 2,
+                engine: 3,
+                source: .user,
+                event: .timing(position: 42, duration: 200, anchoredAt: traceDate)
+            )
+        )
+        check.check("a same-lifetime position refresh is accepted", accepted)
+        check.equal("accepted timing replaces the anchored position", state.timing.position, 42)
+
+        let beforeStaleAccount = state
+        let staleAccount = PlaybackReducer.reduce(
+            &state,
+            envelope: envelope(
+                account: 1,
+                engine: 3,
+                source: .user,
+                event: .timing(position: 99, duration: 200, anchoredAt: traceDate)
+            )
+        )
+        check.check("a stale-account position refresh is rejected", !staleAccount)
+        check.equal("a stale-account position refresh is inert", state, beforeStaleAccount)
+
+        let beforeStaleEngine = state
+        let staleEngine = PlaybackReducer.reduce(
+            &state,
+            envelope: envelope(
+                account: 2,
+                engine: 2,
+                source: .user,
+                event: .timing(position: 99, duration: 200, anchoredAt: traceDate)
+            )
+        )
+        check.check("a stale-engine position refresh is rejected", !staleEngine)
+        check.equal("a stale-engine position refresh is inert", state, beforeStaleEngine)
     }
 
     check.suite("Queue precedence and identity") {
@@ -611,6 +698,32 @@ func runPlaybackReducerChecks(_ check: CheckRunner) {
             envelope: envelope(source: .engineQueue, revision: 10, event: .queue(olderOtherContext))
         )
         check.equal("an older queue from another context cannot return late", state.queue, newContext)
+
+        let beforeStaleAccountQueue = state
+        let staleAccountQueue = PlaybackReducer.reduce(
+            &state,
+            envelope: envelope(
+                account: 0,
+                source: .engineQueue,
+                revision: 11,
+                event: .queue(queue([item("stale-account")], source: .webAPI, completeness: .complete, revision: 100))
+            )
+        )
+        check.check("a stale-account queue snapshot is rejected", !staleAccountQueue)
+        check.equal("a stale-account queue snapshot is inert", state, beforeStaleAccountQueue)
+
+        let beforeStaleEngineQueue = state
+        let staleEngineQueue = PlaybackReducer.reduce(
+            &state,
+            envelope: envelope(
+                engine: 0,
+                source: .engineQueue,
+                revision: 11,
+                event: .queue(queue([item("stale-engine")], source: .webAPI, completeness: .complete, revision: 100))
+            )
+        )
+        check.check("a stale-engine queue snapshot is rejected", !staleEngineQueue)
+        check.equal("a stale-engine queue snapshot is inert", state, beforeStaleEngineQueue)
     }
 
     check.suite("Playback reset invariants") {
