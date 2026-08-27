@@ -34,7 +34,9 @@ func runPCMWriteSpaceChecks(_ check: CheckRunner) {
         Thread.detachNewThread {
             space.arm()
             woke.store(
-                space.wait(timeoutMilliseconds: 5_000, onWillBlock: { parked.signal() })
+                space.wait(timeoutMilliseconds: 5_000, onWillBlock: {
+                    parked.signal()
+                })
             )
             finished.signal()
         }

@@ -28,19 +28,11 @@ nonisolated final class PCMWriteSpace: @unchecked Sendable {
     }
 
     /// Returns `true` when an armed wait was signaled, `false` on timeout.
-    /// `onWillBlock` runs immediately before parking, after checking for a signal already
-    /// delivered in the unlock-to-wait window.
+    /// `onWillBlock` runs while this lock is held, immediately before `condition.wait`.
+    /// The callback must only signal a test handshake and return; it must not call
+    /// `signalIfArmed`, or it would deadlock on this lock.
     @discardableResult
     func wait(timeoutMilliseconds: Int, onWillBlock: (() -> Void)? = nil) -> Bool {
-        condition.lock()
-        if signaled {
-            signaled = false
-            waiting = false
-            condition.unlock()
-            return true
-        }
-        condition.unlock()
-        onWillBlock?()
         condition.lock()
         defer { condition.unlock() }
         if signaled {
@@ -50,6 +42,7 @@ nonisolated final class PCMWriteSpace: @unchecked Sendable {
         }
         let deadline = ProcessInfo.processInfo.systemUptime
             + Double(max(timeoutMilliseconds, 0)) / 1000
+        onWillBlock?()
         while !signaled {
             let remaining = deadline - ProcessInfo.processInfo.systemUptime
             if remaining <= 0 {
