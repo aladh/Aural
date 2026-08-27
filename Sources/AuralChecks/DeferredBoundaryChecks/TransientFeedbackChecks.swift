@@ -292,7 +292,7 @@ private func containsToken(_ source: String, _ token: String) -> Bool {
 
 @MainActor
 func runTransientFeedbackChecks(_ runner: CheckRunner) async {
-    await runner.suite("Transient feedback kinds, replacement, and dismissal") {
+    runner.suite("Transient feedback kinds, replacement, and dismissal") {
         let clock = UncooperativeParkedClock()
         let feedback = TransientFeedbackPresenter(clock: clock, duration: 4)
 
