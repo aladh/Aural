@@ -12,7 +12,11 @@ nonisolated protocol PlaylistMutating: Sendable {
     func removeFromPlaylist(playlistId: String, uids: [String]) async throws
 }
 
-extension PartnerAPI: PlaylistMutating {}
+extension PartnerAPI: PlaylistMutating {
+    func addToPlaylist(playlistId: String, trackUris: [String]) async throws {
+        try await addToPlaylist(playlistId: playlistId, trackUris: trackUris, position: .bottom)
+    }
+}
 
 nonisolated struct UnavailablePlaylistMutations: PlaylistMutating {
     func addToPlaylist(playlistId _: String, trackUris: [String]) async throws {
