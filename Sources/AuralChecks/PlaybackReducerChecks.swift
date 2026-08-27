@@ -371,6 +371,203 @@ func runPlaybackReducerChecks(_ check: CheckRunner) {
         check.equal("an accepted acknowledgement keeps its optimistic transport", state.transport, .paused)
     }
 
+    check.suite("Options command finish does not clobber engine repeat") {
+        let optionsID = UUID(uuidString: "00000000-0000-0000-0000-000000000021")!
+        var state = PlaybackState(
+            accountEpoch: 1,
+            engineEpoch: 1,
+            session: .ready,
+            options: PlaybackOptions(repeatMode: .context)
+        )
+        _ = PlaybackReducer.reduce(
+            &state,
+            envelope: envelope(
+                source: .command,
+                event: .commandStarted(PendingPlaybackCommand(
+                    id: optionsID,
+                    kind: .options,
+                    expectedTransport: nil,
+                    startedAt: traceDate
+                ))
+            )
+        )
+        _ = PlaybackReducer.reduce(
+            &state,
+            envelope: envelope(
+                source: .enginePlayback,
+                revision: 7,
+                event: .enginePlayback(EnginePlaybackSnapshot(
+                    transport: .paused,
+                    trackURI: nil,
+                    timing: PlaybackTiming(anchoredAt: traceDate),
+                    shuffle: false,
+                    repeatMode: .track
+                ))
+            )
+        )
+        check.equal("an engine snapshot can update repeat while an options command is pending", state.options.repeatMode, .track)
+        check.equal("an engine snapshot does not drop a pending options command", state.pendingCommands[.options]?.id, optionsID)
+        _ = PlaybackReducer.reduce(
+            &state,
+            envelope: envelope(
+                source: .command,
+                event: .commandFinished(
+                    id: optionsID,
+                    accepted: false,
+                    notice: PlaybackNotice(message: "Could not update repeat")
+                )
+            )
+        )
+        check.nil_("a rejected options acknowledgement clears its command", state.pendingCommands[.options])
+        check.equal(
+            "a rejected options acknowledgement does not roll back repeat in the reducer",
+            state.options.repeatMode,
+            .track
+        )
+        check.equal(
+            "a rejected options acknowledgement still surfaces its notice",
+            state.notice?.message,
+            "Could not update repeat"
+        )
+        check.equal("engine playback revision is recorded for identity-safe rollback", state.sourceRevisions[.enginePlayback], 7)
+        check.equal("an engine snapshot without raw flags uses the display mode flags", state.options.repeatFlags, RepeatMode.track.flags)
+
+        let bothTrueID = UUID(uuidString: "00000000-0000-0000-0000-000000000022")!
+        var flagged = PlaybackState(accountEpoch: 1, engineEpoch: 1, session: .ready)
+        _ = PlaybackReducer.reduce(
+            &flagged,
+            envelope: envelope(
+                source: .enginePlayback,
+                revision: 1,
+                event: .enginePlayback(EnginePlaybackSnapshot(
+                    transport: .paused,
+                    trackURI: nil,
+                    timing: PlaybackTiming(anchoredAt: traceDate),
+                    shuffle: false,
+                    repeatMode: .track,
+                    repeatFlags: RepeatFlags(context: true, track: true)
+                ))
+            )
+        )
+        check.equal("a both-true snapshot still displays as track", flagged.options.repeatMode, .track)
+        check.equal(
+            "a both-true snapshot retains the raw context bit",
+            flagged.options.repeatFlags,
+            RepeatFlags(context: true, track: true)
+        )
+        _ = PlaybackReducer.reduce(
+            &flagged,
+            envelope: envelope(
+                source: .command,
+                event: .commandStarted(PendingPlaybackCommand(
+                    id: bothTrueID,
+                    kind: .options,
+                    expectedTransport: nil,
+                    startedAt: traceDate
+                ))
+            )
+        )
+        _ = PlaybackReducer.reduce(
+            &flagged,
+            envelope: envelope(
+                source: .command,
+                event: .commandFinished(id: bothTrueID, accepted: false, notice: PlaybackNotice(message: "Could not update repeat"))
+            )
+        )
+        check.equal(
+            "a rejected options finish does not drop retained both-true flags",
+            flagged.options.repeatFlags,
+            RepeatFlags(context: true, track: true)
+        )
+
+        var restored = PlaybackState(accountEpoch: 1, engineEpoch: 1, session: .ready)
+        let priorBothTrue = RepeatFlags(context: true, track: true)
+        let intermediateFlags = RepeatFlags(context: false, track: true)
+        _ = PlaybackReducer.reduce(
+            &restored,
+            envelope: envelope(
+                source: .enginePlayback,
+                revision: 1,
+                event: .enginePlayback(EnginePlaybackSnapshot(
+                    transport: .paused,
+                    trackURI: nil,
+                    timing: PlaybackTiming(anchoredAt: traceDate),
+                    shuffle: false,
+                    repeatMode: .track,
+                    repeatFlags: priorBothTrue
+                ))
+            )
+        )
+        _ = PlaybackReducer.reduce(
+            &restored,
+            envelope: envelope(
+                source: .user,
+                event: .options(PlaybackOptions(repeatMode: .off))
+            )
+        )
+        check.equal("optimistic both-true track → off displays off", restored.options.repeatMode, .off)
+        _ = PlaybackReducer.reduce(
+            &restored,
+            envelope: envelope(
+                source: .enginePlayback,
+                revision: 2,
+                event: .enginePlayback(EnginePlaybackSnapshot(
+                    transport: .paused,
+                    trackURI: nil,
+                    timing: PlaybackTiming(anchoredAt: traceDate),
+                    shuffle: false,
+                    repeatMode: .track,
+                    repeatFlags: intermediateFlags
+                ))
+            )
+        )
+        check.equal("intermediate (false, true) still displays as track", restored.options.repeatMode, .track)
+        check.equal(
+            "intermediate snapshot replaces optimistic off flags",
+            restored.options.repeatFlags,
+            intermediateFlags
+        )
+        check.equal(
+            "compensated both-true intermediate restores previous",
+            reconcileRepeatCommandFailure(
+                visibleMode: restored.options.repeatMode,
+                visibleFlags: restored.options.repeatFlags,
+                previousMode: .track,
+                previousFlags: priorBothTrue,
+                targetMode: .off,
+                targetFlags: RepeatMode.off.flags,
+                enginePlaybackRevisionChanged: true
+            ),
+            .restorePrevious
+        )
+        _ = PlaybackReducer.reduce(
+            &restored,
+            envelope: envelope(
+                source: .user,
+                event: .options(PlaybackOptions(repeatMode: .track, repeatFlags: priorBothTrue))
+            )
+        )
+        check.equal("restored repeat mode is track", restored.options.repeatMode, .track)
+        check.equal(
+            "restored raw flags are the captured both-true pair",
+            restored.options.repeatFlags,
+            priorBothTrue
+        )
+        check.equal(
+            "a later track → off from restored flags plans both mutations",
+            RepeatTransitionPlan.planning(from: restored.options.repeatFlags, to: RepeatMode.off.flags).mutations,
+            [
+                RepeatFlagMutation(flag: .context, enabled: false),
+                RepeatFlagMutation(flag: .track, enabled: false),
+            ]
+        )
+        check.equal(
+            "ordinary (false, true) track → off remains one mutation",
+            RepeatTransitionPlan.planning(from: intermediateFlags, to: RepeatMode.off.flags).mutations,
+            [RepeatFlagMutation(flag: .track, enabled: false)]
+        )
+    }
+
     check.suite("Remote paused playback ownership") {
         let remote = PlaybackDevice(id: "desktop", name: "Other Mac", type: "computer")
         let track = CurrentTrack(uri: "spotify:track:paused", title: "Paused Track", artist: "Artist", duration: 240, metadataSource: .connect)

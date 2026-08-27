@@ -198,10 +198,19 @@ public struct PlaybackTrackMetadata: Equatable, Sendable {
 public struct PlaybackOptions: Equatable, Sendable {
     public var shuffle: Bool
     public var repeatMode: RepeatMode
+    /// Independent Connect/FFI switches. `repeatMode` is the display collapse
+    /// (`track` wins when both are true); planning uses this pair so a live
+    /// both-true snapshot is not forgotten as `context: false`.
+    public var repeatFlags: RepeatFlags
 
-    public init(shuffle: Bool = false, repeatMode: RepeatMode = .off) {
+    public init(
+        shuffle: Bool = false,
+        repeatMode: RepeatMode = .off,
+        repeatFlags: RepeatFlags? = nil
+    ) {
         self.shuffle = shuffle
         self.repeatMode = repeatMode
+        self.repeatFlags = repeatFlags ?? repeatMode.flags
     }
 }
 
@@ -213,19 +222,22 @@ public struct EnginePlaybackSnapshot: Equatable, Sendable {
     public let timing: PlaybackTiming
     public let shuffle: Bool?
     public let repeatMode: RepeatMode?
+    public let repeatFlags: RepeatFlags?
 
     public init(
         transport: PlaybackTransportState,
         trackURI: String?,
         timing: PlaybackTiming,
         shuffle: Bool? = nil,
-        repeatMode: RepeatMode? = nil
+        repeatMode: RepeatMode? = nil,
+        repeatFlags: RepeatFlags? = nil
     ) {
         self.transport = transport
         self.trackURI = trackURI
         self.timing = timing
         self.shuffle = shuffle
         self.repeatMode = repeatMode
+        self.repeatFlags = repeatFlags
     }
 }
 
@@ -522,7 +534,14 @@ public enum PlaybackReducer {
             }
             candidate.timing = snapshot.timing
             if let shuffle = snapshot.shuffle { candidate.options.shuffle = shuffle }
-            if let repeatMode = snapshot.repeatMode { candidate.options.repeatMode = repeatMode }
+            if snapshot.repeatMode != nil || snapshot.repeatFlags != nil {
+                let flags = snapshot.repeatFlags
+                    ?? snapshot.repeatMode?.flags
+                    ?? candidate.options.repeatFlags
+                candidate.options.repeatFlags = flags
+                candidate.options.repeatMode = snapshot.repeatMode
+                    ?? RepeatMode(context: flags.context, track: flags.track)
+            }
             reconcileTransport(candidate.currentTrack == nil ? .stopped : snapshot.transport, in: &candidate)
         case let .engineConnection(snapshot):
             if let session = snapshot.session { candidate.session = session }

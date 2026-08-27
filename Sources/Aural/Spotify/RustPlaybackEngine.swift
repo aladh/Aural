@@ -1,3 +1,4 @@
+import AuralDomain
 import Foundation
 
 /// A typed control event emitted by the embedded engine. PCM deliberately bypasses this stream
@@ -37,60 +38,53 @@ nonisolated final class RustPlaybackEngine: LocalPlaybackEngine, @unchecked Send
     }
 
     func initialize() -> PlaybackEngineResult {
-        PlaybackEngineResult(rawValue: PlaybackCore.initialize().rawValue)
+        engineResult(PlaybackCore.initialize())
     }
 
     func execute(_ operation: LocalPlaybackOperation) -> PlaybackEngineResult {
-        let result: PlaybackCore.Result = switch operation {
-        case let .playURI(uri): PlaybackCore.play(uri: uri)
-        case let .playTracks(tracks): PlaybackCore.play(tracks: tracks)
-        case .pause: PlaybackCore.pause()
-        case .resume: PlaybackCore.resume()
-        case .next: PlaybackCore.next()
-        case .previous: PlaybackCore.previous()
-        case let .seek(milliseconds): PlaybackCore.seek(to: milliseconds)
-        case let .shuffle(enabled): PlaybackCore.setShuffle(enabled)
-        case let .repeatOptions(context, track, rollbackContext, rollbackTrack):
-            executeRepeat(
-                context: context,
-                track: track,
-                rollbackContext: rollbackContext,
-                rollbackTrack: rollbackTrack
-            )
-        case let .addToQueue(uri): PlaybackCore.addToQueue(uri: uri)
-        case .transferToLocal: PlaybackCore.transferToLocal()
-        case let .transferToDevice(id): PlaybackCore.transferPlayback(to: id)
+        switch operation {
+        case let .playURI(uri): engineResult(PlaybackCore.play(uri: uri))
+        case let .playTracks(tracks): engineResult(PlaybackCore.play(tracks: tracks))
+        case .pause: engineResult(PlaybackCore.pause())
+        case .resume: engineResult(PlaybackCore.resume())
+        case .next: engineResult(PlaybackCore.next())
+        case .previous: engineResult(PlaybackCore.previous())
+        case let .seek(milliseconds): engineResult(PlaybackCore.seek(to: milliseconds))
+        case let .shuffle(enabled): engineResult(PlaybackCore.setShuffle(enabled))
+        case let .repeatOptions(plan): executeRepeat(plan)
+        case let .addToQueue(uri): engineResult(PlaybackCore.addToQueue(uri: uri))
+        case .transferToLocal: engineResult(PlaybackCore.transferToLocal())
+        case let .transferToDevice(id): engineResult(PlaybackCore.transferPlayback(to: id))
         }
-        return PlaybackEngineResult(rawValue: result.rawValue)
     }
 
     func positionMilliseconds() -> UInt32 { PlaybackCore.positionMilliseconds() }
     func queueSnapshotJSON() -> String? { PlaybackCore.queueSnapshotJSON() }
     func configureHighQualityPlayback() { PlaybackCore.configureHighQualityPlayback() }
     func shutdown() -> PlaybackEngineResult {
-        PlaybackEngineResult(rawValue: PlaybackCore.shutdown().rawValue)
+        engineResult(PlaybackCore.shutdown())
     }
     func cleanup() { PlaybackCore.cleanup() }
     func clearStreamingCredentials() { PlaybackCore.clearStreamingCredentials() }
     func disconnect() -> PlaybackEngineResult {
-        PlaybackEngineResult(rawValue: PlaybackCore.disconnect().rawValue)
+        engineResult(PlaybackCore.disconnect())
     }
     func forceReconnect() -> Int32 { PlaybackCore.forceReconnect() }
 
-    private func executeRepeat(
-        context: Bool,
-        track: Bool,
-        rollbackContext: Bool,
-        rollbackTrack: Bool
-    ) -> PlaybackCore.Result {
-        let contextResult = PlaybackCore.setRepeat(context: context)
-        guard contextResult == .ok else { return contextResult }
-        let trackResult = PlaybackCore.setRepeatTrack(track)
-        if trackResult != .ok {
-            _ = PlaybackCore.setRepeat(context: rollbackContext)
-            _ = PlaybackCore.setRepeatTrack(rollbackTrack)
+    /// Copies a non-optional FFI result into the Swift engine wrapper. Do not reconstruct
+    /// `PlaybackCore.Result` from `PlaybackEngineResult.rawValue`: the imported open C enum
+    /// has a failable raw-value initializer.
+    private func engineResult(_ result: PlaybackCore.Result) -> PlaybackEngineResult {
+        PlaybackEngineResult(rawValue: result.rawValue)
+    }
+
+    private func executeRepeat(_ plan: RepeatTransitionPlan) -> PlaybackEngineResult {
+        RepeatTransitionApplication.apply(plan) { mutation in
+            switch mutation.flag {
+            case .context: engineResult(PlaybackCore.setRepeat(context: mutation.enabled))
+            case .track: engineResult(PlaybackCore.setRepeatTrack(mutation.enabled))
+            }
         }
-        return trackResult
     }
 
     func events() -> AsyncStream<RustPlaybackEventEnvelope> {

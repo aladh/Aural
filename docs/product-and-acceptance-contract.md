@@ -47,6 +47,16 @@ ADRs; historical measurements belong in the performance baseline.
   seek, pause, track change, or ownership change must re-anchor it instead of allowing drift.
 - Shuffle is a single on/off control backed by Aural's persistent fewer-repeats policy. Spotify
   Connect does not expose a shuffle-style parameter, so no shuffle-style picker is presented.
+- Repeat cycles off → queue → track → off. Each step sends only the Connect flags that change,
+  planned from the reducer's raw context/track pair rather than the display mode. Ordinary
+  track-repeat (context off, track on) → off is one mutation; a both-true track snapshot → off
+  clears both flags. Queue → track is the only two-flag step and applies context off before track
+  on. If the second mutation fails after the first was accepted, Aural best-effort restores the
+  captured previous flags and still reports failure. A later snapshot of the requested target is
+  kept; the known intermediate off after a compensated queue → track failure restores queue
+  repeat; a compensated both-true track → off failure whose intermediate snapshot is still
+  displayed as track (`context: false`, `track: true`) restores the captured previous track
+  mode and both-true flags; unrelated newer authoritative repeat state is left intact.
 - Queue order comes from the playback source of truth. Catalog and Web API metadata may enrich
   names but must not reorder the queue. Resolvable entries should progressively replace fallback
   labels rather than remaining misleadingly `Unknown`.

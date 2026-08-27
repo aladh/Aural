@@ -211,28 +211,35 @@ extension PlaybackStore {
     func cycleRepeat() {
         guard canStartPlayback else { return }
         let previousMode = repeatMode
-        let previousFlags = previousMode.flags
-        let nextMode = repeatMode.next
-        setRepeatMode(nextMode)
-        let flags = nextMode.flags
+        let previousFlags = state.options.repeatFlags
+        let nextMode = previousMode.next
+        let nextFlags = nextMode.flags
+        setRepeat(mode: nextMode, flags: nextFlags)
+        let plan = RepeatTransitionPlan.planning(from: previousFlags, to: nextFlags)
+        let enginePlaybackRevision = state.sourceRevisions[.enginePlayback]
         performRoutedOperation(
             "Could not update repeat",
             kind: .options,
-            local: .repeatOptions(
-                context: flags.context,
-                track: flags.track,
-                rollbackContext: previousFlags.context,
-                rollbackTrack: previousFlags.track
-            ),
+            local: .repeatOptions(plan),
             remote: { api, from, to in
-                try await api.send(.repeatContext(flags.context), from: from, to: to)
-                try await api.send(.repeatTrack(flags.track), from: from, to: to)
+                try await RepeatTransitionApplication.applyRemote(plan) { mutation in
+                    try await api.send(.repeatMutation(mutation), from: from, to: to)
+                }
             }
         ) { [weak self] accepted in
-            // The cycle was applied optimistically; a rejected command must not leave
-            // the toggle showing a mode the backend does not have.
-            if !accepted {
-                self?.setRepeatMode(previousMode)
+            guard let self, !accepted else { return }
+            let disposition = reconcileRepeatCommandFailure(
+                visibleMode: self.repeatMode,
+                visibleFlags: self.state.options.repeatFlags,
+                previousMode: previousMode,
+                previousFlags: previousFlags,
+                targetMode: nextMode,
+                targetFlags: nextFlags,
+                enginePlaybackRevisionChanged:
+                    self.state.sourceRevisions[.enginePlayback] != enginePlaybackRevision
+            )
+            if disposition == .restorePrevious {
+                self.setRepeat(mode: previousMode, flags: previousFlags)
             }
         }
     }
