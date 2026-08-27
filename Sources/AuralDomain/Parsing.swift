@@ -49,7 +49,9 @@ public enum LoopbackRequestParser {
         let version = token.dropFirst(5)
         let parts = version.split(separator: ".", omittingEmptySubsequences: false)
         guard (1...2).contains(parts.count) else { return false }
-        return parts.allSatisfy { !$0.isEmpty && $0.allSatisfy(\.isNumber) }
+        return parts.allSatisfy { part in
+            !part.isEmpty && part.unicodeScalars.allSatisfy { (0x30...0x39).contains($0.value) }
+        }
     }
 
     /// First HTTP request-line, without a CR, LF, or CRLF terminator.
