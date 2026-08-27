@@ -146,9 +146,10 @@ upstreams, but are not a substitute for binary-distribution license review.
 ### Tagged releases
 
 Pushing a version tag such as `v0.0.1` runs the ARM64 release workflow on GitHub's Apple-silicon
-`macos-15` runner. The tag must exactly match `CFBundleShortVersionString` in
-`Packaging/Info.plist`. The workflow runs the full quality gate, validates an ARM64-only app,
-creates a ZIP and SHA-256 checksum, and publishes an experimental GitHub prerelease.
+`macos-15` runner. Tags are `v`-prefixed; the workflow strips the leading `v` and compares that
+numeric suffix with `CFBundleShortVersionString` in `Packaging/Info.plist`. The workflow runs the
+full quality gate, validates an ARM64-only app, creates a ZIP and SHA-256 checksum, and publishes
+an experimental GitHub prerelease.
 
 Until Developer ID and notarization credentials are configured, automated release artifacts use a
 hardened-runtime, ad-hoc signature and are not automatically trusted by macOS.
@@ -170,6 +171,11 @@ ignored `diagnostics/` directory.
 - Do not use real Spotify payloads as fixtures. Reduce them to synthetic, non-identifying examples.
 - State what you tested manually. Maintainers can perform account-backed acceptance testing when a
   contributor cannot safely do so.
+- Do not use GitHub issue-closing keywords such as `Closes`, `Fixes`, or `Resolves` in commit
+  messages or pull-request bodies. Refer to issues in plain wording, for example
+  `Contributes to #13`. GitHub repository auto-close is disabled. After merge, the maintainer
+  re-reads the issue acceptance criteria against `main` and closes the issue only when every
+  criterion is genuinely satisfied.
 
 Follow the [product and acceptance contract](docs/product-and-acceptance-contract.md) for manual
 testing. Live Spotify playback and account mutations are opt-in: launching or read-only acceptance

@@ -316,11 +316,8 @@ be covered by a deterministic transition trace.
 Do not launch Aural just to prove compilation. `build_and_run.sh` terminates an existing Aural
 process before packaging; that can disturb another debugging or authenticated session.
 
-Pull-request bodies and commit messages must not use GitHub issue-closing keywords such as
-`Closes`, `Fixes`, or `Resolves`. Refer to issues in plain wording, for example `Contributes to
-#13`. GitHub repository auto-close is disabled. After merge, the maintainer re-reads the issue
-acceptance criteria against `main` and closes the issue only when every criterion is genuinely
-satisfied.
+Follow the pull-request issue-reference rule in
+[CONTRIBUTING.md](CONTRIBUTING.md#pull-requests). Do not duplicate that wording here.
 
 ## Generated files, signing, and recovery
 
