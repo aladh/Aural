@@ -8,28 +8,25 @@ public enum PCMWriteAdmission: Equatable, Sendable {
     case dropRemaining
 }
 
-/// Bounded backpressure for the librespot player thread.
+/// Bounded backpressure for one `writeAudioData` call.
 ///
 /// A full ring must not wait forever: `stop` / `flush` run on that same thread after `write`
-/// returns, and they are the operations that clear `isRendering` or reset the cursor.
-///
-/// The budget is a single 500 ms wait. That is long enough for the pull side to resume after a
-/// short `renderQueue` gap, and short enough that pause/stop on the player thread cannot sit
-/// behind a multi-second hang. A stalled consumer is dropped rather than waited out; extra
-/// slices would only delay control. Worst-case same-thread stall is
-/// `maxWriterStallMilliseconds`.
+/// returns. The budget is a single 500 ms wait for the whole call. Partial writes that see a
+/// little free space do not renew it, so a trickle of consumer releases cannot stack parks.
+/// Reset at the next write-call boundary (`beginWrite`) or when the ring is reset.
 public struct PCMWriteBackpressure: Equatable, Sendable {
     public static let waitTimeoutMilliseconds = 500
-    public static let maxConsecutiveFullWaits = 1
-    public static let maxWriterStallMilliseconds =
-        waitTimeoutMilliseconds * maxConsecutiveFullWaits
 
-    public private(set) var consecutiveFullWaits = 0
+    public private(set) var hasSpentWait = false
 
     public init() {}
 
+    public mutating func beginWrite() {
+        hasSpentWait = false
+    }
+
     public mutating func resetWaitBudget() {
-        consecutiveFullWaits = 0
+        hasSpentWait = false
     }
 
     public mutating func admit(freeSpace: Int, remaining: Int, isRendering: Bool) -> PCMWriteAdmission {
@@ -37,17 +34,38 @@ public struct PCMWriteBackpressure: Equatable, Sendable {
         precondition(remaining >= 0)
         guard remaining > 0 else { return .dropRemaining }
         if freeSpace > 0 {
-            consecutiveFullWaits = 0
             return .write(min(freeSpace, remaining))
         }
-        guard isRendering else {
-            consecutiveFullWaits = 0
-            return .dropRemaining
-        }
-        guard consecutiveFullWaits < Self.maxConsecutiveFullWaits else {
-            return .dropRemaining
-        }
-        consecutiveFullWaits += 1
+        guard isRendering else { return .dropRemaining }
+        guard !hasSpentWait else { return .dropRemaining }
+        hasSpentWait = true
         return .waitForSpace
+    }
+}
+
+/// Serializes start/stop so a superseded stop cannot tear down a later start.
+///
+/// `beginStop` clears rendering on the caller thread (so a parked writer can drop) and returns
+/// the generation that the serialized AV teardown must still match. `beginStart` bumps the
+/// generation so an in-flight stop becomes a no-op.
+public struct AudioOutputControlEpoch: Equatable, Sendable {
+    public private(set) var isRendering = false
+    public private(set) var generation: UInt64 = 0
+
+    public init() {}
+
+    public mutating func beginStart() {
+        isRendering = true
+        generation &+= 1
+    }
+
+    public mutating func beginStop() -> UInt64? {
+        guard isRendering else { return nil }
+        isRendering = false
+        return generation
+    }
+
+    public func shouldApplyStop(_ captured: UInt64) -> Bool {
+        !isRendering && generation == captured
     }
 }

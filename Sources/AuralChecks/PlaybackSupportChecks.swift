@@ -240,24 +240,9 @@ func runPlaybackSupportChecks(_ check: CheckRunner) {
             PCMWriteBackpressure.waitTimeoutMilliseconds,
             500
         )
-        check.equal(
-            "a stalled writer waits at most one slice",
-            PCMWriteBackpressure.maxConsecutiveFullWaits,
-            1
-        )
-        check.equal(
-            "player-thread stall is one 500 ms slice, not a multi-second hang",
-            PCMWriteBackpressure.maxWriterStallMilliseconds,
-            500
-        )
-        check.equal(
-            "the stall bound is the product of slice duration and wait count",
-            PCMWriteBackpressure.maxWriterStallMilliseconds,
-            PCMWriteBackpressure.waitTimeoutMilliseconds
-                * PCMWriteBackpressure.maxConsecutiveFullWaits
-        )
 
         var policy = PCMWriteBackpressure()
+        policy.beginWrite()
         check.equal(
             "free space admits a partial write",
             policy.admit(freeSpace: 8, remaining: 3, isRendering: true),
@@ -270,6 +255,7 @@ func runPlaybackSupportChecks(_ check: CheckRunner) {
         )
 
         var stopped = PCMWriteBackpressure()
+        stopped.beginWrite()
         check.equal(
             "a stopped renderer drops a full buffer instead of waiting",
             stopped.admit(freeSpace: 0, remaining: 4, isRendering: false),
@@ -277,6 +263,7 @@ func runPlaybackSupportChecks(_ check: CheckRunner) {
         )
 
         var full = PCMWriteBackpressure()
+        full.beginWrite()
         var waitCount = 0
         let remaining = 16
         var controlRan = false
@@ -287,8 +274,8 @@ func runPlaybackSupportChecks(_ check: CheckRunner) {
                 break writeLoop
             case .waitForSpace:
                 waitCount += 1
-                if waitCount > PCMWriteBackpressure.maxConsecutiveFullWaits {
-                    check.check("wait admission is bounded", false)
+                if waitCount > 1 {
+                    check.check("wait admission is spent after one park", false)
                     break writeLoop
                 }
             case .dropRemaining:
@@ -296,29 +283,74 @@ func runPlaybackSupportChecks(_ check: CheckRunner) {
                 break writeLoop
             }
         }
-        check.equal(
-            "a full buffer waits one budget then drops instead of looping",
-            waitCount,
-            PCMWriteBackpressure.maxConsecutiveFullWaits
-        )
+        check.equal("a full buffer waits once then drops instead of looping", waitCount, 1)
         check.check("control can run on the writer thread after the drop", controlRan)
+        check.check("the wait budget stays spent after the drop", full.hasSpentWait)
 
-        var recovered = full
+        var trickle = PCMWriteBackpressure()
+        trickle.beginWrite()
         check.equal(
-            "space after a drop resets the wait budget",
-            recovered.admit(freeSpace: 5, remaining: 5, isRendering: true),
-            .write(5)
+            "the first full buffer spends the wait",
+            trickle.admit(freeSpace: 0, remaining: 10, isRendering: true),
+            .waitForSpace
         )
         check.equal(
-            "after a drop, a still-full buffer keeps dropping until space or reset",
-            full.admit(freeSpace: 0, remaining: 1, isRendering: true),
+            "a small consumer release still copies",
+            trickle.admit(freeSpace: 1, remaining: 10, isRendering: true),
+            .write(1)
+        )
+        check.equal(
+            "a second full buffer in the same write drops instead of waiting again",
+            trickle.admit(freeSpace: 0, remaining: 9, isRendering: true),
             .dropRemaining
         )
+        check.equal(
+            "further trickle releases cannot buy another wait",
+            trickle.admit(freeSpace: 1, remaining: 8, isRendering: true),
+            .write(1)
+        )
+        check.equal(
+            "the same write still drops when full after another trickle",
+            trickle.admit(freeSpace: 0, remaining: 7, isRendering: true),
+            .dropRemaining
+        )
+
+        trickle.beginWrite()
+        check.equal(
+            "the next write call restores a single wait",
+            trickle.admit(freeSpace: 0, remaining: 7, isRendering: true),
+            .waitForSpace
+        )
+
         full.resetWaitBudget()
         check.equal(
-            "flush reset allows a later full buffer to wait again",
+            "ring reset allows a later full buffer to wait again",
             full.admit(freeSpace: 0, remaining: 1, isRendering: true),
             .waitForSpace
         )
+    }
+
+    check.suite("Audio output control epoch") {
+        var epoch = AudioOutputControlEpoch()
+        check.equal("stop is a no-op before start", epoch.beginStop() == nil, true)
+
+        epoch.beginStart()
+        let first = epoch.beginStop()
+        check.check("stop captures the live generation", first == 1)
+        check.check("rendering is cleared before serialized teardown", !epoch.isRendering)
+        check.check("a stop still applies before a later start", first.map { epoch.shouldApplyStop($0) } == true)
+
+        epoch.beginStart()
+        check.check("rendering is live after start", epoch.isRendering)
+        check.check(
+            "a superseded stop cannot tear down a later start",
+            first.map { epoch.shouldApplyStop($0) } == false
+        )
+        check.equal("start bumps the generation", epoch.generation, 2)
+
+        let second = epoch.beginStop()
+        check.check("a new stop captures the new generation", second == 2)
+        check.check("the new stop still applies", second.map { epoch.shouldApplyStop($0) } == true)
+        check.check("the old stop remains inert", first.map { epoch.shouldApplyStop($0) } == false)
     }
 }

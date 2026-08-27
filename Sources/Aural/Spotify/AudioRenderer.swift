@@ -63,11 +63,10 @@ final nonisolated class AudioRenderer: @unchecked Sendable {
     private var cursor = PCMBufferCursor(capacity: ringBufferCapacity)
     private let bufferLock = NSLock()
 
-    /// Sticky wake-up for a writer parked on a full buffer. Control always signals;
-    /// the pull side signals only while a writer is waiting.
+    /// Wake-up for a writer parked on a full buffer. Signal only while a wait is armed.
     private let writerSpace = PCMWriteSpace()
     private var writeBackpressure = PCMWriteBackpressure()
-    private var writerIsWaiting = false
+    private var outputControl = AudioOutputControlEpoch()
 
     // MARK: - Write Throttle (provides real-time pacing)
 
@@ -84,7 +83,6 @@ final nonisolated class AudioRenderer: @unchecked Sendable {
     // MARK: - State
 
     private let renderQueue = DispatchQueue(label: "dev.aural.app.audio-renderer", qos: .userInteractive)
-    private var isRendering = false
     private var currentPTS: CMTime = .zero
     private var isRequestingData = false
     private var underrunCount: UInt64 = 0
@@ -184,23 +182,26 @@ final nonisolated class AudioRenderer: @unchecked Sendable {
         var remaining = count
         var offset = 0
 
+        bufferLock.lock()
+        writeBackpressure.beginWrite()
+        bufferLock.unlock()
+
         while remaining > 0 {
             bufferLock.lock()
             switch writeBackpressure.admit(
                 freeSpace: freeSpace,
                 remaining: remaining,
-                isRendering: isRendering
+                isRendering: outputControl.isRendering
             ) {
             case .dropRemaining:
                 droppedSampleCount &+= UInt64(remaining)
-                writerIsWaiting = false
                 bufferLock.unlock()
                 return
             case .waitForSpace:
                 // Kick the pull side if an underrun stopped it; otherwise a full ring
                 // waits for a consumer that is no longer asking for data.
                 let needsRestart = !isRequestingData
-                writerIsWaiting = true
+                writerSpace.arm()
                 bufferLock.unlock()
                 if needsRestart {
                     renderQueue.async { [weak self] in
@@ -223,7 +224,7 @@ final nonisolated class AudioRenderer: @unchecked Sendable {
                 totalSamplesWritten += Int64(toWrite)
                 let samplesWritten = totalSamplesWritten
                 let startTime = writeStartTime
-                let needsRestart = isRendering && !isRequestingData
+                let needsRestart = outputControl.isRendering && !isRequestingData
                 bufferLock.unlock()
 
                 // If renderer stopped requesting data (buffer was empty), restart it
@@ -255,7 +256,7 @@ final nonisolated class AudioRenderer: @unchecked Sendable {
 
     private func startRequestingData() {
         bufferLock.lock()
-        guard isRendering, !isRequestingData else {
+        guard outputControl.isRendering, !isRequestingData else {
             bufferLock.unlock()
             return
         }
@@ -276,7 +277,7 @@ final nonisolated class AudioRenderer: @unchecked Sendable {
 
             if toRead == 0 {
                 // Buffer empty — stop requesting until more data arrives
-                if isRendering { underrunCount &+= 1 }
+                if outputControl.isRendering { underrunCount &+= 1 }
                 isRequestingData = false
                 bufferLock.unlock()
                 renderer.stopRequestingMediaData()
@@ -300,13 +301,8 @@ final nonisolated class AudioRenderer: @unchecked Sendable {
             }
 
             cursor.advanceRead(by: toRead)
-            let shouldSignal = writerIsWaiting
-            writerIsWaiting = false
             bufferLock.unlock()
-
-            if shouldSignal {
-                writerSpace.signal()
-            }
+            writerSpace.signalIfArmed()
 
             // Create CMBlockBuffer from chunk data
             var blockBuffer: CMBlockBuffer?
@@ -365,7 +361,7 @@ final nonisolated class AudioRenderer: @unchecked Sendable {
     func start() {
         renderQueue.sync { [self] in
             bufferLock.lock()
-            guard !isRendering else {
+            guard !outputControl.isRendering else {
                 // Already rendering, so the full pipeline reset below is skipped — a
                 // deliberate no-op, since flushing mid-playback would glitch the audio.
                 //
@@ -385,7 +381,7 @@ final nonisolated class AudioRenderer: @unchecked Sendable {
                 debugLog("AudioRenderer", "Start while already rendering — re-anchored throttle")
                 return
             }
-            isRendering = true
+            outputControl.beginStart()
             bufferLock.unlock()
 
             // Clear stale data from previous playback to prevent timestamp conflicts
@@ -398,20 +394,22 @@ final nonisolated class AudioRenderer: @unchecked Sendable {
     }
 
     func stop() {
-        // Clear rendering and wake the writer on this thread before taking
-        // `renderQueue`. The player thread may already be parked in `writeAudioData`;
-        // waiting for the queue first cannot unblock it, and the writer cannot call
-        // stop until the write returns.
+        // Wake a parked writer before joining `renderQueue`. Clear rendering on this thread so
+        // the writer can drop, but only tear down AVFoundation if a later start has not already
+        // won the queue.
         bufferLock.lock()
-        let wasRendering = isRendering
-        isRendering = false
+        let capturedGeneration = outputControl.beginStop()
         isRequestingData = false
-        writerIsWaiting = false
         bufferLock.unlock()
-        writerSpace.signal()
-        guard wasRendering else { return }
+        writerSpace.signalIfArmed()
+        guard let capturedGeneration else { return }
 
         renderQueue.sync { [self] in
+            bufferLock.lock()
+            let applyStop = outputControl.shouldApplyStop(capturedGeneration)
+            bufferLock.unlock()
+            guard applyStop else { return }
+
             synchronizer.setRate(0.0, time: synchronizer.currentTime())
             renderer.stopRequestingMediaData()
             let metrics = metricsDescriptionLocked()
@@ -432,7 +430,7 @@ final nonisolated class AudioRenderer: @unchecked Sendable {
             renderer.flush()
 
             bufferLock.lock()
-            let rendering = isRendering
+            let rendering = outputControl.isRendering
             bufferLock.unlock()
 
             if rendering {
@@ -463,7 +461,7 @@ final nonisolated class AudioRenderer: @unchecked Sendable {
             // Recreate pipeline on renderQueue (async since this fires on an arbitrary thread)
             renderQueue.async { [self] in
                 bufferLock.lock()
-                let rendering = isRendering
+                let rendering = outputControl.isRendering
                 bufferLock.unlock()
 
                 guard rendering else { return }
@@ -505,7 +503,7 @@ final nonisolated class AudioRenderer: @unchecked Sendable {
 
     // MARK: - Internal
 
-    /// Resets ring indices, the wait budget, and wakes a parked writer. Safe from any thread.
+    /// Resets ring indices and the wait budget, and wakes a parked writer. Safe from any thread.
     private func resetRingCursorAndWakeWriter() {
         bufferLock.lock()
         isRequestingData = false
@@ -513,9 +511,8 @@ final nonisolated class AudioRenderer: @unchecked Sendable {
         totalSamplesWritten = 0
         writeStartTime = ProcessInfo.processInfo.systemUptime
         writeBackpressure.resetWaitBudget()
-        writerIsWaiting = false
         bufferLock.unlock()
-        writerSpace.signal()
+        writerSpace.signalIfArmed()
     }
 
     /// Resets the ring buffer indices, PTS, and unblocks any waiting writer.
