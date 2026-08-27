@@ -223,6 +223,33 @@ func runPlaybackReducerChecks(_ check: CheckRunner) {
         check.equal("a higher-epoch query does not clear recorded revisions", state.sourceRevisions[.enginePlayback], 4)
     }
 
+    check.suite("Playback reducer device revisions across engine epochs") {
+        var state = PlaybackState(accountEpoch: 1, engineEpoch: 1, session: .ready)
+        state.devices = PlaybackDeviceSnapshot(
+            devices: [PlaybackDevice(id: "old", name: "Old", type: "computer")],
+            localDeviceID: "old",
+            revision: 8
+        )
+
+        let restartedDevicesAccepted = PlaybackReducer.reduce(
+            &state,
+            envelope: envelope(
+                engine: 2,
+                source: .engineDevices,
+                revision: 1,
+                event: .devices(PlaybackDeviceSnapshot(
+                    devices: [PlaybackDevice(id: "restarted", name: "Restarted", type: "computer")],
+                    localDeviceID: "restarted",
+                    revision: 1
+                ))
+            )
+        )
+        check.check("a new engine epoch accepts a restarted device revision", restartedDevicesAccepted)
+        check.equal("the restarted engine epoch is adopted", state.engineEpoch, 2)
+        check.equal("the new engine's device snapshot replaces the prior revision", state.devices.revision, 1)
+        check.equal("the new engine's active device is adopted", state.devices.localDeviceID, "restarted")
+    }
+
     check.suite("Optimistic playback command reconciliation") {
         let pauseID = UUID(uuidString: "00000000-0000-0000-0000-000000000010")!
         var state = PlaybackState(accountEpoch: 1, engineEpoch: 1, session: .ready, transport: .playing)

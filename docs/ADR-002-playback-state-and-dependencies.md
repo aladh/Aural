@@ -39,11 +39,11 @@ paused remote ownership can be replayed in `AuralDomain` without Spotify, Rust, 
 or SwiftUI. Concrete app boundaries and injected coordinator/queue workflows run separately in
 `AuralBoundaryChecks`. The shipping executable contains neither check harness.
 
-Ordered engine *playback*, *connection*, and *device* callback revisions are accepted only by
-`PlaybackReducer`. Store-side watermarks for those sources are not a second policy: a callback is
-applied iff `reduce` accepts it. Connect *queue callback* revisions stay a distinct watermark
-(`QueueService.lastConnectSourceRevision`, mirrored on the MainActor for duplicate suppression)
-because provenance-snapshot revisions recorded on `.engineQueue` are a different namespace.
+Ordered engine *playback*, *connection*, and *device* callbacks are applied only when
+`PlaybackReducer.reduce` accepts the stamped envelope. `PlaybackStore.engineGeneration` mirrors
+`state.engineEpoch` after that success; intake must not guess a newer generation. Connect *queue
+callback* revisions stay a distinct MainActor watermark because provenance-snapshot revisions
+recorded on `.engineQueue` are a different namespace.
 
 Adding a new callback, queue provider, or account-scoped request now requires an explicit epoch,
 revision/provenance rule, effect owner, and cancellation rule. This is intentional friction at the

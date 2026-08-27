@@ -22,69 +22,39 @@ extension PlaybackStore {
 
         switch envelope.event {
         case let .playback(state):
-            guard acceptsEngineEvent(
-                generation: state.sessionGeneration,
-                revision: state.revision,
-                source: .enginePlayback
-            ) else { return }
             receive(state, revision: state.revision, receivedAt: envelope.receivedAt)
         case let .queue(state):
-            guard acceptsEngineEvent(
+            guard acceptsConnectQueueCallback(
                 generation: state.sessionGeneration,
-                revision: state.revision,
-                source: .engineQueue
+                revision: state.revision
             ) else { return }
             receive(state, revision: state.revision)
         case let .connection(state):
-            guard acceptsEngineEvent(
-                generation: state.sessionGeneration,
-                revision: state.revision,
-                source: .engineConnection
-            ) else { return }
             receive(state, revision: state.revision, receivedAt: envelope.receivedAt)
         case let .devices(state):
-            guard acceptsEngineEvent(
-                generation: state.sessionGeneration,
+            receive(
+                state.devices,
                 revision: state.revision,
-                source: .engineDevices
-            ) else { return }
-            receive(state.devices, revision: state.revision)
+                engineEpoch: state.sessionGeneration
+            )
         }
     }
 
-    func acceptsEngineEvent(
-        generation: UInt64?,
-        revision: UInt64?,
-        source: PlaybackEventSource
-    ) -> Bool {
+    /// MainActor dedupe for Connect queue *callbacks*. Does not adopt `engineGeneration`; that
+    /// mirror moves only after a successful `reduce`.
+    func acceptsConnectQueueCallback(generation: UInt64?, revision: UInt64?) -> Bool {
         guard !isTearingDown else { return false }
-        let engineEpoch: UInt64
         if let generation {
             guard generation >= engineGeneration else { return false }
             if generation > engineGeneration {
-                engineGeneration = generation
                 lastQueueRevision = 0
             }
-            engineEpoch = generation
-        } else {
-            engineEpoch = engineGeneration
         }
-
-        if source == .engineQueue {
-            if let revision {
-                guard revision > lastQueueRevision else { return false }
-                lastQueueRevision = revision
-            }
-            return true
+        if let revision {
+            guard revision > lastQueueRevision else { return false }
+            lastQueueRevision = revision
         }
-
-        return PlaybackReducer.accepts(
-            state,
-            accountEpoch: accountEpoch,
-            engineEpoch: engineEpoch,
-            source: source,
-            revision: revision
-        )
+        return true
     }
 
     func present(_ track: CatalogTrack) {
@@ -306,7 +276,7 @@ extension PlaybackStore {
         })
     }
 
-    func receive(_ devices: [ConnectDevice], revision: UInt64) {
+    func receive(_ devices: [ConnectDevice], revision: UInt64, engineEpoch: UInt64) {
         guard !isTearingDown else { return }
         let snapshot = PlaybackDeviceSnapshot(
             devices: devices.map {
@@ -315,7 +285,12 @@ extension PlaybackStore {
             localDeviceID: localDeviceID,
             revision: revision
         )
-        let accepted = send(.devices(snapshot), source: .engineDevices, revision: revision)
+        let accepted = send(
+            .devices(snapshot),
+            source: .engineDevices,
+            revision: revision,
+            engineEpoch: engineEpoch
+        )
         guard accepted else { return }
         if let remote = devices.first(where: { $0.isActive && $0.id != localDeviceID }) {
             lastRemoteDeviceID = remote.id

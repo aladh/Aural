@@ -636,6 +636,7 @@ public enum PlaybackReducer {
             candidate.engineEpoch = engineEpoch
             candidate.sourceRevisions = [:]
             candidate.pendingCommands = [:]
+            candidate.devices.revision = 0
         }
 
         if let revision {
