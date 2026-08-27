@@ -106,8 +106,6 @@ check_arguments=(
 )
 swift build "${check_arguments[@]}"
 checks_path="$(swift build "${check_arguments[@]}" --show-bin-path)/AuralChecks"
-# PlaybackStore projection contract is declaration-aware and lives in AuralChecks.
-export AURAL_PLAYBACK_STORE_SOURCE="$project_root/Sources/Aural/Spotify/PlaybackStore.swift"
 repeat_count="${AURAL_CHECK_REPEATS:-1}"
 if ! [[ "$repeat_count" =~ '^[1-9][0-9]*$' ]] || (( repeat_count > 25 )); then
     print -u2 "AURAL_CHECK_REPEATS must be between 1 and 25"
@@ -164,6 +162,18 @@ if rg -n 'LiveSpotifyController|nonisolated\(unsafe\)' "$project_root/Sources" -
     exit 1
 fi
 
+# Read-only presentation projections live in PlaybackStore+Projections.swift. An explicit
+# setter there recreates partial-presentation states; setters in other files are out of scope.
+projections_file="$project_root/Sources/Aural/Spotify/PlaybackStore+Projections.swift"
+if [[ ! -f "$projections_file" ]]; then
+    print -u2 "PlaybackStore projections must live in PlaybackStore+Projections.swift"
+    exit 1
+fi
+if rg -n '^[[:space:]]*set[[:space:]]*(\{|\()' "$projections_file"; then
+    print -u2 "PlaybackStore state projections must remain read-only; use an explicit atomic action"
+    exit 1
+fi
+
 # Passing one PlaybackStore field as inout while the callee touches another field on the same
 # store traps at runtime under Swift's exclusivity enforcement. Keep engine revision gates keyed
 # by source instead of accepting a stored revision through inout.
@@ -176,6 +186,7 @@ fi
 feature_dependencies=(
     "$project_root/Sources/Aural/Views"
     "$project_root/Sources/Aural/Spotify/PlaybackStore.swift"
+    "$project_root/Sources/Aural/Spotify/PlaybackStore+Projections.swift"
     "$project_root/Sources/Aural/Spotify/PlaybackStore+Commands.swift"
     "$project_root/Sources/Aural/Spotify/PlaybackStore+EngineEvents.swift"
     "$project_root/Sources/Aural/Spotify/PlaybackStore+History.swift"

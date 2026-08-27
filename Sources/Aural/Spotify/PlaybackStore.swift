@@ -116,21 +116,6 @@ final class PlaybackStore {
 
     private(set) var state = PlaybackState(accountEpoch: 1)
 
-    var phase: Phase { state.session }
-    var trackURI: String { state.currentTrack?.uri ?? "" }
-    var trackTitle: String { state.currentTrack?.title ?? "Nothing playing" }
-    var artistName: String { state.currentTrack?.artist ?? "Choose something to play" }
-    var artworkURL: URL? { state.currentTrack?.artworkURL }
-    var isPlaying: Bool { state.transport == .playing }
-    var isShuffleEnabled: Bool { state.options.shuffle }
-    var repeatMode: RepeatMode { state.options.repeatMode }
-    var isActiveDevice: Bool {
-        if case .local = state.owner { return true }
-        return false
-    }
-    var position: TimeInterval { state.timing.position }
-    var duration: TimeInterval { state.timing.duration }
-    var positionAnchorDate: Date { state.timing.anchoredAt }
     /// Catalog state lives in its own observable store; views that only draw
     /// catalog data can depend on it without observing playback at all.
     let catalog: CatalogStore
@@ -142,23 +127,8 @@ final class PlaybackStore {
     @ObservationIgnored let accountStore: AccountStore
     @ObservationIgnored let catalogSession: CatalogSessionAvailability
     @ObservationIgnored var accountEpoch: UInt64 = 1
-    var queueNextEntries: [QueueEntry] {
-        state.queue.entries.map {
-            QueueEntry(uri: $0.uri, provider: $0.provider, occurrence: queueOccurrence($0.id))
-        }
-    }
-    var connectDevices: [ConnectDevice] {
-        state.devices.devices.map {
-            ConnectDevice(id: $0.id, name: $0.name, type: $0.type, isActive: $0.isActive)
-        }
-    }
     var thisDeviceName = "This Mac"
-    var localDeviceID: String? { state.devices.localDeviceID }
     @ObservationIgnored var lastRemoteDeviceID: String?
-    var isPlaybackCommandPending: Bool {
-        state.pendingCommands.keys.contains { $0 != .queue }
-    }
-    var hasCurrentTrackMetadata: Bool { (state.currentTrack?.metadataSource ?? .none) != .none }
     /// The first Connect snapshot describes state that predates this process. It seeds the UI,
     /// but must not be counted as something the listener just played in this Aural session.
     @ObservationIgnored var hasReceivedPlaybackSnapshot = false
@@ -179,52 +149,6 @@ final class PlaybackStore {
     /// `state.sourceRevisions[.engineQueue]`, which tracks provenance snapshots after merge.
     @ObservationIgnored var connectQueueCallback = ConnectQueueCallbackWatermark()
     @ObservationIgnored var shuffleHistoryCache: [String: TimeInterval] = [:]
-    var transientCommandError: String? { state.notice?.message }
-
-    var isConnected: Bool { phase == .ready }
-    var catalogCurrentTrack: CatalogTrack? {
-        guard !trackURI.isEmpty else { return nil }
-        return catalog.metadata.knownTrack(for: trackURI)
-    }
-    var displayedTrackTitle: String { catalogCurrentTrack?.title ?? trackTitle }
-    var displayedArtistName: String { catalogCurrentTrack?.artist ?? artistName }
-    var displayedArtworkURL: URL? { catalogCurrentTrack?.artworkURL ?? artworkURL }
-    var hasCurrentTrack: Bool {
-        !trackURI.isEmpty && (hasCurrentTrackMetadata || catalogCurrentTrack != nil)
-    }
-    /// Connect is account-wide: another device playing is still live playback Aural can control.
-    var showsPauseControl: Bool { hasCurrentTrack && isPlaying }
-    var canStartPlayback: Bool {
-        isConnected && !isTearingDown && terminationGate.allowsCommands && !isPlaybackCommandPending
-    }
-    var canTogglePlayback: Bool { canStartPlayback && hasCurrentTrack }
-    var canSkipTrack: Bool { canStartPlayback && hasCurrentTrack }
-
-    func displayedPosition(at date: Date) -> TimeInterval {
-        interpolatedPlaybackPosition(
-            anchor: position,
-            anchoredAt: positionAnchorDate,
-            now: date,
-            isPlaying: showsPauseControl,
-            duration: duration
-        )
-    }
-
-    var statusText: String {
-        switch phase {
-        case .signedOut: "Connect Spotify Premium"
-        case .authorizing: "Waiting for Spotify…"
-        case .connecting: "Starting Aural Connect…"
-        case .recovering: "Restoring Spotify Connect…"
-        case .ready:
-            if let transientCommandError { transientCommandError }
-            else if let remote = activeRemoteDevice {
-                isPlaying ? "Playing on \(remote.name)" : "Paused on \(remote.name)"
-            } else if showsPauseControl { "Playing on this Mac" }
-            else { "Aural Connect is ready" }
-        case let .failed(message): message
-        }
-    }
 
     init(environment: PlaybackEnvironment = .live) {
         self.environment = environment
@@ -318,30 +242,6 @@ final class PlaybackStore {
     private func statusTextFallbackAfterWake() {
         guard showsPauseControl else { return }
         showTransientCommandError("Restoring playback after sleep…")
-    }
-
-    var activeRemoteDevice: ConnectDevice? {
-        guard !isActiveDevice, hasCurrentTrack else { return nil }
-        let device: PlaybackDevice?
-        switch state.owner {
-        case let .remote(value), let .uncertain(.some(value)):
-            device = value
-        default:
-            device = nil
-        }
-        if let device {
-            return ConnectDevice(
-                id: device.id,
-                name: device.name,
-                type: device.type,
-                isActive: device.isActive
-            )
-        }
-        return nil
-    }
-
-    var commandRoute: ConnectCommandRoute {
-        connectCommandRoute(owner: state.owner, localDeviceID: localDeviceID)
     }
 
     /// The only mutation entrance for the atomic playback snapshot.
@@ -476,10 +376,6 @@ final class PlaybackStore {
 
     func setNotice(_ message: String?) {
         send(.notice(message.map { PlaybackNotice(message: $0) }), source: .user)
-    }
-
-    private func queueOccurrence(_ id: String) -> Int {
-        id.split(separator: "-", maxSplits: 1).first.flatMap { Int($0) } ?? 0
     }
 }
 

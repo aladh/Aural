@@ -57,30 +57,13 @@ func runParsingChecks(_ check: CheckRunner) {
     }
 
     check.suite("Spotify authentication cookie matching") {
-        let spotify = CookieOrigin(name: "sp_dc", domain: "accounts.spotify.com", path: "/")
-        let dotted = CookieOrigin(name: "sp_key", domain: ".spotify.com", path: "/")
-        let nested = CookieOrigin(name: "sp_t", domain: "www.spotify.com", path: "/api")
-        let lookalikeHost = CookieOrigin(name: "sp_dc", domain: "notspotify.com", path: "/")
-        let lookalikeSuffix = CookieOrigin(name: "sp_dc", domain: "spotify.com.evil.example", path: "/")
-        let unrelated = CookieOrigin(name: "session", domain: "example.com", path: "/")
-        let emptyPath = CookieOrigin(name: "sp_dc", domain: "spotify.com", path: "")
-
-        check.check("accounts host is Spotify", SpotifyAuthenticationCookies.shouldRemove(domain: spotify.domain, path: spotify.path))
-        check.check("leading-dot domain is Spotify", SpotifyAuthenticationCookies.shouldRemove(domain: dotted.domain, path: dotted.path))
-        check.check("subdomain and subdirectory stay Spotify", SpotifyAuthenticationCookies.shouldRemove(domain: nested.domain, path: nested.path))
-        check.check("lookalike host is not Spotify", !SpotifyAuthenticationCookies.shouldRemove(domain: lookalikeHost.domain, path: lookalikeHost.path))
-        check.check("suffixed lookalike is not Spotify", !SpotifyAuthenticationCookies.shouldRemove(domain: lookalikeSuffix.domain, path: lookalikeSuffix.path))
-        check.check("unrelated domain is kept", !SpotifyAuthenticationCookies.shouldRemove(domain: unrelated.domain, path: unrelated.path))
-        check.check("empty path is not a cookie path", !SpotifyAuthenticationCookies.shouldRemove(domain: emptyPath.domain, path: emptyPath.path))
-
-        let mixed = [unrelated, nested, lookalikeHost, spotify, dotted]
-        let first = SpotifyAuthenticationCookies.cookiesToRemove(mixed)
-        let second = SpotifyAuthenticationCookies.cookiesToRemove(first)
-        check.equal("selection is ordered by domain, path, then name", first.map(\.name), ["sp_key", "sp_dc", "sp_t"])
-        check.equal("selection is idempotent", second, first)
-        check.equal("a second pass removes nothing more", SpotifyAuthenticationCookies.cookiesToRemove(mixed.filter { leftover in
-            !first.contains(leftover)
-        }), [])
+        check.check("accounts host is Spotify", SpotifyAuthenticationCookies.shouldRemove(domain: "accounts.spotify.com", path: "/"))
+        check.check("leading-dot domain is Spotify", SpotifyAuthenticationCookies.shouldRemove(domain: ".spotify.com", path: "/"))
+        check.check("subdomain and subdirectory stay Spotify", SpotifyAuthenticationCookies.shouldRemove(domain: "www.spotify.com", path: "/api"))
+        check.check("lookalike host is not Spotify", !SpotifyAuthenticationCookies.shouldRemove(domain: "notspotify.com", path: "/"))
+        check.check("suffixed lookalike is not Spotify", !SpotifyAuthenticationCookies.shouldRemove(domain: "spotify.com.evil.example", path: "/"))
+        check.check("unrelated domain is kept", !SpotifyAuthenticationCookies.shouldRemove(domain: "example.com", path: "/"))
+        check.check("empty path is not a cookie path", !SpotifyAuthenticationCookies.shouldRemove(domain: "spotify.com", path: ""))
     }
 
     check.suite("Spotify uri parsing") {

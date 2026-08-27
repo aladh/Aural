@@ -395,6 +395,11 @@ func runAuthCookieCleanupChecks(_ check: CheckRunner) async {
             AuthCookieCleanup.cookiesToDelete(in: [unrelated, lookalike]).map(\.name),
             []
         )
+        check.equal(
+            "selection is idempotent",
+            AuthCookieCleanup.cookiesToDelete(in: deleted).map(\.name),
+            deleted.map(\.name)
+        )
     }
 
     await check.suite("Sign Out cookie cleanup follows grant clear") {

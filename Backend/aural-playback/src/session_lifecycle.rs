@@ -11,16 +11,16 @@ pub(crate) fn run_is_superseded(started_generation: u64, current_generation: u64
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum CredentialsCacheError {
     /// `HOME` is unset or empty.
-    MissingHome,
+    Missing,
     /// `HOME` is not an absolute location, so it cannot be an app container path.
-    RelativeHome,
+    Relative,
+    /// `HOME` is a shared temporary root such as `/tmp` or `/private/tmp`.
+    SharedTemporary,
 }
 
 impl CredentialsCacheError {
     pub(crate) fn message(self) -> &'static str {
-        match self {
-            Self::MissingHome | Self::RelativeHome => "Streaming credential cache is unavailable",
-        }
+        "Streaming credential cache is unavailable"
     }
 }
 
@@ -33,9 +33,12 @@ pub(crate) fn credentials_cache_dir_from_home(
 ) -> Result<std::path::PathBuf, CredentialsCacheError> {
     let home = home
         .filter(|path| !path.as_os_str().is_empty())
-        .ok_or(CredentialsCacheError::MissingHome)?;
+        .ok_or(CredentialsCacheError::Missing)?;
     if !home.is_absolute() {
-        return Err(CredentialsCacheError::RelativeHome);
+        return Err(CredentialsCacheError::Relative);
+    }
+    if is_shared_temporary_home(home) {
+        return Err(CredentialsCacheError::SharedTemporary);
     }
     Ok(home
         .join("Library")
@@ -44,10 +47,20 @@ pub(crate) fn credentials_cache_dir_from_home(
         .join("credentials"))
 }
 
+/// Shared world-writable temp roots, including the macOS `/tmp` → `/private/tmp` pair.
+/// Comparison is lexical so path selection stays pure and does not follow symlinks.
+fn is_shared_temporary_home(home: &std::path::Path) -> bool {
+    const ROOTS: &[&str] = &["/tmp", "/private/tmp", "/var/tmp", "/private/var/tmp"];
+    ROOTS.iter().any(|root| {
+        let root = std::path::Path::new(root);
+        home == root || home.starts_with(root)
+    })
+}
+
 /// Where librespot persists the AP credentials produced by the streaming grant.
 ///
 /// Under the sandbox `HOME` is already the app container, so this stays inside it.
-/// Missing or relative `HOME` fails closed: it must not fall back to a shared `/tmp`.
+/// Missing, relative, or shared-temporary `HOME` fails closed: it must not fall back to `/tmp`.
 pub(crate) fn credentials_cache_dir() -> Result<std::path::PathBuf, CredentialsCacheError> {
     let home = std::env::var_os("HOME").map(std::path::PathBuf::from);
     credentials_cache_dir_from_home(home.as_deref())
@@ -56,12 +69,12 @@ pub(crate) fn credentials_cache_dir() -> Result<std::path::PathBuf, CredentialsC
 /// Creates `dir` and restricts it to the current user when the platform allows.
 pub(crate) fn ensure_private_credentials_dir(dir: &std::path::Path) -> Result<(), String> {
     std::fs::create_dir_all(dir)
-        .map_err(|_| CredentialsCacheError::MissingHome.message().to_string())?;
+        .map_err(|_| CredentialsCacheError::Missing.message().to_string())?;
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
         std::fs::set_permissions(dir, std::fs::Permissions::from_mode(0o700))
-            .map_err(|_| CredentialsCacheError::MissingHome.message().to_string())?;
+            .map_err(|_| CredentialsCacheError::Missing.message().to_string())?;
     }
     Ok(())
 }
@@ -199,7 +212,7 @@ pub(crate) fn create_session(
     let cache_dir = credentials_cache_dir().map_err(|error| error.message().to_string())?;
     ensure_private_credentials_dir(&cache_dir)?;
     let cache = Cache::new(Some(cache_dir), None, None, None)
-        .map_err(|_| CredentialsCacheError::MissingHome.message().to_string())?;
+        .map_err(|_| CredentialsCacheError::Missing.message().to_string())?;
 
     // Prefer a freshly granted token; otherwise reuse what the last grant cached. Resolved
     // here rather than at the call site so every caller gets the same rule.

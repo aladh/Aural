@@ -262,23 +262,32 @@ fn credentials_cache_dir_uses_injected_home_without_tmp_fallback() {
 
     assert_eq!(
         credentials_cache_dir_from_home(None),
-        Err(CredentialsCacheError::MissingHome)
+        Err(CredentialsCacheError::Missing)
     );
     assert_eq!(
         credentials_cache_dir_from_home(Some(std::path::Path::new(""))),
-        Err(CredentialsCacheError::MissingHome)
+        Err(CredentialsCacheError::Missing)
     );
     assert_eq!(
         credentials_cache_dir_from_home(Some(std::path::Path::new("Library"))),
-        Err(CredentialsCacheError::RelativeHome)
+        Err(CredentialsCacheError::Relative)
     );
-    assert_eq!(
-        credentials_cache_dir_from_home(Some(std::path::Path::new("/tmp"))),
-        Ok(std::path::PathBuf::from(
-            "/tmp/Library/Application Support/Aural/credentials"
-        )),
-        "an explicit HOME of /tmp is not the unset-HOME fallback"
-    );
+    for shared in [
+        "/tmp",
+        "/tmp/",
+        "/tmp/aural",
+        "/private/tmp",
+        "/private/tmp/",
+        "/private/tmp/aural",
+        "/var/tmp",
+        "/private/var/tmp",
+    ] {
+        assert_eq!(
+            credentials_cache_dir_from_home(Some(std::path::Path::new(shared))),
+            Err(CredentialsCacheError::SharedTemporary),
+            "shared temporary HOME must fail closed: {shared}"
+        );
+    }
 }
 
 #[cfg(unix)]
