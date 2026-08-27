@@ -197,10 +197,24 @@ feature_dependencies=(
     "$project_root/Sources/Aural/Spotify/HomeLibraryStore.swift"
     "$project_root/Sources/Aural/Spotify/SearchStore.swift"
     "$project_root/Sources/Aural/Spotify/PlaylistStore.swift"
+    "$project_root/Sources/Aural/Spotify/PlaylistMutationController.swift"
+    "$project_root/Sources/Aural/Spotify/CatalogStore.swift"
 )
 if rg -n 'PartnerAPI\(|SpotifyConnectAPI\(|SpotifyWebPlayerAPI\(|KeymasterAuth\.authorize|KeymasterSession\.shared|RustPlaybackEngine\.shared|PlaybackCore\.' \
     "${feature_dependencies[@]}"; then
     print -u2 "A store or view bypasses the injected production environment"
+    exit 1
+fi
+
+if rg -n 'func addToPlaylist|func removeFromPlaylist|func moveInPlaylist' \
+    "$project_root/Sources/Aural/Spotify/CatalogProviding.swift"; then
+    print -u2 "CatalogProviding must remain a read-only catalog surface"
+    exit 1
+fi
+
+if rg -n '\.draggable\(|\.dropDestination\(|onDrop\(' \
+    "$project_root/Sources/Aural/Views" --glob '*.swift'; then
+    print -u2 "Playlist drag-and-drop was omitted; do not reintroduce unverified SwiftUI drag UI"
     exit 1
 fi
 

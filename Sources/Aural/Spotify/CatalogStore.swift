@@ -19,13 +19,16 @@ final class CatalogStore {
     let albumStore: AlbumDetailStore
     let artistStore: ArtistDetailStore
     let metadata: CatalogMetadataRepository
+    let playlistMutations: PlaylistMutationController
 
     @ObservationIgnored private let session: CatalogSessionAvailability
 
     init(
         provider: any CatalogProviding,
         attributesProvider: any TrackAttributesProviding,
-        session: CatalogSessionAvailability
+        playlistMutations: any PlaylistMutating,
+        session: CatalogSessionAvailability,
+        feedback: TransientFeedbackPresenter
     ) {
         self.session = session
         let metadata = CatalogMetadataRepository(
@@ -38,6 +41,13 @@ final class CatalogStore {
         playlistStore = PlaylistStore(provider: provider, metadata: metadata, session: session)
         albumStore = AlbumDetailStore(provider: provider, metadata: metadata, session: session)
         artistStore = ArtistDetailStore(provider: provider, session: session)
+        self.playlistMutations = PlaylistMutationController(
+            mutations: playlistMutations,
+            session: session,
+            feedback: feedback,
+            playlistStore: playlistStore,
+            homeLibrary: homeLibrary
+        )
     }
 
     func reset() {
@@ -47,6 +57,7 @@ final class CatalogStore {
         albumStore.reset()
         artistStore.reset()
         metadata.reset()
+        playlistMutations.reset()
     }
 
 }

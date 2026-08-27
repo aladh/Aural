@@ -21,6 +21,9 @@ could still combine values from different account, engine, command, queue, or se
   queue, and stale or provisional results cannot erase a newer authoritative snapshot.
 - Home/library, search, and selected-playlist work have separate stores, request scopes, and
   account-epoch snapshots. The metadata repository independently rejects cross-account writes.
+  Playlist add/remove is a focused `PlaylistMutating` port injected beside read-only
+  `CatalogProviding`; views consume catalog models and `PlaylistMutationController`, not
+  Pathfinder DTOs.
 - `RustPlaybackEngine` is the process-lifetime callback adapter. It emits a bounded typed stream;
   PCM continues directly to `AudioRenderer` and never enters the state architecture.
 - The `AuralApp` scene in `AuralCore` is the production composition root; the shipping `AuralApp`

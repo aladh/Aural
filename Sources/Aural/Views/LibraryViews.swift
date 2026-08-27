@@ -13,6 +13,7 @@ struct SearchView: View {
     let playback: CatalogPlaybackAccess
     @Binding var searchText: String
     let onSelect: (CatalogItem) -> Void
+    let playlistActions: TrackPlaylistActions
 
     var body: some View {
         Group {
@@ -82,7 +83,12 @@ struct SearchView: View {
                         if !store.tracks.isEmpty {
                             VStack(alignment: .leading, spacing: 12) {
                                 Text("Tracks").font(.title2.bold())
-                                TrackTable(tracks: store.tracks, metadata: metadata, playback: playback)
+                                TrackTable(
+                                    tracks: store.tracks,
+                                    metadata: metadata,
+                                    playback: playback,
+                                    playlistActions: playlistActions
+                                )
                                     .frame(minHeight: 280)
                             }
                         }
@@ -205,6 +211,7 @@ struct TrackCollectionView: View {
     var emptyIcon = "music.note"
     var emptyTitle: String? = nil
     var emptyMessage: String? = nil
+    var playlistActions: TrackPlaylistActions? = nil
 
     var body: some View {
         VStack(spacing: 0) {
@@ -251,7 +258,12 @@ struct TrackCollectionView: View {
                     )
                 }
             } else {
-                TrackTable(tracks: tracks, metadata: metadata, playback: playback)
+                TrackTable(
+                    tracks: tracks,
+                    metadata: metadata,
+                    playback: playback,
+                    playlistActions: playlistActions
+                )
             }
         }
         .navigationTitle(title)

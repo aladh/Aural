@@ -21,6 +21,7 @@ final class PlaylistStore {
     private(set) var sortedTracks: [CatalogTrack] = []
     var description = ""
     private(set) var loadedURI: String?
+    private(set) var ownerURI: String?
     var isLoading = false
     var error: String?
 
@@ -51,19 +52,21 @@ final class PlaylistStore {
         dateSort = .playlistOrder
         description = ""
         loadedURI = nil
+        ownerURI = nil
         isLoading = false
         error = nil
         metadata.replaceTracks([], from: .playlist)
     }
 
-    func load(_ item: CatalogItem) async {
+    func load(_ item: CatalogItem, force: Bool = false) async {
         let currentSession = session.snapshot
         guard currentSession.isAvailable, item.kind == .playlist else { return }
-        if loadedURI == item.uri, !tracks.isEmpty { return }
+        if loadedURI == item.uri, !tracks.isEmpty, !force { return }
         if isLoading,
            loadedURI == item.uri,
            loadSessionSnapshot == currentSession,
-           let loadTask {
+           let loadTask,
+           !force {
             await loadTask.value
             return
         }
@@ -75,12 +78,15 @@ final class PlaylistStore {
         loadTask = nil
         let isNewPlaylist = loadedURI != item.uri
         loadedURI = item.uri
-        tracks = []
-        sortedTracks = []
-        description = ""
+        if isNewPlaylist {
+            tracks = []
+            sortedTracks = []
+            description = ""
+            ownerURI = item.ownerURI
+            metadata.replaceTracks([], from: .playlist)
+        }
         error = nil
         isLoading = true
-        metadata.replaceTracks([], from: .playlist)
         defer {
             if requestID == requestScope {
                 isLoading = false
@@ -122,6 +128,7 @@ final class PlaylistStore {
             let playlist = try await provider.playlist(id: id)
             guard isCurrent(identity, uri: item.uri) else { return }
             description = PlaylistDescription.plainText(from: playlist.description ?? "")
+            ownerURI = CatalogMapping.ownerURI(from: playlist) ?? item.ownerURI
             if isNewPlaylist {
                 dateSort = .playlistOrder
             }

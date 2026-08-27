@@ -11,7 +11,9 @@ ADRs; historical measurements belong in the performance baseline.
 - Prefer idiomatic SwiftUI and AppKit behavior over custom chrome. Do not add a WebView, Chromium
   runtime, or a second UI framework.
 - Keep the product surface small. In particular, Aural has no in-app volume control or manual
-  Spotify refresh action, and library editing is not currently in scope.
+  Spotify refresh action. Playlist creation, rename, cover editing, collaborative permission
+  management, and arbitrary reordering are out of scope. Occurrence-safe add/remove for playlists
+  Aural can justify as owned is in scope.
 - The accent color is user-selectable in the native Settings scene. System semantics, keyboard
   behavior, accessibility, focus, and inactive-window appearance must continue to work for every
   accent.
@@ -60,6 +62,20 @@ ADRs; historical measurements belong in the performance baseline.
 - Clicking **Date Added** sorts directly and reverses the order on the next click through native
   table sorting; it must never open a picker or menu. Clearing table sorting restores playlist
   order.
+- Track tables use native multi-selection. **Add to Playlist** is a context-menu command listing
+  library playlists whose owner URI matches the signed-in profile. The selected rows are batched
+  as one mutation, preserving duplicate track URIs from distinct occurrences and ignoring repeated
+  selection IDs.
+- In an editable open playlist, Delete/Backspace and **Remove from Playlist** remove the selected
+  occurrences by Pathfinder UID (`CatalogTrack.id`), never by track URI. Read-only playlists do
+  not advertise or route those commands.
+- Successful add/remove refresh only the affected open playlist and report through
+  `TransientFeedbackPresenter`. Failure, cancellation, and stale account/session results leave
+  presentation state unchanged.
+- Dragging selected tracks onto playlist rows is omitted. A native SwiftUI Table transfer
+  representation serializes the dragged row rather than the occurrence-aware multi-selection;
+  disabled drop targeting for non-editable rows could not be demonstrated without private
+  hit-testing or pixel coordinates. The context-menu command is the keyboard-accessible add path.
 
 ## Engineering defaults
 
@@ -97,7 +113,7 @@ Without explicit playback permission, it is safe to:
   change Aural-only settings, close/reopen the window, and sign out when sign-out testing is in
   scope;
 - observe remote playback state without pressing Play/Pause, Previous, Next, Shuffle, Repeat,
-  Seek, Add to Queue, or Transfer.
+  Seek, Add to Queue, Transfer, Add to Playlist, or Remove from Playlist.
 
 Do not infer playback permission from a request to launch, inspect, accept-test, or test read-only.
 Do not transfer playback, alter the queue, seek, or change transport modes as a substitute for a

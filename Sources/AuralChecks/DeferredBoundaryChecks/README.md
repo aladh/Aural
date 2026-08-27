@@ -10,7 +10,8 @@ URI/pagination/loopback parsing, deterministic playback reducer traces, and the 
 spike in [ADR 003](../../../docs/ADR-003-playback-command-effects.md). The concrete suite covers
 auth parsing and PKCE, wire codecs, catalog resolution, formatting, privacy-safe API failure
 surfaces, injected coordinator/queue invalidation workflows, typed playback-command failures,
-`PlaybackEffectRegistry` task cancellation, transient mutation feedback, and PCM writer wake/bypass. Do not move check code
+`PlaybackEffectRegistry` task cancellation, transient mutation feedback, native playlist
+add/remove, and PCM writer wake/bypass. Do not move check code
 back into `Sources/Aural`: test code must not ship in the application executable.
 
 These checks intentionally use the custom runner rather than XCTest/Swift Testing so the complete

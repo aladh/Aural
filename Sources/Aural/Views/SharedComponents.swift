@@ -2,14 +2,24 @@ import AppKit
 import AuralDomain
 import SwiftUI
 
+/// Catalog playlist writes available to track tables without Pathfinder DTOs.
+struct TrackPlaylistActions {
+    let editablePlaylists: [CatalogItem]
+    let canRemoveOccurrences: Bool
+    let addToPlaylist: @MainActor (CatalogItem, [CatalogTrack]) -> Void
+    let removeOccurrences: @MainActor ([String]) -> Void
+}
+
 /// A native macOS table shared by playlists, search results, and track libraries.
-/// Single-click selects; double-click or Return plays, matching desktop table behavior.
+/// Single-click selects; command-click extends a simple multi-selection; double-click
+/// or Return plays the primary row, matching desktop table behavior.
 struct TrackTable: View {
     let tracks: [CatalogTrack]
     let metadata: CatalogMetadataRepository
     let playback: CatalogPlaybackAccess
     var showsDateAdded = false
-    @State private var selection: CatalogTrack.ID?
+    var playlistActions: TrackPlaylistActions?
+    @State private var selection: Set<CatalogTrack.ID> = []
     @State private var sortOrder: [KeyPathComparator<CatalogTrack>] = []
     @State private var displayedTracks: [CatalogTrack]
 
@@ -17,12 +27,14 @@ struct TrackTable: View {
         tracks: [CatalogTrack],
         metadata: CatalogMetadataRepository,
         playback: CatalogPlaybackAccess,
-        showsDateAdded: Bool = false
+        showsDateAdded: Bool = false,
+        playlistActions: TrackPlaylistActions? = nil
     ) {
         self.tracks = tracks
         self.metadata = metadata
         self.playback = playback
         self.showsDateAdded = showsDateAdded
+        self.playlistActions = playlistActions
         _displayedTracks = State(initialValue: tracks)
     }
 
@@ -89,7 +101,11 @@ struct TrackTable: View {
             .width(46)
         }
         .contextMenu(forSelectionType: CatalogTrack.ID.self) { selectedIDs in
-            if let track = selectedTrack(in: selectedIDs) {
+            let selectedTracks = PlaylistMutationSelection.orderedTracks(
+                selectedIDs: selectedIDs,
+                in: displayedTracks
+            )
+            if selectedTracks.count == 1, let track = selectedTracks.first {
                 Button("Play", systemImage: "play.fill") {
                     play(track)
                 }
@@ -100,12 +116,47 @@ struct TrackTable: View {
                 }
                 .disabled(!playback.canStartPlayback)
             }
+
+            if !selectedTracks.isEmpty, let playlistActions {
+                Menu("Add to Playlist") {
+                    if playlistActions.editablePlaylists.isEmpty {
+                        Button("No Editable Playlists") {}
+                            .disabled(true)
+                    } else {
+                        ForEach(playlistActions.editablePlaylists) { playlist in
+                            Button(playlist.title) {
+                                playlistActions.addToPlaylist(playlist, selectedTracks)
+                            }
+                        }
+                    }
+                }
+                .accessibilityLabel("Add to Playlist")
+
+                if playlistActions.canRemoveOccurrences {
+                    Divider()
+                    Button("Remove from Playlist", role: .destructive) {
+                        playlistActions.removeOccurrences(Array(selectedIDs))
+                    }
+                    .disabled(
+                        PlaylistMutationSelection.occurrenceIDsForRemoval(from: selectedTracks).isEmpty
+                    )
+                }
+            }
         } primaryAction: { selectedIDs in
-            guard let track = selectedTrack(in: selectedIDs) else { return }
+            let selectedTracks = PlaylistMutationSelection.orderedTracks(
+                selectedIDs: selectedIDs,
+                in: displayedTracks
+            )
+            guard selectedTracks.count == 1, let track = selectedTracks.first else { return }
             play(track)
         }
+        .onDeleteCommandIfAvailable(playlistActions?.canRemoveOccurrences == true) {
+            removeSelectedOccurrences()
+        }
         .accessibilityLabel("Tracks")
-        .onChange(of: tracks, initial: true) { _, _ in
+        .onChange(of: tracks, initial: true) { _, newTracks in
+            let validIDs = Set(newTracks.map(\.id))
+            selection.formIntersection(validIDs)
             updateDisplayedTracks()
         }
         .onChange(of: sortOrder) { _, _ in
@@ -117,18 +168,35 @@ struct TrackTable: View {
         playback.hasCurrentTrack && playback.currentTrackURI == track.uri
     }
 
-    private func selectedTrack(in selectedIDs: Set<CatalogTrack.ID>) -> CatalogTrack? {
-        guard selectedIDs.count == 1, let id = selectedIDs.first else { return nil }
-        return tracks.first { $0.id == id }
-    }
-
     private func play(_ track: CatalogTrack) {
         guard playback.canStartPlayback else { return }
         playback.playTrack(track)
     }
 
+    private func removeSelectedOccurrences() {
+        guard playlistActions?.canRemoveOccurrences == true else { return }
+        let selectedTracks = PlaylistMutationSelection.orderedTracks(
+            selectedIDs: selection,
+            in: displayedTracks
+        )
+        let uids = PlaylistMutationSelection.occurrenceIDsForRemoval(from: selectedTracks)
+        guard !uids.isEmpty else { return }
+        playlistActions?.removeOccurrences(uids)
+    }
+
     private func updateDisplayedTracks() {
         displayedTracks = sortOrder.isEmpty ? tracks : tracks.sorted(using: sortOrder)
+    }
+}
+
+private extension View {
+    @ViewBuilder
+    func onDeleteCommandIfAvailable(_ enabled: Bool, perform action: @escaping () -> Void) -> some View {
+        if enabled {
+            onDeleteCommand(perform: action)
+        } else {
+            self
+        }
     }
 }
 

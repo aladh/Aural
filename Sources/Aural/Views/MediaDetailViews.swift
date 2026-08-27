@@ -12,6 +12,7 @@ struct AlbumDetailView: View {
     let store: AlbumDetailStore
     let metadata: CatalogMetadataRepository
     let playback: CatalogPlaybackAccess
+    var playlistActions: TrackPlaylistActions? = nil
 
     var body: some View {
         VStack(spacing: 0) {
@@ -30,7 +31,12 @@ struct AlbumDetailView: View {
             } else if store.tracks.isEmpty {
                 EmptyState(icon: "square.stack", title: "No tracks", message: "Spotify returned an empty album.")
             } else {
-                TrackTable(tracks: store.tracks, metadata: metadata, playback: playback)
+                TrackTable(
+                    tracks: store.tracks,
+                    metadata: metadata,
+                    playback: playback,
+                    playlistActions: playlistActions
+                )
             }
         }
         .navigationTitle(item.title)

@@ -189,6 +189,9 @@ The normal quality gate enforces several of these mechanically. Treat all of the
   replace fallback labels, but it must never reorder or erase a newer authoritative queue.
 - `Sources/Aural/Spotify/PlaybackCore.swift` is the only Swift file allowed to import
   `AuralPlaybackCore`. `RustPlaybackEngine.swift` is the only caller of `PlaybackCore`.
+- Playlist writes use the injected `PlaylistMutating` port and `PlaylistMutationController`.
+  Do not add add/remove methods to read-only `CatalogProviding`, and do not leak Pathfinder
+  mutation DTOs into views.
 - PCM travels directly from the engine adapter to `AudioRenderer`; never route it through observable
   UI state. Keep callbacks bounded and do not block the Rust callback thread.
 - Keep the checked-in C header and Rust exports exactly aligned. Changes to FFI ownership, pointer
