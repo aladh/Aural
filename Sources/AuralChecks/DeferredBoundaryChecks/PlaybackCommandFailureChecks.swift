@@ -295,15 +295,18 @@ func runPlaybackCommandFailureChecks(_ runner: CheckRunner) async {
             runner.check("remote rejection", false)
         }
 
+        let sleepingRemote = ScriptedRemoteClient(.sleepUntilCancelled)
         let coordinator = PlaybackCoordinator(
             local: ScriptedLocalEngine(result: .ok),
-            remote: ScriptedRemoteClient(.sleepUntilCancelled)
+            remote: sleepingRemote
         )
         let cancelled = Task {
-            try await coordinator.performRemoteCommand { remote in
-                try await remote.send(.pause, from: "from", to: "to")
+            try await coordinator.performRemoteCommand { client in
+                try await client.send(.pause, from: "from", to: "to")
             }
         }
+        let sendStarted = await waitUntil { await sleepingRemote.sendCount == 1 }
+        runner.check("remote send has started before cancellation", sendStarted)
         cancelled.cancel()
         var sawCancellation = false
         var operationalResult: Result<Void, PlaybackCommandFailure>?
