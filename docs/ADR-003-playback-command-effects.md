@@ -210,7 +210,7 @@ and still keeps the teardown guard). No generic `Effect` type, TCA, or second qu
 
 Remaining non-goals from the original routing work, if revisited later:
 
-- Keep using `send(...) == true` for other non-command dependent side effects such as device
+- Keep using `send(...) == true` for other non-command-dependent side effects such as device
   preference writes and `accountStore.receiveEngineConnection`.
 - Do not add engine revision gates outside `PlaybackReducer`.
 - Leave `ConnectQueueCallbackWatermark` as a callback watermark.

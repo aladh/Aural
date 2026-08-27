@@ -609,5 +609,35 @@ func runPlaybackEventOutcomeChecks(_ runner: CheckRunner) async {
         )
         runner.nil_("stale nameless snapshot does not launch a metadata resolver", await missingRemote.requestedURI)
         await missing.shutdownForTermination()
+
+        let watermarkEngine = GatedQueueSnapshotEngine()
+        let watermarkStore = PlaybackStore(
+            environment: outcomeEnvironment(local: watermarkEngine, remote: ImmediateMetadataRemote())
+        )
+        seedReadyLocalPlayback(watermarkStore, uri: uri)
+        let before = watermarkStore.connectQueueCallback
+        watermarkStore.refreshQueueSnapshot()
+        runner.check("watermark snapshot fetch starts", await waitUntil { watermarkEngine.hasStarted })
+        bumpEngine(watermarkStore)
+        watermarkEngine.release(queueSnapshotJSON(uri: uri, name: "Stale snapshot", revision: 9))
+        try? await Task.sleep(nanoseconds: 20_000_000)
+        runner.equal(
+            "a stale snapshot does not advance the callback generation",
+            watermarkStore.connectQueueCallback.generation,
+            before.generation
+        )
+        runner.equal(
+            "a stale snapshot does not advance the callback revision",
+            watermarkStore.connectQueueCallback.revision,
+            before.revision
+        )
+        runner.check(
+            "a later live callback can still start a fresh revision namespace",
+            watermarkStore.acceptsConnectQueueCallback(
+                generation: watermarkStore.engineGeneration,
+                revision: 1
+            )
+        )
+        await watermarkStore.shutdownForTermination()
     }
 }

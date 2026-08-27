@@ -70,9 +70,14 @@ extension PlaybackStore {
                   !Task.isCancelled,
                   !self.isTearingDown,
                   self.isConnected,
+                  self.accountEpoch == epoch,
+                  self.engineGeneration == capturedEngineEpoch,
                   let data = json.data(using: .utf8),
                   let state = try? JSONDecoder().decode(RustQueueState.self, from: data)
             else { return }
+            // Watermark is callback identity, not reducer-owned queue provenance. A stale
+            // snapshot with a nil `sessionGeneration` can still record revision, so captured
+            // account/engine lifetime must still match before `accept`.
             guard self.acceptsConnectQueueCallback(
                 generation: state.sessionGeneration,
                 revision: state.revision
@@ -98,10 +103,10 @@ extension PlaybackStore {
         refreshQueueSnapshot()
         catalog.metadata.retainTracks(from: .queue, for: Set(queueNextEntries.map(\.uri) + [trackURI]))
         let cachedTracks = queueNextEntries.compactMap { catalog.metadata.knownTrack(for: $0.uri) }
+        let epoch = accountEpoch
+        let capturedEngineEpoch = engineGeneration
         effects.replace(.queueRefresh, with: Task { [weak self] in
             guard let self else { return }
-            let epoch = self.accountEpoch
-            let capturedEngineEpoch = self.engineGeneration
             guard let snapshot = await self.queueService.refresh(
                 fallbackEntries: self.queueNextEntries,
                 cachedTracks: cachedTracks,
@@ -122,7 +127,7 @@ extension PlaybackStore {
         effects.cancel(.queueSnapshot)
     }
 
-    func apply(_ snapshot: ProvenanceQueueSnapshot, engineEpoch: UInt64? = nil) {
+    func apply(_ snapshot: ProvenanceQueueSnapshot, engineEpoch: UInt64) {
         let accepted = send(
             .queue(PlaybackQueueSnapshot(
                 entries: snapshot.entries.map {
