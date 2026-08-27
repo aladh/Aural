@@ -44,26 +44,32 @@ nonisolated func mergeQueueSnapshots(
         receivedAt: ordering.receivedAt,
         contextURI: ordering.contextURI,
         entries: ordering.entries.enumerated().map { index, item in
-            let preservedUID: String
-            if !item.uid.isEmpty {
-                preservedUID = item.uid
-            } else if let current,
-                      current.entries.indices.contains(index),
-                      current.entries[index].uri == item.uri
-            {
-                preservedUID = current.entries[index].uid
-            } else {
-                preservedUID = ""
-            }
-            return QueueEntry(
+            QueueEntry(
                 uri: item.uri,
                 provider: item.provider,
                 occurrence: queueOccurrence(item.id),
-                uid: preservedUID
+                uid: preservedQueueOccurrenceUID(incoming: item, index: index, current: current)
             )
         },
         tracks: Array(metadata.values)
     )
+}
+
+/// Web/metadata snapshots often arrive without Connect uids. When the URI at the same
+/// upcoming index still matches, keep the authoritative occurrence uid so selection
+/// identity does not fall back to a lossy index/URI id.
+private nonisolated func preservedQueueOccurrenceUID(
+    incoming: PlaybackQueueItem,
+    index: Int,
+    current: ProvenanceQueueSnapshot
+) -> String {
+    if !incoming.uid.isEmpty { return incoming.uid }
+    guard current.entries.indices.contains(index),
+          current.entries[index].uri == incoming.uri
+    else {
+        return ""
+    }
+    return current.entries[index].uid
 }
 
 private extension ProvenanceQueueSnapshot {

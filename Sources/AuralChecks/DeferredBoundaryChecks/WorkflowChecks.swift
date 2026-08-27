@@ -433,6 +433,31 @@ func runWorkflowChecks(_ runner: CheckRunner) async {
         )
         let merged = mergeQueueSnapshots(current: old, incoming: replacement)
         runner.equal("replacement queues discard unreachable metadata", merged.tracks.map(\.uri), ["spotify:track:new"])
+
+        let connectUID = workflowQueueSnapshot(
+            revision: 4,
+            contextURI: "spotify:track:same",
+            entryURI: "spotify:track:same",
+            uid: "occ-4"
+        )
+        let webLabels = workflowQueueSnapshot(
+            revision: 5,
+            contextURI: "spotify:track:same",
+            entryURI: "spotify:track:same",
+            source: .webAPI,
+            provider: "web-api"
+        )
+        let labeled = mergeQueueSnapshots(current: connectUID, incoming: webLabels)
+        runner.equal(
+            "Web metadata merge keeps the Connect occurrence uid for the same URI index",
+            labeled.entries.first?.uid ?? "",
+            "occ-4"
+        )
+        runner.equal(
+            "Web metadata merge does not invent a uid when the URI at that index changed",
+            mergeQueueSnapshots(current: connectUID, incoming: replacement).entries.first?.uid ?? "",
+            ""
+        )
     }
 
     await runner.suite("Progressive queue metadata") {
@@ -674,16 +699,19 @@ private func workflowTrack(_ uri: String) -> CatalogTrack {
 private func workflowQueueSnapshot(
     revision: UInt64,
     contextURI: String,
-    entryURI: String
+    entryURI: String,
+    source: QueueSnapshotSource = .connect,
+    uid: String = "",
+    provider: String = "connect"
 ) -> ProvenanceQueueSnapshot {
     ProvenanceQueueSnapshot(
         accountEpoch: 1,
         revision: revision,
-        source: .connect,
+        source: source,
         completeness: .complete,
         receivedAt: Date(timeIntervalSince1970: TimeInterval(revision)),
         contextURI: contextURI,
-        entries: [QueueEntry(uri: entryURI, provider: "connect", occurrence: 0)],
+        entries: [QueueEntry(uri: entryURI, provider: provider, occurrence: 0, uid: uid)],
         tracks: [workflowTrack(entryURI)]
     )
 }
