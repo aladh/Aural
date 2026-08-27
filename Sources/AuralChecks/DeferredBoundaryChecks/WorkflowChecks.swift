@@ -453,9 +453,14 @@ func runWorkflowChecks(_ runner: CheckRunner) async {
             labeled.entries.first?.uid ?? "",
             "occ-4"
         )
+        let changedURI = workflowQueueSnapshot(
+            revision: 6,
+            contextURI: "spotify:track:changed",
+            entryURI: "spotify:track:changed"
+        )
         runner.equal(
             "Web metadata merge does not invent a uid when the URI at that index changed",
-            mergeQueueSnapshots(current: connectUID, incoming: replacement).entries.first?.uid ?? "",
+            mergeQueueSnapshots(current: connectUID, incoming: changedURI).entries.first?.uid ?? "",
             ""
         )
     }
