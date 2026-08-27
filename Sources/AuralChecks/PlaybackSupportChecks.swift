@@ -49,6 +49,42 @@ func runPlaybackSupportChecks(_ check: CheckRunner) {
         check.equal("flags rebuild to context", RepeatMode(context: true, track: false), .context)
         check.equal("track flag wins over context", RepeatMode(context: true, track: true), .track)
         check.equal("flags rebuild to off", RepeatMode(context: false, track: false), .off)
+
+        let offToContext = RepeatTransitionPlan.planning(from: RepeatMode.off.flags, to: RepeatMode.context.flags)
+        check.equal(
+            "off → context sends only context on",
+            offToContext.mutations,
+            [RepeatFlagMutation(flag: .context, enabled: true)]
+        )
+        check.equal("off → context has no compensation", offToContext.compensation, [])
+
+        let contextToTrack = RepeatTransitionPlan.planning(from: RepeatMode.context.flags, to: RepeatMode.track.flags)
+        check.equal(
+            "context → track sends context off then track on",
+            contextToTrack.mutations,
+            [
+                RepeatFlagMutation(flag: .context, enabled: false),
+                RepeatFlagMutation(flag: .track, enabled: true),
+            ]
+        )
+        check.equal(
+            "context → track compensates the accepted context flag",
+            contextToTrack.compensation,
+            [RepeatFlagMutation(flag: .context, enabled: true)]
+        )
+
+        let trackToOff = RepeatTransitionPlan.planning(from: RepeatMode.track.flags, to: RepeatMode.off.flags)
+        check.equal(
+            "track → off sends only track off",
+            trackToOff.mutations,
+            [RepeatFlagMutation(flag: .track, enabled: false)]
+        )
+        check.equal("track → off has no compensation", trackToOff.compensation, [])
+        check.equal(
+            "identical flags send nothing",
+            RepeatTransitionPlan.planning(from: RepeatMode.off.flags, to: RepeatMode.off.flags).mutations,
+            []
+        )
     }
 
     check.suite("Play history") {

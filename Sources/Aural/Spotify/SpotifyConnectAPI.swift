@@ -207,6 +207,13 @@ nonisolated struct SpotifyConnectCommand: Encodable, Sendable {
         SpotifyConnectCommand(endpoint: .repeatTrack, value: .boolean(enabled))
     }
 
+    static func repeatMutation(_ mutation: RepeatFlagMutation) -> Self {
+        switch mutation.flag {
+        case .context: repeatContext(mutation.enabled)
+        case .track: repeatTrack(mutation.enabled)
+        }
+    }
+
     static func addToQueue(_ uri: String) -> Self {
         SpotifyConnectCommand(endpoint: .addToQueue, track: Track(uri: uri))
     }

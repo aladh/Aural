@@ -22,6 +22,7 @@ enum BoundaryChecksMain {
         await runWorkflowChecks(runner)
         await runCommandEffectRegistryChecks(runner)
         await runPlaybackCommandFailureChecks(runner)
+        await runRepeatTransitionChecks(runner)
         await runPlaybackEventOutcomeChecks(runner)
         await runPlaylistMutationChecks(runner)
         await runQueueManagementChecks(runner)

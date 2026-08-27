@@ -95,6 +95,67 @@ public struct RepeatFlags: Equatable, Sendable {
         self.context = context
         self.track = track
     }
+
+    public func enabled(for flag: RepeatFlagMutation.Flag) -> Bool {
+        switch flag {
+        case .context: context
+        case .track: track
+        }
+    }
+}
+
+/// One Connect/FFI repeat switch. Spotify exposes context and track independently.
+public struct RepeatFlagMutation: Equatable, Sendable {
+    public enum Flag: Equatable, Sendable {
+        case context
+        case track
+    }
+
+    public let flag: Flag
+    public let enabled: Bool
+
+    public init(flag: Flag, enabled: Bool) {
+        self.flag = flag
+        self.enabled = enabled
+    }
+}
+
+/// Forward mutations for one off → context → track → off step, plus compensation
+/// for the only two-flag transition.
+///
+/// Only flags that differ from the captured previous state are sent. Repeat-queue
+/// → repeat-track is the only two-flag step. Context is applied before track,
+/// matching the existing Connect/FFI sequence; the intermediate account state is
+/// off. If the track mutation fails after context was accepted, `compensation`
+/// restores the captured previous flags (context on). This is a repeat-specific
+/// plan, not a generic two-phase command framework.
+public struct RepeatTransitionPlan: Equatable, Sendable {
+    public let mutations: [RepeatFlagMutation]
+    public let compensation: [RepeatFlagMutation]
+
+    public init(mutations: [RepeatFlagMutation], compensation: [RepeatFlagMutation]) {
+        self.mutations = mutations
+        self.compensation = compensation
+    }
+
+    public static func planning(from previous: RepeatFlags, to next: RepeatFlags) -> RepeatTransitionPlan {
+        var mutations: [RepeatFlagMutation] = []
+        if previous.context != next.context {
+            mutations.append(RepeatFlagMutation(flag: .context, enabled: next.context))
+        }
+        if previous.track != next.track {
+            mutations.append(RepeatFlagMutation(flag: .track, enabled: next.track))
+        }
+        let compensation: [RepeatFlagMutation]
+        if mutations.count > 1 {
+            compensation = mutations.dropLast().map { mutation in
+                RepeatFlagMutation(flag: mutation.flag, enabled: previous.enabled(for: mutation.flag))
+            }
+        } else {
+            compensation = []
+        }
+        return RepeatTransitionPlan(mutations: mutations, compensation: compensation)
+    }
 }
 
 /// One row in the queue panel. Queue updates carry uris only, so display names

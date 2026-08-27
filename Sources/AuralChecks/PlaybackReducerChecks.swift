@@ -371,6 +371,67 @@ func runPlaybackReducerChecks(_ check: CheckRunner) {
         check.equal("an accepted acknowledgement keeps its optimistic transport", state.transport, .paused)
     }
 
+    check.suite("Options command finish does not clobber engine repeat") {
+        let optionsID = UUID(uuidString: "00000000-0000-0000-0000-000000000021")!
+        var state = PlaybackState(
+            accountEpoch: 1,
+            engineEpoch: 1,
+            session: .ready,
+            options: PlaybackOptions(repeatMode: .context)
+        )
+        _ = PlaybackReducer.reduce(
+            &state,
+            envelope: envelope(
+                source: .command,
+                event: .commandStarted(PendingPlaybackCommand(
+                    id: optionsID,
+                    kind: .options,
+                    expectedTransport: nil,
+                    startedAt: traceDate
+                ))
+            )
+        )
+        _ = PlaybackReducer.reduce(
+            &state,
+            envelope: envelope(
+                source: .enginePlayback,
+                revision: 7,
+                event: .enginePlayback(EnginePlaybackSnapshot(
+                    transport: .paused,
+                    trackURI: nil,
+                    timing: PlaybackTiming(anchoredAt: traceDate),
+                    shuffle: false,
+                    repeatMode: .track
+                ))
+            )
+        )
+        check.equal("an engine snapshot can update repeat while an options command is pending", state.options.repeatMode, .track)
+        check.equal("an engine snapshot does not drop a pending options command", state.pendingCommands[.options]?.id, optionsID)
+        _ = PlaybackReducer.reduce(
+            &state,
+            envelope: envelope(
+                source: .command,
+                event: .commandFinished(
+                    id: optionsID,
+                    accepted: false,
+                    notice: PlaybackNotice(message: "Could not update repeat")
+                )
+            )
+        )
+        check.nil_("a rejected options acknowledgement clears its command", state.pendingCommands[.options])
+        check.equal(
+            "a rejected options acknowledgement does not roll back repeat in the reducer",
+            state.options.repeatMode,
+            .track
+        )
+        check.equal(
+            "a rejected options acknowledgement still surfaces its notice",
+            state.notice?.message,
+            "Could not update repeat"
+        )
+        check.equal("engine playback revision is recorded for identity-safe rollback", state.sourceRevisions[.enginePlayback], 7)
+    }
+
     check.suite("Remote paused playback ownership") {
         let remote = PlaybackDevice(id: "desktop", name: "Other Mac", type: "computer")
         let track = CurrentTrack(uri: "spotify:track:paused", title: "Paused Track", artist: "Artist", duration: 240, metadataSource: .connect)

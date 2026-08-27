@@ -212,28 +212,33 @@ extension PlaybackStore {
         guard canStartPlayback else { return }
         let previousMode = repeatMode
         let previousFlags = previousMode.flags
-        let nextMode = repeatMode.next
+        let nextMode = previousMode.next
         setRepeatMode(nextMode)
-        let flags = nextMode.flags
+        let nextFlags = nextMode.flags
+        let plan = RepeatTransitionPlan.planning(from: previousFlags, to: nextFlags)
+        let enginePlaybackRevision = state.sourceRevisions[.enginePlayback]
         performRoutedOperation(
             "Could not update repeat",
             kind: .options,
             local: .repeatOptions(
-                context: flags.context,
-                track: flags.track,
+                context: nextFlags.context,
+                track: nextFlags.track,
                 rollbackContext: previousFlags.context,
                 rollbackTrack: previousFlags.track
             ),
             remote: { api, from, to in
-                try await api.send(.repeatContext(flags.context), from: from, to: to)
-                try await api.send(.repeatTrack(flags.track), from: from, to: to)
+                try await RepeatTransitionApplication.applyRemote(plan) { mutation in
+                    try await api.send(.repeatMutation(mutation), from: from, to: to)
+                }
             }
         ) { [weak self] accepted in
-            // The cycle was applied optimistically; a rejected command must not leave
-            // the toggle showing a mode the backend does not have.
-            if !accepted {
-                self?.setRepeatMode(previousMode)
-            }
+            guard let self, !accepted else { return }
+            // Rollback is identity-safe: a later accepted engine playback snapshot
+            // (source revision) or a newer visible mode must not be overwritten.
+            let laterEngineSnapshot =
+                self.state.sourceRevisions[.enginePlayback] != enginePlaybackRevision
+            guard !laterEngineSnapshot, self.repeatMode == nextMode else { return }
+            self.setRepeatMode(previousMode)
         }
     }
 

@@ -1,3 +1,4 @@
+import AuralDomain
 import Foundation
 
 /// A typed control event emitted by the embedded engine. PCM deliberately bypasses this stream
@@ -51,11 +52,13 @@ nonisolated final class RustPlaybackEngine: LocalPlaybackEngine, @unchecked Send
         case let .seek(milliseconds): PlaybackCore.seek(to: milliseconds)
         case let .shuffle(enabled): PlaybackCore.setShuffle(enabled)
         case let .repeatOptions(context, track, rollbackContext, rollbackTrack):
-            executeRepeat(
-                context: context,
-                track: track,
-                rollbackContext: rollbackContext,
-                rollbackTrack: rollbackTrack
+            PlaybackCore.Result(
+                rawValue: executeRepeat(
+                    context: context,
+                    track: track,
+                    rollbackContext: rollbackContext,
+                    rollbackTrack: rollbackTrack
+                ).rawValue
             )
         case let .addToQueue(uri): PlaybackCore.addToQueue(uri: uri)
         case .transferToLocal: PlaybackCore.transferToLocal()
@@ -82,15 +85,15 @@ nonisolated final class RustPlaybackEngine: LocalPlaybackEngine, @unchecked Send
         track: Bool,
         rollbackContext: Bool,
         rollbackTrack: Bool
-    ) -> PlaybackCore.Result {
-        let contextResult = PlaybackCore.setRepeat(context: context)
-        guard contextResult == .ok else { return contextResult }
-        let trackResult = PlaybackCore.setRepeatTrack(track)
-        if trackResult != .ok {
-            _ = PlaybackCore.setRepeat(context: rollbackContext)
-            _ = PlaybackCore.setRepeatTrack(rollbackTrack)
-        }
-        return trackResult
+    ) -> PlaybackEngineResult {
+        RepeatTransitionApplication.apply(
+            .planning(
+                from: RepeatFlags(context: rollbackContext, track: rollbackTrack),
+                to: RepeatFlags(context: context, track: track)
+            ),
+            setContext: { PlaybackEngineResult(rawValue: PlaybackCore.setRepeat(context: $0).rawValue) },
+            setTrack: { PlaybackEngineResult(rawValue: PlaybackCore.setRepeatTrack($0).rawValue) }
+        )
     }
 
     func events() -> AsyncStream<RustPlaybackEventEnvelope> {
