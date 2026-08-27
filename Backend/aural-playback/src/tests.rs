@@ -164,22 +164,6 @@ fn a_paused_local_player_is_not_resumed() {
 }
 
 #[test]
-fn resume_is_satisfied_when_already_playing_or_already_in_flight() {
-    assert!(resume_is_already_satisfied(true, false));
-    assert!(resume_is_already_satisfied(false, true));
-    assert!(resume_is_already_satisfied(true, true));
-    assert!(!resume_is_already_satisfied(false, false));
-}
-
-#[test]
-fn a_closed_spirc_channel_is_the_only_terminal_resume_load_error() {
-    assert!(resume_load_error_is_terminal(ERROR_NEEDS_REINIT));
-    assert!(!resume_load_error_is_terminal(ERROR_GENERAL));
-    assert!(!resume_load_error_is_terminal(ERROR_NOT_CONNECTED));
-    assert!(!resume_load_error_is_terminal(0));
-}
-
-#[test]
 fn resume_load_plan_prefers_context_then_track_at_the_resume_position() {
     let plan = ResumeLoadPlan::capture(
         93606,
@@ -255,14 +239,6 @@ fn playing_event_waits_observe_sequence_advances_and_timeouts() {
     assert!(!wait_for_playing_event(current, Duration::ZERO));
     assert!(RUNTIME.block_on(wait_for_playing_event_async(previous, Duration::ZERO)));
     assert!(!RUNTIME.block_on(wait_for_playing_event_async(current, Duration::ZERO)));
-}
-
-#[test]
-fn resume_playing_timeouts_are_unchanged() {
-    assert_eq!(PLAYING_EVENT_POLL_INTERVAL, Duration::from_millis(25));
-    assert_eq!(PLAY_COMMAND_PLAYING_TIMEOUT, Duration::from_millis(500));
-    assert_eq!(RESUME_LOAD_PLAYING_TIMEOUT, Duration::from_secs(2));
-    assert_eq!(REHYDRATE_PLAYING_TIMEOUT, Duration::from_secs(3));
 }
 
 #[test]

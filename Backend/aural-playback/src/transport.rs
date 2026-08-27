@@ -94,6 +94,56 @@ impl ResumeLoadPlan {
     }
 }
 
+impl ResumeLoadTarget {
+    /// Logs this fallback and builds the Spirc load. The loop in [`resume_via_load`] only
+    /// issues the request; start-playing, seek, track-hint, and the diagnostic wording live
+    /// here so they cannot drift from the ordered targets.
+    fn into_load(self) -> (LoadRequest, &'static str) {
+        match self {
+            Self::Context {
+                uri,
+                track_hint,
+                position_ms,
+            } => {
+                let playing_track = track_hint.map(PlayingTrack::Uri);
+                debug!(
+                    "Resume fallback: loading context {} at {}ms (track hint: {:?})",
+                    uri, position_ms, playing_track
+                );
+                (
+                    LoadRequest::from_context_uri(
+                        uri,
+                        LoadRequestOptions {
+                            start_playing: true,
+                            seek_to: position_ms,
+                            playing_track,
+                            ..Default::default()
+                        },
+                    ),
+                    "Resume fallback context load",
+                )
+            }
+            Self::Track { uri, position_ms } => {
+                debug!(
+                    "Resume fallback: loading single track {} at {}ms",
+                    uri, position_ms
+                );
+                (
+                    LoadRequest::from_tracks(
+                        vec![uri],
+                        LoadRequestOptions {
+                            start_playing: true,
+                            seek_to: position_ms,
+                            ..Default::default()
+                        },
+                    ),
+                    "Resume fallback track load",
+                )
+            }
+        }
+    }
+}
+
 fn nonempty_uri(uri: Option<String>) -> Option<String> {
     uri.filter(|uri| !uri.is_empty())
 }
@@ -156,19 +206,6 @@ pub(crate) async fn wait_for_playing_event_async(previous_seq: u64, timeout: Dur
     }
 }
 
-/// A closed Spirc channel is terminal for resume loads: the next fallback uses the same
-/// channel. Any other mapped load failure may try the next target.
-pub(crate) fn resume_load_error_is_terminal(mapped: i32) -> bool {
-    mapped == ERROR_NEEDS_REINIT
-}
-
-/// Already-playing is success: the button is asking for audio, and there is audio. An
-/// in-flight resume is also success: joining it is what the caller wanted, and a second
-/// sequence would restart the track underneath the first.
-pub(crate) fn resume_is_already_satisfied(is_playing: bool, already_in_flight: bool) -> bool {
-    is_playing || already_in_flight
-}
-
 /// Reloads what was playing, at the position it stopped.
 ///
 /// **The caller must have activated the device.** `Spirc::load` only hands the command to a
@@ -188,14 +225,10 @@ pub(crate) fn resume_via_load(spirc: &Arc<Spirc>) -> i32 {
     fn try_load(spirc: &Spirc, what: &str, request: LoadRequest) -> Option<i32> {
         match spirc.load(request) {
             Ok(_) => Some(0),
-            Err(e) => {
-                let mapped = spirc_error(what, &e);
-                if resume_load_error_is_terminal(mapped) {
-                    Some(mapped)
-                } else {
-                    None
-                }
-            }
+            Err(e) => match spirc_error(what, &e) {
+                ERROR_NEEDS_REINIT => Some(ERROR_NEEDS_REINIT),
+                _ => None,
+            },
         }
     }
 
@@ -207,48 +240,9 @@ pub(crate) fn resume_via_load(spirc: &Arc<Spirc>) -> i32 {
     let plan = ResumeLoadPlan::from_saved_playback();
 
     for target in plan.targets() {
-        match target {
-            ResumeLoadTarget::Context {
-                uri,
-                track_hint,
-                position_ms,
-            } => {
-                let playing_track = track_hint.map(PlayingTrack::Uri);
-                debug!(
-                    "Resume fallback: loading context {} at {}ms (track hint: {:?})",
-                    uri, position_ms, playing_track
-                );
-                let load_request = LoadRequest::from_context_uri(
-                    uri,
-                    LoadRequestOptions {
-                        start_playing: true,
-                        seek_to: position_ms,
-                        playing_track,
-                        ..Default::default()
-                    },
-                );
-                if let Some(result) = try_load(spirc, "Resume fallback context load", load_request)
-                {
-                    return result;
-                }
-            }
-            ResumeLoadTarget::Track { uri, position_ms } => {
-                debug!(
-                    "Resume fallback: loading single track {} at {}ms",
-                    uri, position_ms
-                );
-                let load_request = LoadRequest::from_tracks(
-                    vec![uri],
-                    LoadRequestOptions {
-                        start_playing: true,
-                        seek_to: position_ms,
-                        ..Default::default()
-                    },
-                );
-                if let Some(result) = try_load(spirc, "Resume fallback track load", load_request) {
-                    return result;
-                }
-            }
+        let (load_request, what) = target.into_load();
+        if let Some(result) = try_load(spirc, what, load_request) {
+            return result;
         }
     }
 
@@ -288,13 +282,13 @@ pub(crate) fn resume_playback() -> i32 {
         return e;
     }
 
-    if resume_is_already_satisfied(IS_PLAYING.load(Ordering::SeqCst), false) {
+    if IS_PLAYING.load(Ordering::SeqCst) {
         return 0;
     }
 
     // A resume is already working; joining it is what this caller wanted, so report success
     // rather than starting a second one that would restart the track underneath the first.
-    if resume_is_already_satisfied(false, RESUMING.swap(true, Ordering::SeqCst)) {
+    if RESUMING.swap(true, Ordering::SeqCst) {
         debug!("Resume already in progress");
         return 0;
     }
