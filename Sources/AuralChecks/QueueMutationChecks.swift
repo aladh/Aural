@@ -455,7 +455,7 @@ func runQueueMutationChecks(_ check: CheckRunner) {
 
         let webUnique = [entry("spotify:track:only", provider: "web-api", occurrence: 0)]
         let webUniqueProtocol = [
-            protocolTrack("spotify:track:only", uid: "c1", provider: "context"),
+            protocolTrack("spotify:track:only", provider: "context", uid: "c1"),
             protocolTrack("spotify:delimiter", provider: "delimiter"),
         ]
         switch QueueMutationPolicy.evaluateRemoval(
@@ -501,25 +501,48 @@ func runQueueMutationChecks(_ check: CheckRunner) {
     }
 
     check.suite("Queue add feedback reports completed command counts") {
-        check.equal(
-            "single add success keeps the existing message",
-            QueueAddFeedbackPolicy.evaluate(requested: 1, completed: 1),
-            QueueAddFeedback(kind: .success, message: "Added to Queue")
+        func expectAddFeedback(
+            requested: Int,
+            completed: Int,
+            kind: QueueAddFeedbackKind,
+            message: String,
+            label: String
+        ) {
+            guard let actual = QueueAddFeedbackPolicy.evaluate(requested: requested, completed: completed) else {
+                check.check("\(label) produced feedback", false)
+                return
+            }
+            check.equal("\(label) kind", actual.kind, kind)
+            check.equal("\(label) message", actual.message, message)
+        }
+
+        expectAddFeedback(
+            requested: 1,
+            completed: 1,
+            kind: .success,
+            message: "Added to Queue",
+            label: "single add success"
         )
-        check.equal(
-            "batch add success reports the completed count",
-            QueueAddFeedbackPolicy.evaluate(requested: 3, completed: 3),
-            QueueAddFeedback(kind: .success, message: "Added 3 songs to Queue")
+        expectAddFeedback(
+            requested: 3,
+            completed: 3,
+            kind: .success,
+            message: "Added 3 songs to Queue",
+            label: "batch add success"
         )
-        check.equal(
-            "zero completed commands are a failure",
-            QueueAddFeedbackPolicy.evaluate(requested: 3, completed: 0),
-            QueueAddFeedback(kind: .failure, message: "Could not add those tracks to the queue.")
+        expectAddFeedback(
+            requested: 3,
+            completed: 0,
+            kind: .failure,
+            message: "Could not add those tracks to the queue.",
+            label: "zero completed commands"
         )
-        check.equal(
-            "partial sequential add reports how many succeeded",
-            QueueAddFeedbackPolicy.evaluate(requested: 5, completed: 2),
-            QueueAddFeedback(kind: .informational, message: "Added 2 of 5 songs to Queue")
+        expectAddFeedback(
+            requested: 5,
+            completed: 2,
+            kind: .informational,
+            message: "Added 2 of 5 songs to Queue",
+            label: "partial sequential add"
         )
         check.nil_("invalid counts produce no message", QueueAddFeedbackPolicy.evaluate(requested: 2, completed: 3))
     }
