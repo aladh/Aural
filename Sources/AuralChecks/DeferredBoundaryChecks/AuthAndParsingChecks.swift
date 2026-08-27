@@ -147,8 +147,14 @@ func runAuthFlowChecks(_ check: CheckRunner) {
         var deniedDescription: String?
         do {
             _ = try code(from: "error=\(deniedSentinel)&state=expected", state: "expected")
+            check.check("authorization denial with sentinel text throws", false)
         } catch let error as LocalizedError {
             deniedDescription = error.errorDescription
+        } catch {
+            check.check(
+                "authorization denial with sentinel text is LocalizedError, got \(error)",
+                false
+            )
         }
         check.equal(
             "authorization denial uses a stable category",
