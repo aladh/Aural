@@ -263,7 +263,11 @@ func runPlaylistMutationChecks(_ runner: CheckRunner) async {
             runner.check("post-add playlist fixture decodes", false)
         }
         await services.completePark()
-        _ = await waitUntil { catalog.playlistStore.tracks.map(\.id) == ["uid-a", "uid-b", "uid-c"] }
+        _ = await waitUntil {
+            catalog.playlistStore.tracks.map(\.id) == ["uid-a", "uid-b", "uid-c"]
+                && feedback.message?.kind == .success
+                && feedback.message?.text == "Added 2 songs to Owned Mix"
+        }
         runner.equal(
             "successful add refreshes the open playlist",
             catalog.playlistStore.tracks.map(\.id),
