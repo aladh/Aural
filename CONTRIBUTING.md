@@ -97,6 +97,8 @@ canonical list of accepted decisions:
 - `AuralCore` owns the app implementation behind the thin shipping `AuralApp` executable.
 - `PlaybackStore` publishes reducer state, `PlaybackCoordinator` serializes effects, and
   `PlaybackEnvironment.live` assembles production dependencies once.
+- `TransientFeedbackPresenter` is the app-composed owner for transient mutation success,
+  informational, and failure banners. It is not playback status and is not an event bus.
 - `PlaybackCore.swift` alone imports the C module; `RustPlaybackEngine.swift` is its only caller.
 - Playback commands cross into Rust; bounded PCM and immutable state snapshots cross back.
 - Artwork is downsampled to rendered Retina size and retained in a cost-bounded cache that is

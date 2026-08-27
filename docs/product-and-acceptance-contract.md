@@ -72,6 +72,17 @@ ADRs; historical measurements belong in the performance baseline.
 - Account-scoped work must retain the epoch, cancellation, and stale-result rules in
   [ADR 002](ADR-002-playback-state-and-dependencies.md).
 
+## Transient mutation feedback
+
+- User-initiated mutations such as Add to Queue report completion through one app-composed
+  `TransientFeedbackPresenter`. Playlist and queue management should use the same owner.
+- The banner is a single non-modal overlay just above the persistent player. It must not steal
+  focus, intercept unrelated pointer or keyboard input, or shift window layout. A newer message
+  replaces the current one; automatic dismissal is cancellable and must not clear a replacement.
+- Durable connection, playback, session, and command-reconciliation status stay with their existing
+  owners (including `PlaybackNotice` / now-playing status text). Do not turn those strings into
+  toasts.
+
 ## Safe acceptance testing
 
 Spotify Connect controls a live account and can interrupt playback on another device. Playback and

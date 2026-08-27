@@ -121,6 +121,9 @@ final class PlaybackStore {
     let catalog: CatalogStore
     let history = PlaybackHistoryStore()
     @ObservationIgnored let environment: PlaybackEnvironment
+    /// App-composed mutation-feedback owner. Queue and later playlist mutations
+    /// report through this presenter rather than `PlaybackState.notice`.
+    @ObservationIgnored let feedback: TransientFeedbackPresenter
     @ObservationIgnored let metadataService: TrackMetadataService
     @ObservationIgnored let coordinator: PlaybackCoordinator
     @ObservationIgnored let queueService: QueueService
@@ -150,8 +153,12 @@ final class PlaybackStore {
     @ObservationIgnored var connectQueueCallback = ConnectQueueCallbackWatermark()
     @ObservationIgnored var shuffleHistoryCache: [String: TimeInterval] = [:]
 
-    init(environment: PlaybackEnvironment = .live) {
+    init(
+        environment: PlaybackEnvironment = .live,
+        feedback: TransientFeedbackPresenter? = nil
+    ) {
         self.environment = environment
+        self.feedback = feedback ?? TransientFeedbackPresenter(clock: environment.clock)
         let metadataService = TrackMetadataService(remote: environment.remote)
         self.metadataService = metadataService
         let coordinator = PlaybackCoordinator(

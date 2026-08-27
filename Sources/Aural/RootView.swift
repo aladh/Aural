@@ -5,6 +5,7 @@ import SwiftUI
 struct RootView: View {
     let player: PlaybackStore
     let catalog: CatalogStore
+    let feedback: TransientFeedbackPresenter
 
     @SceneStorage("sidebarSelection") private var selectionRawValue = SidebarSelection.destination(.home).rawValue
     @State private var selectedMedia: CatalogItem?
@@ -31,6 +32,10 @@ struct RootView: View {
                     onClose: { showsSidePanel = false }
                 )
                 .inspectorColumnWidth(min: 220, ideal: 220, max: 220)
+            }
+            .overlay(alignment: .bottom) {
+                TransientFeedbackBanner(feedback: feedback)
+                    .allowsHitTesting(false)
             }
 
             NowPlayingBar(player: player, showsSidePanel: $showsSidePanel)
