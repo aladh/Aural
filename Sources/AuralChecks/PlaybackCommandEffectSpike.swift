@@ -79,6 +79,7 @@ private final class CommandSession {
             finishAccepted: finished,
             operationSucceeded: succeeded,
             requiresReconnect: result == .reconnectRequired,
+            commandKind: .transport,
             pendingCommandID: state.pendingCommands[.transport]?.id,
             capturedAccountEpoch: capturedAccount,
             capturedEngineEpoch: capturedEngine,
@@ -217,6 +218,20 @@ func runPlaybackCommandEffectSpikeChecks(_ check: CheckRunner) {
         runtime.deliver(.succeeded)
         check.equal("already-reconciled success still reports the completion", runtime.session.completions, [true])
         check.equal("already-reconciled success does not reconnect", runtime.session.reconnectCount, 0)
+
+        let lateFailure = RegistryRuntime()
+        _ = lateFailure.requestPause()
+        _ = lateFailure.session.send(
+            .transport(.paused),
+            source: .enginePlayback,
+            revision: 1
+        )
+        check.nil_("the snapshot reconciles before the late failure", lateFailure.pending)
+        lateFailure.deliver(.reconnectRequired)
+        check.equal("a late coordinator failure still reports success", lateFailure.session.completions, [true])
+        check.equal("a late coordinator failure does not reconnect", lateFailure.session.reconnectCount, 0)
+        check.equal("a late coordinator failure does not roll back the confirmed pause", lateFailure.transport, .paused)
+        check.nil_("a late coordinator failure does not surface an error notice", lateFailure.session.state.notice)
     }
 
     check.suite("Cancel in flight preserves optimistic pause") {
@@ -245,28 +260,26 @@ func runPlaybackCommandEffectSpikeChecks(_ check: CheckRunner) {
         check.equal("account-epoch invalidation does not reconnect", account.session.reconnectCount, 0)
         check.check("account-epoch invalidation reports no completion", account.session.completions.isEmpty)
 
-        let first = UUID(uuidString: "00000000-0000-0000-0000-000000000021")!
-        let second = UUID(uuidString: "00000000-0000-0000-0000-000000000022")!
-        check.equal(
-            "a superseded id stays inert",
-            playbackCommandFollowUp(
-                finishAccepted: false,
-                operationSucceeded: true,
-                requiresReconnect: false,
-                pendingCommandID: second,
-                capturedAccountEpoch: 1,
-                capturedEngineEpoch: 1,
-                currentAccountEpoch: 1,
-                currentEngineEpoch: 1,
-                isTearingDown: false
-            ),
-            .inert
+        let superseded = RegistryRuntime()
+        check.check("the original pause starts", superseded.requestPause())
+        let originalID = superseded.pending?.id
+        check.notNil("the original pause is pending", originalID)
+        let replacementID = UUID(uuidString: "00000000-0000-0000-0000-000000000022")!
+        _ = superseded.session.send(
+            .commandStarted(PendingPlaybackCommand(
+                id: replacementID,
+                kind: .transport,
+                expectedTransport: .playing,
+                startedAt: spikeDate
+            ))
         )
-        check.equal(
-            "the replacement id is the only live pending command",
-            first == second,
-            false
-        )
+        check.equal("the reducer replacement owns the pending slot", superseded.pending?.id, replacementID)
+        check.equal("the replacement updates optimistic transport", superseded.transport, .playing)
+        superseded.deliver(.succeeded)
+        check.check("the superseded original reports no completion", superseded.session.completions.isEmpty)
+        check.equal("the replacement remains pending after the stale finish", superseded.pending?.id, replacementID)
+        check.equal("the superseded finish cannot roll back the replacement", superseded.transport, .playing)
+        check.check("the original id is not the replacement id", originalID != replacementID)
     }
 
     check.suite("TCA cancelInFlight diverges from Aural") {

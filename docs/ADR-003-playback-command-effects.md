@@ -167,10 +167,10 @@ In `PlaybackStore+Commands`, `commandStarted` must be accepted before a command 
 
 - Reducer-accepted success reports success.
 - Reducer-accepted failure may reconnect.
-- A rejected finish on the same account/engine lifetime with no pending command is already-reconciled
-  success (matching transport snapshot) and still reports success, without reconnect.
-- Epoch changes, teardown, cancellation, and superseded ids stay inert and do not call
-  `completion(false)` for a successful already-reconciled command.
+- A rejected finish on the same account/engine lifetime with no pending *transport* command is
+  already-reconciled success (matching snapshot). That includes a later coordinator failure:
+  `completion(true)` still runs, with no error notice, rollback, or reconnect.
+- Epoch changes, teardown, cancellation, non-transport kinds, and superseded ids stay inert.
 
 Successful `commandFinished` does not clear `notice`. Command errors keep the existing
 `.commandError` lifetime.

@@ -1,4 +1,5 @@
 import AuralDomain
+import Foundation
 
 func runSessionLifetimeChecks(_ check: CheckRunner) {
     check.suite("Session teardown coalescing") {
@@ -147,128 +148,78 @@ func runSessionLifetimeChecks(_ check: CheckRunner) {
     }
 
     check.suite("Playback command finish follow-up") {
-        let command = UUID(uuidString: "00000000-0000-0000-0000-000000000031")!
         let other = UUID(uuidString: "00000000-0000-0000-0000-000000000032")!
-        check.equal(
-            "an accepted success reports success",
+        func followUp(
+            finishAccepted: Bool,
+            succeeded: Bool,
+            reconnect: Bool = false,
+            kind: PlaybackCommandKind = .transport,
+            pending: UUID? = nil,
+            account: UInt64 = 1,
+            engine: UInt64 = 1,
+            currentAccount: UInt64 = 1,
+            currentEngine: UInt64 = 1,
+            tearingDown: Bool = false
+        ) -> PlaybackCommandFollowUp {
             playbackCommandFollowUp(
-                finishAccepted: true,
-                operationSucceeded: true,
-                requiresReconnect: false,
-                pendingCommandID: nil,
-                capturedAccountEpoch: 1,
-                capturedEngineEpoch: 1,
-                currentAccountEpoch: 1,
-                currentEngineEpoch: 1,
-                isTearingDown: false
-            ),
-            .reportSuccess
-        )
+                finishAccepted: finishAccepted,
+                operationSucceeded: succeeded,
+                requiresReconnect: reconnect,
+                commandKind: kind,
+                pendingCommandID: pending,
+                capturedAccountEpoch: account,
+                capturedEngineEpoch: engine,
+                currentAccountEpoch: currentAccount,
+                currentEngineEpoch: currentEngine,
+                isTearingDown: tearingDown
+            )
+        }
+
+        check.equal("an accepted success reports success", followUp(finishAccepted: true, succeeded: true), .reportSuccess)
         check.equal(
             "an accepted reconnect-required failure reports reconnect",
-            playbackCommandFollowUp(
-                finishAccepted: true,
-                operationSucceeded: false,
-                requiresReconnect: true,
-                pendingCommandID: nil,
-                capturedAccountEpoch: 1,
-                capturedEngineEpoch: 1,
-                currentAccountEpoch: 1,
-                currentEngineEpoch: 1,
-                isTearingDown: false
-            ),
+            followUp(finishAccepted: true, succeeded: false, reconnect: true),
             .reportFailure(reconnect: true)
         )
         check.equal(
             "a matching snapshot then successful finish still reports success",
-            playbackCommandFollowUp(
-                finishAccepted: false,
-                operationSucceeded: true,
-                requiresReconnect: true,
-                pendingCommandID: nil,
-                capturedAccountEpoch: 1,
-                capturedEngineEpoch: 1,
-                currentAccountEpoch: 1,
-                currentEngineEpoch: 1,
-                isTearingDown: false
-            ),
+            followUp(finishAccepted: false, succeeded: true, reconnect: true),
             .reportSuccess
         )
         check.equal(
-            "already-reconciled success does not reconnect",
-            playbackCommandFollowUp(
-                finishAccepted: false,
-                operationSucceeded: true,
-                requiresReconnect: true,
-                pendingCommandID: nil,
-                capturedAccountEpoch: 1,
-                capturedEngineEpoch: 1,
-                currentAccountEpoch: 1,
-                currentEngineEpoch: 1,
-                isTearingDown: false
-            ),
+            "a matching snapshot then late coordinator failure still reports success",
+            followUp(finishAccepted: false, succeeded: false, reconnect: true),
             .reportSuccess
+        )
+        check.equal(
+            "already-reconciled transport success does not reconnect",
+            followUp(finishAccepted: false, succeeded: false, reconnect: true),
+            .reportSuccess
+        )
+        check.equal(
+            "a non-transport kind with no pending command stays inert",
+            followUp(finishAccepted: false, succeeded: false, reconnect: true, kind: .options),
+            .inert
         )
         check.equal(
             "engine-epoch invalidation stays inert",
-            playbackCommandFollowUp(
-                finishAccepted: false,
-                operationSucceeded: true,
-                requiresReconnect: true,
-                pendingCommandID: nil,
-                capturedAccountEpoch: 1,
-                capturedEngineEpoch: 1,
-                currentAccountEpoch: 1,
-                currentEngineEpoch: 2,
-                isTearingDown: false
-            ),
+            followUp(finishAccepted: false, succeeded: true, reconnect: true, currentEngine: 2),
             .inert
         )
         check.equal(
             "account-epoch invalidation stays inert",
-            playbackCommandFollowUp(
-                finishAccepted: false,
-                operationSucceeded: true,
-                requiresReconnect: true,
-                pendingCommandID: nil,
-                capturedAccountEpoch: 1,
-                capturedEngineEpoch: 1,
-                currentAccountEpoch: 2,
-                currentEngineEpoch: 1,
-                isTearingDown: false
-            ),
+            followUp(finishAccepted: false, succeeded: true, reconnect: true, currentAccount: 2),
             .inert
         )
         check.equal(
             "a superseded id stays inert",
-            playbackCommandFollowUp(
-                finishAccepted: false,
-                operationSucceeded: true,
-                requiresReconnect: false,
-                pendingCommandID: other,
-                capturedAccountEpoch: 1,
-                capturedEngineEpoch: 1,
-                currentAccountEpoch: 1,
-                currentEngineEpoch: 1,
-                isTearingDown: false
-            ),
+            followUp(finishAccepted: false, succeeded: true, pending: other),
             .inert
         )
         check.equal(
-            "a failed finish after the pending command is gone stays inert",
-            playbackCommandFollowUp(
-                finishAccepted: false,
-                operationSucceeded: false,
-                requiresReconnect: true,
-                pendingCommandID: nil,
-                capturedAccountEpoch: 1,
-                capturedEngineEpoch: 1,
-                currentAccountEpoch: 1,
-                currentEngineEpoch: 1,
-                isTearingDown: false
-            ),
+            "teardown stays inert",
+            followUp(finishAccepted: false, succeeded: true, tearingDown: true),
             .inert
         )
-        check.check("the live id is distinct from the superseded id", command != other)
     }
 }

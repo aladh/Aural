@@ -189,7 +189,8 @@ extension PlaybackStore {
     }
 
     /// Local and remote command finishes share this policy so a matching engine snapshot cannot
-    /// drop `play` / `togglePlayback` completions, while epoch, teardown, and superseded ids stay inert.
+    /// drop `play` / `togglePlayback` completions, including when the coordinator later fails.
+    /// Epoch, teardown, non-transport kinds, and superseded ids stay inert.
     private func applyCommandOutcome(
         commandID: UUID,
         kind: PlaybackCommandKind,
@@ -213,6 +214,7 @@ extension PlaybackStore {
             finishAccepted: finished,
             operationSucceeded: succeeded,
             requiresReconnect: requiresReconnect,
+            commandKind: kind,
             pendingCommandID: state.pendingCommands[kind]?.id,
             capturedAccountEpoch: capturedAccountEpoch,
             capturedEngineEpoch: capturedEngineEpoch,

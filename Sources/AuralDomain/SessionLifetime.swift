@@ -122,10 +122,12 @@ public struct ConnectQueueCallbackWatermark: Equatable, Sendable {
 
 /// Dependent work after `PlaybackStore.send(.commandFinished)`.
 ///
-/// `PlaybackReducer.reconcileTransport` can drop a pending transport command when an engine
-/// snapshot already matches `expectedTransport`. The later `commandFinished` is then rejected even
-/// though the coordinator succeeded. That is already-reconciled success on the same account/engine
-/// lifetime, not a stale generation.
+/// `PlaybackReducer.reconcileTransport` drops a pending *transport* command when an engine
+/// snapshot already matches `expectedTransport`. The later `commandFinished` is then rejected.
+/// On the same account/engine lifetime that is already-reconciled success, even if the
+/// coordinator later reports failure: the backend has confirmed the optimistic transport.
+/// Showing an error or calling `completion(false)` would roll back that confirmed state.
+/// Account/engine invalidation, teardown, non-transport kinds, and a newer pending id stay inert.
 public enum PlaybackCommandFollowUp: Equatable, Sendable {
     case reportSuccess
     case reportFailure(reconnect: Bool)
@@ -136,6 +138,7 @@ public func playbackCommandFollowUp(
     finishAccepted: Bool,
     operationSucceeded: Bool,
     requiresReconnect: Bool,
+    commandKind: PlaybackCommandKind,
     pendingCommandID: UUID?,
     capturedAccountEpoch: UInt64,
     capturedEngineEpoch: UInt64,
@@ -150,7 +153,7 @@ public func playbackCommandFollowUp(
         !isTearingDown
         && capturedAccountEpoch == currentAccountEpoch
         && capturedEngineEpoch == currentEngineEpoch
-    if operationSucceeded, sameLifetime, pendingCommandID == nil {
+    if sameLifetime, pendingCommandID == nil, commandKind == .transport {
         return .reportSuccess
     }
     return .inert
