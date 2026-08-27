@@ -735,29 +735,38 @@ func runQueueManagementChecks(_ runner: CheckRunner) async {
         let before = player.queueNextEntries
         player.removeUpcomingQueueOccurrences(selectedIDs: [firstID])
         runner.check("first replacement started", await waitUntil { await parked.sendCount == 1 })
+        runner.check(
+            "an in-flight replacement disables further removal",
+            !player.canRemoveUpcomingQueue(selectedIDs: [secondID])
+        )
+        runner.nil_(
+            "keyboard Delete is gated while a replacement is in flight",
+            QueueMutationSelection.keyboardCommand(
+                deleteOrBackspace: true,
+                selectedUpcomingCount: 1,
+                isRemovalAllowed: player.canRemoveUpcomingQueue(selectedIDs: [secondID])
+            )
+        )
+        invokeKeyboardQueueDelete(player: player, selectedIDs: [secondID])
         player.removeUpcomingQueueOccurrences(selectedIDs: [secondID])
-        runner.check("later replacement supersedes the in-flight request", await waitUntil { await parked.sendCount == 2 })
+        await yieldPasses()
+        runner.equal("a second in-flight removal does not send another set_queue", await parked.sendCount, 1)
+        runner.nil_("a second in-flight removal does not toast", feedback.message)
+        runner.equal("in-flight overlap does not edit presentation", player.queueNextEntries, before)
         await parked.completePark(success: true)
         runner.check(
-            "superseding replacement finished",
+            "the first replacement finished",
             await waitUntil { feedback.message?.text == "Removed from Queue" }
         )
-        let commands = await parked.commands
+        runner.nil_("a finished replacement releases the in-flight gate", player.queueReplacementToken)
         runner.equal(
-            "the cancelled first payload would have dropped q0",
-            commands.first?.nextTracks?.map(\.uid),
+            "committed mutation excludes the occurrence Spotify already dropped",
+            player.queueMutation?.next.map(\.uid),
             ["q1", "q2", "", "a0"]
         )
-        runner.equal(
-            "the later set_queue does not restore the cancelled removal",
-            commands.last?.nextTracks?.map(\.uid),
-            ["q0", "q2", "", "a0"]
-        )
-        runner.equal("overlapping replacements do not edit presentation", player.queueNextEntries, before)
-        runner.equal(
-            "committed mutation matches the last sent next list",
-            player.queueMutation?.next.map(\.uid),
-            ["q0", "q2", "", "a0"]
+        runner.check(
+            "stale visible selection cannot remove until Connect reconciles",
+            !player.canRemoveUpcomingQueue(selectedIDs: [firstID])
         )
         player.removeUpcomingQueueOccurrences(selectedIDs: [firstID])
         runner.equal(
@@ -765,7 +774,7 @@ func runQueueManagementChecks(_ runner: CheckRunner) async {
             feedback.message?.text,
             QueueMutationRefusal.incompleteProvenance.feedbackMessage
         )
-        runner.equal("fail-closed follow-up does not send another set_queue", await parked.sendCount, 2)
+        runner.equal("fail-closed follow-up does not send another set_queue", await parked.sendCount, 1)
         await player.shutdownForTermination()
     }
 
@@ -861,6 +870,143 @@ func runQueueManagementChecks(_ runner: CheckRunner) async {
         await player.shutdownForTermination()
     }
 
+    await runner.suite("View refresh cancel does not own account queue effects") {
+        let parked = QueueRemoteClient(.park)
+        let replacementFeedback = TransientFeedbackPresenter(clock: SystemPlaybackClock(), duration: 4)
+        let replacement = PlaybackStore(
+            environment: queueEnvironment(remote: parked),
+            feedback: replacementFeedback
+        )
+        seedRemoteOwner(replacement)
+        await seedAuthoritativeQueue(replacement)
+        let removalID = replacement.queueNextEntries[0].id
+        replacement.removeUpcomingQueueOccurrences(selectedIDs: [removalID])
+        runner.check("parked replacement started", await waitUntil { await parked.sendCount == 1 })
+        replacement.cancelQueueRefresh()
+        await yieldPasses()
+        runner.equal("closing the inspector does not cancel set_queue", await parked.sendCount, 1)
+        runner.nil_("inspector close does not toast a cancelled replacement", replacementFeedback.message)
+        await parked.completePark(success: true)
+        runner.check(
+            "replacement still completes after inspector close",
+            await waitUntil { replacementFeedback.message?.text == "Removed from Queue" }
+        )
+        runner.equal(
+            "inspector close did not drop the committed mutation",
+            replacement.queueMutation?.next.map(\.uid),
+            ["q1", "q2", "", "a0"]
+        )
+        await replacement.shutdownForTermination()
+
+        let acceptFeedback = TransientFeedbackPresenter(clock: SystemPlaybackClock(), duration: 4)
+        let accept = PlaybackStore(
+            environment: queueEnvironment(remote: QueueRemoteClient(.succeed)),
+            feedback: acceptFeedback
+        )
+        seedRemoteOwner(accept)
+        await accept.queueService.reset(accountEpoch: accept.accountEpoch)
+        await accept.queueService.parkNextConnectAccept()
+        accept.receive(
+            connectQueueEnvelope(
+                sequence: 1,
+                revision: 1,
+                sessionGeneration: accept.engineGeneration
+            )
+        )
+        runner.check(
+            "connect accept parked before inspector close",
+            await waitUntil { await accept.queueService.connectAcceptIsParked() }
+        )
+        accept.cancelQueueRefresh()
+        await yieldPasses()
+        runner.check(
+            "closing the inspector does not cancel Connect intake",
+            await accept.queueService.connectAcceptIsParked()
+        )
+        await accept.queueService.resumeConnectAccept()
+        runner.check(
+            "Connect accept still applies after inspector close",
+            await waitUntil { accept.queueMutation?.next.map(\.uid) == ["q0", "q2"] }
+        )
+        await accept.shutdownForTermination()
+
+        let teardownRemote = QueueRemoteClient(.park)
+        let teardownFeedback = TransientFeedbackPresenter(clock: SystemPlaybackClock(), duration: 4)
+        let teardown = PlaybackStore(
+            environment: queueEnvironment(remote: teardownRemote),
+            feedback: teardownFeedback
+        )
+        seedRemoteOwner(teardown)
+        await seedAuthoritativeQueue(teardown)
+        teardown.removeUpcomingQueueOccurrences(selectedIDs: [teardown.queueNextEntries[0].id])
+        runner.check("teardown replacement started", await waitUntil { await teardownRemote.sendCount == 1 })
+        await teardown.queueService.parkNextConnectAccept()
+        teardown.receive(
+            connectQueueEnvelope(
+                sequence: 1,
+                revision: 8,
+                sessionGeneration: teardown.engineGeneration
+            )
+        )
+        runner.check(
+            "teardown accept parked",
+            await waitUntil { await teardown.queueService.connectAcceptIsParked() }
+        )
+        teardown.queueMutation = nil
+        teardown.effects.cancelAccountScoped()
+        await yieldPasses(20)
+        runner.nil_("account teardown cancels replacement feedback", teardownFeedback.message)
+        await teardownRemote.completePark(success: true)
+        await yieldPasses()
+        runner.nil_("account teardown does not restore replacement mutation from a cancelled task", teardown.queueMutation)
+        await teardown.shutdownForTermination()
+    }
+
+    await runner.suite("Committed replacement invalidation after suspension") {
+        let remote = QueueRemoteClient(.succeed)
+        let epochFeedback = TransientFeedbackPresenter(clock: SystemPlaybackClock(), duration: 4)
+        let epochPlayer = PlaybackStore(environment: queueEnvironment(remote: remote), feedback: epochFeedback)
+        seedRemoteOwner(epochPlayer)
+        await seedAuthoritativeQueue(epochPlayer)
+        await epochPlayer.queueService.parkNextCommittedReplacement()
+        epochPlayer.removeUpcomingQueueOccurrences(selectedIDs: [epochPlayer.queueNextEntries[0].id])
+        runner.check("set_queue reached the remote", await waitUntil { await remote.sendCount == 1 })
+        runner.check(
+            "committed replacement parked after the actor hop",
+            await waitUntil { await epochPlayer.queueService.committedReplacementIsParked() }
+        )
+        epochPlayer.accountEpoch &+= 1
+        epochPlayer.engineGeneration &+= 1
+        epochPlayer.queueMutation = nil
+        await epochPlayer.queueService.resumeCommittedReplacement()
+        await yieldPasses()
+        runner.nil_("epoch invalidation after commit hop does not restore mutation", epochPlayer.queueMutation)
+        runner.nil_("epoch invalidation after commit hop does not toast success", epochFeedback.message)
+        await epochPlayer.shutdownForTermination()
+
+        let cancelRemote = QueueRemoteClient(.succeed)
+        let cancelFeedback = TransientFeedbackPresenter(clock: SystemPlaybackClock(), duration: 4)
+        let cancelPlayer = PlaybackStore(
+            environment: queueEnvironment(remote: cancelRemote),
+            feedback: cancelFeedback
+        )
+        seedRemoteOwner(cancelPlayer)
+        await seedAuthoritativeQueue(cancelPlayer)
+        await cancelPlayer.queueService.parkNextCommittedReplacement()
+        cancelPlayer.removeUpcomingQueueOccurrences(selectedIDs: [cancelPlayer.queueNextEntries[0].id])
+        runner.check(
+            "cancelled committed replacement parked",
+            await waitUntil { await cancelPlayer.queueService.committedReplacementIsParked() }
+        )
+        cancelPlayer.queueMutation = nil
+        cancelPlayer.effects.cancelAccountScoped()
+        await yieldPasses(20)
+        runner.nil_("cancelled committed replacement does not restore mutation", cancelPlayer.queueMutation)
+        runner.nil_("cancelled committed replacement does not toast", cancelFeedback.message)
+        runner.nil_("cancelled committed replacement releases the in-flight gate", cancelPlayer.queueReplacementToken)
+        await cancelPlayer.shutdownForTermination()
+    }
+
     await runner.suite("Keyboard Delete matches context-menu enablement") {
         let remote = QueueRemoteClient(.succeed)
         let feedback = TransientFeedbackPresenter(clock: SystemPlaybackClock(), duration: 4)
@@ -923,8 +1069,17 @@ func runQueueManagementChecks(_ runner: CheckRunner) async {
                 containsToken(queue, ".setQueue(")
                     && containsToken(queue, "performRemote")
                     && containsToken(queue, "queueReplacement")
+                    && containsToken(queue, "queueReplacementToken")
+                    && containsToken(queue, "finishQueueReplacementIfCurrent")
                     && containsToken(queue, "recordCommittedReplacement")
                     && !containsToken(queue, "state.queue.entries =")
+            )
+            runner.check(
+                "inspector close cancels only view-owned queue refresh",
+                containsToken(queue, "effects.cancel(.queueRefresh)")
+                    && containsToken(queue, "effects.cancel(.queueSnapshot)")
+                    && !containsToken(queue, "effects.cancel(.connectQueueAccept)")
+                    && !containsToken(queue, "effects.cancel(.queueReplacement)")
             )
             runner.check(
                 "Connect queue accept is registered on the effect registry",

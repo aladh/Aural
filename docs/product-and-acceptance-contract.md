@@ -63,7 +63,9 @@ ADRs; historical measurements belong in the performance baseline.
   Removal is gated on a complete Connect mutation snapshot, account/engine epoch, owner, and
   player `disallow_set_queue` / `disallow_removing_from_next_tracks` reasons. Partial, provisional,
   web-API-only, restricted, joining, local-owner, stale-selection, and rejected results leave the
-  visible queue intact and report through `TransientFeedbackPresenter`. Cancelled and
+  visible queue intact and report through `TransientFeedbackPresenter`. A second removal while one
+  authoritative replacement is in flight is refused without feedback: cancelling the local task
+  cannot undo a `set_queue` Spotify already accepted. Cancelled and
   account-epoch-invalidated in-flight removals also leave the visible queue intact, without
   transient feedback.
 - Local-owner removal is disabled: librespot `Spirc` at the pinned revision exposes `add_to_queue`

@@ -116,6 +116,9 @@ actor QueueService {
     private var pendingConnectAcceptGate = false
     private var connectAcceptGate: CheckedContinuation<Void, Never>?
     private var connectAcceptGateID: UInt64 = 0
+    private var pendingCommittedReplacementGate = false
+    private var committedReplacementGate: CheckedContinuation<Void, Never>?
+    private var committedReplacementGateID: UInt64 = 0
 
     init(
         webQueue: any WebQueueClient,
@@ -138,6 +141,8 @@ actor QueueService {
         mutation = nil
         pendingConnectAcceptGate = false
         resumeConnectAccept()
+        pendingCommittedReplacementGate = false
+        resumeCommittedReplacement()
         await metadata.reset()
     }
 
@@ -154,11 +159,24 @@ actor QueueService {
         connectAcceptGate = nil
     }
 
+    func parkNextCommittedReplacement() {
+        pendingCommittedReplacementGate = true
+    }
+
+    func committedReplacementIsParked() -> Bool { committedReplacementGate != nil }
+
+    func resumeCommittedReplacement() {
+        committedReplacementGate?.resume()
+        committedReplacementGate = nil
+    }
+
     func recordCommittedReplacement(
         _ replacement: QueueReplacement,
         accountEpoch requestedEpoch: UInt64,
         engineEpoch: UInt64
-    ) -> QueueMutationSnapshot? {
+    ) async -> QueueMutationSnapshot? {
+        await waitForTestCommittedReplacementGate()
+        guard !Task.isCancelled else { return nil }
         guard requestedEpoch == accountEpoch else { return nil }
         guard var current = mutation, current.engineEpoch == engineEpoch else { return nil }
         current.next = replacement.next
@@ -362,6 +380,25 @@ actor QueueService {
     private func resumeConnectAcceptIfCurrent(_ id: UInt64) {
         guard id == connectAcceptGateID else { return }
         resumeConnectAccept()
+    }
+
+    private func waitForTestCommittedReplacementGate() async {
+        guard pendingCommittedReplacementGate else { return }
+        pendingCommittedReplacementGate = false
+        committedReplacementGateID &+= 1
+        let id = committedReplacementGateID
+        await withTaskCancellationHandler {
+            await withCheckedContinuation { continuation in
+                committedReplacementGate = continuation
+            }
+        } onCancel: {
+            Task { await self.resumeCommittedReplacementIfCurrent(id) }
+        }
+    }
+
+    private func resumeCommittedReplacementIfCurrent(_ id: UInt64) {
+        guard id == committedReplacementGateID else { return }
+        resumeCommittedReplacement()
     }
 
     private func uniqueTrackURIs(in entries: [QueueEntry]) -> [String] {

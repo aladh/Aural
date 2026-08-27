@@ -208,6 +208,9 @@ final class PlaybackStore {
     /// `QueueService`'s mutation snapshot, updated only after accepted Connect intake or a
     /// committed replacement. Web inspector refresh must not write it.
     @ObservationIgnored var queueMutation: QueueMutationSnapshot?
+    /// Lifetime token for one in-flight Connect `set_queue` replacement. Not a source revision.
+    /// A finished request clears only its own token so teardown cannot drop a newer session gate.
+    @ObservationIgnored var queueReplacementToken: UUID?
 
     init(
         environment: PlaybackEnvironment = .live,

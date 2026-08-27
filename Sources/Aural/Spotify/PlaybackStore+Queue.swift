@@ -80,6 +80,7 @@ extension PlaybackStore {
     }
 
     func removeUpcomingQueueOccurrences(selectedIDs: Set<String>) {
+        guard queueReplacementToken == nil, !isTearingDown else { return }
         let presentationEntries = queueNextEntries
         switch queueRemoval(selectedIDs: selectedIDs, visibleUpcoming: presentationEntries) {
         case let .failure(reason):
@@ -98,7 +99,10 @@ extension PlaybackStore {
                 let epoch = accountEpoch
                 let engineEpoch = engineGeneration
                 let beforeEntries = presentationEntries
+                let token = UUID()
+                queueReplacementToken = token
                 effects.replace(.queueReplacement, with: Task { [weak self] in
+                    defer { self?.finishQueueReplacementIfCurrent(token) }
                     do {
                         guard let self else { return }
                         try await self.coordinator.performRemote(
@@ -110,20 +114,39 @@ extension PlaybackStore {
                             from: from,
                             to: to
                         )
-                        guard !Task.isCancelled, !self.isTearingDown else { return }
-                        guard self.accountEpoch == epoch, self.isConnected else { return }
-                        guard self.engineGeneration == engineEpoch else { return }
-                        if let mutation = await self.queueService.recordCommittedReplacement(
+                        guard self.queueReplacementStillCurrent(
+                            token: token,
+                            accountEpoch: epoch,
+                            engineEpoch: engineEpoch,
+                            from: from,
+                            to: to
+                        ) else { return }
+                        let mutation = await self.queueService.recordCommittedReplacement(
                             replacement,
                             accountEpoch: epoch,
                             engineEpoch: engineEpoch
-                        ) {
+                        )
+                        guard self.queueReplacementStillCurrent(
+                            token: token,
+                            accountEpoch: epoch,
+                            engineEpoch: engineEpoch,
+                            from: from,
+                            to: to
+                        ) else { return }
+                        if let mutation {
                             self.queueMutation = mutation
                         }
                         self.feedback.success(Self.removedFromQueueMessage(count: replacement.removedCount))
                     } catch {
-                        guard let self, !Task.isCancelled, !self.isTearingDown else { return }
-                        guard self.accountEpoch == epoch, self.isConnected else { return }
+                        guard let self,
+                              self.queueReplacementStillCurrent(
+                                token: token,
+                                accountEpoch: epoch,
+                                engineEpoch: engineEpoch,
+                                from: from,
+                                to: to
+                              )
+                        else { return }
                         guard self.queueNextEntries == beforeEntries else { return }
                         self.feedback.failure("Spotify couldn’t update the queue.")
                     }
@@ -150,10 +173,34 @@ extension PlaybackStore {
     }
 
     func canRemoveUpcomingQueue(selectedIDs: Set<String>) -> Bool {
+        guard queueReplacementToken == nil, !isTearingDown else { return false }
         if case .success = queueRemoval(selectedIDs: selectedIDs, visibleUpcoming: queueNextEntries) {
             return true
         }
         return false
+    }
+
+    private func queueReplacementStillCurrent(
+        token: UUID,
+        accountEpoch: UInt64,
+        engineEpoch: UInt64,
+        from: String,
+        to: String
+    ) -> Bool {
+        guard !Task.isCancelled, !isTearingDown else { return false }
+        guard queueReplacementToken == token else { return false }
+        guard self.accountEpoch == accountEpoch, self.engineGeneration == engineEpoch else { return false }
+        guard isConnected else { return false }
+        guard case let .remote(currentFrom, currentTo) = commandRoute,
+              currentFrom == from, currentTo == to
+        else { return false }
+        return true
+    }
+
+    private func finishQueueReplacementIfCurrent(_ token: UUID) {
+        guard queueReplacementToken == token else { return }
+        queueReplacementToken = nil
+        effects.complete(.queueReplacement)
     }
 
     private func presentAddToQueueFeedback(requested: Int, completed: Int) {
@@ -240,8 +287,6 @@ extension PlaybackStore {
     func cancelQueueRefresh() {
         effects.cancel(.queueRefresh)
         effects.cancel(.queueSnapshot)
-        effects.cancel(.connectQueueAccept)
-        effects.cancel(.queueReplacement)
     }
 
     func apply(_ snapshot: ProvenanceQueueSnapshot, engineEpoch: UInt64) {

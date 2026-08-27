@@ -61,6 +61,7 @@ extension PlaybackStore {
         catalog.reset()
         history.reset()
         queueMutation = nil
+        queueReplacementToken = nil
         shuffleHistoryCache = [:]
         send(.reset(session: cumulative.finalPhase), source: .account)
 
