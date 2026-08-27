@@ -260,8 +260,9 @@ func runPlaybackSupportChecks(_ check: CheckRunner) {
         var controlRan = false
         while remaining > 0 {
             switch full.admit(freeSpace: 0, remaining: remaining, isRendering: true) {
-            case .write:
+            case .write(_):
                 check.check("a full rendering buffer cannot admit a write", false)
+                remaining = 0
                 remaining = 0
             case .waitForSpace:
                 waitCount += 1
