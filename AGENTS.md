@@ -167,7 +167,9 @@ The normal quality gate enforces several of these mechanically. Treat all of the
 - `PlaybackReducer` is the only way to mutate that state. Add explicit events/actions rather than
   writable projections or coordinated assignments across several published properties.
 - `PlaybackStore` is the `@MainActor` compatibility/action surface. `PlaybackCoordinator` owns and
-  serializes side effects. Views render state and invoke narrow actions.
+  serializes side effects. `PlaybackEffectRegistry` owns store-level `Task` lifetimes. Do not adopt
+  The Composable Architecture or a generic `Effect` type; see
+  [ADR 003](docs/ADR-003-playback-command-effects.md). Views render state and invoke narrow actions.
 - Production dependencies are assembled once in `PlaybackEnvironment.live`. Views and feature
   stores must not instantiate Spotify APIs, auth singletons, or the Rust engine directly.
 - Every suspended account-scoped operation must capture and revalidate its generation/account

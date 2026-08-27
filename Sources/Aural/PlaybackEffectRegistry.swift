@@ -26,6 +26,10 @@ enum PlaybackEffectID: Hashable {
 
 /// One owner for every store-level asynchronous lifetime. Replacing a named effect cancels the
 /// superseded task; account teardown can invalidate all account work in one operation.
+///
+/// Transport commands use unique `.command(UUID)` tokens, so this is lifetime ownership rather than
+/// kind-level cancel-in-flight. A second pause is refused by the pending-command gate, not by
+/// replacing an in-flight token. See `docs/ADR-003-playback-command-effects.md`.
 @MainActor
 final class PlaybackEffectRegistry {
     private var tasks: [PlaybackEffectID: Task<Void, Never>] = [:]

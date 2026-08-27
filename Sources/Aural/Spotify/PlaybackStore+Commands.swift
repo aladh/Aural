@@ -27,7 +27,7 @@ extension PlaybackStore {
         }
         let commandID = UUID()
         let epoch = accountEpoch
-        send(
+        let started = send(
             .commandStarted(PendingPlaybackCommand(
                 id: commandID,
                 kind: kind,
@@ -36,19 +36,29 @@ extension PlaybackStore {
             )),
             source: .command
         )
+        guard started else {
+            completion(false)
+            return
+        }
         let effectID = PlaybackEffectID.command(commandID)
         effects.replace(effectID, with: Task { [weak self] in
             defer { self?.effects.complete(effectID) }
             guard let self else { return }
             let result = await self.coordinator.performLocal(operation)
             guard !Task.isCancelled, self.accountEpoch == epoch, !self.isTearingDown else { return }
-            self.send(
-                .commandFinished(id: commandID, accepted: result.isOK, notice: result.isOK ? nil : PlaybackNotice(message: failure)),
+            let finished = self.send(
+                .commandFinished(
+                    id: commandID,
+                    accepted: result.isOK,
+                    notice: result.isOK ? nil : PlaybackNotice(message: failure)
+                ),
                 source: .command
             )
+            // Reconnect, completion, and the detailed notice are dependent work. A rejected
+            // finish (unknown id after an engine epoch bump, superseded command) must stay inert.
+            guard finished else { return }
 
             guard !result.isOK else {
-                self.setNotice(nil)
                 completion(true)
                 return
             }
@@ -138,7 +148,7 @@ extension PlaybackStore {
         }
         let commandID = UUID()
         let epoch = accountEpoch
-        send(
+        let started = send(
             .commandStarted(PendingPlaybackCommand(
                 id: commandID,
                 kind: kind,
@@ -147,6 +157,10 @@ extension PlaybackStore {
             )),
             source: .command
         )
+        guard started else {
+            completion(false)
+            return
+        }
         let effectID = PlaybackEffectID.command(commandID)
         effects.replace(effectID, with: Task { [weak self] in
             defer { self?.effects.complete(effectID) }
@@ -156,13 +170,14 @@ extension PlaybackStore {
                     try await operation(remote, sourceID, targetID)
                 }
                 guard !Task.isCancelled, self.accountEpoch == epoch, !self.isTearingDown else { return }
-                self.send(.commandFinished(id: commandID, accepted: true, notice: nil), source: .command)
-                self.setNotice(nil)
+                guard self.send(.commandFinished(id: commandID, accepted: true, notice: nil), source: .command) else {
+                    return
+                }
                 completion(true)
             } catch {
                 guard let self, !Task.isCancelled, self.accountEpoch == epoch,
                       !self.isTearingDown else { return }
-                self.send(
+                let finished = self.send(
                     .commandFinished(
                         id: commandID,
                         accepted: false,
@@ -170,6 +185,7 @@ extension PlaybackStore {
                     ),
                     source: .command
                 )
+                guard finished else { return }
                 self.showTransientCommandError("\(failure): \(error.localizedDescription)")
                 completion(false)
             }

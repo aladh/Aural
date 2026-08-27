@@ -44,6 +44,9 @@ Add deterministic coverage in the closest existing suite:
 - `Sources/AuralChecks/` for portable domain rules and state-transition traces
 - `Sources/AuralChecks/DeferredBoundaryChecks/` for concrete codecs, fixtures, and injected app flows
 
+Do not add The Composable Architecture or another effect framework to support a prototype;
+see [ADR 003](docs/ADR-003-playback-command-effects.md).
+
 The Swift checks use a small custom runner rather than XCTest/Swift Testing so the full gate works
 with Command Line Tools alone. Neither check executable is included in the packaged app.
 

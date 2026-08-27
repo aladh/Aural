@@ -16,6 +16,7 @@ enum BoundaryChecksMain {
         runTrackAttributeChecks(runner)
         runFixtureContractChecks(runner)
         await runWorkflowChecks(runner)
+        await runCommandEffectRegistryChecks(runner)
 
         if !runner.succeeded {
             print(runner.failures.joined(separator: "\n"))

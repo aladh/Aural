@@ -49,3 +49,8 @@ different namespace.
 Adding a new callback, queue provider, or account-scoped request now requires an explicit epoch,
 revision/provenance rule, effect owner, and cancellation rule. This is intentional friction at the
 boundaries where Aural historically regressed.
+
+Command and other store-level asynchronous work keeps `PlaybackEffectRegistry` as the task owner.
+Reducer-driven generic effects and The Composable Architecture were evaluated and rejected in
+[ADR 003](ADR-003-playback-command-effects.md). Dependent side effects still run only when
+`PlaybackStore.send` reports that `PlaybackReducer` accepted the event.
