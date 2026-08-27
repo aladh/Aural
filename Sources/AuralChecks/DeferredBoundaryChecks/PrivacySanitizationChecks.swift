@@ -5,17 +5,18 @@ import Foundation
 private let privacySentinel = "AURAL_PRIVACY_SENTINEL_api-body_d81f"
 
 @MainActor
+private func omitSentinel(_ check: CheckRunner, _ label: String, _ text: String?) {
+    check.notNil(label, text)
+    check.check("\(label) omits the response body", text?.contains(privacySentinel) != true)
+}
+
+private func httpResponse(url: URL, status: Int) -> HTTPURLResponse {
+    HTTPURLResponse(url: url, statusCode: status, httpVersion: "HTTP/1.1", headerFields: nil)!
+}
+
+@MainActor
 func runPrivacySanitizationChecks(_ check: CheckRunner) async {
     await check.suite("API failure privacy") {
-        func omitSentinel(_ label: String, _ text: String?) {
-            check.notNil(label, text)
-            check.check("\(label) omits the response body", text?.contains(privacySentinel) != true)
-        }
-
-        func httpResponse(url: URL, status: Int) -> HTTPURLResponse {
-            HTTPURLResponse(url: url, statusCode: status, httpVersion: "HTTP/1.1", headerFields: nil)!
-        }
-
         let tokenBody = Data(
             #"{"error":"invalid_request","error_description":"\#(privacySentinel)","refresh_token":"rt"}"#.utf8
         )
@@ -26,7 +27,7 @@ func runPrivacySanitizationChecks(_ check: CheckRunner) async {
             tokenError.errorDescription ?? "",
             "Token exchange failed (HTTP 400)"
         )
-        omitSentinel("token LocalizedError", tokenError.errorDescription)
+        omitSentinel(check, "token LocalizedError", tokenError.errorDescription)
         check.equal(
             "invalid_grant remains a distinct revoked grant",
             KeymasterAuth.tokenFailure(status: 400, body: Data(#"{"error":"invalid_grant"}"#.utf8)),
@@ -42,7 +43,7 @@ func runPrivacySanitizationChecks(_ check: CheckRunner) async {
             accessToken: { "fixture-access" },
             clientToken: { "fixture-client" },
             invalidateClientToken: { _ in },
-            transport: { request in
+            transport: { @Sendable request in
                 (
                     Data("{\"error\":\"\(privacySentinel)\"}".utf8),
                     httpResponse(url: request.url ?? PartnerAPI.endpoint, status: 503)
@@ -59,7 +60,7 @@ func runPrivacySanitizationChecks(_ check: CheckRunner) async {
                 error.errorDescription ?? "",
                 "Spotify rejected the request (HTTP 503)"
             )
-            omitSentinel("Partner HTTP LocalizedError", error.errorDescription)
+            omitSentinel(check, "Partner HTTP LocalizedError", error.errorDescription)
         } catch {
             check.check("Partner HTTP failures throw PartnerAPIError", false)
         }
@@ -68,7 +69,7 @@ func runPrivacySanitizationChecks(_ check: CheckRunner) async {
             accessToken: { "fixture-access" },
             clientToken: { "fixture-client" },
             invalidateClientToken: { _ in },
-            transport: { request in
+            transport: { @Sendable request in
                 let body = Data(
                     """
                     {"errors":[{"message":"\(privacySentinel)","extensions":{"code":"INTERNAL"}}]}
@@ -87,7 +88,7 @@ func runPrivacySanitizationChecks(_ check: CheckRunner) async {
                 error.errorDescription ?? "",
                 "Spotify returned a GraphQL error"
             )
-            omitSentinel("Partner GraphQL LocalizedError", error.errorDescription)
+            omitSentinel(check, "Partner GraphQL LocalizedError", error.errorDescription)
         } catch {
             check.check("Partner GraphQL failures throw PartnerAPIError", false)
         }
@@ -96,7 +97,7 @@ func runPrivacySanitizationChecks(_ check: CheckRunner) async {
             accessToken: { "fixture-access" },
             clientToken: { "fixture-client" },
             invalidateClientToken: { _ in },
-            transport: { request in
+            transport: { @Sendable request in
                 let body = Data(
                     """
                     {"errors":[{"message":"\(privacySentinel) persistedQueryNotFound","extensions":{"code":"PERSISTED_QUERY_NOT_FOUND"}}]}
@@ -114,7 +115,7 @@ func runPrivacySanitizationChecks(_ check: CheckRunner) async {
                 error,
                 .persistedQueryNotFound("profileAttributes")
             )
-            omitSentinel("persisted-query LocalizedError", error.errorDescription)
+            omitSentinel(check, "persisted-query LocalizedError", error.errorDescription)
         } catch {
             check.check("retired persisted queries throw PartnerAPIError", false)
         }
@@ -123,7 +124,7 @@ func runPrivacySanitizationChecks(_ check: CheckRunner) async {
             accessToken: { "fixture-access" },
             clientToken: { "fixture-client" },
             invalidateClientToken: { _ in },
-            transport: { request in
+            transport: { @Sendable request in
                 let body = Data(
                     """
                     {"data":{"addLibraryItems":{"__typename":"NotFound","message":"\(privacySentinel)"}}}
@@ -142,7 +143,7 @@ func runPrivacySanitizationChecks(_ check: CheckRunner) async {
                 error.errorDescription ?? "",
                 "Spotify rejected addToLibrary"
             )
-            omitSentinel("Partner mutation LocalizedError", error.errorDescription)
+            omitSentinel(check, "Partner mutation LocalizedError", error.errorDescription)
         } catch {
             check.check("Partner mutation failures throw PartnerAPIError", false)
         }
@@ -151,7 +152,7 @@ func runPrivacySanitizationChecks(_ check: CheckRunner) async {
             accessToken: { "fixture-access" },
             clientToken: { "fixture-client" },
             invalidateClientToken: { _ in },
-            transport: { request in
+            transport: { @Sendable request in
                 (
                     Data(privacySentinel.utf8),
                     httpResponse(url: request.url ?? SpotifyConnectAPI.baseURL, status: 502)
@@ -168,14 +169,14 @@ func runPrivacySanitizationChecks(_ check: CheckRunner) async {
                 error.errorDescription ?? "",
                 "Spotify rejected the command (HTTP 502)"
             )
-            omitSentinel("Connect LocalizedError", error.errorDescription)
+            omitSentinel(check, "Connect LocalizedError", error.errorDescription)
         } catch {
             check.check("Connect command failures throw SpotifyConnectAPIError", false)
         }
 
         let queue = SpotifyWebPlayerAPI(
             accessToken: { "fixture-access" },
-            transport: { request in
+            transport: { @Sendable request in
                 (
                     Data("{\"error\":\"\(privacySentinel)\"}".utf8),
                     httpResponse(url: request.url ?? SpotifyWebPlayerAPI.queueURL, status: 429)
@@ -193,14 +194,14 @@ func runPrivacySanitizationChecks(_ check: CheckRunner) async {
                 error.errorDescription ?? "",
                 "Spotify rejected the queue request (HTTP 429)"
             )
-            omitSentinel("queue LocalizedError", error.errorDescription)
+            omitSentinel(check, "queue LocalizedError", error.errorDescription)
         } catch {
             check.check("queue Web API failures throw SpotifyWebPlayerAPIError", false)
         }
 
         let forbiddenQueue = SpotifyWebPlayerAPI(
             accessToken: { "fixture-access" },
-            transport: { request in
+            transport: { @Sendable request in
                 (
                     Data(privacySentinel.utf8),
                     httpResponse(url: request.url ?? SpotifyWebPlayerAPI.queueURL, status: 403)
@@ -212,7 +213,7 @@ func runPrivacySanitizationChecks(_ check: CheckRunner) async {
             check.check("forbidden queue failures throw", false)
         } catch let error as SpotifyWebPlayerAPIError {
             check.equal("401/403 capability still reads status", error.statusCode ?? -1, 403)
-            omitSentinel("forbidden queue LocalizedError", error.errorDescription)
+            omitSentinel(check, "forbidden queue LocalizedError", error.errorDescription)
         } catch {
             check.check("forbidden queue failures throw SpotifyWebPlayerAPIError", false)
         }
@@ -221,7 +222,7 @@ func runPrivacySanitizationChecks(_ check: CheckRunner) async {
             accessToken: { "fixture-access" },
             clientToken: { "fixture-client" },
             invalidateClientToken: { _ in },
-            transport: { request in
+            transport: { @Sendable request in
                 (
                     Data(privacySentinel.utf8),
                     httpResponse(url: request.url ?? TrackAttributesAPI.endpoint, status: 500)
@@ -238,7 +239,7 @@ func runPrivacySanitizationChecks(_ check: CheckRunner) async {
                 error.errorDescription ?? "",
                 "Spotify rejected the attribute request (HTTP 500)"
             )
-            omitSentinel("track-attribute LocalizedError", error.errorDescription)
+            omitSentinel(check, "track-attribute LocalizedError", error.errorDescription)
         } catch {
             check.check("track-attribute failures throw TrackAttributesAPIError", false)
         }
@@ -247,9 +248,9 @@ func runPrivacySanitizationChecks(_ check: CheckRunner) async {
             PartnerAPIError.requestFailed(503).errorDescription ?? privacySentinel
         )
         check.equal("failed session phases log a stable category", failedPhase.diagnosticLabel, "failed")
-        omitSentinel("session diagnosticLabel", failedPhase.diagnosticLabel)
+        omitSentinel(check, "session diagnosticLabel", failedPhase.diagnosticLabel)
         let publicLog = "Session phase changed: ready -> \(failedPhase.diagnosticLabel); epoch=8"
-        omitSentinel("public session phase log", publicLog)
+        omitSentinel(check, "public session phase log", publicLog)
         check.check("session phase logs keep epoch", publicLog.contains("epoch=8"))
     }
 }
