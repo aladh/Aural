@@ -95,12 +95,10 @@ extension PlaybackStore {
                 feedback.failure(QueueMutationRefusal.localOwnerUnsupported.feedbackMessage)
                 return
             case let .remote(from, to):
-                let effectID = PlaybackEffectID.queueCommand(UUID())
                 let epoch = accountEpoch
                 let engineEpoch = engineGeneration
                 let beforeEntries = presentationEntries
-                effects.replace(effectID, with: Task { [weak self] in
-                    defer { self?.effects.complete(effectID) }
+                effects.replace(.queueReplacement, with: Task { [weak self] in
                     do {
                         guard let self else { return }
                         try await self.coordinator.performRemote(
@@ -112,11 +110,20 @@ extension PlaybackStore {
                             from: from,
                             to: to
                         )
-                        guard !Task.isCancelled, self.accountEpoch == epoch, self.isConnected else { return }
+                        guard !Task.isCancelled, !self.isTearingDown else { return }
+                        guard self.accountEpoch == epoch, self.isConnected else { return }
                         guard self.engineGeneration == engineEpoch else { return }
+                        if let mutation = await self.queueService.recordCommittedReplacement(
+                            replacement,
+                            accountEpoch: epoch,
+                            engineEpoch: engineEpoch
+                        ) {
+                            self.queueMutation = mutation
+                        }
                         self.feedback.success(Self.removedFromQueueMessage(count: replacement.removedCount))
                     } catch {
-                        guard let self, !Task.isCancelled, self.accountEpoch == epoch, self.isConnected else { return }
+                        guard let self, !Task.isCancelled, !self.isTearingDown else { return }
+                        guard self.accountEpoch == epoch, self.isConnected else { return }
                         guard self.queueNextEntries == beforeEntries else { return }
                         self.feedback.failure("Spotify couldn’t update the queue.")
                     }
@@ -233,6 +240,8 @@ extension PlaybackStore {
     func cancelQueueRefresh() {
         effects.cancel(.queueRefresh)
         effects.cancel(.queueSnapshot)
+        effects.cancel(.connectQueueAccept)
+        effects.cancel(.queueReplacement)
     }
 
     func apply(_ snapshot: ProvenanceQueueSnapshot, engineEpoch: UInt64) {

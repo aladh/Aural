@@ -50,6 +50,7 @@ private actor QueueRemoteClient: RemotePlaybackClient {
 
     private let behavior: Behavior
     private var parked: CheckedContinuation<Void, Error>?
+    private var parkID: UInt64 = 0
     private(set) var commands: [SpotifyConnectCommand] = []
 
     init(_ behavior: Behavior) {
@@ -70,17 +71,33 @@ private actor QueueRemoteClient: RemotePlaybackClient {
                 throw QueueRemoteFailure.boom
             }
         case .park:
-            try await withCheckedThrowingContinuation { parked = $0 }
+            parkID &+= 1
+            let id = parkID
+            try await withTaskCancellationHandler {
+                try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+                    parked?.resume(throwing: CancellationError())
+                    parked = continuation
+                }
+            } onCancel: {
+                Task { await self.completePark(id: id, success: false, cancelled: true) }
+            }
         }
     }
 
     func completePark(success: Bool) {
-        if success {
-            parked?.resume()
+        completePark(id: parkID, success: success, cancelled: false)
+    }
+
+    private func completePark(id: UInt64, success: Bool, cancelled: Bool) {
+        guard id == parkID, let parked else { return }
+        self.parked = nil
+        if cancelled {
+            parked.resume(throwing: CancellationError())
+        } else if success {
+            parked.resume()
         } else {
-            parked?.resume(throwing: QueueRemoteFailure.boom)
+            parked.resume(throwing: QueueRemoteFailure.boom)
         }
-        parked = nil
     }
 
     func trackMetadata(for uri: String) async throws -> SpotifyConnectTrackMetadata {
@@ -190,7 +207,7 @@ private func seedLocalOwner(_ player: PlaybackStore) {
 }
 
 @MainActor
-private func seedAuthoritativeQueue(_ player: PlaybackStore, revision: UInt64 = 4) {
+private func seedAuthoritativeQueue(_ player: PlaybackStore, revision: UInt64 = 4) async {
     let duplicate = "spotify:track:dup"
     let other = "spotify:track:other"
     let entries = [
@@ -206,17 +223,19 @@ private func seedAuthoritativeQueue(_ player: PlaybackStore, revision: UInt64 = 
         QueueProtocolTrack(uri: "spotify:track:autoplay", uid: "a0", provider: "autoplay"),
     ]
     let prev = [QueueProtocolTrack(uri: "spotify:track:prev", uid: "p0", provider: "context")]
-    player.queueMutation = QueueMutationSnapshot(
+    await player.queueService.reset(accountEpoch: player.accountEpoch)
+    if let accepted = await player.queueService.acceptConnect(
+        entries,
         accountEpoch: player.accountEpoch,
-        engineEpoch: player.engineGeneration,
         sourceRevision: revision,
-        source: .connect,
-        completeness: .complete,
-        provisional: false,
-        next: next,
-        prev: prev,
+        contextURI: "spotify:track:now",
+        engineEpoch: player.engineGeneration,
+        protocolNext: next,
+        protocolPrev: prev,
         queueRevision: "rev-\(revision)"
-    )
+    ) {
+        player.queueMutation = accepted.mutation
+    }
     _ = player.send(
         .queue(PlaybackQueueSnapshot(
             entries: entries.map { PlaybackQueueItem($0) },
@@ -270,6 +289,60 @@ private func jsonStringMap(_ value: Any?) -> [String: String] {
             result[pair.key] = string
         }
     }
+}
+
+@MainActor
+private func invokeKeyboardQueueDelete(player: PlaybackStore, selectedIDs: Set<String>) {
+    let selectedCount = QueueMutationSelection.orderedUpcoming(
+        selectedIDs: selectedIDs,
+        in: player.queueNextEntries
+    ).count
+    guard QueueMutationSelection.keyboardCommand(
+        deleteOrBackspace: true,
+        selectedUpcomingCount: selectedCount,
+        isRemovalAllowed: player.canRemoveUpcomingQueue(selectedIDs: selectedIDs)
+    ) == .removeUpcomingOccurrences else {
+        return
+    }
+    player.removeUpcomingQueueOccurrences(selectedIDs: selectedIDs)
+}
+
+private func connectQueueState(revision: UInt64, sessionGeneration: UInt64) -> RustQueueState {
+    let next = [
+        ("spotify:track:dup", "q0"),
+        ("spotify:track:other", "q2"),
+    ]
+    return RustQueueState(
+        track: RustQueueState.Item(
+            uri: "spotify:track:now",
+            name: "Now",
+            artist: "Artist",
+            imageURL: "",
+            durationMS: 1
+        ),
+        nextTracks: next.map { RustQueueState.QueueItem(uri: $0.0, provider: "queue", uid: $0.1) },
+        prevTracks: [],
+        protocolNextTracks: next.map {
+            RustQueueState.ProtocolTrack(
+                uri: $0.0,
+                uid: $0.1,
+                provider: "queue",
+                metadata: [:],
+                removed: [],
+                blocked: [],
+                restrictions: [:],
+                albumURI: "",
+                disallowReasons: [],
+                artistURI: ""
+            )
+        },
+        protocolPrevTracks: [],
+        queueRevision: "rev-\(revision)",
+        disallowSetQueue: false,
+        disallowRemovingFromNextTracks: false,
+        revision: revision,
+        sessionGeneration: sessionGeneration
+    )
 }
 
 @MainActor
@@ -481,7 +554,7 @@ func runQueueManagementChecks(_ runner: CheckRunner) async {
         let feedback = TransientFeedbackPresenter(clock: SystemPlaybackClock(), duration: 4)
         let player = PlaybackStore(environment: queueEnvironment(remote: remote), feedback: feedback)
         seedRemoteOwner(player)
-        seedAuthoritativeQueue(player)
+        await seedAuthoritativeQueue(player)
         let secondDuplicate = player.queueNextEntries[1].id
         let before = player.queueNextEntries
         player.removeUpcomingQueueOccurrences(selectedIDs: [secondDuplicate])
@@ -508,7 +581,7 @@ func runQueueManagementChecks(_ runner: CheckRunner) async {
         let feedback = TransientFeedbackPresenter(clock: SystemPlaybackClock(), duration: 4)
         let player = PlaybackStore(environment: queueEnvironment(remote: remote), feedback: feedback)
         seedRemoteOwner(player)
-        seedAuthoritativeQueue(player)
+        await seedAuthoritativeQueue(player)
         let upcoming = player.queueNextEntries
         runner.check(
             "Delete is enabled for a complete remote upcoming selection",
@@ -540,7 +613,7 @@ func runQueueManagementChecks(_ runner: CheckRunner) async {
         let feedback = TransientFeedbackPresenter(clock: SystemPlaybackClock(), duration: 4)
         let player = PlaybackStore(environment: queueEnvironment(remote: remote), feedback: feedback)
         seedRemoteOwner(player)
-        seedAuthoritativeQueue(player)
+        await seedAuthoritativeQueue(player)
         let id = player.queueNextEntries[0].id
         let before = player.queueNextEntries
 
@@ -565,7 +638,7 @@ func runQueueManagementChecks(_ runner: CheckRunner) async {
         let localFeedback = TransientFeedbackPresenter(clock: SystemPlaybackClock(), duration: 4)
         let local = PlaybackStore(environment: queueEnvironment(remote: remote), feedback: localFeedback)
         seedLocalOwner(local)
-        seedAuthoritativeQueue(local)
+        await seedAuthoritativeQueue(local)
         let localID = local.queueNextEntries[0].id
         let localBefore = local.queueNextEntries
         local.removeUpcomingQueueOccurrences(selectedIDs: [localID])
@@ -585,7 +658,7 @@ func runQueueManagementChecks(_ runner: CheckRunner) async {
         let failFeedback = TransientFeedbackPresenter(clock: SystemPlaybackClock(), duration: 4)
         let rejected = PlaybackStore(environment: queueEnvironment(remote: failing), feedback: failFeedback)
         seedRemoteOwner(rejected)
-        seedAuthoritativeQueue(rejected)
+        await seedAuthoritativeQueue(rejected)
         let rejectedID = rejected.queueNextEntries[0].id
         let rejectedBefore = rejected.queueNextEntries
         rejected.removeUpcomingQueueOccurrences(selectedIDs: [rejectedID])
@@ -598,7 +671,7 @@ func runQueueManagementChecks(_ runner: CheckRunner) async {
         let cancelFeedback = TransientFeedbackPresenter(clock: SystemPlaybackClock(), duration: 4)
         let cancelled = PlaybackStore(environment: queueEnvironment(remote: parked), feedback: cancelFeedback)
         seedRemoteOwner(cancelled)
-        seedAuthoritativeQueue(cancelled)
+        await seedAuthoritativeQueue(cancelled)
         let cancelID = cancelled.queueNextEntries[0].id
         let cancelBefore = cancelled.queueNextEntries
         cancelled.removeUpcomingQueueOccurrences(selectedIDs: [cancelID])
@@ -614,7 +687,7 @@ func runQueueManagementChecks(_ runner: CheckRunner) async {
         let staleFeedback = TransientFeedbackPresenter(clock: SystemPlaybackClock(), duration: 4)
         let stale = PlaybackStore(environment: queueEnvironment(remote: staleRemote), feedback: staleFeedback)
         seedRemoteOwner(stale)
-        seedAuthoritativeQueue(stale)
+        await seedAuthoritativeQueue(stale)
         let staleID = stale.queueNextEntries[0].id
         stale.removeUpcomingQueueOccurrences(selectedIDs: [staleID])
         runner.check("stale-account removal started", await waitUntil { await staleRemote.sendCount == 1 })
@@ -627,7 +700,7 @@ func runQueueManagementChecks(_ runner: CheckRunner) async {
         let missingFeedback = TransientFeedbackPresenter(clock: SystemPlaybackClock(), duration: 4)
         let missing = PlaybackStore(environment: queueEnvironment(remote: QueueRemoteClient(.succeed)), feedback: missingFeedback)
         seedRemoteOwner(missing)
-        seedAuthoritativeQueue(missing)
+        await seedAuthoritativeQueue(missing)
         let beforeMissing = missing.queueNextEntries
         missing.removeUpcomingQueueOccurrences(selectedIDs: ["0-missing-spotify:track:nope"])
         runner.equal(
@@ -637,6 +710,161 @@ func runQueueManagementChecks(_ runner: CheckRunner) async {
         )
         runner.equal("stale identities leave presentation intact", missing.queueNextEntries, beforeMissing)
         await missing.shutdownForTermination()
+    }
+
+    await runner.suite("Overlapping authoritative replacements") {
+        let parked = QueueRemoteClient(.park)
+        let feedback = TransientFeedbackPresenter(clock: SystemPlaybackClock(), duration: 4)
+        let player = PlaybackStore(environment: queueEnvironment(remote: parked), feedback: feedback)
+        seedRemoteOwner(player)
+        await seedAuthoritativeQueue(player)
+        let firstID = player.queueNextEntries[0].id
+        let secondID = player.queueNextEntries[1].id
+        let before = player.queueNextEntries
+        player.removeUpcomingQueueOccurrences(selectedIDs: [firstID])
+        runner.check("first replacement started", await waitUntil { await parked.sendCount == 1 })
+        player.removeUpcomingQueueOccurrences(selectedIDs: [secondID])
+        runner.check("later replacement supersedes the in-flight request", await waitUntil { await parked.sendCount == 2 })
+        await parked.completePark(success: true)
+        runner.check(
+            "superseding replacement finished",
+            await waitUntil { feedback.message?.text == "Removed from Queue" }
+        )
+        let commands = await parked.commands
+        runner.equal(
+            "the cancelled first payload would have dropped q0",
+            commands.first?.nextTracks?.map(\.uid),
+            ["q1", "q2", "", "a0"]
+        )
+        runner.equal(
+            "the later set_queue does not restore the cancelled removal",
+            commands.last?.nextTracks?.map(\.uid),
+            ["q0", "q2", "", "a0"]
+        )
+        runner.equal("overlapping replacements do not edit presentation", player.queueNextEntries, before)
+        runner.equal(
+            "committed mutation matches the last sent next list",
+            player.queueMutation?.next.map(\.uid),
+            ["q0", "q2", "", "a0"]
+        )
+        player.removeUpcomingQueueOccurrences(selectedIDs: [firstID])
+        runner.equal(
+            "a follow-up from the stale visible list fails closed",
+            feedback.message?.text,
+            QueueMutationRefusal.incompleteProvenance.feedbackMessage
+        )
+        runner.equal("fail-closed follow-up does not send another set_queue", await parked.sendCount, 2)
+        await player.shutdownForTermination()
+    }
+
+    await runner.suite("Web inspector refresh keeps Connect occurrence order") {
+        let remote = QueueRemoteClient(.succeed)
+        let feedback = TransientFeedbackPresenter(clock: SystemPlaybackClock(), duration: 4)
+        let player = PlaybackStore(environment: queueEnvironment(remote: remote), feedback: feedback)
+        seedRemoteOwner(player)
+        await seedAuthoritativeQueue(player)
+        let before = player.queueNextEntries
+        let mutationBefore = player.queueMutation
+        player.apply(
+            ProvenanceQueueSnapshot(
+                accountEpoch: player.accountEpoch,
+                revision: 80,
+                source: .webAPI,
+                completeness: .complete,
+                receivedAt: Date(timeIntervalSince1970: 1_800_000_080),
+                contextURI: "spotify:track:now",
+                entries: [
+                    QueueEntry(uri: "spotify:track:reordered", provider: "web-api", occurrence: 0),
+                    QueueEntry(uri: "spotify:track:dup", provider: "web-api", occurrence: 1),
+                ],
+                tracks: [
+                    CatalogTrack(
+                        id: "spotify:track:dup",
+                        uri: "spotify:track:dup",
+                        title: "Web Title",
+                        artist: "Web Artist",
+                        album: "",
+                        duration: 180,
+                        artworkURL: nil,
+                        addedAt: nil
+                    )
+                ]
+            ),
+            engineEpoch: player.engineGeneration
+        )
+        runner.equal("Web refresh does not reorder Connect upcoming entries", player.queueNextEntries.map(\.uri), before.map(\.uri))
+        runner.equal("Web refresh does not replace Connect occurrence uids", player.queueNextEntries.map(\.uid), before.map(\.uid))
+        runner.equal("Web refresh does not replace the Connect mutation snapshot", player.queueMutation, mutationBefore)
+        runner.check(
+            "Connect mutation still matches the visible upcoming list",
+            player.canRemoveUpcomingQueue(selectedIDs: [before[0].id])
+        )
+        await player.shutdownForTermination()
+    }
+
+    await runner.suite("Connect accept invalidation after suspension") {
+        let remote = QueueRemoteClient(.succeed)
+        let feedback = TransientFeedbackPresenter(clock: SystemPlaybackClock(), duration: 4)
+        let player = PlaybackStore(environment: queueEnvironment(remote: remote), feedback: feedback)
+        seedRemoteOwner(player)
+        await player.queueService.reset(accountEpoch: player.accountEpoch)
+        await player.queueService.parkNextConnectAccept()
+        player.receive(connectQueueState(revision: 1, sessionGeneration: player.engineGeneration))
+        runner.check(
+            "connect accept parked after actor hop",
+            await waitUntil { await player.queueService.connectAcceptIsParked() }
+        )
+        player.accountEpoch &+= 1
+        player.engineGeneration &+= 1
+        player.queueMutation = nil
+        await player.queueService.resumeConnectAccept()
+        await yieldPasses()
+        runner.nil_("account and engine invalidation after accept does not restore mutation", player.queueMutation)
+        runner.check("invalidated accept does not populate presentation", player.queueNextEntries.isEmpty)
+
+        await player.queueService.reset(accountEpoch: player.accountEpoch)
+        await player.queueService.parkNextConnectAccept()
+        player.receive(connectQueueState(revision: 2, sessionGeneration: player.engineGeneration))
+        runner.check(
+            "teardown accept parked",
+            await waitUntil { await player.queueService.connectAcceptIsParked() }
+        )
+        player.isTearingDown = true
+        player.queueMutation = nil
+        player.effects.cancelAccountScoped()
+        await yieldPasses(20)
+        runner.nil_("cancelled teardown accept does not restore mutation", player.queueMutation)
+        await player.shutdownForTermination()
+    }
+
+    await runner.suite("Keyboard Delete matches context-menu enablement") {
+        let remote = QueueRemoteClient(.succeed)
+        let feedback = TransientFeedbackPresenter(clock: SystemPlaybackClock(), duration: 4)
+        let player = PlaybackStore(environment: queueEnvironment(remote: remote), feedback: feedback)
+        seedRemoteOwner(player)
+        await seedAuthoritativeQueue(player)
+        let allowedID = player.queueNextEntries[0].id
+        invokeKeyboardQueueDelete(player: player, selectedIDs: [allowedID])
+        runner.check("allowed keyboard Delete sends set_queue", await waitUntil { await remote.sendCount == 1 })
+
+        invokeKeyboardQueueDelete(player: player, selectedIDs: [])
+        runner.equal("empty keyboard selection does not send another command", await remote.sendCount, 1)
+
+        player.queueMutation?.disallowSetQueue = true
+        let restrictedBefore = feedback.message?.text
+        invokeKeyboardQueueDelete(player: player, selectedIDs: [player.queueNextEntries[1].id])
+        runner.equal("restricted keyboard Delete does not send set_queue", await remote.sendCount, 1)
+        runner.equal("restricted keyboard Delete does not toast", feedback.message?.text, restrictedBefore)
+        await player.shutdownForTermination()
+
+        let localFeedback = TransientFeedbackPresenter(clock: SystemPlaybackClock(), duration: 4)
+        let local = PlaybackStore(environment: queueEnvironment(remote: remote), feedback: localFeedback)
+        seedLocalOwner(local)
+        await seedAuthoritativeQueue(local)
+        invokeKeyboardQueueDelete(player: local, selectedIDs: [local.queueNextEntries[0].id])
+        runner.equal("local-owner keyboard Delete does not send set_queue", await remote.sendCount, 1)
+        runner.nil_("local-owner keyboard Delete does not toast", localFeedback.message)
+        await local.shutdownForTermination()
     }
 
     runner.suite("Queue management source contract") {
@@ -661,6 +889,8 @@ func runQueueManagementChecks(_ runner: CheckRunner) async {
                 "upcoming queue rows use native selection rather than play buttons",
                 containsToken(panel, "List(selection: $upcomingSelection)")
                     && containsToken(panel, "onDeleteCommand")
+                    && containsToken(panel, "QueueMutationSelection.keyboardCommand")
+                    && containsToken(panel, "canRemoveUpcomingQueue(selectedIDs: upcomingSelection)")
                     && containsToken(panel, "primaryAction:")
                     && !containsToken(panel, "QueueRow(")
             )
@@ -668,7 +898,16 @@ func runQueueManagementChecks(_ runner: CheckRunner) async {
                 "removal goes through coordinator set_queue and does not assign queue entries",
                 containsToken(queue, ".setQueue(")
                     && containsToken(queue, "performRemote")
+                    && containsToken(queue, "queueReplacement")
+                    && containsToken(queue, "recordCommittedReplacement")
                     && !containsToken(queue, "state.queue.entries =")
+            )
+            runner.check(
+                "Connect queue accept is registered on the effect registry",
+                containsToken(engineEvents, "connectQueueAccept")
+                    && containsToken(engineEvents, "Task.isCancelled")
+                    && containsToken(engineEvents, "accountEpoch == epoch")
+                    && containsToken(engineEvents, "engineGeneration == engineEpoch")
             )
             runner.check(
                 "local engine still has no set_queue operation",

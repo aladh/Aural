@@ -138,6 +138,17 @@ struct SidePanelView: View {
                 player.play(uri: entry.uri)
             }
             .onDeleteCommand {
+                let selectedCount = QueueMutationSelection.orderedUpcoming(
+                    selectedIDs: upcomingSelection,
+                    in: player.queueNextEntries
+                ).count
+                guard QueueMutationSelection.keyboardCommand(
+                    deleteOrBackspace: true,
+                    selectedUpcomingCount: selectedCount,
+                    isRemovalAllowed: player.canRemoveUpcomingQueue(selectedIDs: upcomingSelection)
+                ) == .removeUpcomingOccurrences else {
+                    return
+                }
                 player.removeUpcomingQueueOccurrences(selectedIDs: upcomingSelection)
             }
             .onChange(of: player.queueNextEntries.map(\.id), initial: true) { _, ids in

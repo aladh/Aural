@@ -139,26 +139,27 @@ extension PlaybackStore {
         let protocolPrev = (state.protocolPrevTracks ?? []).map { $0.domainTrack() }
         let epoch = capturedAccountEpoch ?? accountEpoch
         let engineEpoch = capturedEngineEpoch ?? engineGeneration
-        Task { [weak self] in
-            guard let self,
-                  !self.isTearingDown,
-                  let snapshot = await self.queueService.acceptConnect(
-                    entries,
-                    accountEpoch: epoch,
-                    sourceRevision: revision,
-                    contextURI: state.track?.uri ?? self.trackURI,
-                    provisional: state.track == nil && entries.isEmpty,
-                    engineEpoch: engineEpoch,
-                    protocolNext: protocolNext,
-                    protocolPrev: protocolPrev,
-                    queueRevision: state.queueRevision ?? "",
-                    disallowSetQueue: state.disallowSetQueue ?? false,
-                    disallowRemovingFromNextTracks: state.disallowRemovingFromNextTracks ?? false
-                  )
-            else { return }
-            self.queueMutation = await self.queueService.mutationSnapshot()
-            self.apply(snapshot, engineEpoch: engineEpoch)
-        }
+        effects.replace(.connectQueueAccept, with: Task { [weak self] in
+            guard let self else { return }
+            let accepted = await self.queueService.acceptConnect(
+                entries,
+                accountEpoch: epoch,
+                sourceRevision: revision,
+                contextURI: state.track?.uri ?? self.trackURI,
+                provisional: state.track == nil && entries.isEmpty,
+                engineEpoch: engineEpoch,
+                protocolNext: protocolNext,
+                protocolPrev: protocolPrev,
+                queueRevision: state.queueRevision ?? "",
+                disallowSetQueue: state.disallowSetQueue ?? false,
+                disallowRemovingFromNextTracks: state.disallowRemovingFromNextTracks ?? false
+            )
+            guard !Task.isCancelled, !self.isTearingDown else { return }
+            guard self.accountEpoch == epoch, self.engineGeneration == engineEpoch else { return }
+            guard let accepted else { return }
+            self.queueMutation = accepted.mutation
+            self.apply(accepted.snapshot, engineEpoch: engineEpoch)
+        })
 
         guard let track = state.track else { return }
         if !mayAdoptPlaybackIdentity {

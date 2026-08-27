@@ -673,7 +673,8 @@ public enum PlaybackReducer {
 }
 
 /// The one queue-ordering precedence policy used by both the reducer and live queue service.
-/// Metadata enrichment is deliberately separate: it may improve labels but cannot reorder uris.
+/// Complete Connect occurrence order is authoritative for a playback context. Web API and
+/// catalog metadata may enrich labels, but they must not reorder or replace that list.
 public func mergePlaybackQueueSnapshots(
     current: PlaybackQueueSnapshot,
     incoming: PlaybackQueueSnapshot
@@ -681,9 +682,32 @@ public func mergePlaybackQueueSnapshots(
     if current.contextURI != incoming.contextURI {
         return incoming.receivedAt >= current.receivedAt ? incoming : current
     }
+    if let preserved = preservingConnectOccurrenceOrder(current: current, incoming: incoming) {
+        return preserved
+    }
     if incoming.source > current.source { return incoming }
     if incoming.source < current.source { return current }
     if incoming.revision > current.revision { return incoming }
     if incoming.revision < current.revision { return current }
     return incoming.completeness >= current.completeness ? incoming : current
+}
+
+private func preservingConnectOccurrenceOrder(
+    current: PlaybackQueueSnapshot,
+    incoming: PlaybackQueueSnapshot
+) -> PlaybackQueueSnapshot? {
+    let currentConnect = current.source == .connect && current.completeness == .complete
+    let incomingConnect = incoming.source == .connect && incoming.completeness == .complete
+    if currentConnect, incoming.source == .webAPI {
+        var kept = current
+        kept.revision = max(current.revision, incoming.revision)
+        if incoming.receivedAt > current.receivedAt {
+            kept.receivedAt = incoming.receivedAt
+        }
+        return kept
+    }
+    if incomingConnect, current.source == .webAPI {
+        return incoming
+    }
+    return nil
 }

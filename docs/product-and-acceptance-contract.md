@@ -62,8 +62,10 @@ ADRs; historical measurements belong in the performance baseline.
   feedback reports full success, zero success, or a partial completed count.
   Removal is gated on a complete Connect mutation snapshot, account/engine epoch, owner, and
   player `disallow_set_queue` / `disallow_removing_from_next_tracks` reasons. Partial, provisional,
-  web-API-only, restricted, stale, cancelled, and rejected results leave the visible queue intact
-  and report through `TransientFeedbackPresenter`.
+  web-API-only, restricted, joining, local-owner, stale-selection, and rejected results leave the
+  visible queue intact and report through `TransientFeedbackPresenter`. Cancelled and
+  account-epoch-invalidated in-flight removals also leave the visible queue intact, without
+  transient feedback.
 - Local-owner removal is disabled: librespot `Spirc` at the pinned revision exposes `add_to_queue`
   only, and inbound `SetQueue` is not a public local command. The follow-up is a tested Spirc
   replacement export (or proven same-device HTTP `set_queue`), not a second owner. Add to Queue

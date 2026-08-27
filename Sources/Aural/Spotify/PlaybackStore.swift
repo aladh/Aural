@@ -204,7 +204,9 @@ final class PlaybackStore {
     /// `state.sourceRevisions[.engineQueue]`, which tracks provenance snapshots after merge.
     @ObservationIgnored var connectQueueCallback = ConnectQueueCallbackWatermark()
     @ObservationIgnored var shuffleHistoryCache: [String: TimeInterval] = [:]
-    /// Connect protocol queue used for `set_queue`. Distinct from presentation merge.
+    /// Connect protocol queue used for `set_queue`. This is a MainActor projection of
+    /// `QueueService`'s mutation snapshot, updated only after accepted Connect intake or a
+    /// committed replacement. Web inspector refresh must not write it.
     @ObservationIgnored var queueMutation: QueueMutationSnapshot?
 
     init(

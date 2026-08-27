@@ -551,4 +551,42 @@ func runQueueMutationChecks(_ check: CheckRunner) {
         )
         check.nil_("invalid counts produce no message", QueueAddFeedbackPolicy.evaluate(requested: 2, completed: 3))
     }
+
+    check.suite("Overlapping replacements fail closed after a committed mutation") {
+        guard case let .success(firstReplacement) = QueueMutationPolicy.evaluateRemoval(
+            selectedIDs: [visible[0].id],
+            visibleUpcoming: visible,
+            nowPlayingID: "now",
+            historyIDs: ["hist"],
+            mutation: snapshot(next: protocolNext),
+            route: remote,
+            isConnected: true,
+            accountEpoch: 1,
+            engineEpoch: 2
+        ) else {
+            check.check("first overlapping removal should be allowed", false)
+            return
+        }
+        var committed = snapshot(next: protocolNext)
+        committed.next = firstReplacement.next
+        check.equal(
+            "a second delete from the original visible list cannot restore the removed uid",
+            QueueMutationPolicy.evaluateRemoval(
+                selectedIDs: [visible[1].id],
+                visibleUpcoming: visible,
+                nowPlayingID: "now",
+                historyIDs: ["hist"],
+                mutation: committed,
+                route: remote,
+                isConnected: true,
+                accountEpoch: 1,
+                engineEpoch: 2
+            ),
+            .failure(.incompleteProvenance)
+        )
+        check.check(
+            "the committed next list no longer contains the first removed uid",
+            !firstReplacement.next.contains { $0.uid == "q0" }
+        )
+    }
 }

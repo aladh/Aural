@@ -17,7 +17,8 @@ nonisolated struct ProvenanceQueueSnapshot: Sendable {
 }
 
 /// Pure precedence policy. A lower-quality or older snapshot cannot erase a more authoritative
-/// queue; metadata from either snapshot can still enrich the retained ordering.
+/// queue; metadata from either snapshot can still enrich the retained ordering. Complete Connect
+/// occurrence order wins over same-context Web API entry lists.
 nonisolated func mergeQueueSnapshots(
     current: ProvenanceQueueSnapshot?,
     incoming: ProvenanceQueueSnapshot
@@ -89,6 +90,11 @@ private nonisolated func queueOccurrence(_ id: String) -> Int {
     id.split(separator: "-", maxSplits: 1).first.flatMap { Int($0) } ?? 0
 }
 
+nonisolated struct AcceptedConnectQueue: Sendable {
+    let snapshot: ProvenanceQueueSnapshot
+    let mutation: QueueMutationSnapshot
+}
+
 actor QueueService {
     private enum WebCapability {
         case unknown
@@ -107,6 +113,9 @@ actor QueueService {
     private var webRetryNotBefore: Date?
     private var snapshot: ProvenanceQueueSnapshot?
     private var mutation: QueueMutationSnapshot?
+    private var pendingConnectAcceptGate = false
+    private var connectAcceptGate: CheckedContinuation<Void, Never>?
+    private var connectAcceptGateID: UInt64 = 0
 
     init(
         webQueue: any WebQueueClient,
@@ -127,10 +136,37 @@ actor QueueService {
         webRetryNotBefore = nil
         snapshot = nil
         mutation = nil
+        pendingConnectAcceptGate = false
+        resumeConnectAccept()
         await metadata.reset()
     }
 
     func mutationSnapshot() -> QueueMutationSnapshot? { mutation }
+
+    func parkNextConnectAccept() {
+        pendingConnectAcceptGate = true
+    }
+
+    func connectAcceptIsParked() -> Bool { connectAcceptGate != nil }
+
+    func resumeConnectAccept() {
+        connectAcceptGate?.resume()
+        connectAcceptGate = nil
+    }
+
+    func recordCommittedReplacement(
+        _ replacement: QueueReplacement,
+        accountEpoch requestedEpoch: UInt64,
+        engineEpoch: UInt64
+    ) -> QueueMutationSnapshot? {
+        guard requestedEpoch == accountEpoch else { return nil }
+        guard var current = mutation, current.engineEpoch == engineEpoch else { return nil }
+        current.next = replacement.next
+        current.prev = replacement.prev
+        current.queueRevision = replacement.queueRevision
+        mutation = current
+        return mutation
+    }
 
     func acceptConnect(
         _ entries: [QueueEntry],
@@ -144,10 +180,12 @@ actor QueueService {
         queueRevision: String = "",
         disallowSetQueue: Bool = false,
         disallowRemovingFromNextTracks: Bool = false
-    ) -> ProvenanceQueueSnapshot? {
+    ) async -> AcceptedConnectQueue? {
+        await waitForTestConnectAcceptGate()
+        guard !Task.isCancelled else { return nil }
         guard requestedEpoch == accountEpoch else { return nil }
         if let sourceRevision {
-            guard sourceRevision > lastConnectSourceRevision else { return snapshot }
+            guard sourceRevision > lastConnectSourceRevision else { return acceptedQueue() }
             lastConnectSourceRevision = sourceRevision
             revision = max(revision, sourceRevision)
         } else {
@@ -178,7 +216,7 @@ actor QueueService {
             disallowSetQueue: disallowSetQueue,
             disallowRemovingFromNextTracks: disallowRemovingFromNextTracks
         )
-        return snapshot
+        return acceptedQueue()
     }
 
     func refresh(
@@ -300,6 +338,30 @@ actor QueueService {
             "Queue fallback finished; hydrated=\(hydrated.count, privacy: .public)/\(wantedURIs.count, privacy: .public); epoch=\(requestedEpoch, privacy: .public)"
         )
         return snapshot
+    }
+
+    private func acceptedQueue() -> AcceptedConnectQueue? {
+        guard let snapshot, let mutation else { return nil }
+        return AcceptedConnectQueue(snapshot: snapshot, mutation: mutation)
+    }
+
+    private func waitForTestConnectAcceptGate() async {
+        guard pendingConnectAcceptGate else { return }
+        pendingConnectAcceptGate = false
+        connectAcceptGateID &+= 1
+        let id = connectAcceptGateID
+        await withTaskCancellationHandler {
+            await withCheckedContinuation { continuation in
+                connectAcceptGate = continuation
+            }
+        } onCancel: {
+            Task { await self.resumeConnectAcceptIfCurrent(id) }
+        }
+    }
+
+    private func resumeConnectAcceptIfCurrent(_ id: UInt64) {
+        guard id == connectAcceptGateID else { return }
+        resumeConnectAccept()
     }
 
     private func uniqueTrackURIs(in entries: [QueueEntry]) -> [String] {
