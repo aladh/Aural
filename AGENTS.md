@@ -169,7 +169,10 @@ The normal quality gate enforces several of these mechanically. Treat all of the
 - `PlaybackStore` is the `@MainActor` compatibility/action surface. `PlaybackCoordinator` owns and
   serializes side effects. `PlaybackEffectRegistry` owns store-level `Task` lifetimes. Do not adopt
   The Composable Architecture or a generic `Effect` type; see
-  [ADR 003](docs/ADR-003-playback-command-effects.md). Views render state and invoke narrow actions.
+  [ADR 003](docs/ADR-003-playback-command-effects.md). Reducer acceptance normally gates follow-ups.
+  A rejected transport finish may report success only when a same-lifetime authoritative snapshot
+  already reconciled the pending expected transport; stale, superseded, teardown, epoch-invalidated,
+  and non-transport results stay inert. Views render state and invoke narrow actions.
 - Production dependencies are assembled once in `PlaybackEnvironment.live`. Views and feature
   stores must not instantiate Spotify APIs, auth singletons, or the Rust engine directly.
 - Every suspended account-scoped operation must capture and revalidate its generation/account

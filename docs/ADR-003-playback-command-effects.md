@@ -19,7 +19,9 @@ boilerplate, or replace straightforward Swift concurrency with framework weight.
 playback, connection, and device callbacks are accepted only when the stamped envelope passes
 account epoch, engine epoch, and source revision gates. `PlaybackStore.send(...)` returns `Bool`.
 Dependent work (metadata adopt, device preference writes, engine-connection session updates) already
-runs only after a successful send.
+runs only after a successful send. Command-finish follow-ups are a separate gate: reducer acceptance
+is the normal path, and a rejected transport finish may report success only when a same-lifetime
+authoritative snapshot already reconciled the pending expected transport.
 
 `ConnectQueueCallbackWatermark` remains a distinct callback-identity gate. Adopting an engine epoch
 in `reduce` does not clear it, because provenance-snapshot revisions on `.engineQueue` are a
@@ -49,19 +51,20 @@ reconciles the pending command before the coordinator returns.
 ### 1. Keep `PlaybackEffectRegistry` (evolve in place)
 
 The registry stays a small `@MainActor` dictionary of tasks. The store continues to decide *when*
-to start work. The reducer continues to decide *whether* a result may mutate state. Callers gate
-dependent work on `send(...) == true`.
-
-This is the production path, with two tightly scoped corrections: command start still requires an
-accepted send, and command-finish follow-ups use `playbackCommandFollowUp` so a matching engine
-snapshot cannot drop success completions. Command-error notices keep their existing timed lifetime;
-successful acknowledgements do not clear unrelated notices.
+to start work. The reducer continues to decide *whether* a result may mutate state. Command start
+still requires an accepted send. Command-finish follow-ups use `playbackCommandFollowUp`: reducer
+acceptance is the normal gate, and a rejected transport finish may report success only when a
+same-lifetime authoritative snapshot already reconciled the pending expected transport. Stale,
+superseded, teardown, epoch-invalidated, and non-transport results stay inert. Command-error
+notices keep their existing timed lifetime; successful acknowledgements do not clear unrelated
+notices.
 
 ### 2. Tiny Aural-specific command runner
 
 A command-specific plan (`token`, captured account epoch, single in-flight pause) that the store
 starts and later completes. Not a generic `Effect<Action, Failure, Result>`. Cancellation and
-account invalidation drop the plan. Completion still calls `send` and ignores rejected finishes.
+account invalidation drop the plan. Completion would still need the same explicit
+reconciled-versus-stale follow-up policy as `playbackCommandFollowUp`.
 
 This is easier to test with a scripted `deliver` than unstructured `Task`s, and it makes the
 transport policy (one pending kind, unique command id, reconnect only after accepted failure)
@@ -116,8 +119,8 @@ IssueReporting, Perception, Sharing, Swift Navigation, swift-collections, and a 
 plugin. That is incompatible with Aural's zero-dependency check executables, Renovate-scoped
 Rust/Swift surface, and `AuralDomain` rule that the reducer stay testable without frameworks.
 
-The package was **not** added to `Package.swift`. The check-suite `TCAStyleRuntime` reproduces
-`Reduce` → `Effect.run` / `.cancel`, `cancellable` IDs, and `send` rejection for dependent work.
+The package was **not** added to `Package.swift`. This ADR retains an illustrative TCA 1.x sketch
+and a semantic comparison only; no TCA-shaped runtime or dependency remains.
 
 ## Comparison on the pause workflow
 
@@ -131,7 +134,7 @@ The package was **not** added to `Package.swift`. The check-suite `TCAStyleRunti
 | Local reconnect-required | Engine result flag on the coordinator; reconnect is **not** reducer state. Gate on accepted finish. | Same. | Follow-up `.run { await connect() }` from the failure action. Still a Core side effect. |
 | Remote failure | `async throws` collapsed to a string notice today (#17). Rollback is reducer-owned. | Same until typed errors exist. | `Result` in `Action` helps tests; still needs a domain error at the coordinator boundary. |
 | MainActor / Sendable | Store and registry are `@MainActor`. Coordinator is an actor. Command closures hop back to the store. No new isolation model. | Same. | TCA `Store` / `@Dependency` / `Effect.run` (cooperative pool, `send` hops to the store) is a second isolation story beside `PlaybackEnvironment.live` and the coordinator actor. `PlaybackStore` is not a TCA `Store`. |
-| Deterministic tests | Reducer traces in `AuralChecks`; scripted pause runtimes in the spike; real `Task` cancel in `AuralBoundaryChecks`. | Scripted `deliver` is the nicest local ergonomics, but only for this workflow. | `TestStore` is excellent **if** the app is TCA. Adopting it for one command path still requires the package, macros, and wrapping the existing reducer. |
+| Deterministic tests | Reducer traces in `AuralChecks`; one scripted registry-shaped pause runtime in the spike; real `Task` cancel in `AuralBoundaryChecks`. | Scripted `deliver` is the nicest local ergonomics, but only for this workflow. | `TestStore` is excellent **if** the app is TCA. Adopting it for one command path still requires the package, macros, and wrapping the existing reducer. |
 | Call-site boilerplate | Explicit `Task`, epoch capture, `send` Bool. Honest about lifetimes. | Moves the same checks into a helper. | `@Reducer` + `Effect` + dependencies + cancel IDs for every feature. |
 | Package / build | No new dependency. | No new dependency if the helper stays in Core or checks. | Large transitive graph, macro plugin, SwiftUI/UIKit navigation extras Aural does not use. |
 | Fit with `AuralDomain` / `AuralCore` | Domain stays pure. Registry stays Core. | Safe only as a Core helper or check prototype. | Either Domain depends on TCA, or Core becomes a TCA app around a second store. Both violate ADR 002. |
@@ -147,8 +150,9 @@ abstraction.**
 Reasons:
 
 1. The missing correctness was not “effects are not described by the reducer.” It was **dependent
-   work after a rejected send**. #15 already returned `Bool` from `send`. The command path now uses
-   it. That is an evolution of the current architecture, not a new one.
+   work after a rejected send**. #15 already returned `Bool` from `send`. The command path now
+   feeds that Bool into `playbackCommandFollowUp` rather than treating it as the only gate. That
+   is an evolution of the current architecture, not a new one.
 2. Aural already has the useful part of an effect system: atomic state, stamped events, a
    coordinator, and named task cancellation. TCA’s remaining value is `TestStore` and
    `cancelInFlight` sugar. The former needs a TCA app; the latter **disagrees** with the pending-kind
@@ -182,8 +186,9 @@ issue 16.
 
 Route remaining playback outcomes through `PlaybackEvent` without a framework:
 
-- Keep using `send(...) == true` for every dependent side effect (metadata, history, preferences,
-  `accountStore.receiveEngineConnection`, reconnect).
+- Keep using `send(...) == true` for remaining dependent side effects (metadata, history,
+  preferences, `accountStore.receiveEngineConnection`, reconnect). Command-finish follow-ups
+  already use `playbackCommandFollowUp` instead of a blanket send-true gate.
 - Prefer new `PlaybackEvent` cases over `setTransport` / `setNotice` after awaits where that makes
   success, failure, and stale results the same function.
 - Do not add engine revision gates outside `PlaybackReducer`.
