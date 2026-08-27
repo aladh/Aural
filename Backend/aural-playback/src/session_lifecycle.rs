@@ -5,16 +5,74 @@ pub(crate) fn run_is_superseded(started_generation: u64, current_generation: u64
     started_generation != current_generation
 }
 
-/// Where librespot persists the AP credentials produced by the streaming grant.
+/// Why the streaming credential cache cannot be opened.
 ///
-/// Under the sandbox `HOME` is already the app container, so this stays inside it.
-pub(crate) fn credentials_cache_dir() -> std::path::PathBuf {
-    let home = std::env::var("HOME").unwrap_or_else(|_| "/tmp".to_string());
-    std::path::Path::new(&home)
+/// Variants carry no filesystem path so public logs stay sanitized.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum CredentialsCacheError {
+    /// `HOME` is unset or empty.
+    MissingHome,
+    /// `HOME` is not an absolute location, so it cannot be an app container path.
+    RelativeHome,
+}
+
+impl CredentialsCacheError {
+    pub(crate) fn message(self) -> &'static str {
+        match self {
+            Self::MissingHome | Self::RelativeHome => "Streaming credential cache is unavailable",
+        }
+    }
+}
+
+/// Resolves the cache directory from an injected `HOME`.
+///
+/// Path selection is pure: callers pass a value rather than mutating the process
+/// environment, so checks do not touch the developer's real home or race on `HOME`.
+pub(crate) fn credentials_cache_dir_from_home(
+    home: Option<&std::path::Path>,
+) -> Result<std::path::PathBuf, CredentialsCacheError> {
+    let home = home
+        .filter(|path| !path.as_os_str().is_empty())
+        .ok_or(CredentialsCacheError::MissingHome)?;
+    if !home.is_absolute() {
+        return Err(CredentialsCacheError::RelativeHome);
+    }
+    Ok(home
         .join("Library")
         .join("Application Support")
         .join("Aural")
-        .join("credentials")
+        .join("credentials"))
+}
+
+/// Where librespot persists the AP credentials produced by the streaming grant.
+///
+/// Under the sandbox `HOME` is already the app container, so this stays inside it.
+/// Missing or relative `HOME` fails closed: it must not fall back to a shared `/tmp`.
+pub(crate) fn credentials_cache_dir() -> Result<std::path::PathBuf, CredentialsCacheError> {
+    let home = std::env::var_os("HOME").map(std::path::PathBuf::from);
+    credentials_cache_dir_from_home(home.as_deref())
+}
+
+/// Creates `dir` and restricts it to the current user when the platform allows.
+pub(crate) fn ensure_private_credentials_dir(dir: &std::path::Path) -> Result<(), String> {
+    std::fs::create_dir_all(dir)
+        .map_err(|_| CredentialsCacheError::MissingHome.message().to_string())?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(dir, std::fs::Permissions::from_mode(0o700))
+            .map_err(|_| CredentialsCacheError::MissingHome.message().to_string())?;
+    }
+    Ok(())
+}
+
+/// Resolves the live cache directory and removes it. Unavailable locations are success:
+/// there is no app-owned cache to clear, and the C ABI remains a void cleanup.
+pub(crate) fn clear_resolved_credentials() {
+    match credentials_cache_dir() {
+        Ok(dir) => clear_credentials_at(&dir),
+        Err(_) => debug!("Streaming credential cache unavailable; nothing to clear"),
+    }
 }
 
 /// Removes cached credentials from `dir`, treating "not there" as success.
@@ -35,7 +93,7 @@ pub(crate) fn clear_credentials_at(dir: &std::path::Path) {
 #[no_mangle]
 pub extern "C" fn aural_playback_clear_streaming_credentials() {
     ffi_void("aural_playback_clear_streaming_credentials", || {
-        clear_credentials_at(&credentials_cache_dir());
+        clear_resolved_credentials();
     })
 }
 
@@ -111,7 +169,7 @@ pub extern "C" fn aural_playback_authorize_streaming(access_token: *const c_char
         // session one: an ordinary rebuild during the browser wait is not a supersession.
         if run_is_superseded(started_generation, LOGOUT_GENERATION.load(Ordering::SeqCst)) {
             debug!("Streaming authorization superseded; removing the credentials it wrote");
-            clear_credentials_at(&credentials_cache_dir());
+            clear_resolved_credentials();
             return -2;
         }
 
@@ -138,8 +196,10 @@ pub(crate) fn create_session(
         device_id: device_id.to_string(),
         ..Default::default()
     };
-    let cache = Cache::new(Some(credentials_cache_dir()), None, None, None)
-        .map_err(|e| format!("Cache error: {}", e))?;
+    let cache_dir = credentials_cache_dir().map_err(|error| error.message().to_string())?;
+    ensure_private_credentials_dir(&cache_dir)?;
+    let cache = Cache::new(Some(cache_dir), None, None, None)
+        .map_err(|_| CredentialsCacheError::MissingHome.message().to_string())?;
 
     // Prefer a freshly granted token; otherwise reuse what the last grant cached. Resolved
     // here rather than at the call site so every caller gets the same rule.

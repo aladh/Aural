@@ -40,7 +40,9 @@ exports, raw service responses, or unrelated system logs to an issue.
 
 ## Removing data
 
-Use **Aural → Sign Out** to clear the active Aural grant and playback session. macOS application
+Use **Aural → Sign Out** to clear the active Aural grant, the local playback session, cached
+streaming credentials, and Spotify authentication cookies from the shared `URLSession` cookie
+store used by the token flow. Cookies for other domains are left in place. macOS application
 preferences, caches, or diagnostic files may remain until removed through normal macOS file
 management. Revoking Aural/Spotify desktop access from the Spotify account is an additional way to
 invalidate previously issued credentials.

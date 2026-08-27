@@ -10,6 +10,8 @@ enum BoundaryChecksMain {
         runPaginationChecks(runner)
         runPlaybackPanelChecks(runner)
         runLoopbackParsingChecks(runner)
+        await runLoopbackServerChecks(runner)
+        await runAuthCookieCleanupChecks(runner)
         runURIChecks(runner)
         runFormattingChecks(runner)
         runPlaylistSortingChecks(runner)

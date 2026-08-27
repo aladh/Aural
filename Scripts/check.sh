@@ -106,6 +106,8 @@ check_arguments=(
 )
 swift build "${check_arguments[@]}"
 checks_path="$(swift build "${check_arguments[@]}" --show-bin-path)/AuralChecks"
+# PlaybackStore projection contract is declaration-aware and lives in AuralChecks.
+export AURAL_PLAYBACK_STORE_SOURCE="$project_root/Sources/Aural/Spotify/PlaybackStore.swift"
 repeat_count="${AURAL_CHECK_REPEATS:-1}"
 if ! [[ "$repeat_count" =~ '^[1-9][0-9]*$' ]] || (( repeat_count > 25 )); then
     print -u2 "AURAL_CHECK_REPEATS must be between 1 and 25"
@@ -159,14 +161,6 @@ fi
 
 if rg -n 'LiveSpotifyController|nonisolated\(unsafe\)' "$project_root/Sources" --glob '*.swift'; then
     print -u2 "A deleted controller or unsafe global state re-entered the Swift architecture"
-    exit 1
-fi
-
-# Playback state projections are intentionally read-only. Reintroducing a setter recreates the
-# partial-presentation states that the reducer boundary exists to prevent.
-if sed -n '104,320p' "$project_root/Sources/Aural/Spotify/PlaybackStore.swift" \
-    | rg -n '^[[:space:]]*set[[:space:]]*\{'; then
-    print -u2 "PlaybackStore state projections must remain read-only; use an explicit atomic action"
     exit 1
 fi
 

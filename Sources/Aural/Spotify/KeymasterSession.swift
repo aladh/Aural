@@ -34,6 +34,9 @@ actor KeymasterSession {
 
     private let store: KeymasterTokenStoring
     private let refresher: Refresher
+    /// Clears Spotify authentication cookies from the jar the token exchange uses.
+    /// Injected so Sign Out cleanup can be checked without mutating the process-wide store.
+    private let cookieCleanup: @Sendable () -> Void
     private var tokens: KeymasterTokens?
     private var hasLoadedStore = false
     private var refreshInFlight: Task<KeymasterTokens, Error>?
@@ -45,9 +48,13 @@ actor KeymasterSession {
     init(
         store: KeymasterTokenStoring = DefaultKeymasterTokenStore(),
         refresher: @escaping Refresher = { try await KeymasterAuth.refresh(refreshToken: $0) },
+        cookieCleanup: @escaping @Sendable () -> Void = {
+            AuthCookieCleanup.removeSpotifyAuthenticationCookies()
+        }
     ) {
         self.store = store
         self.refresher = refresher
+        self.cookieCleanup = cookieCleanup
     }
 
     /// Fires once when a refresh comes back `invalid_grant`. AsyncSequence keeps account
@@ -123,6 +130,7 @@ actor KeymasterSession {
         supersedeRefresh()
         tokens = nil
         store.clear()
+        cookieCleanup()
     }
 
     /// Abandons any refresh in flight and disowns whatever it eventually returns.

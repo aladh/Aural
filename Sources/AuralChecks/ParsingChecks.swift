@@ -33,6 +33,54 @@ func runParsingChecks(_ check: CheckRunner) {
         check.notNil("query-less request parses", bare)
         check.equal("query-less path", bare?.path, "/login")
         check.nil_("no parameters without a query", bare?.queryItems)
+
+        let encodedPath = LoopbackRequestParser.parseRequestLine("GET /%6Cogin?code=abc&state=xyz HTTP/1.1\n")
+        check.equal("percent-decoded path is /login", encodedPath?.path, "/login")
+        check.equal("percent-decoded path still yields the code", encodedPath?.queryItems?.first(where: { $0.name == "code" })?.value, "abc")
+
+        let encodedQuery = LoopbackRequestParser.parseRequestLine("GET /login?code=a%20b&state=xy%26z HTTP/1.1\n")
+        check.equal("query values stay percent-decoded", encodedQuery?.queryItems?.first(where: { $0.name == "code" })?.value, "a b")
+        check.equal("encoded ampersands stay inside the value", encodedQuery?.queryItems?.first(where: { $0.name == "state" })?.value, "xy&z")
+
+        check.nil_("root path rejected", LoopbackRequestParser.parseRequestLine("GET / HTTP/1.1\n"))
+        check.nil_("root path with query cannot win", LoopbackRequestParser.parseRequestLine("GET /?code=abc&state=xyz HTTP/1.1\n"))
+        check.nil_("prefix lookalike rejected", LoopbackRequestParser.parseRequestLine("GET /login/extra?code=abc HTTP/1.1\n"))
+        check.nil_("suffix lookalike rejected", LoopbackRequestParser.parseRequestLine("GET /loginn?code=abc HTTP/1.1\n"))
+        check.nil_("embedded /login rejected", LoopbackRequestParser.parseRequestLine("GET /callback/login?code=abc HTTP/1.1\n"))
+        check.nil_("trailing slash rejected", LoopbackRequestParser.parseRequestLine("GET /login/?code=abc HTTP/1.1\n"))
+        check.nil_("encoded extra segment rejected", LoopbackRequestParser.parseRequestLine("GET /login%2Fextra?code=abc HTTP/1.1\n"))
+        check.nil_("double-slash target rejected", LoopbackRequestParser.parseRequestLine("GET //login?code=abc HTTP/1.1\n"))
+        check.nil_("absolute-form target rejected", LoopbackRequestParser.parseRequestLine("GET http://127.0.0.1/login?code=abc HTTP/1.1\n"))
+        check.nil_("missing HTTP version rejected", LoopbackRequestParser.parseRequestLine("GET /login?code=abc\n"))
+        check.nil_("extra request-line tokens rejected", LoopbackRequestParser.parseRequestLine("GET /login HTTP/1.1 extra\n"))
+        check.nil_("tab-separated request-line rejected", LoopbackRequestParser.parseRequestLine("GET\t/login HTTP/1.1\n"))
+    }
+
+    check.suite("Spotify authentication cookie matching") {
+        let spotify = CookieOrigin(name: "sp_dc", domain: "accounts.spotify.com", path: "/")
+        let dotted = CookieOrigin(name: "sp_key", domain: ".spotify.com", path: "/")
+        let nested = CookieOrigin(name: "sp_t", domain: "www.spotify.com", path: "/api")
+        let lookalikeHost = CookieOrigin(name: "sp_dc", domain: "notspotify.com", path: "/")
+        let lookalikeSuffix = CookieOrigin(name: "sp_dc", domain: "spotify.com.evil.example", path: "/")
+        let unrelated = CookieOrigin(name: "session", domain: "example.com", path: "/")
+        let emptyPath = CookieOrigin(name: "sp_dc", domain: "spotify.com", path: "")
+
+        check.check("accounts host is Spotify", SpotifyAuthenticationCookies.shouldRemove(domain: spotify.domain, path: spotify.path))
+        check.check("leading-dot domain is Spotify", SpotifyAuthenticationCookies.shouldRemove(domain: dotted.domain, path: dotted.path))
+        check.check("subdomain and subdirectory stay Spotify", SpotifyAuthenticationCookies.shouldRemove(domain: nested.domain, path: nested.path))
+        check.check("lookalike host is not Spotify", !SpotifyAuthenticationCookies.shouldRemove(domain: lookalikeHost.domain, path: lookalikeHost.path))
+        check.check("suffixed lookalike is not Spotify", !SpotifyAuthenticationCookies.shouldRemove(domain: lookalikeSuffix.domain, path: lookalikeSuffix.path))
+        check.check("unrelated domain is kept", !SpotifyAuthenticationCookies.shouldRemove(domain: unrelated.domain, path: unrelated.path))
+        check.check("empty path is not a cookie path", !SpotifyAuthenticationCookies.shouldRemove(domain: emptyPath.domain, path: emptyPath.path))
+
+        let mixed = [unrelated, nested, lookalikeHost, spotify, dotted]
+        let first = SpotifyAuthenticationCookies.cookiesToRemove(mixed)
+        let second = SpotifyAuthenticationCookies.cookiesToRemove(first)
+        check.equal("selection is ordered by domain, path, then name", first.map(\.name), ["sp_key", "sp_dc", "sp_t"])
+        check.equal("selection is idempotent", second, first)
+        check.equal("a second pass removes nothing more", SpotifyAuthenticationCookies.cookiesToRemove(mixed.filter { leftover in
+            !first.contains(leftover)
+        }), [])
     }
 
     check.suite("Spotify uri parsing") {
