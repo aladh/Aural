@@ -181,7 +181,9 @@ Successful `commandFinished` does not clear `notice`. Command errors keep the ex
 
 `togglePlayback` and `seek` pass their optimistic transport and/or timing on `commandStarted`.
 The reducer captures the prior presentation and `commandFinished` restores it on a matching
-rejection. Those call sites must not mutate `PlaybackState` before the start event.
+rejection. Seek timing is held until an incoming sample matches the expected millisecond
+position, the same shape as transport. Those call sites must not mutate `PlaybackState` before
+the start event.
 
 No other command sites were migrated in #19/#27. Queue add remains a non-transport command path;
 its transient mutation feedback now uses the app-composed `TransientFeedbackPresenter` rather than

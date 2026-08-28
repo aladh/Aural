@@ -538,7 +538,7 @@ public enum PlaybackReducer {
             } else {
                 candidate.currentTrack = nil
             }
-            candidate.timing = snapshot.timing
+            reconcileSeekTiming(snapshot.timing, in: &candidate)
             if let shuffle = snapshot.shuffle { candidate.options.shuffle = shuffle }
             if snapshot.repeatMode != nil || snapshot.repeatFlags != nil {
                 let flags = snapshot.repeatFlags
@@ -549,16 +549,13 @@ public enum PlaybackReducer {
                     ?? RepeatMode(context: flags.context, track: flags.track)
             }
             reconcileTransport(candidate.currentTrack == nil ? .stopped : snapshot.transport, in: &candidate)
-            // A newer playback snapshot is authoritative for position. Drop a pending seek so a
-            // later rejected finish cannot restore pre-seek timing over this snapshot.
-            candidate.pendingCommands[.seek] = nil
         case let .engineConnection(snapshot):
             if let session = snapshot.session { candidate.session = session }
             candidate.owner = snapshot.owner
             candidate.devices.localDeviceID = snapshot.localDeviceID
         case let .presentation(presentation):
             candidate.currentTrack = presentation.currentTrack
-            candidate.timing = presentation.timing
+            reconcileSeekTiming(presentation.timing, in: &candidate)
             reconcileTransport(presentation.transport, in: &candidate)
         case let .trackMetadata(metadata):
             guard var track = candidate.currentTrack, track.uri == metadata.uri else { return false }
@@ -578,10 +575,13 @@ public enum PlaybackReducer {
                 candidate.timing = PlaybackTiming(anchoredAt: envelope.receivedAt)
             }
         case let .timing(position, duration, anchoredAt):
-            candidate.timing = PlaybackTiming(
-                position: max(0, position),
-                duration: max(0, duration),
-                anchoredAt: anchoredAt
+            reconcileSeekTiming(
+                PlaybackTiming(
+                    position: max(0, position),
+                    duration: max(0, duration),
+                    anchoredAt: anchoredAt
+                ),
+                in: &candidate
             )
         case let .options(options):
             candidate.options = options
@@ -708,6 +708,35 @@ public enum PlaybackReducer {
                 state.pendingCommands[.transport] = nil
             }
         }
+    }
+
+    /// Holds optimistic seek timing until an incoming sample is at the expected millisecond
+    /// position, matching `reconcileTransport`. A contradictory sample cannot confirm the seek.
+    private static func reconcileSeekTiming(
+        _ timing: PlaybackTiming,
+        in state: inout PlaybackState
+    ) {
+        if let pending = state.pendingCommands[.seek],
+           let expected = pending.expectedTiming,
+           !matchesExpectedSeekPosition(timing, expected)
+        {
+            state.timing = expected
+        } else {
+            state.timing = timing
+            if let pending = state.pendingCommands[.seek],
+               let expected = pending.expectedTiming,
+               matchesExpectedSeekPosition(timing, expected)
+            {
+                state.pendingCommands[.seek] = nil
+            }
+        }
+    }
+
+    private static func matchesExpectedSeekPosition(
+        _ actual: PlaybackTiming,
+        _ expected: PlaybackTiming
+    ) -> Bool {
+        Int((actual.position * 1_000).rounded()) == Int((expected.position * 1_000).rounded())
     }
 
 }
