@@ -191,22 +191,12 @@ private actor IdlePreferences: PlaybackPreferences {
 
 private actor RecordingOwnerPreferences: PlaybackPreferences {
     private var remoteID: String?
-    private var waiters: [CheckedContinuation<String?, Never>] = []
 
     func seed(_ id: String?) { remoteID = id }
     func shuffleEnabled() -> Bool { false }
     func setShuffleEnabled(_: Bool) {}
     func lastRemoteDeviceID() -> String? { remoteID }
-    func setLastRemoteDeviceID(_ id: String?) {
-        remoteID = id
-        let pending = waiters
-        waiters.removeAll()
-        pending.forEach { $0.resume(returning: id) }
-    }
-    func waitForRemoteID() async -> String? {
-        if let remoteID { return remoteID }
-        return await withCheckedContinuation { waiters.append($0) }
-    }
+    func setLastRemoteDeviceID(_ id: String?) { remoteID = id }
     func shuffleHistory() -> [String: TimeInterval] { [:] }
     func setShuffleHistory(_: [String: TimeInterval]) {}
 }
@@ -772,6 +762,7 @@ func runPlaybackEventOutcomeChecks(_ runner: CheckRunner) async {
         let pausedURI = "spotify:track:paused-remote"
         let expectedPhone = PlaybackDevice(id: "phone", name: "Phone", type: "smartphone", isActive: false)
 
+        @MainActor
         func seedIdentity(_ player: PlaybackStore) {
             _ = player.send(.session(.ready), source: .account)
             _ = player.send(
@@ -786,6 +777,7 @@ func runPlaybackEventOutcomeChecks(_ runner: CheckRunner) async {
             )
         }
 
+        @MainActor
         func seedTrack(_ player: PlaybackStore) {
             _ = player.send(
                 .currentTrack(CurrentTrack(
@@ -915,7 +907,8 @@ func runPlaybackEventOutcomeChecks(_ runner: CheckRunner) async {
         )
         runner.equal("the store records last-remote after an accepted active remote", remoteActive.lastRemoteDeviceID, "phone")
         let writtenRemoteID = remoteActive.lastRemoteDeviceID == "phone"
-            ? await remotePreferences.waitForRemoteID()
+            && await waitUntil { await remotePreferences.lastRemoteDeviceID() == "phone" }
+            ? "phone"
             : nil
         runner.equal(
             "an accepted active remote writes the last-remote preference",
