@@ -35,7 +35,9 @@ music streaming only for Premium subscribers; review the current
   a persistent fewer-repeats shuffle mode.
 - Spotify Connect device discovery, remote playback mirroring, device transfer, and queue display.
   Add to Queue uses selected tracks in visible order. Selectable upcoming rows can be removed with
-  Delete/Backspace or Remove from Queue when another device owns playback, preserving duplicates.
+  Delete/Backspace or Remove from Queue when another device owns playback and the current player
+  permits queue edits, preserving duplicates; Spotify Connect confirms a successful removal before
+  the displayed queue changes.
 - Home, Search, profile, Liked Songs, playlists, albums, and artists from the signed-in account.
 - Sortable playlist metadata including Date Added, Popularity, BPM, and Camelot Key.
 - Add selected tracks to an owned library playlist, and remove selected occurrences from an open
