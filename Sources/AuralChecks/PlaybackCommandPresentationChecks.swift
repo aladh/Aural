@@ -194,6 +194,43 @@ func runPlaybackCommandPresentationChecks(_ check: CheckRunner) {
         check.equal("an accepted seek keeps the optimistic timing", acceptedSeek.timing, seekTiming)
         check.nil_("an accepted seek clears its pending command", acceptedSeek.pendingCommands[.seek])
 
+        let clearedTrackSeekID = UUID(uuidString: "00000000-0000-0000-0000-00000000003B")!
+        var clearedTrackSeek = PlaybackState(
+            accountEpoch: 1,
+            engineEpoch: 1,
+            session: .ready,
+            transport: .playing,
+            timing: priorSeekTiming
+        )
+        _ = PlaybackReducer.reduce(
+            &clearedTrackSeek,
+            envelope: presentationEnvelope(
+                source: .command,
+                event: .commandStarted(PendingPlaybackCommand(
+                    id: clearedTrackSeekID,
+                    kind: .seek,
+                    expectedTransport: nil,
+                    expectedTiming: seekTiming,
+                    startedAt: presentationDate
+                ))
+            )
+        )
+        let stoppedTiming = PlaybackTiming(position: 0, duration: 0, anchoredAt: presentationDate.addingTimeInterval(1))
+        _ = PlaybackReducer.reduce(
+            &clearedTrackSeek,
+            envelope: presentationEnvelope(
+                source: .enginePlayback,
+                revision: 1,
+                event: .enginePlayback(EnginePlaybackSnapshot(
+                    transport: .stopped,
+                    trackURI: nil,
+                    timing: stoppedTiming
+                ))
+            )
+        )
+        check.equal("a nil-track snapshot adopts the incoming timing", clearedTrackSeek.timing, stoppedTiming)
+        check.nil_("a nil-track snapshot supersedes the pending seek", clearedTrackSeek.pendingCommands[.seek])
+
         var mismatchedSeek = PlaybackState(
             accountEpoch: 1,
             engineEpoch: 1,

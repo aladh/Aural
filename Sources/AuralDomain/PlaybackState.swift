@@ -732,7 +732,7 @@ public enum PlaybackReducer {
     ) {
         let incomingURI = playbackTrackURI(incomingTrackURI)
         if state.pendingCommands[.seek] != nil,
-           playbackTrackURI(state.currentTrack?.uri) != incomingURI
+           incomingURI == nil || playbackTrackURI(state.currentTrack?.uri) != incomingURI
         {
             state.pendingCommands[.seek] = nil
             state.timing = timing
