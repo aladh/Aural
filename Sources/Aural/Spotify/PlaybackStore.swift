@@ -181,7 +181,8 @@ final class PlaybackStore {
     @ObservationIgnored let queueService: QueueService
     @ObservationIgnored let accountStore: AccountStore
     @ObservationIgnored let catalogSession: CatalogSessionAvailability
-    @ObservationIgnored var accountEpoch: UInt64 = 1
+    /// Read-only projection of `AccountStore.epoch`. Do not increment or assign this value.
+    var accountEpoch: UInt64 { accountStore.epoch }
     var thisDeviceName = "This Mac"
     @ObservationIgnored var lastRemoteDeviceID: String?
     /// The first Connect snapshot describes state that predates this process. It seeds the UI,
@@ -232,7 +233,7 @@ final class PlaybackStore {
             clock: environment.clock
         )
         accountStore = AccountStore(environment: environment, coordinator: coordinator)
-        let catalogSession = CatalogSessionAvailability(accountEpoch: accountEpoch, isAvailable: false)
+        let catalogSession = CatalogSessionAvailability(accountEpoch: accountStore.epoch, isAvailable: false)
         self.catalogSession = catalogSession
         catalog = CatalogStore(
             provider: environment.catalog,
@@ -315,8 +316,10 @@ final class PlaybackStore {
     /// The only mutation entrance for the atomic playback snapshot.
     /// Engine callbacks pass their payload `sessionGeneration` as `engineEpoch`. Asynchronous
     /// outcomes pass the account and engine identity captured when the work started so
-    /// `PlaybackReducer` rejects stale results. Unstamped events use `accountEpoch` and
-    /// `engineGeneration`, which mirrors `state.engineEpoch` after `reduce`.
+    /// `PlaybackReducer` rejects stale results. Unstamped events use `accountEpoch` (the
+    /// `AccountStore.epoch` projection) and `engineGeneration`, which mirrors `state.engineEpoch`
+    /// after `reduce`. Reducer-owned `state.accountEpoch` is accepted snapshot state, not a
+    /// second imperative lifecycle owner.
     @discardableResult
     func send(
         _ event: PlaybackEvent,

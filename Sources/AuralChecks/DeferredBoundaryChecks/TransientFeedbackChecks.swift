@@ -497,7 +497,7 @@ func runTransientFeedbackChecks(_ runner: CheckRunner) async {
             "stale-account add started the remote command",
             await waitUntil { await staleRemote.sendCount == 1 }
         )
-        staleAccount.accountEpoch &+= 1
+        staleAccount.accountStore.advanceEpoch()
         await staleRemote.completePark(success: true)
         await yieldPasses()
         runner.nil_("stale-account add reports no mutation feedback", staleFeedback.message)

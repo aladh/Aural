@@ -405,7 +405,7 @@ func runPlaybackEventOutcomeChecks(_ runner: CheckRunner) async {
         startTrackResolution(staleAccount, uri: "spotify:track:stale-account")
         runner.check("stale-account metadata lookup starts", await waitUntil { await staleAccountRemote.requestedURI != nil })
         staleAccount.recordPlayed("spotify:track:stale-account")
-        staleAccount.accountEpoch += 1
+        staleAccount.accountStore.advanceEpoch()
         _ = staleAccount.send(
             .reset(session: .signedOut),
             source: .account,
@@ -475,7 +475,7 @@ func runPlaybackEventOutcomeChecks(_ runner: CheckRunner) async {
         seedReadyLocalPlayback(staleAccount, uri: "spotify:track:playing")
         staleAccount.refreshPosition()
         runner.check("stale-account position refresh starts", await waitUntil { staleAccountEngine.hasStarted })
-        staleAccount.accountEpoch += 1
+        staleAccount.accountStore.advanceEpoch()
         _ = staleAccount.send(
             .reset(session: .signedOut),
             source: .account,
@@ -545,7 +545,7 @@ func runPlaybackEventOutcomeChecks(_ runner: CheckRunner) async {
         runner.equal("stale-engine queue adoption is inert", player.state.queue.entries.first?.uri, firstURI)
         runner.nil_("stale-engine queue does not retain catalog metadata", player.catalog.metadata.knownTrack(for: staleEngineURI))
 
-        player.accountEpoch += 1
+        player.accountStore.advanceEpoch()
         _ = player.send(
             .reset(session: .signedOut),
             source: .account,

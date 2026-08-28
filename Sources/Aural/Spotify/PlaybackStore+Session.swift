@@ -52,7 +52,12 @@ extension PlaybackStore {
         }
 
         isTearingDown = true
-        accountEpoch &+= 1
+        // Advance AccountStore.epoch before any reducer send, catalog update, queue reset,
+        // or effect invalidation so every observer uses that already-advanced identity.
+        let accountTask = accountStore.beginEndSession(
+            clearGrant: cumulative.clearGrant,
+            finalPhase: cumulative.finalPhase
+        )
         engineGeneration &+= 1
         connectQueueCallback.reset()
         catalogSession.update(accountEpoch: accountEpoch, isAvailable: false)
@@ -65,10 +70,6 @@ extension PlaybackStore {
         shuffleHistoryCache = [:]
         send(.reset(session: cumulative.finalPhase), source: .account)
 
-        let accountTask = accountStore.beginEndSession(
-            clearGrant: cumulative.clearGrant,
-            finalPhase: cumulative.finalPhase
-        )
         let task = Task { [weak self] in
             guard let self else { return }
             await self.performEndSession(accountTask: accountTask)
@@ -80,10 +81,8 @@ extension PlaybackStore {
     private func performEndSession(
         accountTask: Task<SessionTeardownIntent, Never>
     ) async {
-        var appliedIntent = await accountTask.value
-        accountEpoch = accountStore.epoch
-        catalogSession.update(accountEpoch: accountEpoch, isAvailable: false)
         await queueService.reset(accountEpoch: accountEpoch)
+        var appliedIntent = await accountTask.value
         await environment.preferences.setShuffleHistory([:])
 
         var clearedRemoteDevice = false
@@ -124,13 +123,13 @@ extension PlaybackStore {
         guard !isTearingDown else { return }
         feedback.dismiss()
         isTearingDown = true
-        accountEpoch &+= 1
+        let staleConnectionTask = accountStore.prepareShutdownForTermination()
         engineGeneration &+= 1
         connectQueueCallback.reset()
         catalogSession.update(accountEpoch: accountEpoch, isAvailable: false)
         effects.cancelAccountScoped()
         send(.reset(session: .signedOut), source: .account)
-        await accountStore.shutdownForTermination()
+        await accountStore.completeShutdownForTermination(staleConnectionTask: staleConnectionTask)
     }
 
     func clearCurrentTrackMetadata() {
