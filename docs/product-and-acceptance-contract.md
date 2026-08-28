@@ -37,7 +37,9 @@ ADRs; historical measurements belong in the performance baseline.
   different computer. The now-playing title, artist, artwork, position, play/pause state, queue,
   and available controls must follow that owner without requiring a manual refresh.
 - Transport commands target the device that owns playback. Aural must not silently transfer
-  playback to this Mac merely because the user pressed a remote control.
+  playback to this Mac merely because the user pressed a remote control. When no device is marked
+  active but a current track remains, a remembered last remote device stays an uncertain remote
+  candidate so commands remain remote-routable; a missing or stale fallback never becomes local.
 - With no current track, the primary control shows Play and is disabled. Pause appears only while
   the observed playback state is actually playing.
 - The transport order is shuffle, previous, play/pause, next, repeat. Previous and next use the

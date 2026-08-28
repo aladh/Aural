@@ -42,6 +42,38 @@ private func queue(
     )
 }
 
+private let localComputer = PlaybackDevice(id: "local", name: "Aural", type: "computer")
+private let inactivePhone = PlaybackDevice(id: "phone", name: "Phone", type: "smartphone")
+private let activePhone = PlaybackDevice(id: "phone", name: "Phone", type: "smartphone", isActive: true)
+private let activeLocal = PlaybackDevice(id: "local", name: "Aural", type: "computer", isActive: true)
+
+@discardableResult
+private func reduceDevices(
+    _ state: inout PlaybackState,
+    devices: [PlaybackDevice],
+    localDeviceID: String? = "local",
+    lastRemoteDeviceID: String? = nil,
+    revision: UInt64,
+    engine: UInt64 = 1,
+    account: UInt64 = 1
+) -> Bool {
+    PlaybackReducer.reduce(
+        &state,
+        envelope: envelope(
+            account: account,
+            engine: engine,
+            source: .engineDevices,
+            revision: revision,
+            event: .devices(PlaybackDeviceSnapshot(
+                devices: devices,
+                localDeviceID: localDeviceID,
+                revision: revision,
+                lastRemoteDeviceID: lastRemoteDeviceID
+            ))
+        )
+    )
+}
+
 func runPlaybackReducerChecks(_ check: CheckRunner) {
     check.suite("Playback reducer account and engine epochs") {
         let remote = PlaybackDevice(id: "phone", name: "Phone", type: "smartphone")
@@ -584,6 +616,197 @@ func runPlaybackReducerChecks(_ check: CheckRunner) {
         check.equal("paused playback retains the remote owner", state.owner, .remote(remote))
         check.equal("remote pause is represented as paused, not stopped", state.transport, .paused)
         check.equal("remote pause retains now-playing metadata", state.currentTrack, track)
+    }
+
+    check.suite("Playback reducer device owner resolution") {
+        let pausedURI = "spotify:track:paused-remote"
+        let cluster = [localComputer, inactivePhone]
+
+        var launch = PlaybackState(accountEpoch: 1, engineEpoch: 1, session: .ready)
+        _ = reduceDevices(&launch, devices: cluster, lastRemoteDeviceID: "phone", revision: 1)
+        check.equal("devices-first with no track is none", launch.owner, .none)
+        check.equal("the last-remote payload is stamped for later URI adoption", launch.devices.lastRemoteDeviceID, "phone")
+        _ = PlaybackReducer.reduce(
+            &launch,
+            envelope: envelope(
+                source: .enginePlayback,
+                revision: 1,
+                event: .currentTrack(CurrentTrack(uri: pausedURI))
+            )
+        )
+        check.equal(
+            "a later URI adopts the stamped last-remote candidate",
+            launch.owner,
+            .uncertain(inactivePhone)
+        )
+        check.equal(
+            "devices-then-track stays remote-routable",
+            connectCommandRoute(owner: launch.owner, localDeviceID: "local"),
+            .remote(from: "local", to: "phone")
+        )
+        _ = PlaybackReducer.reduce(
+            &launch,
+            envelope: envelope(source: .enginePlayback, revision: 2, event: .currentTrack(nil))
+        )
+        check.equal("clearing the URI drops an uncertain last-remote owner", launch.owner, .none)
+
+        var missing = PlaybackState(accountEpoch: 1, engineEpoch: 1, session: .ready)
+        _ = reduceDevices(&missing, devices: cluster, lastRemoteDeviceID: "missing-speaker", revision: 1)
+        _ = PlaybackReducer.reduce(
+            &missing,
+            envelope: envelope(
+                source: .enginePlayback,
+                revision: 1,
+                event: .enginePlayback(EnginePlaybackSnapshot(
+                    transport: .paused,
+                    trackURI: pausedURI,
+                    timing: PlaybackTiming(position: 0, duration: 180, anchoredAt: traceDate)
+                ))
+            )
+        )
+        check.equal("a stale last-remote after devices-then-track is uncertain(nil)", missing.owner, .uncertain(nil))
+        check.equal(
+            "a stale last-remote never becomes local",
+            connectCommandRoute(owner: missing.owner, localDeviceID: "local"),
+            .waitingForLocalIdentity
+        )
+
+        var withTrack = PlaybackState(
+            accountEpoch: 1,
+            engineEpoch: 1,
+            session: .ready,
+            currentTrack: CurrentTrack(uri: pausedURI)
+        )
+        _ = reduceDevices(&withTrack, devices: cluster, lastRemoteDeviceID: "phone", revision: 1)
+        check.equal(
+            "a no-active snapshot that already has a track uses last-remote",
+            withTrack.owner,
+            .uncertain(inactivePhone)
+        )
+
+        var namedPrevious = PlaybackState(
+            accountEpoch: 1,
+            engineEpoch: 1,
+            session: .ready,
+            owner: .remote(PlaybackDevice(id: "phone", name: "Old Phone", type: "smartphone")),
+            currentTrack: CurrentTrack(uri: pausedURI)
+        )
+        _ = reduceDevices(&namedPrevious, devices: cluster, revision: 1)
+        check.equal(
+            "a previous remote candidate refreshes from the device list",
+            namedPrevious.owner,
+            .uncertain(inactivePhone)
+        )
+
+        var noTrack = PlaybackState(accountEpoch: 1, engineEpoch: 1, session: .ready, owner: .remote(inactivePhone))
+        _ = reduceDevices(&noTrack, devices: cluster, lastRemoteDeviceID: "phone", revision: 1)
+        check.equal("no current track clears ownership even with a last remote", noTrack.owner, .none)
+
+        var activeLocalState = PlaybackState(
+            accountEpoch: 1,
+            engineEpoch: 1,
+            session: .ready,
+            currentTrack: CurrentTrack(uri: pausedURI)
+        )
+        _ = reduceDevices(
+            &activeLocalState,
+            devices: [activeLocal, inactivePhone],
+            lastRemoteDeviceID: "phone",
+            revision: 1
+        )
+        check.equal("an active local device wins over last-remote fallback", activeLocalState.owner, .local(activeLocal))
+
+        var activeRemoteState = PlaybackState(accountEpoch: 1, engineEpoch: 1, session: .ready)
+        _ = reduceDevices(
+            &activeRemoteState,
+            devices: [localComputer, activePhone],
+            lastRemoteDeviceID: "phone",
+            revision: 1
+        )
+        check.equal("an active remote device is remote ownership", activeRemoteState.owner, .remote(activePhone))
+
+        let connectionRemote = PlaybackDevice(id: "phone", name: "Phone", type: "smartphone", isActive: true)
+        var connected = PlaybackState(accountEpoch: 1, engineEpoch: 1, session: .ready)
+        _ = reduceDevices(&connected, devices: cluster, lastRemoteDeviceID: "phone", revision: 1)
+        _ = PlaybackReducer.reduce(
+            &connected,
+            envelope: envelope(
+                source: .engineConnection,
+                revision: 1,
+                event: .engineConnection(EngineConnectionSnapshot(
+                    session: .ready,
+                    owner: .remote(connectionRemote),
+                    localDeviceID: "local"
+                ))
+            )
+        )
+        _ = PlaybackReducer.reduce(
+            &connected,
+            envelope: envelope(
+                source: .enginePlayback,
+                revision: 1,
+                event: .currentTrack(CurrentTrack(uri: pausedURI))
+            )
+        )
+        check.equal(
+            "a later URI does not weaken an identified remote owner from connection",
+            connected.owner,
+            .remote(connectionRemote)
+        )
+
+        var gated = PlaybackState(
+            accountEpoch: 4,
+            engineEpoch: 7,
+            session: .ready,
+            owner: .none,
+            currentTrack: CurrentTrack(uri: pausedURI),
+            devices: PlaybackDeviceSnapshot(devices: cluster, localDeviceID: "local", revision: 3)
+        )
+        _ = reduceDevices(
+            &gated,
+            devices: cluster,
+            lastRemoteDeviceID: "phone",
+            revision: 4,
+            engine: 7,
+            account: 4
+        )
+        let afterAccepted = gated
+        check.check(
+            "a stale device revision is rejected",
+            !reduceDevices(
+                &gated,
+                devices: [localComputer, activePhone],
+                lastRemoteDeviceID: "phone",
+                revision: 3,
+                engine: 7,
+                account: 4
+            )
+        )
+        check.equal("a stale device revision is inert", gated, afterAccepted)
+        check.check(
+            "a stale engine epoch is rejected",
+            !reduceDevices(
+                &gated,
+                devices: [localComputer, activePhone],
+                lastRemoteDeviceID: "phone",
+                revision: 5,
+                engine: 6,
+                account: 4
+            )
+        )
+        check.equal("a stale engine epoch is inert", gated, afterAccepted)
+        check.check(
+            "a stale account epoch is rejected",
+            !reduceDevices(
+                &gated,
+                devices: [localComputer, activePhone],
+                lastRemoteDeviceID: "phone",
+                revision: 5,
+                engine: 7,
+                account: 3
+            )
+        )
+        check.equal("a stale account epoch is inert", gated, afterAccepted)
     }
 
     check.suite("Atomic engine snapshots") {

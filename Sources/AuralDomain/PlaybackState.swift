@@ -30,9 +30,13 @@ public enum PlaybackOwner: Equatable, Sendable {
     case uncertain(PlaybackDevice?)
 }
 
-/// Resolves a connection callback without making metadata availability part of playback
-/// ownership. A URI is sufficient evidence that playback exists; labels and artwork may arrive
-/// later without changing where transport commands must be routed.
+/// Single owner-resolution policy for connection callbacks and device snapshots.
+/// Metadata availability is not ownership: a URI is sufficient evidence that playback exists,
+/// so labels and artwork may arrive later without changing where transport commands route.
+/// `lastRemoteDeviceID` is immutable event context, never read from store preferences here.
+/// A matching remembered remote remains an uncertain candidate so paused Connect playback stays
+/// remote-routable; a missing, stale, or local identity fallback stays `uncertain(nil)` and
+/// never becomes local.
 public func connectionPlaybackOwner(
     isLocalActive: Bool,
     localDeviceID: String?,
@@ -59,9 +63,12 @@ public func connectionPlaybackOwner(
 
     let candidate: PlaybackDevice? = switch previousOwner {
     case let .remote(device), let .uncertain(.some(device)):
-        device
+        devices.first { $0.id == device.id } ?? device
     default:
-        lastRemoteDeviceID.flatMap { id in devices.first { $0.id == id } }
+        lastRemoteDeviceID.flatMap { id in
+            guard id != localDeviceID else { return nil }
+            return devices.first { $0.id == id }
+        }
     }
     return .uncertain(candidate)
 }
@@ -326,11 +333,20 @@ public struct PlaybackDeviceSnapshot: Equatable, Sendable {
     public var devices: [PlaybackDevice]
     public var localDeviceID: String?
     public var revision: UInt64
+    /// Remembered remote device stamped by the store at event intake. The reducer uses this
+    /// only as payload; it does not read preferences.
+    public var lastRemoteDeviceID: String?
 
-    public init(devices: [PlaybackDevice] = [], localDeviceID: String? = nil, revision: UInt64 = 0) {
+    public init(
+        devices: [PlaybackDevice] = [],
+        localDeviceID: String? = nil,
+        revision: UInt64 = 0,
+        lastRemoteDeviceID: String? = nil
+    ) {
         self.devices = devices
         self.localDeviceID = localDeviceID
         self.revision = revision
+        self.lastRemoteDeviceID = lastRemoteDeviceID
     }
 }
 
@@ -532,6 +548,7 @@ public enum PlaybackReducer {
             reconcileTransport(transport, in: &candidate)
         case let .enginePlayback(snapshot):
             let incomingURI = playbackTrackURI(snapshot.trackURI)
+            let previousURI = candidate.currentTrack?.uri
             reconcileSeekTiming(snapshot.timing, incomingTrackURI: incomingURI, in: &candidate)
             if let uri = incomingURI {
                 if candidate.currentTrack?.uri != uri {
@@ -540,6 +557,11 @@ public enum PlaybackReducer {
             } else {
                 candidate.currentTrack = nil
             }
+            adoptOwnerAfterTrackURIChange(
+                previousURI: previousURI,
+                incomingURI: incomingURI,
+                in: &candidate
+            )
             if let shuffle = snapshot.shuffle { candidate.options.shuffle = shuffle }
             if snapshot.repeatMode != nil || snapshot.repeatFlags != nil {
                 let flags = snapshot.repeatFlags
@@ -575,12 +597,18 @@ public enum PlaybackReducer {
             }
         case let .currentTrack(track):
             let incomingURI = playbackTrackURI(track?.uri)
+            let previousURI = candidate.currentTrack?.uri
             if candidate.pendingCommands[.seek] != nil,
                incomingURI == nil || playbackTrackURI(candidate.currentTrack?.uri) != incomingURI
             {
                 candidate.pendingCommands[.seek] = nil
             }
             candidate.currentTrack = track
+            adoptOwnerAfterTrackURIChange(
+                previousURI: previousURI,
+                incomingURI: incomingURI,
+                in: &candidate
+            )
             if track == nil {
                 candidate.transport = .stopped
                 candidate.timing = PlaybackTiming(anchoredAt: envelope.receivedAt)
@@ -605,20 +633,7 @@ public enum PlaybackReducer {
         case let .devices(devices):
             guard devices.revision >= candidate.devices.revision else { return false }
             candidate.devices = devices
-            if let active = devices.devices.first(where: \.isActive) {
-                candidate.owner = active.id == devices.localDeviceID ? .local(active) : .remote(active)
-            } else if candidate.currentTrack == nil {
-                candidate.owner = .none
-            } else {
-                let previousCandidate: PlaybackDevice? = switch candidate.owner {
-                case let .remote(device), let .uncertain(.some(device)): device
-                default: nil
-                }
-                let refreshed = previousCandidate.flatMap { prior in
-                    devices.devices.first { $0.id == prior.id }
-                } ?? previousCandidate
-                candidate.owner = .uncertain(refreshed)
-            }
+            applyConnectionPlaybackOwner(&candidate)
         case let .commandStarted(command):
             // Capture current presentation before applying the caller's target. The store must
             // not mutate transport or timing first, or rollback records the optimistic values.
@@ -751,6 +766,50 @@ public enum PlaybackReducer {
             {
                 state.pendingCommands[.seek] = nil
             }
+        }
+    }
+
+    private static func applyConnectionPlaybackOwner(_ candidate: inout PlaybackState) {
+        let devices = candidate.devices
+        let isLocalActive = devices.devices.contains {
+            $0.isActive && $0.id == devices.localDeviceID
+        }
+        candidate.owner = connectionPlaybackOwner(
+            isLocalActive: isLocalActive,
+            localDeviceID: devices.localDeviceID,
+            localDeviceName: devices.devices.first { $0.id == devices.localDeviceID }?.name ?? "",
+            devices: devices.devices,
+            currentTrackURI: candidate.currentTrack?.uri,
+            previousOwner: candidate.owner,
+            lastRemoteDeviceID: devices.lastRemoteDeviceID
+        )
+    }
+
+    /// Cluster delivery notifies devices before player state, so the first no-active snapshot
+    /// often has no URI yet and resolves to `.none`. When a URI later appears or clears, reuse
+    /// the stamped last-remote context instead of leaving `.none` locally routable.
+    /// Connection-authoritative `.local` / `.remote` / identified `.uncertain` owners stay put
+    /// until a devices snapshot re-resolves them.
+    private static func adoptOwnerAfterTrackURIChange(
+        previousURI: String?,
+        incomingURI: String?,
+        in candidate: inout PlaybackState
+    ) {
+        let previous = playbackTrackURI(previousURI)
+        let incoming = playbackTrackURI(incomingURI)
+        guard previous != incoming else { return }
+        if incoming == nil {
+            if case .uncertain = candidate.owner {
+                applyConnectionPlaybackOwner(&candidate)
+            }
+            return
+        }
+        guard previous == nil else { return }
+        switch candidate.owner {
+        case .none, .uncertain(nil):
+            applyConnectionPlaybackOwner(&candidate)
+        default:
+            break
         }
     }
 

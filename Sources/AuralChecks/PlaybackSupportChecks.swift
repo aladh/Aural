@@ -324,6 +324,39 @@ func runPlaybackSupportChecks(_ check: CheckRunner) {
             connectCommandRoute(owner: metadataLateOwner, localDeviceID: "local"),
             .remote(from: "local", to: "phone")
         )
+        let missingFallbackOwner = connectionPlaybackOwner(
+            isLocalActive: false,
+            localDeviceID: "local",
+            localDeviceName: "Aural",
+            devices: [PlaybackDevice(id: "local", name: "Aural", type: "computer"), inactivePhone],
+            currentTrackURI: "spotify:track:paused",
+            previousOwner: .none,
+            lastRemoteDeviceID: "missing-speaker"
+        )
+        check.equal(
+            "a stale last-remote fallback stays unidentified",
+            missingFallbackOwner,
+            .uncertain(nil)
+        )
+        check.equal(
+            "an unidentified fallback cannot steal playback locally",
+            connectCommandRoute(owner: missingFallbackOwner, localDeviceID: "local"),
+            .waitingForLocalIdentity
+        )
+        let localIdentityFallback = connectionPlaybackOwner(
+            isLocalActive: false,
+            localDeviceID: "local",
+            localDeviceName: "Aural",
+            devices: [PlaybackDevice(id: "local", name: "Aural", type: "computer"), inactivePhone],
+            currentTrackURI: "spotify:track:paused",
+            previousOwner: .none,
+            lastRemoteDeviceID: "local"
+        )
+        check.equal(
+            "a last-remote identity that matches this Mac stays unidentified",
+            localIdentityFallback,
+            .uncertain(nil)
+        )
 
         check.nil_(
             "a cached queue for an older track cannot replace playback identity",

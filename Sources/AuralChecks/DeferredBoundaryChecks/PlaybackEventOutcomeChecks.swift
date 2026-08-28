@@ -189,6 +189,18 @@ private actor IdlePreferences: PlaybackPreferences {
     func setShuffleHistory(_: [String: TimeInterval]) {}
 }
 
+private actor RecordingOwnerPreferences: PlaybackPreferences {
+    private var remoteID: String?
+
+    func seed(_ id: String?) { remoteID = id }
+    func shuffleEnabled() -> Bool { false }
+    func setShuffleEnabled(_: Bool) {}
+    func lastRemoteDeviceID() -> String? { remoteID }
+    func setLastRemoteDeviceID(_ id: String?) { remoteID = id }
+    func shuffleHistory() -> [String: TimeInterval] { [:] }
+    func setShuffleHistory(_: [String: TimeInterval]) {}
+}
+
 private struct IdleAudio: AudioOutputPreparing { func prepareForPlayback() throws {} }
 
 private struct StickyClock: PlaybackClock {
@@ -230,7 +242,8 @@ private func waitUntil(_ condition: @MainActor () async -> Bool) async -> Bool {
 private func outcomeEnvironment(
     local: any LocalPlaybackEngine = IdleLocalEngine(),
     remote: any RemotePlaybackClient,
-    webQueue: any WebQueueClient = IdleWebQueue()
+    webQueue: any WebQueueClient = IdleWebQueue(),
+    preferences: any PlaybackPreferences = IdlePreferences()
 ) -> PlaybackEnvironment {
     PlaybackEnvironment(
         remote: remote,
@@ -238,7 +251,7 @@ private func outcomeEnvironment(
         webQueue: webQueue,
         account: IdleAccount(),
         audioOutput: IdleAudio(),
-        preferences: IdlePreferences(),
+        preferences: preferences,
         lifecycle: IdleLifecycle(),
         clock: StickyClock(),
         catalog: IdleCatalog(),
@@ -739,5 +752,121 @@ func runPlaybackEventOutcomeChecks(_ runner: CheckRunner) async {
         runner.equal("a stale payload generation cannot replace now-playing title", stalePayload.state.currentTrack?.title, "Now")
         runner.nil_("a stale payload generation does not install mutation", stalePayload.queueMutation)
         await stalePayload.shutdownForTermination()
+    }
+
+    await runner.suite("Device owner resolution stamps last-remote context") {
+        let mac = ConnectDevice(id: "mac", name: "Mac", type: "computer", isActive: false)
+        let phone = ConnectDevice(id: "phone", name: "Phone", type: "smartphone", isActive: false)
+        let activePhone = ConnectDevice(id: "phone", name: "Phone", type: "smartphone", isActive: true)
+        let pausedURI = "spotify:track:paused-remote"
+        let expectedPhone = PlaybackDevice(id: "phone", name: "Phone", type: "smartphone", isActive: false)
+
+        @MainActor
+        func seedIdentity(_ player: PlaybackStore) {
+            _ = player.send(.session(.ready), source: .account)
+            _ = player.send(
+                .engineConnection(EngineConnectionSnapshot(
+                    session: .ready,
+                    owner: .none,
+                    localDeviceID: "mac"
+                )),
+                source: .engineConnection,
+                revision: 1,
+                engineEpoch: 1
+            )
+        }
+
+        let launchPreferences = RecordingOwnerPreferences()
+        await launchPreferences.seed("phone")
+        let launch = playbackStore(
+            outcomeEnvironment(remote: ImmediateMetadataRemote(), preferences: launchPreferences)
+        )
+        seedIdentity(launch)
+        launch.lastRemoteDeviceID = "phone"
+        launch.receive([mac, phone], revision: 1, engineEpoch: launch.engineGeneration)
+        runner.equal("cluster devices-first with no track is none", launch.state.owner, .none)
+        runner.equal("the store stamps last-remote context onto the snapshot", launch.state.devices.lastRemoteDeviceID, "phone")
+        _ = launch.send(
+            .currentTrack(CurrentTrack(
+                uri: pausedURI,
+                title: "Paused",
+                artist: "Artist",
+                duration: 180,
+                metadataSource: .connect
+            )),
+            source: .enginePlayback,
+            revision: 1,
+            engineEpoch: launch.engineGeneration
+        )
+        runner.equal(
+            "a later URI adopts the stamped last-remote candidate",
+            launch.state.owner,
+            .uncertain(expectedPhone)
+        )
+        runner.equal(
+            "devices-then-track stays remote-routable",
+            launch.commandRoute,
+            .remote(from: "mac", to: "phone")
+        )
+        await launch.shutdownForTermination()
+
+        let remotePreferences = RecordingOwnerPreferences()
+        let remoteActive = playbackStore(
+            outcomeEnvironment(remote: ImmediateMetadataRemote(), preferences: remotePreferences)
+        )
+        seedIdentity(remoteActive)
+        remoteActive.receive([mac, activePhone], revision: 1, engineEpoch: remoteActive.engineGeneration)
+        runner.equal(
+            "an active remote snapshot is remote ownership",
+            remoteActive.state.owner,
+            .remote(PlaybackDevice(id: "phone", name: "Phone", type: "smartphone", isActive: true))
+        )
+        runner.equal("the store records last-remote after an accepted active remote", remoteActive.lastRemoteDeviceID, "phone")
+        let preferenceWritten: Bool
+        if remoteActive.lastRemoteDeviceID == "phone" {
+            preferenceWritten = await waitUntil { await remotePreferences.lastRemoteDeviceID() == "phone" }
+        } else {
+            preferenceWritten = false
+        }
+        runner.check("an accepted active remote writes the last-remote preference", preferenceWritten)
+        await remoteActive.shutdownForTermination()
+
+        let stale = playbackStore(outcomeEnvironment(remote: ImmediateMetadataRemote()))
+        seedIdentity(stale)
+        stale.lastRemoteDeviceID = "phone"
+        stale.receive([mac, phone], revision: 4, engineEpoch: stale.engineGeneration)
+        let afterDevices = stale.state
+        stale.receive([mac, activePhone], revision: 3, engineEpoch: stale.engineGeneration)
+        runner.equal("a stale device revision does not replace owner", stale.state, afterDevices)
+        stale.receive([mac, activePhone], revision: 5, engineEpoch: 0)
+        runner.equal("a stale engine epoch does not replace owner", stale.state, afterDevices)
+        let rejected = stale.send(
+            .devices(PlaybackDeviceSnapshot(
+                devices: [
+                    PlaybackDevice(id: "mac", name: "Mac", type: "computer"),
+                    PlaybackDevice(id: "phone", name: "Phone", type: "smartphone", isActive: true),
+                ],
+                localDeviceID: "mac",
+                revision: 5,
+                lastRemoteDeviceID: "phone"
+            )),
+            source: .engineDevices,
+            revision: 5,
+            engineEpoch: stale.engineGeneration,
+            accountEpoch: 0
+        )
+        runner.check("a stale account epoch is rejected", !rejected)
+        runner.equal("a stale account epoch does not replace owner", stale.state, afterDevices)
+        await stale.shutdownForTermination()
+
+        let teardown = playbackStore(outcomeEnvironment(remote: ImmediateMetadataRemote()))
+        seedIdentity(teardown)
+        teardown.lastRemoteDeviceID = nil
+        let beforeTeardown = teardown.state
+        teardown.isTearingDown = true
+        teardown.receive([mac, activePhone], revision: 1, engineEpoch: teardown.engineGeneration)
+        runner.equal("teardown device intake is inert", teardown.state, beforeTeardown)
+        runner.nil_("teardown does not record last-remote from a discarded snapshot", teardown.lastRemoteDeviceID)
+        await teardown.shutdownForTermination()
     }
 }
