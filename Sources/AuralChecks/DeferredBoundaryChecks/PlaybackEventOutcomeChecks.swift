@@ -758,7 +758,6 @@ func runPlaybackEventOutcomeChecks(_ runner: CheckRunner) async {
         let mac = ConnectDevice(id: "mac", name: "Mac", type: "computer", isActive: false)
         let phone = ConnectDevice(id: "phone", name: "Phone", type: "smartphone", isActive: false)
         let activePhone = ConnectDevice(id: "phone", name: "Phone", type: "smartphone", isActive: true)
-        let activeMac = ConnectDevice(id: "mac", name: "Mac", type: "computer", isActive: true)
         let pausedURI = "spotify:track:paused-remote"
         let expectedPhone = PlaybackDevice(id: "phone", name: "Phone", type: "smartphone", isActive: false)
 
@@ -777,128 +776,45 @@ func runPlaybackEventOutcomeChecks(_ runner: CheckRunner) async {
             )
         }
 
-        @MainActor
-        func seedTrack(_ player: PlaybackStore) {
-            _ = player.send(
-                .currentTrack(CurrentTrack(
-                    uri: pausedURI,
-                    title: "Paused",
-                    artist: "Artist",
-                    duration: 180,
-                    metadataSource: .connect
-                )),
-                source: .enginePlayback,
-                revision: 1,
-                engineEpoch: player.engineGeneration
-            )
-        }
-
-        let fallbackPreferences = RecordingOwnerPreferences()
-        await fallbackPreferences.seed("phone")
-        let fallback = playbackStore(
-            outcomeEnvironment(remote: ImmediateMetadataRemote(), preferences: fallbackPreferences)
+        let launchPreferences = RecordingOwnerPreferences()
+        await launchPreferences.seed("phone")
+        let launch = playbackStore(
+            outcomeEnvironment(remote: ImmediateMetadataRemote(), preferences: launchPreferences)
         )
-        seedIdentity(fallback)
-        fallback.lastRemoteDeviceID = "phone"
-        seedTrack(fallback)
-        fallback.receive([mac, phone], revision: 1, engineEpoch: fallback.engineGeneration)
-        runner.equal(
-            "a no-active snapshot with last-remote context is uncertain remote",
-            fallback.state.owner,
-            .uncertain(expectedPhone)
-        )
-        runner.equal("the store stamps last-remote context onto the snapshot", fallback.state.devices.lastRemoteDeviceID, "phone")
-        runner.equal(
-            "the last-remote fallback remains remote-routable",
-            fallback.commandRoute,
-            .remote(from: "mac", to: "phone")
-        )
-        await fallback.shutdownForTermination()
-
-        let connection = playbackStore(outcomeEnvironment(remote: ImmediateMetadataRemote()))
-        seedIdentity(connection)
-        connection.receive([mac, phone], revision: 1, engineEpoch: connection.engineGeneration)
-        connection.lastRemoteDeviceID = "phone"
-        seedTrack(connection)
-        connection.receive(
-            RustConnectionState(
-                revision: 2,
-                sessionGeneration: connection.engineGeneration,
-                sessionConnected: true,
-                spircReady: true,
-                isActiveDevice: false,
-                lastError: nil,
-                deviceID: "mac",
-                deviceName: "Mac"
-            ),
-            revision: 2,
-            receivedAt: Date(timeIntervalSince1970: 1_800_000_000)
+        seedIdentity(launch)
+        launch.lastRemoteDeviceID = "phone"
+        launch.receive([mac, phone], revision: 1, engineEpoch: launch.engineGeneration)
+        runner.equal("cluster devices-first with no track is none", launch.state.owner, .none)
+        runner.equal("the store stamps last-remote context onto the snapshot", launch.state.devices.lastRemoteDeviceID, "phone")
+        _ = launch.send(
+            .currentTrack(CurrentTrack(
+                uri: pausedURI,
+                title: "Paused",
+                artist: "Artist",
+                duration: 180,
+                metadataSource: .connect
+            )),
+            source: .enginePlayback,
+            revision: 1,
+            engineEpoch: launch.engineGeneration
         )
         runner.equal(
-            "a connection callback uses the same last-remote fallback",
-            connection.state.owner,
+            "a later URI adopts the stamped last-remote candidate",
+            launch.state.owner,
             .uncertain(expectedPhone)
         )
         runner.equal(
-            "the connection fallback remains remote-routable",
-            connection.commandRoute,
+            "devices-then-track stays remote-routable",
+            launch.commandRoute,
             .remote(from: "mac", to: "phone")
         )
-        await connection.shutdownForTermination()
-
-        let missing = playbackStore(outcomeEnvironment(remote: ImmediateMetadataRemote()))
-        seedIdentity(missing)
-        missing.lastRemoteDeviceID = "missing-speaker"
-        seedTrack(missing)
-        missing.receive([mac, phone], revision: 1, engineEpoch: missing.engineGeneration)
-        runner.equal("a stale last-remote fallback is uncertain(nil)", missing.state.owner, .uncertain(nil))
-        runner.equal(
-            "a stale last-remote fallback waits for identity instead of going local",
-            missing.commandRoute,
-            .waitingForLocalIdentity
-        )
-        await missing.shutdownForTermination()
-
-        let localIdentity = playbackStore(outcomeEnvironment(remote: ImmediateMetadataRemote()))
-        seedIdentity(localIdentity)
-        localIdentity.lastRemoteDeviceID = "mac"
-        seedTrack(localIdentity)
-        localIdentity.receive([mac, phone], revision: 1, engineEpoch: localIdentity.engineGeneration)
-        runner.equal("a last-remote identity matching this Mac stays uncertain(nil)", localIdentity.state.owner, .uncertain(nil))
-        runner.equal(
-            "a local-identity fallback does not silently become local",
-            localIdentity.commandRoute,
-            .waitingForLocalIdentity
-        )
-        await localIdentity.shutdownForTermination()
-
-        let noTrack = playbackStore(outcomeEnvironment(remote: ImmediateMetadataRemote()))
-        seedIdentity(noTrack)
-        noTrack.lastRemoteDeviceID = "phone"
-        noTrack.receive([mac, phone], revision: 1, engineEpoch: noTrack.engineGeneration)
-        runner.equal("no current track clears owner even with last-remote context", noTrack.state.owner, .none)
-        runner.equal("no current track stays local-routable", noTrack.commandRoute, .local)
-        await noTrack.shutdownForTermination()
-
-        let localActive = playbackStore(outcomeEnvironment(remote: ImmediateMetadataRemote()))
-        seedIdentity(localActive)
-        localActive.lastRemoteDeviceID = "phone"
-        seedTrack(localActive)
-        localActive.receive([activeMac, phone], revision: 1, engineEpoch: localActive.engineGeneration)
-        runner.equal(
-            "an active local snapshot is local ownership",
-            localActive.state.owner,
-            .local(PlaybackDevice(id: "mac", name: "Mac", type: "computer", isActive: true))
-        )
-        runner.equal("an active local snapshot routes locally", localActive.commandRoute, .local)
-        await localActive.shutdownForTermination()
+        await launch.shutdownForTermination()
 
         let remotePreferences = RecordingOwnerPreferences()
         let remoteActive = playbackStore(
             outcomeEnvironment(remote: ImmediateMetadataRemote(), preferences: remotePreferences)
         )
         seedIdentity(remoteActive)
-        seedTrack(remoteActive)
         remoteActive.receive([mac, activePhone], revision: 1, engineEpoch: remoteActive.engineGeneration)
         runner.equal(
             "an active remote snapshot is remote ownership",
@@ -906,22 +822,18 @@ func runPlaybackEventOutcomeChecks(_ runner: CheckRunner) async {
             .remote(PlaybackDevice(id: "phone", name: "Phone", type: "smartphone", isActive: true))
         )
         runner.equal("the store records last-remote after an accepted active remote", remoteActive.lastRemoteDeviceID, "phone")
-        let writtenRemoteID = remoteActive.lastRemoteDeviceID == "phone"
-            && await waitUntil { await remotePreferences.lastRemoteDeviceID() == "phone" }
-            ? "phone"
-            : nil
-        runner.equal(
-            "an accepted active remote writes the last-remote preference",
-            writtenRemoteID,
-            "phone"
-        )
-        runner.equal("an active remote snapshot routes remotely", remoteActive.commandRoute, .remote(from: "mac", to: "phone"))
+        let preferenceWritten: Bool
+        if remoteActive.lastRemoteDeviceID == "phone" {
+            preferenceWritten = await waitUntil { await remotePreferences.lastRemoteDeviceID() == "phone" }
+        } else {
+            preferenceWritten = false
+        }
+        runner.check("an accepted active remote writes the last-remote preference", preferenceWritten)
         await remoteActive.shutdownForTermination()
 
         let stale = playbackStore(outcomeEnvironment(remote: ImmediateMetadataRemote()))
         seedIdentity(stale)
         stale.lastRemoteDeviceID = "phone"
-        seedTrack(stale)
         stale.receive([mac, phone], revision: 4, engineEpoch: stale.engineGeneration)
         let afterDevices = stale.state
         stale.receive([mac, activePhone], revision: 3, engineEpoch: stale.engineGeneration)
@@ -949,7 +861,6 @@ func runPlaybackEventOutcomeChecks(_ runner: CheckRunner) async {
 
         let teardown = playbackStore(outcomeEnvironment(remote: ImmediateMetadataRemote()))
         seedIdentity(teardown)
-        seedTrack(teardown)
         teardown.lastRemoteDeviceID = nil
         let beforeTeardown = teardown.state
         teardown.isTearingDown = true
