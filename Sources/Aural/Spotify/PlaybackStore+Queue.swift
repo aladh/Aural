@@ -233,13 +233,15 @@ extension PlaybackStore {
                   !self.isTearingDown,
                   self.isConnected,
                   self.accountEpoch == epoch,
-                  self.engineGeneration == capturedEngineEpoch,
                   let data = json.data(using: .utf8),
                   let state = try? JSONDecoder().decode(RustQueueState.self, from: data)
             else { return }
-            // Watermark is callback identity, not reducer-owned queue provenance. A stale
-            // snapshot with a nil `sessionGeneration` can still record revision, so captured
-            // account/engine lifetime must still match before `accept`.
+            // Stamp the decoded payload generation. A nil `sessionGeneration` snapshot can
+            // still record revision, so the pre-await engine lifetime must still match then.
+            // `ConnectQueueCallbackWatermark` remains callback identity, not this stamp.
+            if state.sessionGeneration == nil {
+                guard self.engineGeneration == capturedEngineEpoch else { return }
+            }
             guard self.acceptsConnectQueueCallback(
                 generation: state.sessionGeneration,
                 revision: state.revision
@@ -249,7 +251,7 @@ extension PlaybackStore {
                 revision: state.revision,
                 mayAdoptPlaybackIdentity: false,
                 accountEpoch: epoch,
-                engineEpoch: capturedEngineEpoch
+                engineEpoch: state.sessionGeneration
             )
         })
     }
