@@ -91,25 +91,24 @@ extension PlaybackStore {
     }
 
     func toggleShuffle() {
-        let previous = isShuffleEnabled
         let enabled = !isShuffleEnabled
-        setShuffleEnabled(enabled)
-        Task { await environment.preferences.setShuffleEnabled(enabled) }
-
         // Spotify Connect only exposes an on/off command. Keep other clients in sync when
         // there is a live context; playlist starts in Aural use the local freshness ordering.
         if isActiveDevice || activeRemoteDevice != nil {
             performRoutedCommand(
                 "Could not update shuffle",
                 kind: .options,
+                expectedShuffle: enabled,
                 local: .shuffle(enabled),
                 remote: .shuffle(enabled)
             ) { [weak self] accepted in
-                guard let self, !accepted else { return }
-                self.setShuffleEnabled(previous)
-                Task { await self.environment.preferences.setShuffleEnabled(previous) }
+                guard let self, accepted else { return }
+                Task { await self.environment.preferences.setShuffleEnabled(self.isShuffleEnabled) }
             }
+            return
         }
+        setShuffleEnabled(enabled)
+        Task { await environment.preferences.setShuffleEnabled(enabled) }
     }
 
     func togglePlayback() {

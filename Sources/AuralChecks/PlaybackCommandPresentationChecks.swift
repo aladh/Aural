@@ -1120,4 +1120,260 @@ func runPlaybackCommandPresentationChecks(_ check: CheckRunner) {
         check.equal("a rejected same-URI play restores A's timing", sameURI.timing, priorPlayingTiming)
         check.nil_("a rejected same-URI play drops the nested seek", sameURI.pendingCommands[.seek])
     }
+
+    check.suite("Shuffle options optimism is reducer-owned") {
+        let shuffleID = UUID(uuidString: "00000000-0000-0000-0000-000000000050")!
+        let confirmedID = UUID(uuidString: "00000000-0000-0000-0000-000000000051")!
+        let acceptedID = UUID(uuidString: "00000000-0000-0000-0000-000000000052")!
+        let laterOptionsID = UUID(uuidString: "00000000-0000-0000-0000-000000000053")!
+        let repeatID = UUID(uuidString: "00000000-0000-0000-0000-000000000054")!
+
+        func startShuffle(_ state: inout PlaybackState, id: UUID, expected: Bool) {
+            _ = PlaybackReducer.reduce(
+                &state,
+                envelope: presentationEnvelope(
+                    source: .command,
+                    event: .commandStarted(PendingPlaybackCommand(
+                        id: id,
+                        kind: .options,
+                        expectedTransport: nil,
+                        expectedShuffle: expected,
+                        startedAt: presentationDate
+                    ))
+                )
+            )
+        }
+
+        func engineShuffle(
+            _ state: inout PlaybackState,
+            shuffle: Bool,
+            revision: UInt64,
+            repeatMode: RepeatMode? = nil
+        ) {
+            _ = PlaybackReducer.reduce(
+                &state,
+                envelope: presentationEnvelope(
+                    source: .enginePlayback,
+                    revision: revision,
+                    event: .enginePlayback(EnginePlaybackSnapshot(
+                        transport: .paused,
+                        trackURI: nil,
+                        timing: PlaybackTiming(anchoredAt: presentationDate),
+                        shuffle: shuffle,
+                        repeatMode: repeatMode
+                    ))
+                )
+            )
+        }
+
+        var rejected = PlaybackState(
+            accountEpoch: 1,
+            engineEpoch: 1,
+            session: .ready,
+            options: PlaybackOptions(shuffle: true)
+        )
+        startShuffle(&rejected, id: shuffleID, expected: false)
+        check.equal("shuffle applies the requested value atomically", rejected.options.shuffle, false)
+        check.equal(
+            "shuffle captures the exact pre-command value",
+            rejected.pendingCommands[.options]?.rollbackShuffle,
+            true
+        )
+        check.equal("shuffle records the requested target", rejected.pendingCommands[.options]?.expectedShuffle, false)
+        engineShuffle(&rejected, shuffle: true, revision: 1)
+        check.equal("a lagging on snapshot keeps optimistic off", rejected.options.shuffle, false)
+        check.equal("a lagging on snapshot does not confirm off", rejected.pendingCommands[.options]?.id, shuffleID)
+        check.nil_("a lagging on snapshot is not a confirmation", rejected.transportCommandResolutions[shuffleID])
+        _ = PlaybackReducer.reduce(
+            &rejected,
+            envelope: presentationEnvelope(
+                source: .command,
+                event: .commandFinished(
+                    id: shuffleID,
+                    accepted: false,
+                    notice: PlaybackNotice(message: "Could not update shuffle")
+                )
+            )
+        )
+        check.equal("a rejected shuffle restores the exact prior value", rejected.options.shuffle, true)
+        check.nil_("a rejected shuffle clears its pending command", rejected.pendingCommands[.options])
+
+        var confirmed = PlaybackState(
+            accountEpoch: 1,
+            engineEpoch: 1,
+            session: .ready,
+            options: PlaybackOptions(shuffle: true)
+        )
+        startShuffle(&confirmed, id: confirmedID, expected: false)
+        engineShuffle(&confirmed, shuffle: false, revision: 1)
+        check.equal("an authoritative off snapshot keeps off", confirmed.options.shuffle, false)
+        check.nil_("an authoritative off snapshot confirms the command", confirmed.pendingCommands[.options])
+        check.equal(
+            "an authoritative off snapshot records confirmation",
+            confirmed.transportCommandResolutions[confirmedID],
+            .confirmed
+        )
+        let capturedConfirmation = confirmed.transportCommandResolutions[confirmedID]
+        let lateFailure = PlaybackReducer.reduce(
+            &confirmed,
+            envelope: presentationEnvelope(
+                source: .command,
+                event: .commandFinished(
+                    id: confirmedID,
+                    accepted: false,
+                    notice: PlaybackNotice(message: "Could not update shuffle")
+                )
+            )
+        )
+        check.check("a late failure after shuffle confirmation is accepted to consume the entry", lateFailure)
+        check.nil_("a late failure after shuffle confirmation consumes the resolution", confirmed.transportCommandResolutions[confirmedID])
+        check.equal("a late failure after shuffle confirmation keeps off", confirmed.options.shuffle, false)
+        check.equal(
+            "a captured shuffle confirmation still reports success after consume-only acceptance",
+            playbackCommandFollowUp(
+                finishAccepted: lateFailure,
+                operationSucceeded: false,
+                requiresReconnect: false,
+                commandKind: .options,
+                pendingCommandID: confirmed.pendingCommands[.options]?.id,
+                finishedCommandResolution: capturedConfirmation,
+                capturedAccountEpoch: 1,
+                capturedEngineEpoch: 1,
+                currentAccountEpoch: 1,
+                currentEngineEpoch: 1,
+                isTearingDown: false
+            ),
+            .reportSuccess
+        )
+
+        var accepted = PlaybackState(
+            accountEpoch: 1,
+            engineEpoch: 1,
+            session: .ready,
+            options: PlaybackOptions(shuffle: false)
+        )
+        startShuffle(&accepted, id: acceptedID, expected: true)
+        _ = PlaybackReducer.reduce(
+            &accepted,
+            envelope: presentationEnvelope(
+                source: .command,
+                event: .commandFinished(id: acceptedID, accepted: true, notice: nil)
+            )
+        )
+        check.equal("an accepted shuffle keeps the requested value", accepted.options.shuffle, true)
+        check.nil_("an accepted shuffle clears its pending command", accepted.pendingCommands[.options])
+
+        var laterOptions = PlaybackState(
+            accountEpoch: 1,
+            engineEpoch: 1,
+            session: .ready,
+            options: PlaybackOptions(shuffle: true, repeatMode: .off)
+        )
+        startShuffle(&laterOptions, id: confirmedID, expected: false)
+        engineShuffle(&laterOptions, shuffle: false, revision: 1)
+        check.equal(
+            "shuffle confirmation records the shuffle id",
+            laterOptions.transportCommandResolutions[confirmedID],
+            .confirmed
+        )
+        _ = PlaybackReducer.reduce(
+            &laterOptions,
+            envelope: presentationEnvelope(
+                source: .command,
+                event: .commandStarted(PendingPlaybackCommand(
+                    id: laterOptionsID,
+                    kind: .options,
+                    expectedTransport: nil,
+                    startedAt: presentationDate
+                ))
+            )
+        )
+        check.equal(
+            "a later options command does not drop the confirmed shuffle id",
+            laterOptions.transportCommandResolutions[confirmedID],
+            .confirmed
+        )
+        check.equal("a later options command is the pending options command", laterOptions.pendingCommands[.options]?.id, laterOptionsID)
+        check.equal("a later options command does not invent shuffle rollback", laterOptions.pendingCommands[.options]?.rollbackShuffle, nil as Bool?)
+        check.equal("a later options command keeps confirmed off", laterOptions.options.shuffle, false)
+        let capturedLaterConfirmation = laterOptions.transportCommandResolutions[confirmedID]
+        let lateShuffleFinish = PlaybackReducer.reduce(
+            &laterOptions,
+            envelope: presentationEnvelope(
+                source: .command,
+                event: .commandFinished(
+                    id: confirmedID,
+                    accepted: false,
+                    notice: PlaybackNotice(message: "Could not update shuffle")
+                )
+            )
+        )
+        check.check("a late shuffle finish after a later options command consumes the shuffle entry", lateShuffleFinish)
+        check.nil_("a late shuffle finish after a later options command removes the shuffle resolution", laterOptions.transportCommandResolutions[confirmedID])
+        check.equal("a late shuffle finish after a later options command leaves that command pending", laterOptions.pendingCommands[.options]?.id, laterOptionsID)
+        check.equal("a late shuffle finish after a later options command keeps off", laterOptions.options.shuffle, false)
+        check.equal(
+            "a late shuffle finish after a later options command still reports success",
+            playbackCommandFollowUp(
+                finishAccepted: lateShuffleFinish,
+                operationSucceeded: false,
+                requiresReconnect: false,
+                commandKind: .options,
+                pendingCommandID: laterOptions.pendingCommands[.options]?.id,
+                finishedCommandResolution: capturedLaterConfirmation,
+                capturedAccountEpoch: 1,
+                capturedEngineEpoch: 1,
+                currentAccountEpoch: 1,
+                currentEngineEpoch: 1,
+                isTearingDown: false
+            ),
+            .reportSuccess
+        )
+        _ = PlaybackReducer.reduce(
+            &laterOptions,
+            envelope: presentationEnvelope(
+                source: .command,
+                event: .commandFinished(id: laterOptionsID, accepted: true, notice: nil)
+            )
+        )
+        check.equal("the later options command can still finish after the shuffle entry was consumed", laterOptions.options.shuffle, false)
+        check.nil_("an accepted later options command clears pending options", laterOptions.pendingCommands[.options])
+
+        var repeatPending = PlaybackState(
+            accountEpoch: 1,
+            engineEpoch: 1,
+            session: .ready,
+            options: PlaybackOptions(shuffle: true, repeatMode: .off)
+        )
+        _ = PlaybackReducer.reduce(
+            &repeatPending,
+            envelope: presentationEnvelope(
+                source: .command,
+                event: .commandStarted(PendingPlaybackCommand(
+                    id: repeatID,
+                    kind: .options,
+                    expectedTransport: nil,
+                    startedAt: presentationDate
+                ))
+            )
+        )
+        engineShuffle(&repeatPending, shuffle: false, revision: 1, repeatMode: .track)
+        check.equal("a repeat options command still adopts engine shuffle", repeatPending.options.shuffle, false)
+        check.equal("a repeat options command still adopts engine repeat", repeatPending.options.repeatMode, .track)
+        check.equal("a shuffle sample does not confirm a repeat options command", repeatPending.pendingCommands[.options]?.id, repeatID)
+        check.nil_("a shuffle sample does not record confirmation for a repeat command", repeatPending.transportCommandResolutions[repeatID])
+        _ = PlaybackReducer.reduce(
+            &repeatPending,
+            envelope: presentationEnvelope(
+                source: .command,
+                event: .commandFinished(
+                    id: repeatID,
+                    accepted: false,
+                    notice: PlaybackNotice(message: "Could not update repeat")
+                )
+            )
+        )
+        check.equal("a rejected repeat options command does not restore shuffle", repeatPending.options.shuffle, false)
+        check.equal("a rejected repeat options command does not restore repeat", repeatPending.options.repeatMode, .track)
+    }
 }
