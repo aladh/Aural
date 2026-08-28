@@ -30,9 +30,13 @@ public enum PlaybackOwner: Equatable, Sendable {
     case uncertain(PlaybackDevice?)
 }
 
-/// Resolves a connection callback without making metadata availability part of playback
-/// ownership. A URI is sufficient evidence that playback exists; labels and artwork may arrive
-/// later without changing where transport commands must be routed.
+/// Single owner-resolution policy for connection callbacks and device snapshots.
+/// Metadata availability is not ownership: a URI is sufficient evidence that playback exists,
+/// so labels and artwork may arrive later without changing where transport commands route.
+/// `lastRemoteDeviceID` is immutable event context, never read from store preferences here.
+/// A matching remembered remote remains an uncertain candidate so paused Connect playback stays
+/// remote-routable; a missing, stale, or local identity fallback stays `uncertain(nil)` and
+/// never becomes local.
 public func connectionPlaybackOwner(
     isLocalActive: Bool,
     localDeviceID: String?,
@@ -59,9 +63,12 @@ public func connectionPlaybackOwner(
 
     let candidate: PlaybackDevice? = switch previousOwner {
     case let .remote(device), let .uncertain(.some(device)):
-        device
+        devices.first { $0.id == device.id } ?? device
     default:
-        lastRemoteDeviceID.flatMap { id in devices.first { $0.id == id } }
+        lastRemoteDeviceID.flatMap { id in
+            guard id != localDeviceID else { return nil }
+            return devices.first { $0.id == id }
+        }
     }
     return .uncertain(candidate)
 }
@@ -326,11 +333,20 @@ public struct PlaybackDeviceSnapshot: Equatable, Sendable {
     public var devices: [PlaybackDevice]
     public var localDeviceID: String?
     public var revision: UInt64
+    /// Remembered remote device stamped by the store at event intake. The reducer uses this
+    /// only as payload; it does not read preferences.
+    public var lastRemoteDeviceID: String?
 
-    public init(devices: [PlaybackDevice] = [], localDeviceID: String? = nil, revision: UInt64 = 0) {
+    public init(
+        devices: [PlaybackDevice] = [],
+        localDeviceID: String? = nil,
+        revision: UInt64 = 0,
+        lastRemoteDeviceID: String? = nil
+    ) {
         self.devices = devices
         self.localDeviceID = localDeviceID
         self.revision = revision
+        self.lastRemoteDeviceID = lastRemoteDeviceID
     }
 }
 
@@ -604,21 +620,20 @@ public enum PlaybackReducer {
             )
         case let .devices(devices):
             guard devices.revision >= candidate.devices.revision else { return false }
+            let previousOwner = candidate.owner
             candidate.devices = devices
-            if let active = devices.devices.first(where: \.isActive) {
-                candidate.owner = active.id == devices.localDeviceID ? .local(active) : .remote(active)
-            } else if candidate.currentTrack == nil {
-                candidate.owner = .none
-            } else {
-                let previousCandidate: PlaybackDevice? = switch candidate.owner {
-                case let .remote(device), let .uncertain(.some(device)): device
-                default: nil
-                }
-                let refreshed = previousCandidate.flatMap { prior in
-                    devices.devices.first { $0.id == prior.id }
-                } ?? previousCandidate
-                candidate.owner = .uncertain(refreshed)
+            let isLocalActive = devices.devices.contains {
+                $0.isActive && $0.id == devices.localDeviceID
             }
+            candidate.owner = connectionPlaybackOwner(
+                isLocalActive: isLocalActive,
+                localDeviceID: devices.localDeviceID,
+                localDeviceName: devices.devices.first { $0.id == devices.localDeviceID }?.name ?? "",
+                devices: devices.devices,
+                currentTrackURI: candidate.currentTrack?.uri,
+                previousOwner: previousOwner,
+                lastRemoteDeviceID: devices.lastRemoteDeviceID
+            )
         case let .commandStarted(command):
             // Capture current presentation before applying the caller's target. The store must
             // not mutate transport or timing first, or rollback records the optimistic values.

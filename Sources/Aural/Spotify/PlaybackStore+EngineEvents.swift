@@ -324,7 +324,8 @@ extension PlaybackStore {
                 PlaybackDevice(id: $0.id, name: $0.name, type: $0.type, isActive: $0.isActive)
             },
             localDeviceID: localDeviceID,
-            revision: revision
+            revision: revision,
+            lastRemoteDeviceID: lastRemoteDeviceID
         )
         let accepted = send(
             .devices(snapshot),
