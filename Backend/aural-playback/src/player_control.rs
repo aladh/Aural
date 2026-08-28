@@ -321,99 +321,122 @@ pub extern "C" fn aural_playback_cleanup() {
         // Invalidate the current generation first, so anything already in flight — most
         // importantly a reconnect loop sleeping between attempts — sees that what it was
         // recovering no longer exists and abandons instead of rebuilding over the teardown.
+        // This bump is *before* waiting on the lifecycle lock so an in-flight commit can
+        // observe supersession while it still holds that lock.
         let invalidated = SESSION_GENERATION.fetch_add(1, Ordering::SeqCst) + 1;
         debug!(
             "aural_playback_cleanup invalidated generation, now {}",
             invalidated
         );
 
-        // Signal event listener to stop
-        if let Some(tx) = PLAYER_EVENT_TX
-            .lock()
-            .unwrap_or_else(|e| e.into_inner())
-            .take()
-        {
-            let _ = tx.send(());
+        match block_on_export(async {
+            with_lifecycle_lock(async {
+                let _store = enter_store_section();
+                cleanup_player_globals();
+            })
+            .await;
+        }) {
+            Ok(()) => {}
+            Err(_) => {
+                // Nested `block_on` cannot take `LIFECYCLE`. Unlocked writes would race an
+                // in-flight build. Generation is already invalidated above; Swift does not
+                // call cleanup from a Tokio worker.
+                debug!("aural_playback_cleanup: refusing nested-runtime cleanup");
+            }
         }
-
-        // Shutdown Spirc first - this terminates the spirc_task and closes the dealer
-        shutdown_spirc("aural_playback_cleanup");
-
-        // Now clear Spirc reference
-        *SPIRC.lock().unwrap_or_else(|e| e.into_inner()) = None;
-        // Clear player (see do_reconnect_cleanup for why Swift is told first)
-        proxy_sink::ProxySink::notify_player_gone();
-        *PLAYER.lock().unwrap_or_else(|e| e.into_inner()) = None;
-
-        // Clear mixer
-        *MIXER.lock().unwrap_or_else(|e| e.into_inner()) = None;
-
-        // Clear session
-        *SESSION.lock().unwrap_or_else(|e| e.into_inner()) = None;
-
-        // Reset state flags
-        IS_PLAYING.store(false, Ordering::SeqCst);
-        set_active_device(false);
-        SHUFFLE_STATE.store(false, Ordering::SeqCst);
-        REPEAT_TRACK_STATE.store(false, Ordering::SeqCst);
-        REPEAT_CONTEXT_STATE.store(false, Ordering::SeqCst);
-        POSITION_MS.store(0, Ordering::SeqCst);
-        // Belongs to the session being torn down. Surviving a logout would let a resume seek to
-        // an offset from the previous lifecycle, or another account's playback.
-        RESUME_POSITION_MS.store(0, Ordering::SeqCst);
-        // What that offset is an offset *into*, and the same argument applies with more at stake.
-        // `resume_via_load` loads `CURRENT_CONTEXT_URI` with `CURRENT_TRACK_URI` as its track
-        // hint, and nothing after a login rewrites them until playback establishes something new:
-        // `update_current_context_uri` ignores empty values, and `set_current_track_uri` only runs
-        // from player events. So pressing play as a freshly logged-in account reaches an activated
-        // Spirc with no queue, `play()` produces no `Playing` event, and the fallback loads the
-        // previous account's context — with its position, if this line's neighbour above had not
-        // already been cleared. Reachable through the ordinary control path: with nobody active,
-        // `sendTransportCommand` takes the Web API 404 and falls back to `aural_playback_resume`.
-        //
-        // Only a full cleanup clears them. The wake and reconnect paths run
-        // `do_reconnect_cleanup`, which deliberately leaves playback state alone so the
-        // rehydrating load has something to reload; this function runs on logout and on an
-        // explicit rebuild, after which Rust has no track or context loaded — which is what Swift
-        // already assumes when `performInitialization` nils its own `currentTrackUri`.
-        *CURRENT_TRACK_URI.lock().unwrap_or_else(|e| e.into_inner()) = None;
-        *CURRENT_CONTEXT_URI
-            .lock()
-            .unwrap_or_else(|e| e.into_inner()) = None;
-        LAST_VOLUME.store(0, Ordering::SeqCst);
-        LAST_ACTIVE_DEVICE_ID
-            .lock()
-            .unwrap_or_else(|e| e.into_inner())
-            .clear();
-
-        // The cluster describes an account, so both of these belong to the session being torn
-        // down. `aural_playback_get_queue_snapshot` is what the queue bootstrap reads on a cold start,
-        // and its whole guard rests on nil meaning "no cluster update has arrived" — a surviving
-        // snapshot makes that read as "this is the queue", and a freshly logged-in account gets
-        // the previous one's. The device list is a dedup cache, so a stale entry would suppress
-        // the first update after a login as unchanged.
-        *LAST_QUEUE_JSON.lock().unwrap_or_else(|e| e.into_inner()) = None;
-        LAST_DEVICES_JSON
-            .lock()
-            .unwrap_or_else(|e| e.into_inner())
-            .clear();
-
-        // Reset the connection snapshot: not ready, not connected, no device ID.
-        // reconnect_attempt is deliberately preserved - it drives exponential backoff and
-        // is only reset on a successful connect (in the SessionConnected handler).
-        with_connection(|c| {
-            c.spirc_ready = false;
-            c.session_connected = false;
-            c.session_connection_id = None;
-            c.device_id = None;
-            c.connected_since_ms = 0;
-        });
-
-        // Notify connection state change
-        notify_connection_state_change();
-
-        debug!("aural_playback_cleanup complete - ready for reinitialization");
     })
+}
+
+/// Clears engine globals and session-scoped playback identity.
+///
+/// Callers that write these stores must already hold the lifecycle lock.
+pub(crate) fn cleanup_player_globals() {
+    // Signal event listener to stop
+    if let Some(tx) = PLAYER_EVENT_TX
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .take()
+    {
+        let _ = tx.send(());
+    }
+
+    // Shutdown Spirc first - this terminates the spirc_task and closes the dealer
+    shutdown_spirc("aural_playback_cleanup");
+
+    // Now clear Spirc reference
+    *SPIRC.lock().unwrap_or_else(|e| e.into_inner()) = None;
+    // Clear player (see do_reconnect_cleanup for why Swift is told first)
+    proxy_sink::ProxySink::notify_player_gone();
+    *PLAYER.lock().unwrap_or_else(|e| e.into_inner()) = None;
+
+    // Clear mixer
+    *MIXER.lock().unwrap_or_else(|e| e.into_inner()) = None;
+
+    // Clear session
+    *SESSION.lock().unwrap_or_else(|e| e.into_inner()) = None;
+
+    // Reset state flags
+    IS_PLAYING.store(false, Ordering::SeqCst);
+    set_active_device(false);
+    SHUFFLE_STATE.store(false, Ordering::SeqCst);
+    REPEAT_TRACK_STATE.store(false, Ordering::SeqCst);
+    REPEAT_CONTEXT_STATE.store(false, Ordering::SeqCst);
+    POSITION_MS.store(0, Ordering::SeqCst);
+    // Belongs to the session being torn down. Surviving a logout would let a resume seek to
+    // an offset from the previous lifecycle, or another account's playback.
+    RESUME_POSITION_MS.store(0, Ordering::SeqCst);
+    // What that offset is an offset *into*, and the same argument applies with more at stake.
+    // `resume_via_load` loads `CURRENT_CONTEXT_URI` with `CURRENT_TRACK_URI` as its track
+    // hint, and nothing after a login rewrites them until playback establishes something new:
+    // `update_current_context_uri` ignores empty values, and `set_current_track_uri` only runs
+    // from player events. So pressing play as a freshly logged-in account reaches an activated
+    // Spirc with no queue, `play()` produces no `Playing` event, and the fallback loads the
+    // previous account's context — with its position, if this line's neighbour above had not
+    // already been cleared. Reachable through the ordinary control path: with nobody active,
+    // `sendTransportCommand` takes the Web API 404 and falls back to `aural_playback_resume`.
+    //
+    // Only a full cleanup clears them. The wake and reconnect paths run
+    // `do_reconnect_cleanup`, which deliberately leaves playback state alone so the
+    // rehydrating load has something to reload; this function runs on logout and on an
+    // explicit rebuild, after which Rust has no track or context loaded — which is what Swift
+    // already assumes when `performInitialization` nils its own `currentTrackUri`.
+    *CURRENT_TRACK_URI.lock().unwrap_or_else(|e| e.into_inner()) = None;
+    *CURRENT_CONTEXT_URI
+        .lock()
+        .unwrap_or_else(|e| e.into_inner()) = None;
+    LAST_VOLUME.store(0, Ordering::SeqCst);
+    LAST_ACTIVE_DEVICE_ID
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .clear();
+
+    // The cluster describes an account, so both of these belong to the session being torn
+    // down. `aural_playback_get_queue_snapshot` is what the queue bootstrap reads on a cold start,
+    // and its whole guard rests on nil meaning "no cluster update has arrived" — a surviving
+    // snapshot makes that read as "this is the queue", and a freshly logged-in account gets
+    // the previous one's. The device list is a dedup cache, so a stale entry would suppress
+    // the first update after a login as unchanged.
+    *LAST_QUEUE_JSON.lock().unwrap_or_else(|e| e.into_inner()) = None;
+    LAST_DEVICES_JSON
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .clear();
+
+    // Reset the connection snapshot: not ready, not connected, no device ID.
+    // reconnect_attempt is deliberately preserved - it drives exponential backoff and
+    // is only reset on a successful connect (in the SessionConnected handler).
+    with_connection(|c| {
+        c.spirc_ready = false;
+        c.session_connected = false;
+        c.session_connection_id = None;
+        c.device_id = None;
+        c.connected_since_ms = 0;
+    });
+
+    // Notify connection state change
+    notify_connection_state_change();
+
+    debug!("aural_playback_cleanup complete - ready for reinitialization");
 }
 
 /// Returns 1 if currently playing, 0 otherwise.

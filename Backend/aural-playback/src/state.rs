@@ -160,6 +160,7 @@ pub(crate) fn should_recover_after_deactivation(
 /// the deactivation handler clears the active flag, a `Stopped` event clears `IS_PLAYING`,
 /// and a final cluster update can clear both — so reading it late made "does an outage
 /// resume playback" depend on event ordering rather than on what was actually playing.
+/// The recovering session generation is captured the same way; see `start_reconnect_loop`.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) struct RecoveryIntent {
     pub(crate) was_playing: bool,

@@ -7,6 +7,7 @@
 
 mod connect;
 mod ffi;
+mod lifecycle_serialization;
 mod player_control;
 mod player_event_pump;
 mod proxy_sink;
@@ -18,6 +19,7 @@ mod transport;
 
 pub(crate) use connect::*;
 pub(crate) use ffi::*;
+pub(crate) use lifecycle_serialization::*;
 pub(crate) use player_control::*;
 pub(crate) use player_event_pump::*;
 pub(crate) use proxy_sink::mk_proxy_sink;
@@ -54,6 +56,8 @@ pub(crate) use std::time::{Duration, SystemTime, UNIX_EPOCH};
 pub(crate) use tokio::runtime::Runtime;
 pub(crate) use tokio::sync::mpsc;
 
+#[cfg(test)]
+mod lifecycle_serialization_tests;
 #[cfg(test)]
 mod queue_tests;
 #[cfg(test)]
