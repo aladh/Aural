@@ -348,6 +348,8 @@ public struct PendingPlaybackCommand: Equatable, Sendable {
     public let kind: PlaybackCommandKind
     public let expectedTransport: PlaybackTransportState?
     public let rollbackTransport: PlaybackTransportState?
+    public let expectedTiming: PlaybackTiming?
+    public let rollbackTiming: PlaybackTiming?
     public let startedAt: Date
 
     public init(
@@ -355,12 +357,16 @@ public struct PendingPlaybackCommand: Equatable, Sendable {
         kind: PlaybackCommandKind,
         expectedTransport: PlaybackTransportState?,
         rollbackTransport: PlaybackTransportState? = nil,
+        expectedTiming: PlaybackTiming? = nil,
+        rollbackTiming: PlaybackTiming? = nil,
         startedAt: Date
     ) {
         self.id = id
         self.kind = kind
         self.expectedTransport = expectedTransport
         self.rollbackTransport = rollbackTransport
+        self.expectedTiming = expectedTiming
+        self.rollbackTiming = rollbackTiming
         self.startedAt = startedAt
     }
 }
@@ -543,6 +549,9 @@ public enum PlaybackReducer {
                     ?? RepeatMode(context: flags.context, track: flags.track)
             }
             reconcileTransport(candidate.currentTrack == nil ? .stopped : snapshot.transport, in: &candidate)
+            // A newer playback snapshot is authoritative for position. Drop a pending seek so a
+            // later rejected finish cannot restore pre-seek timing over this snapshot.
+            candidate.pendingCommands[.seek] = nil
         case let .engineConnection(snapshot):
             if let session = snapshot.session { candidate.session = session }
             candidate.owner = snapshot.owner
@@ -599,6 +608,8 @@ public enum PlaybackReducer {
                 candidate.owner = .uncertain(refreshed)
             }
         case let .commandStarted(command):
+            // Capture current presentation before applying the caller's target. The store must
+            // not mutate transport or timing first, or rollback records the optimistic values.
             let prepared = PendingPlaybackCommand(
                 id: command.id,
                 kind: command.kind,
@@ -606,11 +617,18 @@ public enum PlaybackReducer {
                 rollbackTransport: command.rollbackTransport ?? (
                     command.expectedTransport == nil ? nil : candidate.transport
                 ),
+                expectedTiming: command.expectedTiming,
+                rollbackTiming: command.rollbackTiming ?? (
+                    command.expectedTiming == nil ? nil : candidate.timing
+                ),
                 startedAt: command.startedAt
             )
             candidate.pendingCommands[command.kind] = prepared
             if let expected = command.expectedTransport {
                 candidate.transport = expected
+            }
+            if let expected = command.expectedTiming {
+                candidate.timing = expected
             }
         case let .commandFinished(id, accepted, notice):
             guard let pair = candidate.pendingCommands.first(where: { $0.value.id == id }) else {
@@ -618,8 +636,11 @@ public enum PlaybackReducer {
             }
             candidate.pendingCommands[pair.key] = nil
             if !accepted {
-                if pair.key == .transport, let rollback = pair.value.rollbackTransport {
+                if let rollback = pair.value.rollbackTransport {
                     candidate.transport = rollback
+                }
+                if let rollback = pair.value.rollbackTiming {
+                    candidate.timing = rollback
                 }
                 candidate.notice = notice
             }

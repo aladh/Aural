@@ -123,7 +123,9 @@ public struct ConnectQueueCallbackWatermark: Equatable, Sendable {
 /// Dependent work after `PlaybackStore.send(.commandFinished)`.
 ///
 /// `PlaybackReducer.reconcileTransport` drops a pending *transport* command when an engine
-/// snapshot already matches `expectedTransport`. The later `commandFinished` is then rejected.
+/// snapshot already matches `expectedTransport`. An accepted engine playback snapshot also
+/// drops a pending *seek* so a later rejected finish cannot restore pre-seek timing.
+/// The later `commandFinished` is then rejected.
 /// On the same account/engine lifetime that is already-reconciled success, even if the
 /// coordinator later reports failure: the backend has confirmed the optimistic transport.
 /// Showing an error or calling `completion(false)` would roll back that confirmed state.
