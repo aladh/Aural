@@ -43,6 +43,31 @@ private enum FixtureRemoteFailure: Error {
     case boom
 }
 
+private actor GatedFailingRemoteClient: RemotePlaybackClient {
+    private var continuation: CheckedContinuation<Void, Error>?
+    private(set) var sendCount = 0
+
+    func send(_: SpotifyConnectCommand, from _: String, to _: String) async throws {
+        sendCount += 1
+        try await withCheckedThrowingContinuation { continuation = $0 }
+    }
+
+    func fail() {
+        continuation?.resume(throwing: FixtureRemoteFailure.boom)
+        continuation = nil
+    }
+
+    func trackMetadata(for uri: String) async throws -> SpotifyConnectTrackMetadata {
+        SpotifyConnectTrackMetadata(
+            uri: uri,
+            title: "Metadata",
+            artist: "Artist",
+            artworkURL: nil,
+            duration: 180
+        )
+    }
+}
+
 private actor ScriptedRemoteClient: RemotePlaybackClient {
     enum Behavior: Sendable {
         case succeed
@@ -671,5 +696,40 @@ func runPlaybackCommandFailureChecks(_ runner: CheckRunner) async {
         runner.nil_("an engine-epoch bump drops the pending seek", staleStore.state.pendingCommands[.seek])
         runner.equal("an engine-epoch bump does not roll back seek timing", staleStore.state.timing, optimisticSeekTiming)
         await staleStore.shutdownForTermination()
+
+        let trackSwitchRemote = GatedFailingRemoteClient()
+        let trackSwitchStore = playbackStore(
+            commandEnvironment(local: ScriptedLocalEngine(result: .ok), remote: trackSwitchRemote)
+        )
+        seedRemotePlayback(trackSwitchStore, transport: .playing, timing: priorPlayingTiming)
+        trackSwitchStore.seek(to: 0.4)
+        let trackSwitchPending = await waitUntil { trackSwitchStore.state.pendingCommands[.seek] != nil }
+        runner.check("seek is pending before a same-engine track switch", trackSwitchPending)
+        let sendStarted = await waitUntil { await trackSwitchRemote.sendCount == 1 }
+        runner.check("the seek has reached the remote client before the track switch", sendStarted)
+        let trackBTiming = PlaybackTiming(position: 0, duration: 180, anchoredAt: clockNow)
+        _ = trackSwitchStore.send(
+            .enginePlayback(EnginePlaybackSnapshot(
+                transport: .playing,
+                trackURI: "spotify:track:other",
+                timing: trackBTiming
+            )),
+            source: .enginePlayback,
+            revision: 1
+        )
+        runner.equal("a track switch adopts the new track URI", trackSwitchStore.state.currentTrack?.uri, "spotify:track:other")
+        runner.equal("a track switch adopts the incoming timing", trackSwitchStore.state.timing, trackBTiming)
+        runner.nil_("a track switch clears the old pending seek", trackSwitchStore.state.pendingCommands[.seek])
+        let afterTrackSwitch = trackSwitchStore.state
+        await trackSwitchRemote.fail()
+        for _ in 0..<50 { await Task.yield() }
+        runner.equal("a rejected finish after a track switch leaves timing unchanged", trackSwitchStore.state.timing, afterTrackSwitch.timing)
+        runner.equal(
+            "a rejected finish after a track switch leaves the new track",
+            trackSwitchStore.state.currentTrack?.uri,
+            "spotify:track:other"
+        )
+        runner.nil_("a rejected finish after a track switch does not surface a seek notice", trackSwitchStore.transientCommandError)
+        await trackSwitchStore.shutdownForTermination()
     }
 }

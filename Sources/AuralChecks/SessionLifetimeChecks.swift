@@ -209,9 +209,9 @@ func runSessionLifetimeChecks(_ check: CheckRunner) {
             .inert
         )
         check.equal(
-            "a matching snapshot then late seek failure still reports success",
+            "a late seek finish after pending was cleared stays inert",
             followUp(finishAccepted: false, succeeded: false, reconnect: true, kind: .seek),
-            .reportSuccess
+            .inert
         )
         check.equal(
             "engine-epoch invalidation stays inert",

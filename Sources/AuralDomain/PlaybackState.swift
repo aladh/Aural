@@ -531,14 +531,15 @@ public enum PlaybackReducer {
         case let .transport(transport):
             reconcileTransport(transport, in: &candidate)
         case let .enginePlayback(snapshot):
-            if let uri = snapshot.trackURI, !uri.isEmpty {
+            let incomingURI = snapshot.trackURI.flatMap { $0.isEmpty ? nil : $0 }
+            reconcileSeekTiming(snapshot.timing, incomingTrackURI: incomingURI, in: &candidate)
+            if let uri = incomingURI {
                 if candidate.currentTrack?.uri != uri {
                     candidate.currentTrack = CurrentTrack(uri: uri)
                 }
             } else {
                 candidate.currentTrack = nil
             }
-            reconcileSeekTiming(snapshot.timing, in: &candidate)
             if let shuffle = snapshot.shuffle { candidate.options.shuffle = shuffle }
             if snapshot.repeatMode != nil || snapshot.repeatFlags != nil {
                 let flags = snapshot.repeatFlags
@@ -554,8 +555,12 @@ public enum PlaybackReducer {
             candidate.owner = snapshot.owner
             candidate.devices.localDeviceID = snapshot.localDeviceID
         case let .presentation(presentation):
+            reconcileSeekTiming(
+                presentation.timing,
+                incomingTrackURI: presentation.currentTrack?.uri,
+                in: &candidate
+            )
             candidate.currentTrack = presentation.currentTrack
-            reconcileSeekTiming(presentation.timing, in: &candidate)
             reconcileTransport(presentation.transport, in: &candidate)
         case let .trackMetadata(metadata):
             guard var track = candidate.currentTrack, track.uri == metadata.uri else { return false }
@@ -581,6 +586,7 @@ public enum PlaybackReducer {
                     duration: max(0, duration),
                     anchoredAt: anchoredAt
                 ),
+                incomingTrackURI: candidate.currentTrack?.uri,
                 in: &candidate
             )
         case let .options(options):
@@ -711,11 +717,21 @@ public enum PlaybackReducer {
     }
 
     /// Holds optimistic seek timing until an incoming sample is at the expected millisecond
-    /// position, matching `reconcileTransport`. A contradictory sample cannot confirm the seek.
+    /// position on the same track. A different track or empty URI supersedes the old seek and
+    /// adopts the incoming timing so rollback cannot attach the previous track's position.
     private static func reconcileSeekTiming(
         _ timing: PlaybackTiming,
+        incomingTrackURI: String?,
         in state: inout PlaybackState
     ) {
+        let incomingURI = incomingTrackURI.flatMap { $0.isEmpty ? nil : $0 }
+        if state.pendingCommands[.seek] != nil,
+           state.currentTrack?.uri != incomingURI
+        {
+            state.pendingCommands[.seek] = nil
+            state.timing = timing
+            return
+        }
         if let pending = state.pendingCommands[.seek],
            let expected = pending.expectedTiming,
            !matchesExpectedSeekPosition(timing, expected)

@@ -294,6 +294,59 @@ func runPlaybackCommandPresentationChecks(_ check: CheckRunner) {
         check.check("a finish after a matching seek snapshot is rejected", !confirmedFinish)
         check.equal("a matching snapshot prevents stale seek rollback", matchingSeek, afterConfirmedSeek)
 
+        let trackSwitchSeekID = UUID(uuidString: "00000000-0000-0000-0000-000000000039")!
+        var trackSwitchSeek = PlaybackState(
+            accountEpoch: 1,
+            engineEpoch: 1,
+            session: .ready,
+            transport: .playing,
+            currentTrack: CurrentTrack(uri: "spotify:track:a"),
+            timing: priorSeekTiming
+        )
+        _ = PlaybackReducer.reduce(
+            &trackSwitchSeek,
+            envelope: presentationEnvelope(
+                source: .command,
+                event: .commandStarted(PendingPlaybackCommand(
+                    id: trackSwitchSeekID,
+                    kind: .seek,
+                    expectedTransport: nil,
+                    expectedTiming: seekTiming,
+                    startedAt: presentationDate
+                ))
+            )
+        )
+        let trackBTiming = PlaybackTiming(position: 0, duration: 180, anchoredAt: presentationDate.addingTimeInterval(1))
+        _ = PlaybackReducer.reduce(
+            &trackSwitchSeek,
+            envelope: presentationEnvelope(
+                source: .enginePlayback,
+                revision: 1,
+                event: .enginePlayback(EnginePlaybackSnapshot(
+                    transport: .playing,
+                    trackURI: "spotify:track:b",
+                    timing: trackBTiming
+                ))
+            )
+        )
+        check.equal("a newer track snapshot adopts the incoming timing", trackSwitchSeek.timing, trackBTiming)
+        check.equal("a newer track snapshot replaces the current track", trackSwitchSeek.currentTrack?.uri, "spotify:track:b")
+        check.nil_("a newer track snapshot supersedes the old pending seek", trackSwitchSeek.pendingCommands[.seek])
+        let afterTrackSwitch = trackSwitchSeek
+        let supersededByTrackFinish = PlaybackReducer.reduce(
+            &trackSwitchSeek,
+            envelope: presentationEnvelope(
+                source: .command,
+                event: .commandFinished(
+                    id: trackSwitchSeekID,
+                    accepted: false,
+                    notice: PlaybackNotice(message: "Seek was rejected")
+                )
+            )
+        )
+        check.check("a finish after a track switch is rejected", !supersededByTrackFinish)
+        check.equal("a track-switched seek cannot restore the previous track's timing", trackSwitchSeek, afterTrackSwitch)
+
         var identitySeek = PlaybackState(
             accountEpoch: 1,
             engineEpoch: 1,
