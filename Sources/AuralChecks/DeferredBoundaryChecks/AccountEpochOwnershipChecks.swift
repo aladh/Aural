@@ -176,15 +176,17 @@ private func containsToken(_ source: String, _ token: String) -> Bool {
 }
 
 private func playbackStoreWritableAccountEpochMutations(_ source: String) -> [String] {
-    source.split(separator: "\n", omittingEmptySubsequences: false).compactMap { line in
+    let assignment = try! NSRegularExpression(
+        pattern: #"(?:self\.)?accountEpoch\s*(?:\+|&\+)?=(?!=)"#
+    )
+    return source.split(separator: "\n", omittingEmptySubsequences: false).compactMap { line in
         let trimmed = line.trimmingCharacters(in: .whitespaces)
         if trimmed.hasPrefix("//") { return nil }
-        if trimmed.contains("accountEpoch &+=") { return String(line) }
-        if trimmed.contains("accountEpoch +=") { return String(line) }
-        if trimmed.contains("self.accountEpoch =") { return String(line) }
-        if trimmed.hasPrefix("accountEpoch =") { return String(line) }
         if trimmed.contains("@ObservationIgnored var accountEpoch") { return String(line) }
-        return nil
+        let nsLine = trimmed as NSString
+        let range = NSRange(location: 0, length: nsLine.length)
+        guard assignment.firstMatch(in: trimmed, range: range) != nil else { return nil }
+        return String(line)
     }
 }
 
