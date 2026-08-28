@@ -20,6 +20,7 @@ enum BoundaryChecksMain {
         runPCMWriteSpaceChecks(runner)
         await runPrivacySanitizationChecks(runner)
         await runWorkflowChecks(runner)
+        await runAccountEpochOwnershipChecks(runner)
         await runCommandEffectRegistryChecks(runner)
         await runPlaybackCommandFailureChecks(runner)
         await runRepeatTransitionChecks(runner)

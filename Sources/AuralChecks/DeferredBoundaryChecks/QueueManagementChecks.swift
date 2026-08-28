@@ -703,7 +703,7 @@ func runQueueManagementChecks(_ runner: CheckRunner) async {
         let staleID = stale.queueNextEntries[0].id
         stale.removeUpcomingQueueOccurrences(selectedIDs: [staleID])
         runner.check("stale-account removal started", await waitUntil { await staleRemote.sendCount == 1 })
-        stale.accountEpoch &+= 1
+        stale.accountStore.advanceEpoch()
         await staleRemote.completePark(success: true)
         await yieldPasses()
         runner.nil_("stale-account removal reports no mutation feedback", staleFeedback.message)
@@ -923,7 +923,7 @@ func runQueueManagementChecks(_ runner: CheckRunner) async {
             "connect accept parked after actor hop",
             await waitUntil { await player.queueService.connectAcceptIsParked() }
         )
-        player.accountEpoch &+= 1
+        player.accountStore.advanceEpoch()
         player.engineGeneration &+= 1
         player.queueMutation = nil
         await player.queueService.resumeConnectAccept()
@@ -1057,7 +1057,7 @@ func runQueueManagementChecks(_ runner: CheckRunner) async {
             "committed replacement parked after the actor hop",
             await waitUntil { await epochPlayer.queueService.committedReplacementIsParked() }
         )
-        epochPlayer.accountEpoch &+= 1
+        epochPlayer.accountStore.advanceEpoch()
         epochPlayer.engineGeneration &+= 1
         epochPlayer.queueMutation = nil
         await epochPlayer.queueService.resumeCommittedReplacement()

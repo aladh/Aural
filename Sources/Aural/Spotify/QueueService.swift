@@ -105,7 +105,7 @@ actor QueueService {
     private let webQueue: any WebQueueClient
     private let metadata: TrackMetadataService
     private let clock: any PlaybackClock
-    private var accountEpoch: UInt64 = 0
+    private(set) var accountEpoch: UInt64 = 0
     private var revision: UInt64 = 0
     private var lastConnectSourceRevision: UInt64 = 0
     private var contextURI: String?

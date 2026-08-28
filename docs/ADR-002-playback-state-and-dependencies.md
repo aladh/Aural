@@ -16,7 +16,10 @@ could still combine values from different account, engine, command, queue, or se
 - `PlaybackStore` is a `@MainActor` compatibility and action surface. `PlaybackCoordinator`
   serializes playback effects and talks only to injected ports.
 - `AccountStore` owns restore, interactive authorization, revocation, logout, and account epochs.
-  Every suspended account operation revalidates its generation and epoch before mutation.
+  `AccountStore.epoch` is the only writable account-epoch owner. `PlaybackStore.accountEpoch` is a
+  read-only projection of that value. `PlaybackState.accountEpoch` remains reducer-owned accepted
+  snapshot state, not a second imperative lifecycle counter. Every suspended account operation
+  revalidates its generation and epoch before mutation.
 - `QueueService` owns source precedence, context identity, and the Connect mutation snapshot used
   for `set_queue`. Metadata enrichment cannot reorder a queue, and stale or provisional results
   cannot erase a newer authoritative snapshot. Same-context Web API `/me/player/queue` snapshots
