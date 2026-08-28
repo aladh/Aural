@@ -156,12 +156,15 @@ func runSessionLifetimeChecks(_ check: CheckRunner) {
 
     check.suite("Playback command finish follow-up") {
         let other = UUID(uuidString: "00000000-0000-0000-0000-000000000032")!
+        let playID = UUID(uuidString: "00000000-0000-0000-0000-000000000033")!
         func followUp(
             finishAccepted: Bool,
             succeeded: Bool,
             reconnect: Bool = false,
             kind: PlaybackCommandKind = .transport,
             pending: UUID? = nil,
+            finished: UUID? = nil,
+            resolution: PlaybackTransportCommandResolution? = nil,
             account: UInt64 = 1,
             engine: UInt64 = 1,
             currentAccount: UInt64 = 1,
@@ -174,6 +177,8 @@ func runSessionLifetimeChecks(_ check: CheckRunner) {
                 requiresReconnect: reconnect,
                 commandKind: kind,
                 pendingCommandID: pending,
+                finishedCommandID: finished,
+                transportCommandResolution: resolution,
                 capturedAccountEpoch: account,
                 capturedEngineEpoch: engine,
                 currentAccountEpoch: currentAccount,
@@ -231,6 +236,28 @@ func runSessionLifetimeChecks(_ check: CheckRunner) {
         check.equal(
             "teardown stays inert",
             followUp(finishAccepted: false, succeeded: true, tearingDown: true),
+            .inert
+        )
+        check.equal(
+            "a confirmed play target still reports success after a late failure",
+            followUp(
+                finishAccepted: false,
+                succeeded: false,
+                reconnect: true,
+                finished: playID,
+                resolution: .confirmed(playID)
+            ),
+            .reportSuccess
+        )
+        check.equal(
+            "a superseded play target stays inert after a late failure",
+            followUp(
+                finishAccepted: false,
+                succeeded: false,
+                reconnect: true,
+                finished: playID,
+                resolution: .superseded(playID)
+            ),
             .inert
         )
     }

@@ -172,8 +172,9 @@ In `PlaybackStore+Commands`, `commandStarted` must be accepted before a command 
 - Reducer-accepted success reports success.
 - Reducer-accepted failure may reconnect.
 - A rejected finish on the same account/engine lifetime with no pending *transport* command is
-  already-reconciled success (matching snapshot). That includes a later coordinator failure:
-  `completion(true)` still runs, with no error notice, rollback, or reconnect.
+  already-reconciled success (matching snapshot), unless a known play target was superseded by a
+  different or empty track. Target confirmation still reports success when a later coordinator
+  failure arrives, with no error notice, rollback, or reconnect.
 - Epoch changes, teardown, cancellation, non-transport kinds, and superseded ids stay inert.
 
 Successful `commandFinished` does not clear `notice`. Command errors keep the existing
@@ -185,6 +186,14 @@ rejection. Seek timing is held until an incoming sample matches the expected mil
 position on the same track. A different track supersedes the pending seek and
 adopts the incoming timing. Those call sites must not mutate `PlaybackState` before
 the start event.
+
+`play(track:)` and a loaded-playlist `playPlaylist` pass the known target track on
+`commandStarted`. The reducer applies that presentation atomically after command admission
+and restores the exact captured snapshot on a matching rejection. A lagging snapshot of
+the previous track cannot confirm the command. An authoritative snapshot of the target
+may confirm it so a later coordinator failure cannot roll back. An unrelated or empty
+track supersedes the optimistic target. Raw `play(uri:)` and playlist launches without a
+known first track keep their existing non-presenting behavior.
 
 No other command sites were migrated in #19/#27. Queue add remains a non-transport command path;
 its transient mutation feedback now uses the app-composed `TransientFeedbackPresenter` rather than

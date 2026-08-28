@@ -14,6 +14,7 @@ extension PlaybackStore {
         _ action: String,
         expecting expectedPlaybackState: Bool? = nil,
         expectedTiming: PlaybackTiming? = nil,
+        expectedTrack: CurrentTrack? = nil,
         operation: LocalPlaybackOperation,
         kind: PlaybackCommandKind = .transport,
         completion: @escaping @MainActor (Bool) -> Void = { _ in }
@@ -35,6 +36,7 @@ extension PlaybackStore {
                 kind: kind,
                 expectedTransport: expectedPlaybackState.map { $0 ? .playing : .paused },
                 expectedTiming: expectedTiming,
+                expectedTrack: expectedTrack,
                 startedAt: environment.clock.now()
             )),
             source: .command
@@ -70,6 +72,7 @@ extension PlaybackStore {
         kind: PlaybackCommandKind = .transport,
         expecting expectedPlaybackState: Bool? = nil,
         expectedTiming: PlaybackTiming? = nil,
+        expectedTrack: CurrentTrack? = nil,
         local: LocalPlaybackOperation,
         remote command: SpotifyConnectCommand,
         completion: @escaping @MainActor (Bool) -> Void = { _ in }
@@ -79,6 +82,7 @@ extension PlaybackStore {
             kind: kind,
             expecting: expectedPlaybackState,
             expectedTiming: expectedTiming,
+            expectedTrack: expectedTrack,
             local: local,
             remote: { api, from, to in try await api.send(command, from: from, to: to) },
             completion: completion
@@ -90,6 +94,7 @@ extension PlaybackStore {
         kind: PlaybackCommandKind = .transport,
         expecting expectedPlaybackState: Bool? = nil,
         expectedTiming: PlaybackTiming? = nil,
+        expectedTrack: CurrentTrack? = nil,
         local: LocalPlaybackOperation,
         remote: @escaping @Sendable (any RemotePlaybackClient, String, String) async throws -> Void,
         completion: @escaping @MainActor (Bool) -> Void = { _ in }
@@ -101,6 +106,7 @@ extension PlaybackStore {
                 action,
                 expecting: expectedPlaybackState,
                 expectedTiming: expectedTiming,
+                expectedTrack: expectedTrack,
                 operation: local,
                 kind: kind,
                 completion: completion
@@ -118,6 +124,7 @@ extension PlaybackStore {
                 kind: kind,
                 expecting: expectedPlaybackState,
                 expectedTiming: expectedTiming,
+                expectedTrack: expectedTrack,
                 from: from,
                 to: to,
                 operation: remote,
@@ -131,6 +138,7 @@ extension PlaybackStore {
         kind: PlaybackCommandKind,
         expecting expectedPlaybackState: Bool?,
         expectedTiming: PlaybackTiming?,
+        expectedTrack: CurrentTrack?,
         from sourceID: String,
         to targetID: String,
         operation: @escaping @Sendable (any RemotePlaybackClient, String, String) async throws -> Void,
@@ -153,6 +161,7 @@ extension PlaybackStore {
                 kind: kind,
                 expectedTransport: expectedPlaybackState.map { $0 ? .playing : .paused },
                 expectedTiming: expectedTiming,
+                expectedTrack: expectedTrack,
                 startedAt: environment.clock.now()
             )),
             source: .command
@@ -226,6 +235,8 @@ extension PlaybackStore {
             requiresReconnect: requiresReconnect,
             commandKind: kind,
             pendingCommandID: state.pendingCommands[kind]?.id,
+            finishedCommandID: commandID,
+            transportCommandResolution: state.transportCommandResolution,
             capturedAccountEpoch: capturedAccountEpoch,
             capturedEngineEpoch: capturedEngineEpoch,
             currentAccountEpoch: accountEpoch,

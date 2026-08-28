@@ -17,26 +17,19 @@ extension PlaybackStore {
     }
 
     func play(track: CatalogTrack) {
-        let previous = playbackPresentation
-        present(track)
-        submitPlay(uri: track.uri) { [weak self] accepted in
-            guard let self else { return }
-            if accepted {
-                self.recordPlayed(track.uri)
-            } else {
-                self.restorePlaybackPresentation(previous)
-            }
+        submitPlay(uri: track.uri, expectedTrack: currentTrack(from: track)) { [weak self] accepted in
+            if accepted { self?.recordPlayed(track.uri) }
         }
     }
 
     func playPlaylist(_ item: CatalogItem) {
         let playlistTracks = catalog.playlistStore.tracks
         let orderedTracks = isShuffleEnabled ? fewerRepeatsOrder(playlistTracks) : playlistTracks
-        let previous = playbackPresentation
-        var presentedTrack: CatalogTrack?
+        let expectedTrack: CurrentTrack?
         if catalog.playlistStore.loadedURI == item.uri, let first = orderedTracks.first {
-            present(first)
-            presentedTrack = first
+            expectedTrack = currentTrack(from: first)
+        } else {
+            expectedTrack = nil
         }
 
         if isShuffleEnabled, !orderedTracks.isEmpty {
@@ -45,31 +38,25 @@ extension PlaybackStore {
                 "Could not shuffle that playlist",
                 kind: .transport,
                 expecting: true,
+                expectedTiming: expectedTrack.map { playTargetTiming(from: $0) },
+                expectedTrack: expectedTrack,
                 local: .playTracks(trackURIs),
                 remote: .play(trackURIs: trackURIs)
             ) { [weak self] accepted in
-                guard let self else { return }
-                if accepted {
-                    self.setTransport(.playing, anchoredAt: self.environment.clock.now())
-                    if let presentedTrack { self.recordPlayed(presentedTrack.uri) }
-                } else {
-                    self.restorePlaybackPresentation(previous)
-                }
+                guard let self, accepted, let expectedTrack else { return }
+                self.recordPlayed(expectedTrack.uri)
             }
             return
         }
-        submitPlay(uri: item.uri) { [weak self] accepted in
-            guard let self else { return }
-            if accepted {
-                if let presentedTrack { self.recordPlayed(presentedTrack.uri) }
-            } else {
-                self.restorePlaybackPresentation(previous)
-            }
+        submitPlay(uri: item.uri, expectedTrack: expectedTrack) { [weak self] accepted in
+            guard let self, accepted, let expectedTrack else { return }
+            self.recordPlayed(expectedTrack.uri)
         }
     }
 
     private func submitPlay(
         uri: String,
+        expectedTrack: CurrentTrack? = nil,
         completion: @escaping @MainActor (Bool) -> Void = { _ in }
     ) {
         let value = uri.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -80,27 +67,27 @@ extension PlaybackStore {
         performRoutedCommand(
             "Could not play that Spotify URI",
             expecting: true,
+            expectedTiming: expectedTrack.map { playTargetTiming(from: $0) },
+            expectedTrack: expectedTrack,
             local: .playURI(value),
-            remote: .play(uri: value)
-        ) { [weak self] accepted in
-            if accepted {
-                guard let self else { return }
-                self.setTransport(.playing, anchoredAt: self.environment.clock.now())
-            }
-            completion(accepted)
-        }
-    }
-
-    private var playbackPresentation: PlaybackPresentationSnapshot {
-        PlaybackPresentationSnapshot(
-            currentTrack: state.currentTrack,
-            transport: state.transport,
-            timing: state.timing
+            remote: .play(uri: value),
+            completion: completion
         )
     }
 
-    private func restorePlaybackPresentation(_ presentation: PlaybackPresentationSnapshot) {
-        send(.presentation(presentation), source: .command)
+    private func currentTrack(from track: CatalogTrack) -> CurrentTrack {
+        CurrentTrack(
+            uri: track.uri,
+            title: track.title,
+            artist: track.artist,
+            artworkURL: track.artworkURL,
+            duration: track.duration,
+            metadataSource: .catalog
+        )
+    }
+
+    private func playTargetTiming(from track: CurrentTrack) -> PlaybackTiming {
+        PlaybackTiming(position: 0, duration: track.duration, anchoredAt: environment.clock.now())
     }
 
     func toggleShuffle() {

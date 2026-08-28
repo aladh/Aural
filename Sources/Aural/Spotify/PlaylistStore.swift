@@ -20,7 +20,7 @@ final class PlaylistStore {
     }
     private(set) var sortedTracks: [CatalogTrack] = []
     var description = ""
-    private(set) var loadedURI: String?
+    internal(set) var loadedURI: String?
     private(set) var ownerURI: String?
     var isLoading = false
     var error: String?

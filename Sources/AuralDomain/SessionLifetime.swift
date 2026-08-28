@@ -127,6 +127,9 @@ public struct ConnectQueueCallbackWatermark: Equatable, Sendable {
 /// On the same account/engine lifetime that is already-reconciled success, even if the
 /// coordinator later reports failure: the backend has confirmed the optimistic transport.
 /// Showing an error or calling `completion(false)` would roll back that confirmed state.
+/// A known play target is confirmed only by that target's identity, not by a lagging prior
+/// track that happens to already be `.playing`. An unrelated or empty track supersedes the
+/// optimistic target: rollback is cleared and a later finish stays inert.
 /// Seek confirmation and track-switch supersession both clear pending `.seek`, so a later
 /// finish stays inert: `pendingCommandID == nil` cannot tell those cases apart, and seek
 /// completions have no success side effect.
@@ -143,6 +146,8 @@ public func playbackCommandFollowUp(
     requiresReconnect: Bool,
     commandKind: PlaybackCommandKind,
     pendingCommandID: UUID?,
+    finishedCommandID: UUID? = nil,
+    transportCommandResolution: PlaybackTransportCommandResolution? = nil,
     capturedAccountEpoch: UInt64,
     capturedEngineEpoch: UInt64,
     currentAccountEpoch: UInt64,
@@ -157,7 +162,14 @@ public func playbackCommandFollowUp(
         && capturedAccountEpoch == currentAccountEpoch
         && capturedEngineEpoch == currentEngineEpoch
     if sameLifetime, pendingCommandID == nil, commandKind == .transport {
-        return .reportSuccess
+        switch transportCommandResolution {
+        case let .confirmed(id):
+            return finishedCommandID == id ? .reportSuccess : .inert
+        case .superseded:
+            return .inert
+        case nil:
+            return .reportSuccess
+        }
     }
     return .inert
 }
