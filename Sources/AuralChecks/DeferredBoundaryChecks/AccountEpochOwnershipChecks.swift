@@ -65,12 +65,10 @@ private final class EpochAccount: AccountSession, @unchecked Sendable {
     func clear() async {
         if parkClear {
             await withCheckedContinuation { continuation in
-                lock.lock()
-                clearPark = continuation
-                lock.unlock()
+                lock.withLock { clearPark = continuation }
             }
         }
-        lock.lock(); clearStorage += 1; lock.unlock()
+        lock.withLock { clearStorage += 1 }
     }
     func completeClear() {
         lock.lock(); let continuation = clearPark; clearPark = nil; lock.unlock()
