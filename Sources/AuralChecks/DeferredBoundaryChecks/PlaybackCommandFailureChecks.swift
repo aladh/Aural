@@ -441,7 +441,7 @@ func runPlaybackCommandFailureChecks(_ runner: CheckRunner) async {
         let playingAnchor = clockNow.addingTimeInterval(-10)
         let priorPlayingTiming = PlaybackTiming(position: 40, duration: 200, anchoredAt: playingAnchor)
         let frozenPauseTiming = PlaybackTiming(
-            position: interpolatedPlaybackPosition(
+            position: AuralDomain.interpolatedPlaybackPosition(
                 anchor: 40,
                 anchoredAt: playingAnchor,
                 now: clockNow,
