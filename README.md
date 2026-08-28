@@ -34,6 +34,10 @@ music streaming only for Premium subscribers; review the current
 - Local 320 kbps playback with pause/resume, seek, previous/next, gapless transitions, repeat, and
   a persistent fewer-repeats shuffle mode.
 - Spotify Connect device discovery, remote playback mirroring, device transfer, and queue display.
+  Add to Queue uses selected tracks in visible order. Selectable upcoming rows can be removed with
+  Delete/Backspace or Remove from Queue when another device owns playback and the current player
+  permits queue edits, preserving duplicates; Spotify Connect confirms a successful removal before
+  the displayed queue changes.
 - Home, Search, profile, Liked Songs, playlists, albums, and artists from the signed-in account.
 - Sortable playlist metadata including Date Added, Popularity, BPM, and Camelot Key.
 - Add selected tracks to an owned library playlist, and remove selected occurrences from an open
@@ -84,7 +88,8 @@ release mechanics are in [CONTRIBUTING.md](CONTRIBUTING.md).
 
 Live local and remote playback, Spotify Home, profile, saved tracks, demand-loaded library
 collections, search, and media detail pages are wired. Owned-playlist add and occurrence removal
-are available. Playlist creation, rename, reordering, cover editing, collaborative-permission
+are available. Upcoming queue rows cannot be removed when Aural owns playback.
+Playlist creation, rename, reordering, cover editing, collaborative-permission
 management, liked-library editing, and incremental on-screen pagination remain future work.
 
 Aural currently targets Apple-silicon Macs on macOS 15 or newer. Compatibility with Spotify is
