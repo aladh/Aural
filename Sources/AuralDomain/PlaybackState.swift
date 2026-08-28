@@ -397,6 +397,8 @@ public struct PendingPlaybackCommand: Equatable, Sendable {
 
 /// How a known-target transport command left `pendingCommands` without `commandFinished`.
 /// Stored per command id so a later pause/resume cannot recycle the nil catch-all.
+/// `commandFinished` consumes a matching entry (pending rollback or consume-only) so the
+/// map does not grow for the process/session lifetime.
 public enum PlaybackTransportCommandResolution: Equatable, Sendable {
     case confirmed
     case superseded
@@ -705,25 +707,30 @@ public enum PlaybackReducer {
                 candidate.timing = expected
             }
         case let .commandFinished(id, accepted, notice):
-            guard let pair = candidate.pendingCommands.first(where: { $0.value.id == id }) else {
-                return false
-            }
-            candidate.pendingCommands[pair.key] = nil
-            if !accepted {
-                if let rollback = pair.value.rollbackPresentation {
-                    candidate.pendingCommands[.seek] = nil
-                    candidate.currentTrack = rollback.currentTrack
-                    candidate.transport = rollback.transport
-                    candidate.timing = rollback.timing
-                } else {
-                    if let rollback = pair.value.rollbackTransport {
-                        candidate.transport = rollback
+            if let pair = candidate.pendingCommands.first(where: { $0.value.id == id }) {
+                candidate.pendingCommands[pair.key] = nil
+                candidate.transportCommandResolutions[id] = nil
+                if !accepted {
+                    if let rollback = pair.value.rollbackPresentation {
+                        candidate.pendingCommands[.seek] = nil
+                        candidate.currentTrack = rollback.currentTrack
+                        candidate.transport = rollback.transport
+                        candidate.timing = rollback.timing
+                    } else {
+                        if let rollback = pair.value.rollbackTransport {
+                            candidate.transport = rollback
+                        }
+                        if let rollback = pair.value.rollbackTiming {
+                            candidate.timing = rollback
+                        }
                     }
-                    if let rollback = pair.value.rollbackTiming {
-                        candidate.timing = rollback
-                    }
+                    candidate.notice = notice
                 }
-                candidate.notice = notice
+            } else if candidate.transportCommandResolutions[id] != nil {
+                // Consume a confirmed/superseded entry without touching presentation.
+                candidate.transportCommandResolutions[id] = nil
+            } else {
+                return false
             }
         case let .notice(notice):
             candidate.notice = notice

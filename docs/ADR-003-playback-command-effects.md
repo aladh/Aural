@@ -53,11 +53,13 @@ reconciles the pending command before the coordinator returns.
 The registry stays a small `@MainActor` dictionary of tasks. The store continues to decide *when*
 to start work. The reducer continues to decide *whether* a result may mutate state. Command start
 still requires an accepted send. Command-finish follow-ups use `playbackCommandFollowUp`: reducer
-acceptance is the normal gate, and a rejected transport finish may report success only when a
-same-lifetime authoritative snapshot already reconciled the pending expected transport. Stale,
-superseded, teardown, epoch-invalidated, and non-transport results stay inert. Command-error
-notices keep their existing timed lifetime; successful acknowledgements do not clear unrelated
-notices.
+acceptance is the normal gate. A captured same-lifetime transport resolution is evaluated first
+(confirmed success, superseded inert). Consume-only `commandFinished` acceptance exists only to
+remove that map entry and cannot turn a coordinator failure into `reportFailure`. A rejected
+transport finish may still report success when a same-lifetime snapshot already reconciled the
+pending expected transport without recording a resolution. Stale, superseded, teardown,
+epoch-invalidated, and non-transport results stay inert. Command-error notices keep their existing
+timed lifetime; successful acknowledgements do not clear unrelated notices.
 
 ### 2. Tiny Aural-specific command runner
 
@@ -170,13 +172,18 @@ In `PlaybackStore+Commands`, `commandStarted` must be accepted before a command 
 `playbackCommandFollowUp`:
 
 - Reducer-accepted success reports success.
-- Reducer-accepted failure may reconnect.
-- A rejected finish on the same account/engine lifetime with no pending *transport* command is
-  already-reconciled success (matching snapshot), unless that command id was superseded by a
-  different or empty track. Target confirmation and supersession are keyed by command id so a
-  later pause/resume cannot recycle the nil catch-all. Target confirmation still reports success
-  when a later coordinator failure arrives, with no error notice, rollback, or reconnect.
-- Epoch changes, teardown, cancellation, non-transport kinds, and superseded ids stay inert.
+- Reducer-accepted failure may reconnect, except when the finish only consumed a captured
+  transport resolution.
+- `applyCommandOutcome` snapshots `transportCommandResolutions[id]` *before* `commandFinished`.
+  The reducer consumes that entry (pending rollback, or consume-only when the snapshot already
+  confirmed or superseded the command). Follow-up evaluates the captured optional resolution
+  before `finishAccepted`: confirmed reports success, superseded stays inert, so consume-only
+  acceptance cannot turn a coordinator failure into `reportFailure`.
+- A rejected finish on the same account/engine lifetime with no pending *transport* command and
+  no captured resolution is already-reconciled success (matching snapshot). Target confirmation and
+  supersession are keyed by command id so a later pause/resume cannot recycle the nil catch-all.
+- Unknown ids stay reducer-rejected and inert. Epoch changes, teardown, cancellation,
+  non-transport kinds, and superseded ids stay inert even if a confirmation was captured.
 
 Successful `commandFinished` does not clear `notice`. Command errors keep the existing
 `.commandError` lifetime.

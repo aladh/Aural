@@ -196,7 +196,9 @@ extension PlaybackStore {
 
     /// Local and remote command finishes share this policy so a matching engine snapshot cannot
     /// drop `play` / `togglePlayback` completions, including when the coordinator later fails.
-    /// Epoch, teardown, non-transport kinds, and superseded ids stay inert.
+    /// The finished command's resolution is captured before `commandFinished` so follow-up can
+    /// treat consume-only reducer acceptance as confirmed success or superseded inertness.
+    /// Epoch, teardown, non-transport kinds, and unknown ids stay inert.
     private func applyCommandOutcome(
         commandID: UUID,
         kind: PlaybackCommandKind,
@@ -219,6 +221,7 @@ extension PlaybackStore {
             requiresReconnect = failure == .reconnectRequired
             notice = PlaybackNotice(message: action)
         }
+        let capturedResolution = state.transportCommandResolutions[commandID]
         let finished = send(
             .commandFinished(
                 id: commandID,
@@ -235,8 +238,7 @@ extension PlaybackStore {
             requiresReconnect: requiresReconnect,
             commandKind: kind,
             pendingCommandID: state.pendingCommands[kind]?.id,
-            finishedCommandID: commandID,
-            transportCommandResolutions: state.transportCommandResolutions,
+            finishedCommandResolution: capturedResolution,
             capturedAccountEpoch: capturedAccountEpoch,
             capturedEngineEpoch: capturedEngineEpoch,
             currentAccountEpoch: accountEpoch,

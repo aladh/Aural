@@ -11,7 +11,7 @@ linking errors, not to silently change its decision.
 | --- | --- | --- |
 | [ADR 001: Keep librespot as a contained playback leaf](ADR-001-playback-engine.md) | Accepted | Keep playback and Spotify Connect behind the narrow Rust/C boundary rather than reimplementing the engine in Swift. |
 | [ADR 002: Atomic playback state and explicit dependency ownership](ADR-002-playback-state-and-dependencies.md) | Accepted | Use one reducer-owned playback snapshot, explicit dependency assembly, and generation-aware async ownership. |
-| [ADR 003: Keep PlaybackEffectRegistry; reject TCA and a generic Effect type](ADR-003-playback-command-effects.md) | Accepted | Keep store-level `PlaybackEffectRegistry`; do not adopt TCA or a generic Effect type. Reducer acceptance normally gates follow-ups, except a same-lifetime snapshot that already reconciled pending expected transport, or a known play target's identity. |
+| [ADR 003: Keep PlaybackEffectRegistry; reject TCA and a generic Effect type](ADR-003-playback-command-effects.md) | Accepted | Keep store-level `PlaybackEffectRegistry`; do not adopt TCA or a generic Effect type. Reducer acceptance normally gates follow-ups; a captured same-lifetime transport resolution and matching-snapshot reconciliation are the documented exceptions, and consume-only acceptance cannot report coordinator failure. |
 
 ## Maintaining the index
 

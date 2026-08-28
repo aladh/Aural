@@ -708,7 +708,7 @@ func runPlaybackCommandPresentationChecks(_ check: CheckRunner) {
             confirmed.transportCommandResolutions[confirmedID],
             .confirmed
         )
-        let afterB = confirmed
+        let capturedConfirmation = confirmed.transportCommandResolutions[confirmedID]
         let lateFailure = PlaybackReducer.reduce(
             &confirmed,
             envelope: presentationEnvelope(
@@ -720,8 +720,40 @@ func runPlaybackCommandPresentationChecks(_ check: CheckRunner) {
                 )
             )
         )
-        check.check("a late failure after B confirmation is rejected", !lateFailure)
-        check.equal("a late failure after B confirmation does not roll back", confirmed, afterB)
+        check.check("a late failure after B confirmation is accepted to consume the entry", lateFailure)
+        check.nil_("a late failure after B confirmation consumes the resolution", confirmed.transportCommandResolutions[confirmedID])
+        check.check("a late failure after B confirmation leaves no resolution map entries", confirmed.transportCommandResolutions.isEmpty)
+        let secondConfirmedFinish = PlaybackReducer.reduce(
+            &confirmed,
+            envelope: presentationEnvelope(
+                source: .command,
+                event: .commandFinished(
+                    id: confirmedID,
+                    accepted: false,
+                    notice: PlaybackNotice(message: "Could not play that Spotify URI")
+                )
+            )
+        )
+        check.check("a second finish after confirmation consume is rejected", !secondConfirmedFinish)
+        check.equal("a late failure after B confirmation keeps B", confirmed.currentTrack, trackB)
+        check.equal("a late failure after B confirmation does not restore A timing", confirmed.timing.position, 1)
+        check.equal(
+            "a captured confirmation still reports success after consume-only acceptance",
+            playbackCommandFollowUp(
+                finishAccepted: lateFailure,
+                operationSucceeded: false,
+                requiresReconnect: false,
+                commandKind: .transport,
+                pendingCommandID: confirmed.pendingCommands[.transport]?.id,
+                finishedCommandResolution: capturedConfirmation,
+                capturedAccountEpoch: 1,
+                capturedEngineEpoch: 1,
+                currentAccountEpoch: 1,
+                currentEngineEpoch: 1,
+                isTearingDown: false
+            ),
+            .reportSuccess
+        )
 
         var superseded = PlaybackState(
             accountEpoch: 1,
@@ -753,7 +785,7 @@ func runPlaybackCommandPresentationChecks(_ check: CheckRunner) {
             superseded.transportCommandResolutions[supersededID],
             .superseded
         )
-        let afterC = superseded
+        let capturedSupersession = superseded.transportCommandResolutions[supersededID]
         let supersededFinish = PlaybackReducer.reduce(
             &superseded,
             envelope: presentationEnvelope(
@@ -765,8 +797,28 @@ func runPlaybackCommandPresentationChecks(_ check: CheckRunner) {
                 )
             )
         )
-        check.check("a late finish after C supersession is rejected", !supersededFinish)
-        check.equal("a late finish after C supersession leaves C", superseded, afterC)
+        check.check("a late finish after C supersession is accepted to consume the entry", supersededFinish)
+        check.nil_("a late finish after C supersession consumes the resolution", superseded.transportCommandResolutions[supersededID])
+        check.check("a late finish after C supersession leaves no resolution map entries", superseded.transportCommandResolutions.isEmpty)
+        check.equal("a late finish after C supersession leaves C", superseded.currentTrack?.uri, "spotify:track:c")
+        check.equal("a late finish after C supersession keeps C timing", superseded.timing, trackCTiming)
+        check.equal(
+            "a captured supersession stays inert after consume-only acceptance",
+            playbackCommandFollowUp(
+                finishAccepted: supersededFinish,
+                operationSucceeded: false,
+                requiresReconnect: false,
+                commandKind: .transport,
+                pendingCommandID: superseded.pendingCommands[.transport]?.id,
+                finishedCommandResolution: capturedSupersession,
+                capturedAccountEpoch: 1,
+                capturedEngineEpoch: 1,
+                currentAccountEpoch: 1,
+                currentEngineEpoch: 1,
+                isTearingDown: false
+            ),
+            .inert
+        )
 
         var cleared = PlaybackState(
             accountEpoch: 1,
@@ -946,7 +998,7 @@ func runPlaybackCommandPresentationChecks(_ check: CheckRunner) {
             .superseded
         )
         check.equal("a later pause is the pending transport command", supersededThenPause.pendingCommands[.transport]?.id, pauseAfterPlayID)
-        let afterPauseStart = supersededThenPause
+        let capturedPauseSupersession = supersededThenPause.transportCommandResolutions[supersededID]
         let latePlayFinish = PlaybackReducer.reduce(
             &supersededThenPause,
             envelope: presentationEnvelope(
@@ -958,18 +1010,19 @@ func runPlaybackCommandPresentationChecks(_ check: CheckRunner) {
                 )
             )
         )
-        check.check("a late play finish after C then pause is rejected", !latePlayFinish)
-        check.equal("a late play finish after C then pause leaves C and the pause", supersededThenPause, afterPauseStart)
+        check.check("a late play finish after C then pause consumes the play entry", latePlayFinish)
+        check.nil_("a late play finish after C then pause removes the play resolution", supersededThenPause.transportCommandResolutions[supersededID])
+        check.equal("a late play finish after C then pause leaves the pause pending", supersededThenPause.pendingCommands[.transport]?.id, pauseAfterPlayID)
+        check.equal("a late play finish after C then pause leaves C", supersededThenPause.currentTrack?.uri, "spotify:track:c")
         check.equal(
             "a late play finish after C then pause is inert",
             playbackCommandFollowUp(
-                finishAccepted: false,
+                finishAccepted: latePlayFinish,
                 operationSucceeded: false,
                 requiresReconnect: false,
                 commandKind: .transport,
                 pendingCommandID: supersededThenPause.pendingCommands[.transport]?.id,
-                finishedCommandID: supersededID,
-                transportCommandResolutions: supersededThenPause.transportCommandResolutions,
+                finishedCommandResolution: capturedPauseSupersession,
                 capturedAccountEpoch: 1,
                 capturedEngineEpoch: 1,
                 currentAccountEpoch: 1,
@@ -978,6 +1031,15 @@ func runPlaybackCommandPresentationChecks(_ check: CheckRunner) {
             ),
             .inert
         )
+        _ = PlaybackReducer.reduce(
+            &supersededThenPause,
+            envelope: presentationEnvelope(
+                source: .command,
+                event: .commandFinished(id: pauseAfterPlayID, accepted: true, notice: nil)
+            )
+        )
+        check.equal("the later pause can still finish after the play entry was consumed", supersededThenPause.transport, .paused)
+        check.nil_("an accepted pause clears the pending pause", supersededThenPause.pendingCommands[.transport])
 
         let seekDuringPlayID = UUID(uuidString: "00000000-0000-0000-0000-000000000049")!
         let playThenRejectID = UUID(uuidString: "00000000-0000-0000-0000-00000000004A")!

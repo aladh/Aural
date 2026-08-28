@@ -122,20 +122,23 @@ public struct ConnectQueueCallbackWatermark: Equatable, Sendable {
 
 /// Dependent work after `PlaybackStore.send(.commandFinished)`.
 ///
-/// `PlaybackReducer.reconcileTransport` drops a pending *transport* command when an engine
-/// snapshot already matches `expectedTransport`. The later `commandFinished` is then rejected.
-/// On the same account/engine lifetime that is already-reconciled success, even if the
-/// coordinator later reports failure: the backend has confirmed the optimistic transport.
-/// Showing an error or calling `completion(false)` would roll back that confirmed state.
+/// Same-lifetime is the first gate: epoch invalidation and teardown stay inert even when a
+/// confirmation was captured. `applyCommandOutcome` snapshots the finished command's
+/// resolution before `commandFinished`; the reducer consumes that map entry.
+/// Follow-up then evaluates the captured resolution before `finishAccepted`: confirmed
+/// reports success, superseded stays inert, so consume-only acceptance cannot turn a
+/// coordinator failure into `reportFailure`.
+/// `PlaybackReducer.reconcileTransport` may also drop a pending *transport* command when an
+/// engine snapshot already matches `expectedTransport` without recording a resolution. A
+/// later rejected finish on that same lifetime with no pending transport command is then
+/// already-reconciled success.
 /// A known play target is confirmed only by that target's identity, not by a lagging prior
-/// track that happens to already be `.playing`. Confirmation and supersession are stored per
-/// command id so a later pause/resume cannot recycle the nil already-reconciled-success path.
-/// An unrelated or empty track supersedes the optimistic target: rollback is cleared and a later
-/// finish stays inert.
+/// track that happens to already be `.playing`. An unrelated or empty track supersedes the
+/// optimistic target: rollback is cleared and a later finish stays inert.
 /// Seek confirmation and track-switch supersession both clear pending `.seek`, so a later
 /// finish stays inert: `pendingCommandID == nil` cannot tell those cases apart, and seek
 /// completions have no success side effect.
-/// Account/engine invalidation, teardown, non-transport kinds, and a newer pending id stay inert.
+/// Non-transport kinds and a newer pending id stay inert.
 public enum PlaybackCommandFollowUp: Equatable, Sendable {
     case reportSuccess
     case reportFailure(reconnect: Bool)
@@ -148,24 +151,20 @@ public func playbackCommandFollowUp(
     requiresReconnect: Bool,
     commandKind: PlaybackCommandKind,
     pendingCommandID: UUID?,
-    finishedCommandID: UUID? = nil,
-    transportCommandResolutions: [UUID: PlaybackTransportCommandResolution] = [:],
+    finishedCommandResolution: PlaybackTransportCommandResolution? = nil,
     capturedAccountEpoch: UInt64,
     capturedEngineEpoch: UInt64,
     currentAccountEpoch: UInt64,
     currentEngineEpoch: UInt64,
     isTearingDown: Bool
 ) -> PlaybackCommandFollowUp {
-    if finishAccepted {
-        return operationSucceeded ? .reportSuccess : .reportFailure(reconnect: requiresReconnect)
-    }
     let sameLifetime =
         !isTearingDown
         && capturedAccountEpoch == currentAccountEpoch
         && capturedEngineEpoch == currentEngineEpoch
-    guard sameLifetime, commandKind == .transport else { return .inert }
-    if let finishedCommandID {
-        switch transportCommandResolutions[finishedCommandID] {
+    guard sameLifetime else { return .inert }
+    if commandKind == .transport {
+        switch finishedCommandResolution {
         case .confirmed:
             return .reportSuccess
         case .superseded:
@@ -174,5 +173,11 @@ public func playbackCommandFollowUp(
             break
         }
     }
-    return pendingCommandID == nil ? .reportSuccess : .inert
+    if finishAccepted {
+        return operationSucceeded ? .reportSuccess : .reportFailure(reconnect: requiresReconnect)
+    }
+    if pendingCommandID == nil, commandKind == .transport {
+        return .reportSuccess
+    }
+    return .inert
 }

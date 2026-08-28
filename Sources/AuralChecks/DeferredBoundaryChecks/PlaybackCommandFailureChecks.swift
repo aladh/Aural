@@ -964,6 +964,7 @@ func runPlaybackCommandFailureChecks(_ runner: CheckRunner) async {
         runner.equal("confirmed B then failure keeps B", confirmStore.state.currentTrack?.uri, trackB.uri)
         runner.nil_("confirmed B then failure has no command notice", confirmStore.transientCommandError)
         runner.check("confirmed B then failure still records B", confirmStore.history.entries.contains { $0.uri == trackB.uri })
+        runner.check("confirmed B then failure consumes the resolution entry", confirmStore.state.transportCommandResolutions.isEmpty)
         await confirmStore.shutdownForTermination()
 
         let supersedeRemote = GatedFailingRemoteClient()
@@ -990,6 +991,7 @@ func runPlaybackCommandFailureChecks(_ runner: CheckRunner) async {
         runner.equal("C supersession then failure keeps C timing", supersedeStore.state.timing, trackCTiming)
         runner.check("C supersession then failure does not record B", !supersedeStore.history.entries.contains { $0.uri == trackB.uri })
         runner.nil_("C supersession then failure has no play notice", supersedeStore.transientCommandError)
+        runner.check("C supersession then failure consumes the resolution entry", supersedeStore.state.transportCommandResolutions.isEmpty)
         await supersedeStore.shutdownForTermination()
 
         let nilRemote = GatedFailingRemoteClient()
