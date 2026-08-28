@@ -123,13 +123,13 @@ extension PlaybackStore {
         guard !isTearingDown else { return }
         feedback.dismiss()
         isTearingDown = true
-        accountStore.prepareShutdownForTermination()
+        let staleConnectionTask = accountStore.prepareShutdownForTermination()
         engineGeneration &+= 1
         connectQueueCallback.reset()
         catalogSession.update(accountEpoch: accountEpoch, isAvailable: false)
         effects.cancelAccountScoped()
         send(.reset(session: .signedOut), source: .account)
-        await accountStore.completeShutdownForTermination()
+        await accountStore.completeShutdownForTermination(staleConnectionTask: staleConnectionTask)
     }
 
     func clearCurrentTrackMetadata() {

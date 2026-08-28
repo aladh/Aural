@@ -175,6 +175,33 @@ private func containsToken(_ source: String, _ token: String) -> Bool {
     source.contains(token)
 }
 
+private func functionBody(_ source: String, named name: String) -> String? {
+    guard let header = source.range(of: "func \(name)") else { return nil }
+    guard let open = source[header.lowerBound...].firstIndex(of: "{") else { return nil }
+    var depth = 0
+    var index = open
+    while index < source.endIndex {
+        switch source[index] {
+        case "{": depth += 1
+        case "}":
+            depth -= 1
+            if depth == 0 {
+                return String(source[open...index])
+            }
+        default: break
+        }
+        index = source.index(after: index)
+    }
+    return nil
+}
+
+private func epochAdvancesBeforeConnectionCancel(in accountSource: String) -> Bool {
+    guard let body = functionBody(accountSource, named: "invalidateAccountIdentity") else { return false }
+    guard let advance = body.range(of: "advanceEpoch()") else { return false }
+    guard let cancel = body.range(of: "staleTask?.cancel()") else { return false }
+    return advance.lowerBound < cancel.lowerBound
+}
+
 private func playbackStoreWritableAccountEpochMutations(_ source: String) -> [String] {
     let assignment = try! NSRegularExpression(
         pattern: #"(?:self\.)?accountEpoch\s*(?:\+|&\+)?=(?!=)"#
@@ -340,15 +367,11 @@ func runAccountEpochOwnershipChecks(_ runner: CheckRunner) async {
             )
             runner.check(
                 "AccountStore.advanceEpoch is the only epoch increment",
-                containsToken(account, "func advanceEpoch()")
-                    && containsToken(account, "epoch &+= 1")
-                    && account.components(separatedBy: "epoch &+= 1").count == 2
+                account.components(separatedBy: "epoch &+= 1").count == 2
             )
             runner.check(
-                "session teardown advances the epoch before connection cancellation",
-                containsToken(account, "advanceEpoch()")
-                    && containsToken(session, "accountStore.beginEndSession(")
-                    && containsToken(session, "accountStore.prepareShutdownForTermination()")
+                "invalidateAccountIdentity advances the epoch before cancelling connection work",
+                epochAdvancesBeforeConnectionCancel(in: account)
             )
         }
     }

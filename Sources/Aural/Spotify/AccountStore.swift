@@ -31,7 +31,6 @@ final class AccountStore {
     @ObservationIgnored private var connectionGeneration: UInt64 = 0
     @ObservationIgnored private var teardown = SessionTeardownCoalescer()
     @ObservationIgnored private var teardownTask: Task<SessionTeardownIntent, Never>?
-    @ObservationIgnored private var cancelledConnectionTask: Task<Void, Never>?
     @ObservationIgnored var onPhaseChange: ((PlaybackSessionPhase) -> Void)?
     @ObservationIgnored var onReady: (() -> Void)?
 
@@ -101,11 +100,7 @@ final class AccountStore {
             return teardownTask
         }
 
-        advanceEpoch()
-        connectionGeneration &+= 1
-        let staleTask = connectionTask
-        connectionTask = nil
-        staleTask?.cancel()
+        let staleTask = invalidateAccountIdentity()
         phase = cumulative.finalPhase
 
         let task = Task { [weak self] in
@@ -175,32 +170,32 @@ final class AccountStore {
         epoch &+= 1
     }
 
-    /// Advances account identity and cancels connection work without waiting for engine shutdown
-    /// so presentation teardown can observe the new epoch first.
-    func prepareShutdownForTermination() {
+    /// Advances account identity and cancels in-flight connection work. Returns the cancelled
+    /// connection task so the caller can await it after presentation teardown.
+    @discardableResult
+    func invalidateAccountIdentity() -> Task<Void, Never>? {
         advanceEpoch()
         connectionGeneration &+= 1
         let staleTask = connectionTask
         connectionTask = nil
         staleTask?.cancel()
-        cancelledConnectionTask = staleTask
-        phase = .signedOut
+        return staleTask
     }
 
-    func completeShutdownForTermination() async {
-        if let cancelledConnectionTask {
-            await cancelledConnectionTask.value
-            self.cancelledConnectionTask = nil
-        }
+    /// Invalidates account identity without waiting for engine shutdown so presentation
+    /// teardown can observe the new epoch first. Streaming credentials stay intact.
+    @discardableResult
+    func prepareShutdownForTermination() -> Task<Void, Never>? {
+        let staleTask = invalidateAccountIdentity()
+        phase = .signedOut
+        return staleTask
+    }
+
+    func completeShutdownForTermination(staleConnectionTask: Task<Void, Never>?) async {
+        if let staleConnectionTask { await staleConnectionTask.value }
         _ = await coordinator.shutdownEngine()
         await coordinator.cleanupEngine()
         phase = .signedOut
-    }
-
-    /// Stops the process-owned engine without clearing the reusable streaming credential cache.
-    func shutdownForTermination() async {
-        prepareShutdownForTermination()
-        await completeShutdownForTermination()
     }
 
     @discardableResult
