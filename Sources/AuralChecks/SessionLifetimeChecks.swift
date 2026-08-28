@@ -164,7 +164,7 @@ func runSessionLifetimeChecks(_ check: CheckRunner) {
             kind: PlaybackCommandKind = .transport,
             pending: UUID? = nil,
             finished: UUID? = nil,
-            resolution: PlaybackTransportCommandResolution? = nil,
+            resolutions: [UUID: PlaybackTransportCommandResolution] = [:],
             account: UInt64 = 1,
             engine: UInt64 = 1,
             currentAccount: UInt64 = 1,
@@ -178,7 +178,7 @@ func runSessionLifetimeChecks(_ check: CheckRunner) {
                 commandKind: kind,
                 pendingCommandID: pending,
                 finishedCommandID: finished,
-                transportCommandResolution: resolution,
+                transportCommandResolutions: resolutions,
                 capturedAccountEpoch: account,
                 capturedEngineEpoch: engine,
                 currentAccountEpoch: currentAccount,
@@ -245,7 +245,7 @@ func runSessionLifetimeChecks(_ check: CheckRunner) {
                 succeeded: false,
                 reconnect: true,
                 finished: playID,
-                resolution: .confirmed(playID)
+                resolutions: [playID: .confirmed]
             ),
             .reportSuccess
         )
@@ -256,9 +256,44 @@ func runSessionLifetimeChecks(_ check: CheckRunner) {
                 succeeded: false,
                 reconnect: true,
                 finished: playID,
-                resolution: .superseded(playID)
+                resolutions: [playID: .superseded]
             ),
             .inert
+        )
+        check.equal(
+            "a superseded play stays inert after a later pause is pending",
+            followUp(
+                finishAccepted: false,
+                succeeded: false,
+                reconnect: true,
+                pending: other,
+                finished: playID,
+                resolutions: [playID: .superseded]
+            ),
+            .inert
+        )
+        check.equal(
+            "a superseded play stays inert after a later pause cleared pending",
+            followUp(
+                finishAccepted: false,
+                succeeded: false,
+                reconnect: true,
+                finished: playID,
+                resolutions: [playID: .superseded]
+            ),
+            .inert
+        )
+        check.equal(
+            "a confirmed play still reports success while a later pause is pending",
+            followUp(
+                finishAccepted: false,
+                succeeded: false,
+                reconnect: true,
+                pending: other,
+                finished: playID,
+                resolutions: [playID: .confirmed]
+            ),
+            .reportSuccess
         )
     }
 }

@@ -172,9 +172,10 @@ In `PlaybackStore+Commands`, `commandStarted` must be accepted before a command 
 - Reducer-accepted success reports success.
 - Reducer-accepted failure may reconnect.
 - A rejected finish on the same account/engine lifetime with no pending *transport* command is
-  already-reconciled success (matching snapshot), unless a known play target was superseded by a
-  different or empty track. Target confirmation still reports success when a later coordinator
-  failure arrives, with no error notice, rollback, or reconnect.
+  already-reconciled success (matching snapshot), unless that command id was superseded by a
+  different or empty track. Target confirmation and supersession are keyed by command id so a
+  later pause/resume cannot recycle the nil catch-all. Target confirmation still reports success
+  when a later coordinator failure arrives, with no error notice, rollback, or reconnect.
 - Epoch changes, teardown, cancellation, non-transport kinds, and superseded ids stay inert.
 
 Successful `commandFinished` does not clear `notice`. Command errors keep the existing

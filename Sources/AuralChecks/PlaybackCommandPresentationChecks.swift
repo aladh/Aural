@@ -662,7 +662,7 @@ func runPlaybackCommandPresentationChecks(_ check: CheckRunner) {
         check.equal("a lagging A snapshot keeps the optimistic B track", playingA.currentTrack, trackB)
         check.equal("a lagging A snapshot keeps B timing", playingA.timing, optimisticTiming)
         check.equal("a lagging A snapshot does not confirm B", playingA.pendingCommands[.transport]?.id, playID)
-        check.nil_("a lagging A snapshot is not a confirmation", playingA.transportCommandResolution)
+        check.nil_("a lagging A snapshot is not a confirmation", playingA.transportCommandResolutions[playID])
 
         _ = PlaybackReducer.reduce(
             &playingA,
@@ -705,8 +705,8 @@ func runPlaybackCommandPresentationChecks(_ check: CheckRunner) {
         check.nil_("an authoritative B snapshot confirms the command", confirmed.pendingCommands[.transport])
         check.equal(
             "an authoritative B snapshot records confirmation",
-            confirmed.transportCommandResolution,
-            .confirmed(confirmedID)
+            confirmed.transportCommandResolutions[confirmedID],
+            .confirmed
         )
         let afterB = confirmed
         let lateFailure = PlaybackReducer.reduce(
@@ -750,8 +750,8 @@ func runPlaybackCommandPresentationChecks(_ check: CheckRunner) {
         check.nil_("an unrelated C snapshot clears B rollback ownership", superseded.pendingCommands[.transport])
         check.equal(
             "an unrelated C snapshot records supersession",
-            superseded.transportCommandResolution,
-            .superseded(supersededID)
+            superseded.transportCommandResolutions[supersededID],
+            .superseded
         )
         let afterC = superseded
         let supersededFinish = PlaybackReducer.reduce(
@@ -794,8 +794,8 @@ func runPlaybackCommandPresentationChecks(_ check: CheckRunner) {
         check.nil_("a nil snapshot clears B rollback ownership", cleared.pendingCommands[.transport])
         check.equal(
             "a nil snapshot records supersession",
-            cleared.transportCommandResolution,
-            .superseded(nilID)
+            cleared.transportCommandResolutions[nilID],
+            .superseded
         )
 
         var accepted = PlaybackState(
@@ -886,5 +886,97 @@ func runPlaybackCommandPresentationChecks(_ check: CheckRunner) {
         check.nil_("a different-track play supersedes a pending seek", seekThenPlay.pendingCommands[.seek])
         check.equal("a different-track play keeps target timing at zero", seekThenPlay.timing, optimisticTiming)
         check.equal("a different-track play still presents B", seekThenPlay.currentTrack, trackB)
+        _ = PlaybackReducer.reduce(
+            &seekThenPlay,
+            envelope: presentationEnvelope(
+                source: .enginePlayback,
+                revision: 1,
+                event: .enginePlayback(EnginePlaybackSnapshot(
+                    transport: .playing,
+                    trackURI: trackB.uri,
+                    timing: PlaybackTiming(position: 0, duration: 180, anchoredAt: presentationDate)
+                ))
+            )
+        )
+        check.nil_("a B snapshot after play does not revive the seek", seekThenPlay.pendingCommands[.seek])
+        check.equal("a B snapshot after play keeps timing at zero", seekThenPlay.timing, optimisticTiming)
+
+        let pauseAfterPlayID = UUID(uuidString: "00000000-0000-0000-0000-000000000048")!
+        var supersededThenPause = PlaybackState(
+            accountEpoch: 1,
+            engineEpoch: 1,
+            session: .ready,
+            transport: .playing,
+            currentTrack: trackA,
+            timing: priorPlayingTiming
+        )
+        startPlay(&supersededThenPause, id: supersededID)
+        _ = PlaybackReducer.reduce(
+            &supersededThenPause,
+            envelope: presentationEnvelope(
+                source: .enginePlayback,
+                revision: 1,
+                event: .enginePlayback(EnginePlaybackSnapshot(
+                    transport: .playing,
+                    trackURI: "spotify:track:c",
+                    timing: trackCTiming
+                ))
+            )
+        )
+        check.equal(
+            "C supersession records the play id as superseded",
+            supersededThenPause.transportCommandResolutions[supersededID],
+            .superseded
+        )
+        _ = PlaybackReducer.reduce(
+            &supersededThenPause,
+            envelope: presentationEnvelope(
+                source: .command,
+                event: .commandStarted(PendingPlaybackCommand(
+                    id: pauseAfterPlayID,
+                    kind: .transport,
+                    expectedTransport: .paused,
+                    startedAt: presentationDate
+                ))
+            )
+        )
+        check.equal(
+            "a later pause does not drop the superseded play id",
+            supersededThenPause.transportCommandResolutions[supersededID],
+            .superseded
+        )
+        check.equal("a later pause is the pending transport command", supersededThenPause.pendingCommands[.transport]?.id, pauseAfterPlayID)
+        let afterPauseStart = supersededThenPause
+        let latePlayFinish = PlaybackReducer.reduce(
+            &supersededThenPause,
+            envelope: presentationEnvelope(
+                source: .command,
+                event: .commandFinished(
+                    id: supersededID,
+                    accepted: false,
+                    notice: PlaybackNotice(message: "Could not play that Spotify URI")
+                )
+            )
+        )
+        check.check("a late play finish after C then pause is rejected", !latePlayFinish)
+        check.equal("a late play finish after C then pause leaves C and the pause", supersededThenPause, afterPauseStart)
+        check.equal(
+            "a late play finish after C then pause is inert",
+            playbackCommandFollowUp(
+                finishAccepted: false,
+                operationSucceeded: false,
+                requiresReconnect: false,
+                commandKind: .transport,
+                pendingCommandID: supersededThenPause.pendingCommands[.transport]?.id,
+                finishedCommandID: supersededID,
+                transportCommandResolutions: supersededThenPause.transportCommandResolutions,
+                capturedAccountEpoch: 1,
+                capturedEngineEpoch: 1,
+                currentAccountEpoch: 1,
+                currentEngineEpoch: 1,
+                isTearingDown: false
+            ),
+            .inert
+        )
     }
 }

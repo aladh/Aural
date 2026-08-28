@@ -956,8 +956,8 @@ func runPlaybackCommandFailureChecks(_ runner: CheckRunner) async {
         runner.nil_("an authoritative B snapshot confirms the play", confirmStore.state.pendingCommands[.transport])
         runner.equal(
             "an authoritative B snapshot records confirmation",
-            confirmStore.state.transportCommandResolution,
-            confirmedCommandID.map { .confirmed($0) }
+            confirmedCommandID.flatMap { confirmStore.state.transportCommandResolutions[$0] },
+            Optional(PlaybackTransportCommandResolution.confirmed)
         )
         await confirmRemote.fail()
         _ = await waitUntil { confirmStore.history.entries.contains { $0.uri == trackB.uri } }
@@ -1092,7 +1092,7 @@ func runPlaybackCommandFailureChecks(_ runner: CheckRunner) async {
         )
         runner.nil_("an engine-epoch bump drops the pending play", staleStore.state.pendingCommands[.transport])
         runner.equal("an engine-epoch bump does not roll back B", staleStore.state.currentTrack?.uri, optimisticPlay.currentTrack?.uri)
-        runner.nil_("an engine-epoch bump clears play confirmation state", staleStore.state.transportCommandResolution)
+        runner.check("an engine-epoch bump clears play confirmation state", staleStore.state.transportCommandResolutions.isEmpty)
         await staleStore.shutdownForTermination()
 
         let playlistStore = playbackStore(

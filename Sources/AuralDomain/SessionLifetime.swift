@@ -128,8 +128,10 @@ public struct ConnectQueueCallbackWatermark: Equatable, Sendable {
 /// coordinator later reports failure: the backend has confirmed the optimistic transport.
 /// Showing an error or calling `completion(false)` would roll back that confirmed state.
 /// A known play target is confirmed only by that target's identity, not by a lagging prior
-/// track that happens to already be `.playing`. An unrelated or empty track supersedes the
-/// optimistic target: rollback is cleared and a later finish stays inert.
+/// track that happens to already be `.playing`. Confirmation and supersession are stored per
+/// command id so a later pause/resume cannot recycle the nil already-reconciled-success path.
+/// An unrelated or empty track supersedes the optimistic target: rollback is cleared and a later
+/// finish stays inert.
 /// Seek confirmation and track-switch supersession both clear pending `.seek`, so a later
 /// finish stays inert: `pendingCommandID == nil` cannot tell those cases apart, and seek
 /// completions have no success side effect.
@@ -147,7 +149,7 @@ public func playbackCommandFollowUp(
     commandKind: PlaybackCommandKind,
     pendingCommandID: UUID?,
     finishedCommandID: UUID? = nil,
-    transportCommandResolution: PlaybackTransportCommandResolution? = nil,
+    transportCommandResolutions: [UUID: PlaybackTransportCommandResolution] = [:],
     capturedAccountEpoch: UInt64,
     capturedEngineEpoch: UInt64,
     currentAccountEpoch: UInt64,
@@ -161,15 +163,15 @@ public func playbackCommandFollowUp(
         !isTearingDown
         && capturedAccountEpoch == currentAccountEpoch
         && capturedEngineEpoch == currentEngineEpoch
-    if sameLifetime, pendingCommandID == nil, commandKind == .transport {
-        switch transportCommandResolution {
-        case let .confirmed(id):
-            return finishedCommandID == id ? .reportSuccess : .inert
+    guard sameLifetime, commandKind == .transport else { return .inert }
+    if let finishedCommandID {
+        switch transportCommandResolutions[finishedCommandID] {
+        case .confirmed:
+            return .reportSuccess
         case .superseded:
             return .inert
         case nil:
-            return .reportSuccess
+            break
         }
     }
-    return .inert
-}
+    return pendingCommandID == nil ? .reportSuccess : .inert

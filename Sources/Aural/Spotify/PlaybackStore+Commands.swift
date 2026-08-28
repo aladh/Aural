@@ -236,7 +236,7 @@ extension PlaybackStore {
             commandKind: kind,
             pendingCommandID: state.pendingCommands[kind]?.id,
             finishedCommandID: commandID,
-            transportCommandResolution: state.transportCommandResolution,
+            transportCommandResolutions: state.transportCommandResolutions,
             capturedAccountEpoch: capturedAccountEpoch,
             capturedEngineEpoch: capturedEngineEpoch,
             currentAccountEpoch: accountEpoch,

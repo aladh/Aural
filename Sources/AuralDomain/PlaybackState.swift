@@ -395,12 +395,11 @@ public struct PendingPlaybackCommand: Equatable, Sendable {
     }
 }
 
-/// How a pending transport command left `pendingCommands` without `commandFinished`.
+/// How a known-target transport command left `pendingCommands` without `commandFinished`.
+/// Stored per command id so a later pause/resume cannot recycle the nil catch-all.
 public enum PlaybackTransportCommandResolution: Equatable, Sendable {
-    /// An authoritative snapshot matched the expected target identity and transport.
-    case confirmed(UUID)
-    /// A different or empty track replaced the optimistic target.
-    case superseded(UUID)
+    case confirmed
+    case superseded
 }
 
 public struct PlaybackNotice: Equatable, Sendable {
@@ -482,7 +481,7 @@ public struct PlaybackState: Equatable, Sendable {
     public var pendingCommands: [PlaybackCommandKind: PendingPlaybackCommand]
     public var notice: PlaybackNotice?
     public var sourceRevisions: [PlaybackEventSource: UInt64]
-    public var transportCommandResolution: PlaybackTransportCommandResolution?
+    public var transportCommandResolutions: [UUID: PlaybackTransportCommandResolution]
 
     public init(
         accountEpoch: UInt64 = 0,
@@ -498,7 +497,7 @@ public struct PlaybackState: Equatable, Sendable {
         pendingCommands: [PlaybackCommandKind: PendingPlaybackCommand] = [:],
         notice: PlaybackNotice? = nil,
         sourceRevisions: [PlaybackEventSource: UInt64] = [:],
-        transportCommandResolution: PlaybackTransportCommandResolution? = nil
+        transportCommandResolutions: [UUID: PlaybackTransportCommandResolution] = [:]
     ) {
         self.accountEpoch = accountEpoch
         self.engineEpoch = engineEpoch
@@ -513,7 +512,7 @@ public struct PlaybackState: Equatable, Sendable {
         self.pendingCommands = pendingCommands
         self.notice = notice
         self.sourceRevisions = sourceRevisions
-        self.transportCommandResolution = transportCommandResolution
+        self.transportCommandResolutions = transportCommandResolutions
     }
 }
 
@@ -669,9 +668,8 @@ public enum PlaybackReducer {
         case let .commandStarted(command):
             // Capture current presentation before applying the caller's target. The store must
             // not mutate transport, timing, or track first, or rollback records the optimistic values.
-            if command.kind == .transport {
-                candidate.transportCommandResolution = nil
-            }
+            // Do not clear other commands' resolutions: a later pause must not recycle the
+            // already-reconciled-success path for a superseded play.
             let prepared = PendingPlaybackCommand(
                 id: command.id,
                 kind: command.kind,
@@ -764,7 +762,7 @@ public enum PlaybackReducer {
             candidate.engineEpoch = engineEpoch
             candidate.sourceRevisions = [:]
             candidate.pendingCommands = [:]
-            candidate.transportCommandResolution = nil
+            candidate.transportCommandResolutions = [:]
             candidate.devices.revision = 0
         }
 
@@ -794,7 +792,7 @@ public enum PlaybackReducer {
             } else {
                 state.transport = transport
                 if pending.expectedTransport == nil || pending.expectedTransport == transport {
-                    state.transportCommandResolution = .confirmed(pending.id)
+                    state.transportCommandResolutions[pending.id] = .confirmed
                     state.pendingCommands[.transport] = nil
                 }
             }
@@ -838,7 +836,7 @@ public enum PlaybackReducer {
         if incoming == targetURI { return }
         if incoming != nil, incoming == rollbackURI { return }
         state.pendingCommands[.transport] = nil
-        state.transportCommandResolution = .superseded(pending.id)
+        state.transportCommandResolutions[pending.id] = .superseded
     }
 
     private static func applyEnginePlaybackOptions(
