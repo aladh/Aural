@@ -175,3 +175,4 @@ public func playbackCommandFollowUp(
         }
     }
     return pendingCommandID == nil ? .reportSuccess : .inert
+}

@@ -1018,5 +1018,44 @@ func runPlaybackCommandPresentationChecks(_ check: CheckRunner) {
         check.equal("a rejected play restores A after a nested seek", seekDuringPlay.currentTrack, trackA)
         check.equal("a rejected play restores A's timing after a nested seek", seekDuringPlay.timing, priorPlayingTiming)
         check.nil_("a rejected play drops a seek that targeted B", seekDuringPlay.pendingCommands[.seek])
+
+        let sameURIPlayID = UUID(uuidString: "00000000-0000-0000-0000-00000000004B")!
+        let seekSameURIID = UUID(uuidString: "00000000-0000-0000-0000-00000000004C")!
+        var sameURI = PlaybackState(
+            accountEpoch: 1,
+            engineEpoch: 1,
+            session: .ready,
+            transport: .playing,
+            currentTrack: trackA,
+            timing: priorPlayingTiming
+        )
+        startPlay(&sameURI, id: sameURIPlayID, expected: trackA)
+        _ = PlaybackReducer.reduce(
+            &sameURI,
+            envelope: presentationEnvelope(
+                source: .command,
+                event: .commandStarted(PendingPlaybackCommand(
+                    id: seekSameURIID,
+                    kind: .seek,
+                    expectedTransport: nil,
+                    expectedTiming: PlaybackTiming(position: 90, duration: 200, anchoredAt: presentationDate),
+                    startedAt: presentationDate
+                ))
+            )
+        )
+        _ = PlaybackReducer.reduce(
+            &sameURI,
+            envelope: presentationEnvelope(
+                source: .command,
+                event: .commandFinished(
+                    id: sameURIPlayID,
+                    accepted: false,
+                    notice: PlaybackNotice(message: "Could not play that Spotify URI")
+                )
+            )
+        )
+        check.equal("a rejected same-URI play restores A", sameURI.currentTrack, trackA)
+        check.equal("a rejected same-URI play restores A's timing", sameURI.timing, priorPlayingTiming)
+        check.nil_("a rejected same-URI play drops the nested seek", sameURI.pendingCommands[.seek])
     }
 }
