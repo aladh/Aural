@@ -65,14 +65,17 @@ fn two_lifecycle_ops_never_enter_the_store_section_together() {
             ready.wait().await;
             with_lifecycle_lock(async {
                 let _section = enter_store_section();
-                // Block this worker so the sibling can contend for the lock while
-                // the store section is still open. Multi-thread runtime lets it run.
-                std::thread::sleep(Duration::from_millis(80));
+                // Yield so the sibling task can contend for the lock while this
+                // section is still open. `RUNTIME` is multi-thread.
+                tokio::time::sleep(Duration::from_millis(80)).await;
             })
             .await;
         };
 
-        tokio::join!(op(ready.clone()), op(ready));
+        let first = tokio::spawn(op(ready.clone()));
+        let second = tokio::spawn(op(ready));
+        first.await.expect("first lifecycle op");
+        second.await.expect("second lifecycle op");
     })
     .expect("lifecycle test");
 
@@ -102,7 +105,7 @@ fn queued_stale_reconnect_revalidates_and_skips_cleanup_and_build() {
                 let _lock = acquire_lifecycle().await;
                 queued.wait().await;
                 current.store(3, Ordering::SeqCst);
-                std::thread::sleep(Duration::from_millis(40));
+                tokio::time::sleep(Duration::from_millis(40)).await;
             }
         };
 
@@ -130,7 +133,10 @@ fn queued_stale_reconnect_revalidates_and_skips_cleanup_and_build() {
             }
         };
 
-        let (_, outcome) = tokio::join!(newer_session, stale_reconnect);
+        let holder = tokio::spawn(newer_session);
+        let waiter = tokio::spawn(stale_reconnect);
+        holder.await.expect("newer session holder");
+        let outcome = waiter.await.expect("stale reconnect");
         assert!(matches!(outcome, ReconnectUnitOutcome::Abandoned));
     })
     .expect("lifecycle test");
@@ -156,7 +162,7 @@ fn exported_init_recheck_prevents_a_second_build_after_waiting() {
                 let _lock = acquire_lifecycle().await;
                 waiter_ready.wait().await;
                 session_present.store(true, Ordering::SeqCst);
-                std::thread::sleep(Duration::from_millis(40));
+                tokio::time::sleep(Duration::from_millis(40)).await;
             }
         };
 
@@ -173,7 +179,10 @@ fn exported_init_recheck_prevents_a_second_build_after_waiting() {
             }
         };
 
-        let (_, outcome) = tokio::join!(first_build, second_init);
+        let holder = tokio::spawn(first_build);
+        let waiter = tokio::spawn(second_init);
+        holder.await.expect("first build holder");
+        let outcome = waiter.await.expect("second init");
         assert!(matches!(outcome, SerializedInitOutcome::AlreadyInitialized));
     })
     .expect("lifecycle test");
