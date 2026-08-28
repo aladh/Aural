@@ -215,7 +215,7 @@ func runPlaybackCommandPresentationChecks(_ check: CheckRunner) {
                 ))
             )
         )
-        let laggingTiming = PlaybackTiming(position: 12, duration: 200, anchoredAt: presentationDate.addingTimeInterval(1))
+        let laggingTiming = PlaybackTiming(position: 21, duration: 200, anchoredAt: presentationDate.addingTimeInterval(1))
         _ = PlaybackReducer.reduce(
             &mismatchedSeek,
             envelope: presentationEnvelope(
@@ -391,5 +391,10 @@ func runPlaybackCommandPresentationChecks(_ check: CheckRunner) {
         check.equal("a superseded seek finish cannot roll back the replacement", supersededSeek, afterReplacementSeek)
         check.equal("the replacement seek remains pending", supersededSeek.pendingCommands[.seek]?.id, replacementSeekID)
         check.equal("the replacement seek keeps its optimistic timing", supersededSeek.timing, replacementTiming)
+        check.equal(
+            "the replacement seek rolls back to the superseded optimistic timing",
+            supersededSeek.pendingCommands[.seek]?.rollbackTiming,
+            seekTiming
+        )
     }
 }
