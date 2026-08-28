@@ -348,6 +348,8 @@ public struct PendingPlaybackCommand: Equatable, Sendable {
     public let kind: PlaybackCommandKind
     public let expectedTransport: PlaybackTransportState?
     public let rollbackTransport: PlaybackTransportState?
+    public let expectedTiming: PlaybackTiming?
+    public let rollbackTiming: PlaybackTiming?
     public let startedAt: Date
 
     public init(
@@ -355,12 +357,16 @@ public struct PendingPlaybackCommand: Equatable, Sendable {
         kind: PlaybackCommandKind,
         expectedTransport: PlaybackTransportState?,
         rollbackTransport: PlaybackTransportState? = nil,
+        expectedTiming: PlaybackTiming? = nil,
+        rollbackTiming: PlaybackTiming? = nil,
         startedAt: Date
     ) {
         self.id = id
         self.kind = kind
         self.expectedTransport = expectedTransport
         self.rollbackTransport = rollbackTransport
+        self.expectedTiming = expectedTiming
+        self.rollbackTiming = rollbackTiming
         self.startedAt = startedAt
     }
 }
@@ -525,14 +531,15 @@ public enum PlaybackReducer {
         case let .transport(transport):
             reconcileTransport(transport, in: &candidate)
         case let .enginePlayback(snapshot):
-            if let uri = snapshot.trackURI, !uri.isEmpty {
+            let incomingURI = playbackTrackURI(snapshot.trackURI)
+            reconcileSeekTiming(snapshot.timing, incomingTrackURI: incomingURI, in: &candidate)
+            if let uri = incomingURI {
                 if candidate.currentTrack?.uri != uri {
                     candidate.currentTrack = CurrentTrack(uri: uri)
                 }
             } else {
                 candidate.currentTrack = nil
             }
-            candidate.timing = snapshot.timing
             if let shuffle = snapshot.shuffle { candidate.options.shuffle = shuffle }
             if snapshot.repeatMode != nil || snapshot.repeatFlags != nil {
                 let flags = snapshot.repeatFlags
@@ -548,8 +555,12 @@ public enum PlaybackReducer {
             candidate.owner = snapshot.owner
             candidate.devices.localDeviceID = snapshot.localDeviceID
         case let .presentation(presentation):
+            reconcileSeekTiming(
+                presentation.timing,
+                incomingTrackURI: presentation.currentTrack?.uri,
+                in: &candidate
+            )
             candidate.currentTrack = presentation.currentTrack
-            candidate.timing = presentation.timing
             reconcileTransport(presentation.transport, in: &candidate)
         case let .trackMetadata(metadata):
             guard var track = candidate.currentTrack, track.uri == metadata.uri else { return false }
@@ -563,16 +574,26 @@ public enum PlaybackReducer {
                 candidate.timing.duration = metadata.duration
             }
         case let .currentTrack(track):
+            let incomingURI = playbackTrackURI(track?.uri)
+            if candidate.pendingCommands[.seek] != nil,
+               incomingURI == nil || playbackTrackURI(candidate.currentTrack?.uri) != incomingURI
+            {
+                candidate.pendingCommands[.seek] = nil
+            }
             candidate.currentTrack = track
             if track == nil {
                 candidate.transport = .stopped
                 candidate.timing = PlaybackTiming(anchoredAt: envelope.receivedAt)
             }
         case let .timing(position, duration, anchoredAt):
-            candidate.timing = PlaybackTiming(
-                position: max(0, position),
-                duration: max(0, duration),
-                anchoredAt: anchoredAt
+            reconcileSeekTiming(
+                PlaybackTiming(
+                    position: max(0, position),
+                    duration: max(0, duration),
+                    anchoredAt: anchoredAt
+                ),
+                incomingTrackURI: candidate.currentTrack?.uri,
+                in: &candidate
             )
         case let .options(options):
             candidate.options = options
@@ -599,6 +620,8 @@ public enum PlaybackReducer {
                 candidate.owner = .uncertain(refreshed)
             }
         case let .commandStarted(command):
+            // Capture current presentation before applying the caller's target. The store must
+            // not mutate transport or timing first, or rollback records the optimistic values.
             let prepared = PendingPlaybackCommand(
                 id: command.id,
                 kind: command.kind,
@@ -606,11 +629,18 @@ public enum PlaybackReducer {
                 rollbackTransport: command.rollbackTransport ?? (
                     command.expectedTransport == nil ? nil : candidate.transport
                 ),
+                expectedTiming: command.expectedTiming,
+                rollbackTiming: command.rollbackTiming ?? (
+                    command.expectedTiming == nil ? nil : candidate.timing
+                ),
                 startedAt: command.startedAt
             )
             candidate.pendingCommands[command.kind] = prepared
             if let expected = command.expectedTransport {
                 candidate.transport = expected
+            }
+            if let expected = command.expectedTiming {
+                candidate.timing = expected
             }
         case let .commandFinished(id, accepted, notice):
             guard let pair = candidate.pendingCommands.first(where: { $0.value.id == id }) else {
@@ -618,8 +648,11 @@ public enum PlaybackReducer {
             }
             candidate.pendingCommands[pair.key] = nil
             if !accepted {
-                if pair.key == .transport, let rollback = pair.value.rollbackTransport {
+                if let rollback = pair.value.rollbackTransport {
                     candidate.transport = rollback
+                }
+                if let rollback = pair.value.rollbackTiming {
+                    candidate.timing = rollback
                 }
                 candidate.notice = notice
             }
@@ -687,6 +720,49 @@ public enum PlaybackReducer {
                 state.pendingCommands[.transport] = nil
             }
         }
+    }
+
+    /// Holds optimistic seek timing until an incoming sample is at the expected millisecond
+    /// position on the same track. A different track or empty URI supersedes the old seek and
+    /// adopts the incoming timing so rollback cannot attach the previous track's position.
+    private static func reconcileSeekTiming(
+        _ timing: PlaybackTiming,
+        incomingTrackURI: String?,
+        in state: inout PlaybackState
+    ) {
+        let incomingURI = playbackTrackURI(incomingTrackURI)
+        if state.pendingCommands[.seek] != nil,
+           incomingURI == nil || playbackTrackURI(state.currentTrack?.uri) != incomingURI
+        {
+            state.pendingCommands[.seek] = nil
+            state.timing = timing
+            return
+        }
+        if let pending = state.pendingCommands[.seek],
+           let expected = pending.expectedTiming,
+           !matchesExpectedSeekPosition(timing, expected)
+        {
+            state.timing = expected
+        } else {
+            state.timing = timing
+            if let pending = state.pendingCommands[.seek],
+               let expected = pending.expectedTiming,
+               matchesExpectedSeekPosition(timing, expected)
+            {
+                state.pendingCommands[.seek] = nil
+            }
+        }
+    }
+
+    private static func playbackTrackURI(_ uri: String?) -> String? {
+        uri.flatMap { $0.isEmpty ? nil : $0 }
+    }
+
+    private static func matchesExpectedSeekPosition(
+        _ actual: PlaybackTiming,
+        _ expected: PlaybackTiming
+    ) -> Bool {
+        Int((actual.position * 1_000).rounded()) == Int((expected.position * 1_000).rounded())
     }
 
 }

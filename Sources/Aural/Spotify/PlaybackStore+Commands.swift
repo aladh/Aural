@@ -13,6 +13,7 @@ extension PlaybackStore {
     func performCommand(
         _ action: String,
         expecting expectedPlaybackState: Bool? = nil,
+        expectedTiming: PlaybackTiming? = nil,
         operation: LocalPlaybackOperation,
         kind: PlaybackCommandKind = .transport,
         completion: @escaping @MainActor (Bool) -> Void = { _ in }
@@ -33,6 +34,7 @@ extension PlaybackStore {
                 id: commandID,
                 kind: kind,
                 expectedTransport: expectedPlaybackState.map { $0 ? .playing : .paused },
+                expectedTiming: expectedTiming,
                 startedAt: environment.clock.now()
             )),
             source: .command
@@ -67,6 +69,7 @@ extension PlaybackStore {
         _ action: String,
         kind: PlaybackCommandKind = .transport,
         expecting expectedPlaybackState: Bool? = nil,
+        expectedTiming: PlaybackTiming? = nil,
         local: LocalPlaybackOperation,
         remote command: SpotifyConnectCommand,
         completion: @escaping @MainActor (Bool) -> Void = { _ in }
@@ -75,6 +78,7 @@ extension PlaybackStore {
             action,
             kind: kind,
             expecting: expectedPlaybackState,
+            expectedTiming: expectedTiming,
             local: local,
             remote: { api, from, to in try await api.send(command, from: from, to: to) },
             completion: completion
@@ -85,6 +89,7 @@ extension PlaybackStore {
         _ action: String,
         kind: PlaybackCommandKind = .transport,
         expecting expectedPlaybackState: Bool? = nil,
+        expectedTiming: PlaybackTiming? = nil,
         local: LocalPlaybackOperation,
         remote: @escaping @Sendable (any RemotePlaybackClient, String, String) async throws -> Void,
         completion: @escaping @MainActor (Bool) -> Void = { _ in }
@@ -95,6 +100,7 @@ extension PlaybackStore {
             performCommand(
                 action,
                 expecting: expectedPlaybackState,
+                expectedTiming: expectedTiming,
                 operation: local,
                 kind: kind,
                 completion: completion
@@ -111,6 +117,7 @@ extension PlaybackStore {
                 action,
                 kind: kind,
                 expecting: expectedPlaybackState,
+                expectedTiming: expectedTiming,
                 from: from,
                 to: to,
                 operation: remote,
@@ -123,6 +130,7 @@ extension PlaybackStore {
         _ action: String,
         kind: PlaybackCommandKind,
         expecting expectedPlaybackState: Bool?,
+        expectedTiming: PlaybackTiming?,
         from sourceID: String,
         to targetID: String,
         operation: @escaping @Sendable (any RemotePlaybackClient, String, String) async throws -> Void,
@@ -144,6 +152,7 @@ extension PlaybackStore {
                 id: commandID,
                 kind: kind,
                 expectedTransport: expectedPlaybackState.map { $0 ? .playing : .paused },
+                expectedTiming: expectedTiming,
                 startedAt: environment.clock.now()
             )),
             source: .command

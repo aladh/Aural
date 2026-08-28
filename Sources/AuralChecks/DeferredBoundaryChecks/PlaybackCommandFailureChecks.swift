@@ -43,6 +43,31 @@ private enum FixtureRemoteFailure: Error {
     case boom
 }
 
+private actor GatedFailingRemoteClient: RemotePlaybackClient {
+    private var continuation: CheckedContinuation<Void, Error>?
+    private(set) var sendCount = 0
+
+    func send(_: SpotifyConnectCommand, from _: String, to _: String) async throws {
+        sendCount += 1
+        try await withCheckedThrowingContinuation { continuation = $0 }
+    }
+
+    func fail() {
+        continuation?.resume(throwing: FixtureRemoteFailure.boom)
+        continuation = nil
+    }
+
+    func trackMetadata(for uri: String) async throws -> SpotifyConnectTrackMetadata {
+        SpotifyConnectTrackMetadata(
+            uri: uri,
+            title: "Metadata",
+            artist: "Artist",
+            artworkURL: nil,
+            duration: 180
+        )
+    }
+}
+
 private actor ScriptedRemoteClient: RemotePlaybackClient {
     enum Behavior: Sendable {
         case succeed
@@ -434,5 +459,277 @@ func runPlaybackCommandFailureChecks(_ runner: CheckRunner) async {
         runner.check("cancelled remote command reports no completion", cancelCompletions.isEmpty)
         runner.nil_("cancelled remote command has no notice", cancelStore.transientCommandError)
         await cancelStore.shutdownForTermination()
+    }
+
+    await runner.suite("Store toggle and seek presentation ownership") {
+        let clockNow = Date(timeIntervalSince1970: 1_800_000_000)
+        let playingAnchor = clockNow.addingTimeInterval(-10)
+        let priorPlayingTiming = PlaybackTiming(position: 40, duration: 200, anchoredAt: playingAnchor)
+        let frozenPauseTiming = PlaybackTiming(
+            position: AuralDomain.interpolatedPlaybackPosition(
+                anchor: 40,
+                anchoredAt: playingAnchor,
+                now: clockNow,
+                isPlaying: true,
+                duration: 200
+            ),
+            duration: 200,
+            anchoredAt: clockNow
+        )
+        let pausedTiming = PlaybackTiming(position: 50, duration: 200, anchoredAt: playingAnchor)
+        let resumeTiming = PlaybackTiming(position: 50, duration: 200, anchoredAt: clockNow)
+
+        @MainActor
+        func seedRemotePlayback(
+            _ player: PlaybackStore,
+            transport: PlaybackTransportState,
+            timing: PlaybackTiming
+        ) {
+            _ = player.send(.session(.ready), source: .account)
+            _ = player.send(
+                .devices(PlaybackDeviceSnapshot(
+                    devices: [
+                        PlaybackDevice(id: "mac", name: "Mac", type: "computer", isActive: false),
+                        PlaybackDevice(id: "speaker", name: "Speaker", type: "speaker", isActive: true)
+                    ],
+                    localDeviceID: "mac",
+                    revision: 1
+                )),
+                source: .engineDevices,
+                revision: 1
+            )
+            _ = player.send(
+                .presentation(PlaybackPresentationSnapshot(
+                    currentTrack: CurrentTrack(
+                        uri: "spotify:track:fixture",
+                        title: "Now",
+                        artist: "Artist",
+                        duration: 200,
+                        metadataSource: .catalog
+                    ),
+                    transport: transport,
+                    timing: timing
+                )),
+                source: .user
+            )
+        }
+
+        let pauseFailStore = playbackStore(
+            commandEnvironment(local: ScriptedLocalEngine(result: .ok), remote: ScriptedRemoteClient(.fail))
+        )
+        seedRemotePlayback(pauseFailStore, transport: .playing, timing: priorPlayingTiming)
+        runner.check("remote pause can toggle before the command", pauseFailStore.canTogglePlayback)
+        pauseFailStore.togglePlayback()
+        runner.equal("remote pause applies paused transport before completion", pauseFailStore.state.transport, .paused)
+        runner.equal("remote pause freezes displayed timing before completion", pauseFailStore.state.timing, frozenPauseTiming)
+        _ = await waitUntil { pauseFailStore.state.pendingCommands[.transport] == nil }
+        runner.equal("remote pause rejection restores playing", pauseFailStore.state.transport, .playing)
+        runner.equal("remote pause rejection restores exact prior timing", pauseFailStore.state.timing, priorPlayingTiming)
+        runner.equal("remote pause rejection uses the action notice", pauseFailStore.transientCommandError, "Pause was rejected")
+        await pauseFailStore.shutdownForTermination()
+
+        let resumeFailStore = playbackStore(
+            commandEnvironment(local: ScriptedLocalEngine(result: .ok), remote: ScriptedRemoteClient(.fail))
+        )
+        seedRemotePlayback(resumeFailStore, transport: .paused, timing: pausedTiming)
+        resumeFailStore.togglePlayback()
+        runner.equal("remote resume applies playing before completion", resumeFailStore.state.transport, .playing)
+        runner.equal("remote resume re-anchors from the injected clock", resumeFailStore.state.timing, resumeTiming)
+        _ = await waitUntil { resumeFailStore.state.pendingCommands[.transport] == nil }
+        runner.equal("remote resume rejection restores paused", resumeFailStore.state.transport, .paused)
+        runner.equal("remote resume rejection restores exact prior timing", resumeFailStore.state.timing, pausedTiming)
+        await resumeFailStore.shutdownForTermination()
+
+        let pauseOkStore = playbackStore(
+            commandEnvironment(local: ScriptedLocalEngine(result: .ok), remote: ScriptedRemoteClient(.succeed))
+        )
+        seedRemotePlayback(pauseOkStore, transport: .playing, timing: priorPlayingTiming)
+        pauseOkStore.togglePlayback()
+        _ = await waitUntil { pauseOkStore.state.pendingCommands[.transport] == nil }
+        runner.equal("accepted remote pause keeps paused transport", pauseOkStore.state.transport, .paused)
+        runner.equal("accepted remote pause keeps frozen timing", pauseOkStore.state.timing, frozenPauseTiming)
+        runner.nil_("accepted remote pause has no command notice", pauseOkStore.transientCommandError)
+        await pauseOkStore.shutdownForTermination()
+
+        let seekFailStore = playbackStore(
+            commandEnvironment(local: ScriptedLocalEngine(result: .ok), remote: ScriptedRemoteClient(.fail))
+        )
+        seedRemotePlayback(seekFailStore, transport: .playing, timing: priorPlayingTiming)
+        seekFailStore.seek(to: 0.4)
+        runner.equal("seek applies optimistic timing before completion", seekFailStore.state.timing.position, 80)
+        runner.equal("seek leaves transport playing", seekFailStore.state.transport, .playing)
+        _ = await waitUntil { seekFailStore.state.pendingCommands[.seek] == nil }
+        runner.equal("rejected seek restores exact prior timing", seekFailStore.state.timing, priorPlayingTiming)
+        runner.equal("rejected seek uses the action notice", seekFailStore.transientCommandError, "Seek was rejected")
+        await seekFailStore.shutdownForTermination()
+
+        let seekOkStore = playbackStore(
+            commandEnvironment(local: ScriptedLocalEngine(result: .ok), remote: ScriptedRemoteClient(.succeed))
+        )
+        seedRemotePlayback(seekOkStore, transport: .paused, timing: pausedTiming)
+        seekOkStore.seek(to: 0.4)
+        _ = await waitUntil { seekOkStore.state.pendingCommands[.seek] == nil }
+        runner.equal("accepted seek keeps optimistic timing", seekOkStore.state.timing.position, 80)
+        runner.equal("accepted seek does not change transport", seekOkStore.state.transport, .paused)
+        await seekOkStore.shutdownForTermination()
+
+        let localSeekFail = playbackStore(
+            commandEnvironment(local: ScriptedLocalEngine(result: .error), remote: ScriptedRemoteClient(.succeed))
+        )
+        _ = localSeekFail.send(.session(.ready), source: .account)
+        _ = localSeekFail.send(
+            .devices(PlaybackDeviceSnapshot(
+                devices: [PlaybackDevice(id: "mac", name: "Mac", type: "computer", isActive: true)],
+                localDeviceID: "mac",
+                revision: 1
+            )),
+            source: .engineDevices,
+            revision: 1
+        )
+        _ = localSeekFail.send(
+            .presentation(PlaybackPresentationSnapshot(
+                currentTrack: CurrentTrack(
+                    uri: "spotify:track:fixture",
+                    title: "Now",
+                    artist: "Artist",
+                    duration: 200,
+                    metadataSource: .catalog
+                ),
+                transport: .playing,
+                timing: priorPlayingTiming
+            )),
+            source: .user
+        )
+        localSeekFail.seek(to: 0.4)
+        runner.equal("local seek applies optimistic timing", localSeekFail.state.timing.position, 80)
+        _ = await waitUntil { localSeekFail.state.pendingCommands[.seek] == nil }
+        runner.equal("local seek rejection restores exact prior timing", localSeekFail.state.timing, priorPlayingTiming)
+        await localSeekFail.shutdownForTermination()
+
+        let joining = playbackStore(
+            commandEnvironment(local: ScriptedLocalEngine(result: .ok), remote: ScriptedRemoteClient(.succeed))
+        )
+        _ = joining.send(.session(.ready), source: .account)
+        _ = joining.send(.owner(.uncertain(nil)), source: .command)
+        _ = joining.send(
+            .presentation(PlaybackPresentationSnapshot(
+                currentTrack: CurrentTrack(
+                    uri: "spotify:track:fixture",
+                    title: "Now",
+                    artist: "Artist",
+                    duration: 200,
+                    metadataSource: .catalog
+                ),
+                transport: .playing,
+                timing: priorPlayingTiming
+            )),
+            source: .user
+        )
+        let joiningBefore = joining.state
+        joining.togglePlayback()
+        joining.seek(to: 0.5)
+        runner.equal("route refusal leaves presentation unchanged", joining.state.transport, joiningBefore.transport)
+        runner.equal("route refusal leaves timing unchanged", joining.state.timing, joiningBefore.timing)
+        runner.check("route refusal does not start a pending command", joining.state.pendingCommands.isEmpty)
+        runner.equal(
+            "route refusal still surfaces the joining notice",
+            joining.transientCommandError,
+            "Aural is still joining Spotify Connect."
+        )
+        await joining.shutdownForTermination()
+
+        let duplicateRemote = ScriptedRemoteClient(.sleepUntilCancelled)
+        let duplicateStore = playbackStore(
+            commandEnvironment(local: ScriptedLocalEngine(result: .ok), remote: duplicateRemote)
+        )
+        seedRemotePlayback(duplicateStore, transport: .playing, timing: priorPlayingTiming)
+        duplicateStore.seek(to: 0.4)
+        let seekPending = await waitUntil { duplicateStore.state.pendingCommands[.seek] != nil }
+        runner.check("the first seek is pending before a duplicate toggle", seekPending)
+        let afterSeek = duplicateStore.state
+        duplicateStore.togglePlayback()
+        runner.equal("a duplicate toggle does not change transport", duplicateStore.state.transport, afterSeek.transport)
+        runner.equal("a duplicate toggle does not change timing", duplicateStore.state.timing, afterSeek.timing)
+        runner.nil_("a duplicate toggle does not start a transport command", duplicateStore.state.pendingCommands[.transport])
+        if let commandID = duplicateStore.state.pendingCommands[.seek]?.id {
+            duplicateStore.effects.cancel(.command(commandID))
+        }
+        await duplicateStore.shutdownForTermination()
+
+        let cancelRemote = ScriptedRemoteClient(.sleepUntilCancelled)
+        let cancelStore = playbackStore(
+            commandEnvironment(local: ScriptedLocalEngine(result: .ok), remote: cancelRemote)
+        )
+        seedRemotePlayback(cancelStore, transport: .playing, timing: priorPlayingTiming)
+        cancelStore.togglePlayback()
+        let pausePending = await waitUntil { cancelStore.state.pendingCommands[.transport] != nil }
+        runner.check("remote pause is pending before cancellation", pausePending)
+        let optimisticCancel = cancelStore.state
+        if let commandID = cancelStore.state.pendingCommands[.transport]?.id {
+            cancelStore.effects.cancel(.command(commandID))
+        }
+        _ = await waitUntil { await cancelRemote.sendCount == 1 }
+        runner.equal("cancellation does not roll back optimistic pause", cancelStore.state.transport, optimisticCancel.transport)
+        runner.equal("cancellation does not roll back frozen timing", cancelStore.state.timing, optimisticCancel.timing)
+        runner.equal(
+            "cancellation leaves the pending command until teardown",
+            cancelStore.state.pendingCommands[.transport]?.id,
+            optimisticCancel.pendingCommands[.transport]?.id
+        )
+        runner.nil_("cancellation does not surface a command notice", cancelStore.transientCommandError)
+        await cancelStore.shutdownForTermination()
+
+        let staleStore = playbackStore(
+            commandEnvironment(local: ScriptedLocalEngine(result: .ok), remote: ScriptedRemoteClient(.sleepUntilCancelled))
+        )
+        seedRemotePlayback(staleStore, transport: .playing, timing: priorPlayingTiming)
+        staleStore.seek(to: 0.4)
+        let stalePending = await waitUntil { staleStore.state.pendingCommands[.seek] != nil }
+        runner.check("seek is pending before an engine-epoch bump", stalePending)
+        let optimisticSeekTiming = staleStore.state.timing
+        _ = staleStore.send(
+            .engineConnection(EngineConnectionSnapshot(session: .recovering, owner: .none, localDeviceID: nil)),
+            source: .engineConnection,
+            revision: 1,
+            engineEpoch: staleStore.engineGeneration + 1
+        )
+        runner.nil_("an engine-epoch bump drops the pending seek", staleStore.state.pendingCommands[.seek])
+        runner.equal("an engine-epoch bump does not roll back seek timing", staleStore.state.timing, optimisticSeekTiming)
+        await staleStore.shutdownForTermination()
+
+        let trackSwitchRemote = GatedFailingRemoteClient()
+        let trackSwitchStore = playbackStore(
+            commandEnvironment(local: ScriptedLocalEngine(result: .ok), remote: trackSwitchRemote)
+        )
+        seedRemotePlayback(trackSwitchStore, transport: .playing, timing: priorPlayingTiming)
+        trackSwitchStore.seek(to: 0.4)
+        let trackSwitchPending = await waitUntil { trackSwitchStore.state.pendingCommands[.seek] != nil }
+        runner.check("seek is pending before a same-engine track switch", trackSwitchPending)
+        let sendStarted = await waitUntil { await trackSwitchRemote.sendCount == 1 }
+        runner.check("the seek has reached the remote client before the track switch", sendStarted)
+        let trackBTiming = PlaybackTiming(position: 0, duration: 180, anchoredAt: clockNow)
+        _ = trackSwitchStore.send(
+            .enginePlayback(EnginePlaybackSnapshot(
+                transport: .playing,
+                trackURI: "spotify:track:other",
+                timing: trackBTiming
+            )),
+            source: .enginePlayback,
+            revision: 1
+        )
+        runner.equal("a track switch adopts the new track URI", trackSwitchStore.state.currentTrack?.uri, "spotify:track:other")
+        runner.equal("a track switch adopts the incoming timing", trackSwitchStore.state.timing, trackBTiming)
+        runner.nil_("a track switch clears the old pending seek", trackSwitchStore.state.pendingCommands[.seek])
+        let afterTrackSwitch = trackSwitchStore.state
+        await trackSwitchRemote.fail()
+        for _ in 0..<50 { await Task.yield() }
+        runner.equal("a rejected finish after a track switch leaves timing unchanged", trackSwitchStore.state.timing, afterTrackSwitch.timing)
+        runner.equal(
+            "a rejected finish after a track switch leaves the new track",
+            trackSwitchStore.state.currentTrack?.uri,
+            "spotify:track:other"
+        )
+        runner.nil_("a rejected finish after a track switch does not surface a seek notice", trackSwitchStore.transientCommandError)
+        await trackSwitchStore.shutdownForTermination()
     }
 }

@@ -127,36 +127,37 @@ extension PlaybackStore {
 
     func togglePlayback() {
         guard canTogglePlayback else { return }
-        let previousIsPlaying = isPlaying
         let targetIsPlaying = !isPlaying
+        let now = environment.clock.now()
+        let expectedTiming: PlaybackTiming
         if targetIsPlaying {
             // A paused anchor may be arbitrarily old; resume interpolation from now.
-            setTiming(position: position, anchoredAt: environment.clock.now())
+            expectedTiming = PlaybackTiming(position: position, duration: duration, anchoredAt: now)
         } else {
-            // Freeze the smooth UI clock before the optimistic state change stops it. The local
-            // player can provide an exact position; a remote device is represented by this clock.
+            // Freeze the smooth UI clock in the same event that applies paused transport. The
+            // local player can still refresh an exact position as a follow-up; a remote device
+            // is represented by this clock.
             if isActiveDevice {
                 refreshPosition()
-            } else {
-                setTiming(position: displayedPosition(at: environment.clock.now()))
             }
+            expectedTiming = PlaybackTiming(
+                position: displayedPosition(at: now),
+                duration: duration,
+                anchoredAt: now
+            )
         }
-        setTransport(targetIsPlaying ? .playing : .paused)
 
         let failure = targetIsPlaying ? "Resume was rejected" : "Pause was rejected"
         performRoutedCommand(
             failure,
             kind: .transport,
             expecting: targetIsPlaying,
+            expectedTiming: expectedTiming,
             local: targetIsPlaying ? .resume : .pause,
             remote: targetIsPlaying ? .resume : .pause
         ) { [weak self] accepted in
-            guard let self else { return }
-            if accepted {
-                self.refreshPosition()
-            } else {
-                self.setTransport(previousIsPlaying ? .playing : .paused)
-            }
+            guard let self, accepted else { return }
+            self.refreshPosition()
         }
     }
 
@@ -180,10 +181,15 @@ extension PlaybackStore {
 
     func seek(to fraction: Double) {
         let milliseconds = UInt32(max(0, min(1, fraction)) * duration * 1_000)
-        setTiming(position: TimeInterval(milliseconds) / 1_000)
+        let now = environment.clock.now()
         performRoutedCommand(
             "Seek was rejected",
             kind: .seek,
+            expectedTiming: PlaybackTiming(
+                position: TimeInterval(milliseconds) / 1_000,
+                duration: duration,
+                anchoredAt: now
+            ),
             local: .seek(milliseconds),
             remote: .seek(to: Int(milliseconds))
         )

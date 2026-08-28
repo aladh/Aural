@@ -127,6 +127,9 @@ public struct ConnectQueueCallbackWatermark: Equatable, Sendable {
 /// On the same account/engine lifetime that is already-reconciled success, even if the
 /// coordinator later reports failure: the backend has confirmed the optimistic transport.
 /// Showing an error or calling `completion(false)` would roll back that confirmed state.
+/// Seek confirmation and track-switch supersession both clear pending `.seek`, so a later
+/// finish stays inert: `pendingCommandID == nil` cannot tell those cases apart, and seek
+/// completions have no success side effect.
 /// Account/engine invalidation, teardown, non-transport kinds, and a newer pending id stay inert.
 public enum PlaybackCommandFollowUp: Equatable, Sendable {
     case reportSuccess
