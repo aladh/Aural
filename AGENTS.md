@@ -185,6 +185,13 @@ The normal quality gate enforces several of these mechanically. Treat all of the
   result protection and cancellation.
 - Ordered callback sources carry revisions. Session/engine generations prevent a stale callback or
   teardown from mutating a replacement session.
+- Rust player-session lifecycle operations that write `SESSION`, `SPIRC`, `PLAYER`, `MIXER`, or
+  `PLAYER_EVENT_TX` (exported init build, reconnect cleanup+build, and exported cleanup) serialize
+  through one async mutex in `aural-playback`. Do not hold a per-global `Mutex` guard across
+  `await`, and do not re-enter that lifecycle lock from an inner helper. Reconnect captures
+  `SESSION_GENERATION` at trigger time, revalidates after acquiring the lock, and must not clean up
+  or rebuild a newer generation. Exported init re-checks the already-initialized no-op inside that
+  lock, not only before waiting. This is not the cross-language lifecycle actor.
 - Queue source precedence and context identity belong to `QueueService`. Metadata enrichment may
   replace fallback labels, but it must never reorder or erase a newer authoritative queue.
 - `Sources/Aural/Spotify/PlaybackCore.swift` is the only Swift file allowed to import

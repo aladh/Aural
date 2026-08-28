@@ -402,13 +402,8 @@ fn a_run_is_superseded_when_the_generation_moves() {
     assert!(run_is_superseded(4, 0));
 }
 
-/// Serialises the tests that drive the real FFI entry points. Everything else here is a
-/// pure predicate and needs no lock, but these mutate process-wide generation counters
-/// and the suite runs in parallel.
-static GLOBAL_STATE: Mutex<()> = Mutex::new(());
-
 fn lock_global_state() -> std::sync::MutexGuard<'static, ()> {
-    GLOBAL_STATE.lock().unwrap_or_else(|e| e.into_inner())
+    lock_lifecycle_test_globals()
 }
 
 #[test]
@@ -795,7 +790,9 @@ fn exported_c_functions_enter_through_the_panic_barrier() {
         }
         let source = std::fs::read_to_string(&path).expect("read rust source");
         let file_name = path.file_name().and_then(|name| name.to_str());
-        if file_name != Some("runtime.rs") && file_name != Some("tests.rs") {
+        let is_test_module = file_name == Some("tests.rs")
+            || file_name.is_some_and(|name| name.ends_with("_tests.rs"));
+        if file_name != Some("runtime.rs") && !is_test_module {
             assert!(
                 !source.contains("RUNTIME.block_on"),
                 "{} must call block_on_export rather than RUNTIME.block_on",
