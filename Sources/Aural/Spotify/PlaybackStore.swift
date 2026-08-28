@@ -233,7 +233,7 @@ final class PlaybackStore {
             clock: environment.clock
         )
         accountStore = AccountStore(environment: environment, coordinator: coordinator)
-        let catalogSession = CatalogSessionAvailability(accountEpoch: accountEpoch, isAvailable: false)
+        let catalogSession = CatalogSessionAvailability(accountEpoch: accountStore.epoch, isAvailable: false)
         self.catalogSession = catalogSession
         catalog = CatalogStore(
             provider: environment.catalog,
