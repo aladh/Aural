@@ -531,7 +531,7 @@ public enum PlaybackReducer {
         case let .transport(transport):
             reconcileTransport(transport, in: &candidate)
         case let .enginePlayback(snapshot):
-            let incomingURI = snapshot.trackURI.flatMap { $0.isEmpty ? nil : $0 }
+            let incomingURI = playbackTrackURI(snapshot.trackURI)
             reconcileSeekTiming(snapshot.timing, incomingTrackURI: incomingURI, in: &candidate)
             if let uri = incomingURI {
                 if candidate.currentTrack?.uri != uri {
@@ -574,6 +574,12 @@ public enum PlaybackReducer {
                 candidate.timing.duration = metadata.duration
             }
         case let .currentTrack(track):
+            let incomingURI = playbackTrackURI(track?.uri)
+            if candidate.pendingCommands[.seek] != nil,
+               playbackTrackURI(candidate.currentTrack?.uri) != incomingURI
+            {
+                candidate.pendingCommands[.seek] = nil
+            }
             candidate.currentTrack = track
             if track == nil {
                 candidate.transport = .stopped
@@ -724,9 +730,9 @@ public enum PlaybackReducer {
         incomingTrackURI: String?,
         in state: inout PlaybackState
     ) {
-        let incomingURI = incomingTrackURI.flatMap { $0.isEmpty ? nil : $0 }
+        let incomingURI = playbackTrackURI(incomingTrackURI)
         if state.pendingCommands[.seek] != nil,
-           state.currentTrack?.uri != incomingURI
+           playbackTrackURI(state.currentTrack?.uri) != incomingURI
         {
             state.pendingCommands[.seek] = nil
             state.timing = timing
@@ -746,6 +752,10 @@ public enum PlaybackReducer {
                 state.pendingCommands[.seek] = nil
             }
         }
+    }
+
+    private static func playbackTrackURI(_ uri: String?) -> String? {
+        uri.flatMap { $0.isEmpty ? nil : $0 }
     }
 
     private static func matchesExpectedSeekPosition(

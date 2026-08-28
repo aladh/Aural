@@ -347,6 +347,52 @@ func runPlaybackCommandPresentationChecks(_ check: CheckRunner) {
         check.check("a finish after a track switch is rejected", !supersededByTrackFinish)
         check.equal("a track-switched seek cannot restore the previous track's timing", trackSwitchSeek, afterTrackSwitch)
 
+        let currentTrackSwitchID = UUID(uuidString: "00000000-0000-0000-0000-00000000003A")!
+        var currentTrackSwitch = PlaybackState(
+            accountEpoch: 1,
+            engineEpoch: 1,
+            session: .ready,
+            transport: .playing,
+            currentTrack: CurrentTrack(uri: "spotify:track:a"),
+            timing: priorSeekTiming
+        )
+        _ = PlaybackReducer.reduce(
+            &currentTrackSwitch,
+            envelope: presentationEnvelope(
+                source: .command,
+                event: .commandStarted(PendingPlaybackCommand(
+                    id: currentTrackSwitchID,
+                    kind: .seek,
+                    expectedTransport: nil,
+                    expectedTiming: seekTiming,
+                    startedAt: presentationDate
+                ))
+            )
+        )
+        _ = PlaybackReducer.reduce(
+            &currentTrackSwitch,
+            envelope: presentationEnvelope(
+                source: .user,
+                event: .currentTrack(CurrentTrack(uri: "spotify:track:b"))
+            )
+        )
+        check.equal("a current-track switch keeps the new track", currentTrackSwitch.currentTrack?.uri, "spotify:track:b")
+        check.nil_("a current-track switch supersedes the old pending seek", currentTrackSwitch.pendingCommands[.seek])
+        let afterCurrentTrackSwitch = currentTrackSwitch
+        let currentTrackFinish = PlaybackReducer.reduce(
+            &currentTrackSwitch,
+            envelope: presentationEnvelope(
+                source: .command,
+                event: .commandFinished(
+                    id: currentTrackSwitchID,
+                    accepted: false,
+                    notice: PlaybackNotice(message: "Seek was rejected")
+                )
+            )
+        )
+        check.check("a finish after a current-track switch is rejected", !currentTrackFinish)
+        check.equal("a current-track switch cannot restore the previous track's timing", currentTrackSwitch, afterCurrentTrackSwitch)
+
         var identitySeek = PlaybackState(
             accountEpoch: 1,
             engineEpoch: 1,
