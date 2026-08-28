@@ -328,10 +328,12 @@ private func queueSnapshotJSON(
     uri: String,
     name: String = "",
     artist: String = "",
-    revision: UInt64 = 1
+    revision: UInt64 = 1,
+    sessionGeneration: UInt64? = nil
 ) -> String {
-    """
-    {"track":{"uri":"\(uri)","name":"\(name)","artist":"\(artist)","image_url":"","duration_ms":180000},"next_tracks":[],"revision":\(revision)}
+    let generationField = sessionGeneration.map { ",\"session_generation\":\($0)" } ?? ""
+    return """
+    {"track":{"uri":"\(uri)","name":"\(name)","artist":"\(artist)","image_url":"","duration_ms":180000},"next_tracks":[],"revision":\(revision)\(generationField)}
     """
 }
 
@@ -648,5 +650,94 @@ func runPlaybackEventOutcomeChecks(_ runner: CheckRunner) async {
             )
         )
         await watermarkStore.shutdownForTermination()
+
+        let payloadEngine = GatedQueueSnapshotEngine()
+        let payloadStore = playbackStore(
+            outcomeEnvironment(local: payloadEngine, remote: ImmediateMetadataRemote())
+        )
+        seedReadyLocalPlayback(payloadStore, uri: uri)
+        let mirroredGeneration = payloadStore.engineGeneration
+        let payloadGeneration = mirroredGeneration + 1
+        payloadStore.refreshQueueSnapshot()
+        runner.check("payload-generation snapshot fetch starts", await waitUntil { payloadEngine.hasStarted })
+        payloadEngine.release(
+            queueSnapshotJSON(
+                uri: uri,
+                name: "Payload generation",
+                artist: "Payload artist",
+                revision: 3,
+                sessionGeneration: payloadGeneration
+            )
+        )
+        runner.check(
+            "decoded payload generation stamps reducer state before playback catches up",
+            await waitUntil { payloadStore.state.engineEpoch == payloadGeneration }
+        )
+        runner.equal("decoded payload generation stamps presentation", payloadStore.engineGeneration, payloadGeneration)
+        runner.equal("decoded payload generation updates now-playing title", payloadStore.state.currentTrack?.title, "Payload generation")
+        runner.check(
+            "decoded payload generation stamps the mutation snapshot",
+            await waitUntil { payloadStore.queueMutation?.engineEpoch == payloadGeneration }
+        )
+        runner.equal(
+            "decoded payload generation does not stamp the pre-await mirror",
+            payloadStore.queueMutation?.engineEpoch == mirroredGeneration,
+            false
+        )
+        await payloadStore.shutdownForTermination()
+
+        let bumpedEngine = GatedQueueSnapshotEngine()
+        let bumpedStore = playbackStore(
+            outcomeEnvironment(local: bumpedEngine, remote: ImmediateMetadataRemote())
+        )
+        seedReadyLocalPlayback(bumpedStore, uri: uri)
+        let beforeBump = bumpedStore.engineGeneration
+        bumpedStore.refreshQueueSnapshot()
+        runner.check("bumped-engine snapshot fetch starts", await waitUntil { bumpedEngine.hasStarted })
+        bumpEngine(bumpedStore)
+        let liveGeneration = bumpedStore.engineGeneration
+        runner.check("playback adopted a newer engine epoch during the snapshot await", liveGeneration > beforeBump)
+        bumpedEngine.release(
+            queueSnapshotJSON(
+                uri: uri,
+                name: "Live generation",
+                artist: "Live artist",
+                revision: 4,
+                sessionGeneration: liveGeneration
+            )
+        )
+        runner.check(
+            "a snapshot decoded after a live engine bump still stamps the payload generation",
+            await waitUntil { bumpedStore.state.currentTrack?.title == "Live generation" }
+        )
+        runner.equal("a live-generation snapshot keeps reducer epoch aligned", bumpedStore.state.engineEpoch, liveGeneration)
+        runner.check(
+            "a live-generation snapshot stamps mutation with the payload, not the pre-await mirror",
+            await waitUntil { bumpedStore.queueMutation?.engineEpoch == liveGeneration }
+        )
+        await bumpedStore.shutdownForTermination()
+
+        let stalePayloadEngine = GatedQueueSnapshotEngine()
+        let stalePayload = playbackStore(
+            outcomeEnvironment(local: stalePayloadEngine, remote: ImmediateMetadataRemote())
+        )
+        seedReadyLocalPlayback(stalePayload, uri: uri)
+        let staleBefore = stalePayload.engineGeneration
+        stalePayload.refreshQueueSnapshot()
+        runner.check("stale-payload snapshot fetch starts", await waitUntil { stalePayloadEngine.hasStarted })
+        bumpEngine(stalePayload)
+        stalePayloadEngine.release(
+            queueSnapshotJSON(
+                uri: uri,
+                name: "Stale payload",
+                artist: "Stale artist",
+                revision: 5,
+                sessionGeneration: staleBefore
+            )
+        )
+        try? await Task.sleep(nanoseconds: 20_000_000)
+        runner.equal("a stale payload generation cannot replace now-playing title", stalePayload.state.currentTrack?.title, "Now")
+        runner.nil_("a stale payload generation does not install mutation", stalePayload.queueMutation)
+        await stalePayload.shutdownForTermination()
     }
 }

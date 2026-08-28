@@ -28,7 +28,7 @@ extension PlaybackStore {
                 generation: state.sessionGeneration,
                 revision: state.revision
             ) else { return }
-            receive(state, revision: state.revision)
+            receive(state, revision: state.revision, engineEpoch: state.sessionGeneration)
         case let .connection(state):
             receive(state, revision: state.revision, receivedAt: envelope.receivedAt)
         case let .devices(state):
@@ -140,7 +140,9 @@ extension PlaybackStore {
         let protocolNext = (state.protocolNextTracks ?? []).map { $0.domainTrack() }
         let protocolPrev = (state.protocolPrevTracks ?? []).map { $0.domainTrack() }
         let epoch = capturedAccountEpoch ?? accountEpoch
-        let engineEpoch = capturedEngineEpoch ?? engineGeneration
+        // Stamp from the payload generation. `engineGeneration` is only a fallback when the
+        // snapshot omitted `sessionGeneration`; it must not override a newer decoded epoch.
+        let engineEpoch = capturedEngineEpoch ?? state.sessionGeneration ?? engineGeneration
         effects.replace(.connectQueueAccept, with: Task { [weak self] in
             guard let self else { return }
             let accepted = await self.queueService.acceptConnect(
@@ -157,7 +159,7 @@ extension PlaybackStore {
                 disallowRemovingFromNextTracks: state.disallowRemovingFromNextTracks ?? false
             )
             guard !Task.isCancelled, !self.isTearingDown else { return }
-            guard self.accountEpoch == epoch, self.engineGeneration == engineEpoch else { return }
+            guard self.accountEpoch == epoch, self.engineGeneration <= engineEpoch else { return }
             guard let accepted else { return }
             self.queueMutation = accepted.mutation
             self.apply(accepted.snapshot, engineEpoch: engineEpoch)

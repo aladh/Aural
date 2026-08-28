@@ -195,7 +195,8 @@ stamping.
 - Track metadata resolution sends `.trackMetadata`. `PlaybackHistoryStore.applyMetadata` runs only
   after that event is accepted.
 - Position refresh sends `.timing` with captured identity. Stale and cancelled refreshes are inert.
-- Queue adoption stamps `ProvenanceQueueSnapshot.accountEpoch` and the captured engine epoch.
+- Queue adoption stamps `ProvenanceQueueSnapshot.accountEpoch` and the payload
+  `sessionGeneration` (falling back to a captured engine epoch only when that field is absent).
   Catalog retain/replace runs only after the queue event is accepted. A cached queue snapshot's
   synchronous track presentation and `adoptTrackMetadata` path uses that same captured identity;
   `send(...) == true` gates history enrichment and starting a resolver. Merge/provenance policy is

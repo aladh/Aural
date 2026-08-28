@@ -823,6 +823,88 @@ func runQueueManagementChecks(_ runner: CheckRunner) async {
         await player.shutdownForTermination()
     }
 
+    await runner.suite("Connect queue stamps payload session generation") {
+        let remote = QueueRemoteClient(.succeed)
+        let feedback = TransientFeedbackPresenter(clock: SystemPlaybackClock(), duration: 4)
+        let player = PlaybackStore(environment: queueEnvironment(remote: remote), feedback: feedback)
+        seedRemoteOwner(player)
+        let mirroredGeneration = player.engineGeneration
+        let payloadGeneration = mirroredGeneration + 1
+        runner.check("queue can arrive before playback has adopted the payload generation", payloadGeneration > mirroredGeneration)
+
+        player.receive(
+            connectQueueEnvelope(
+                sequence: 1,
+                revision: 1,
+                sessionGeneration: payloadGeneration
+            )
+        )
+        runner.check(
+            "G+1 queue adopts reducer engine epoch from the payload",
+            await waitUntil { player.state.engineEpoch == payloadGeneration }
+        )
+        runner.equal("G+1 queue presentation stamps the payload generation", player.engineGeneration, payloadGeneration)
+        runner.equal("G+1 queue presentation keeps the payload track", player.state.currentTrack?.title, "Now")
+        runner.check(
+            "G+1 queue mutation snapshot uses the payload generation",
+            await waitUntil { player.queueMutation?.engineEpoch == payloadGeneration }
+        )
+        runner.equal(
+            "G+1 queue does not leave mutation on the stale mirror",
+            player.queueMutation?.engineEpoch == mirroredGeneration,
+            false
+        )
+        runner.equal("callback watermark records the payload generation", player.connectQueueCallback.generation, payloadGeneration)
+        runner.equal("callback watermark records the payload revision", player.connectQueueCallback.revision, 1)
+
+        let afterFirst = player.connectQueueCallback
+        let mutationAfterFirst = player.queueMutation
+        let trackAfterFirst = player.state.currentTrack
+        player.receive(
+            connectQueueEnvelope(
+                sequence: 2,
+                revision: 1,
+                sessionGeneration: payloadGeneration
+            )
+        )
+        await yieldPasses()
+        runner.equal("identical redelivery does not advance the callback watermark", player.connectQueueCallback, afterFirst)
+        runner.equal("identical redelivery does not replace mutation identity", player.queueMutation, mutationAfterFirst)
+        runner.equal("identical redelivery does not replace now-playing identity", player.state.currentTrack, trackAfterFirst)
+
+        player.receive(
+            connectQueueEnvelope(
+                sequence: 3,
+                revision: 2,
+                sessionGeneration: mirroredGeneration
+            )
+        )
+        await yieldPasses()
+        runner.equal("a stale generation does not advance the callback watermark", player.connectQueueCallback, afterFirst)
+        runner.equal("a stale generation does not replace mutation identity", player.queueMutation, mutationAfterFirst)
+        runner.equal("a stale generation does not replace now-playing identity", player.state.currentTrack, trackAfterFirst)
+        await player.shutdownForTermination()
+
+        let teardownFeedback = TransientFeedbackPresenter(clock: SystemPlaybackClock(), duration: 4)
+        let teardown = PlaybackStore(environment: queueEnvironment(remote: remote), feedback: teardownFeedback)
+        seedRemoteOwner(teardown)
+        let teardownMirror = teardown.engineGeneration
+        teardown.isTearingDown = true
+        teardown.receive(
+            connectQueueEnvelope(
+                sequence: 1,
+                revision: 1,
+                sessionGeneration: teardownMirror + 1
+            )
+        )
+        await yieldPasses()
+        runner.equal("teardown queue intake does not adopt the payload engine epoch", teardown.state.engineEpoch, 0)
+        runner.nil_("teardown queue intake does not install mutation", teardown.queueMutation)
+        runner.nil_("teardown queue intake does not install now-playing", teardown.state.currentTrack)
+        runner.equal("teardown queue intake does not record callback identity", teardown.connectQueueCallback.generation, 0)
+        await teardown.shutdownForTermination()
+    }
+
     await runner.suite("Connect accept invalidation after suspension") {
         let remote = QueueRemoteClient(.succeed)
         let feedback = TransientFeedbackPresenter(clock: SystemPlaybackClock(), duration: 4)
@@ -1082,11 +1164,21 @@ func runQueueManagementChecks(_ runner: CheckRunner) async {
                     && !containsToken(queue, "effects.cancel(.queueReplacement)")
             )
             runner.check(
+                "queue snapshot refresh stamps decoded payload generation",
+                containsToken(queue, "engineEpoch: state.sessionGeneration")
+                    && containsToken(queue, "if state.sessionGeneration == nil")
+            )
+            runner.check(
                 "Connect queue accept is registered on the effect registry",
                 containsToken(engineEvents, "connectQueueAccept")
                     && containsToken(engineEvents, "Task.isCancelled")
                     && containsToken(engineEvents, "accountEpoch == epoch")
-                    && containsToken(engineEvents, "engineGeneration == engineEpoch")
+                    && containsToken(engineEvents, "engineGeneration <= engineEpoch")
+            )
+            runner.check(
+                "Connect queue callbacks stamp payload sessionGeneration rather than the engineGeneration mirror",
+                containsToken(engineEvents, "receive(state, revision: state.revision, engineEpoch: state.sessionGeneration)")
+                    && containsToken(engineEvents, "capturedEngineEpoch ?? state.sessionGeneration ?? engineGeneration")
             )
             runner.check(
                 "local engine still has no set_queue operation",
