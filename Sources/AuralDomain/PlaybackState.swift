@@ -711,6 +711,11 @@ public enum PlaybackReducer {
             candidate.pendingCommands[pair.key] = nil
             if !accepted {
                 if let rollback = pair.value.rollbackPresentation {
+                    let rollbackURI = playbackTrackURI(rollback.currentTrack?.uri)
+                    let targetURI = playbackTrackURI(pair.value.expectedTrack?.uri)
+                    if rollbackURI != targetURI {
+                        candidate.pendingCommands[.seek] = nil
+                    }
                     candidate.currentTrack = rollback.currentTrack
                     candidate.transport = rollback.transport
                     candidate.timing = rollback.timing
