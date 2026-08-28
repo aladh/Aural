@@ -978,5 +978,45 @@ func runPlaybackCommandPresentationChecks(_ check: CheckRunner) {
             ),
             .inert
         )
+
+        let seekDuringPlayID = UUID(uuidString: "00000000-0000-0000-0000-000000000049")!
+        let playThenRejectID = UUID(uuidString: "00000000-0000-0000-0000-00000000004A")!
+        var seekDuringPlay = PlaybackState(
+            accountEpoch: 1,
+            engineEpoch: 1,
+            session: .ready,
+            transport: .playing,
+            currentTrack: trackA,
+            timing: priorPlayingTiming
+        )
+        startPlay(&seekDuringPlay, id: playThenRejectID)
+        _ = PlaybackReducer.reduce(
+            &seekDuringPlay,
+            envelope: presentationEnvelope(
+                source: .command,
+                event: .commandStarted(PendingPlaybackCommand(
+                    id: seekDuringPlayID,
+                    kind: .seek,
+                    expectedTransport: nil,
+                    expectedTiming: PlaybackTiming(position: 90, duration: 180, anchoredAt: presentationDate),
+                    startedAt: presentationDate
+                ))
+            )
+        )
+        check.equal("a seek can start while a known-target play is pending", seekDuringPlay.pendingCommands[.seek]?.id, seekDuringPlayID)
+        _ = PlaybackReducer.reduce(
+            &seekDuringPlay,
+            envelope: presentationEnvelope(
+                source: .command,
+                event: .commandFinished(
+                    id: playThenRejectID,
+                    accepted: false,
+                    notice: PlaybackNotice(message: "Could not play that Spotify URI")
+                )
+            )
+        )
+        check.equal("a rejected play restores A after a nested seek", seekDuringPlay.currentTrack, trackA)
+        check.equal("a rejected play restores A's timing after a nested seek", seekDuringPlay.timing, priorPlayingTiming)
+        check.nil_("a rejected play drops a seek that targeted B", seekDuringPlay.pendingCommands[.seek])
     }
 }
