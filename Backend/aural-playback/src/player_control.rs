@@ -338,12 +338,10 @@ pub extern "C" fn aural_playback_cleanup() {
         }) {
             Ok(()) => {}
             Err(_) => {
-                // Nested runtime cannot `block_on` the async lock. Apply the writes
-                // anyway so logout still clears globals; this path is a re-entry from a
-                // Tokio worker, not the Swift-thread init-vs-reconnect race.
-                debug!("aural_playback_cleanup: nested runtime; applying cleanup without waiting");
-                let _store = enter_store_section();
-                cleanup_player_globals();
+                // Nested `block_on` cannot take `LIFECYCLE`. Unlocked writes would race an
+                // in-flight build. Generation is already invalidated above; Swift does not
+                // call cleanup from a Tokio worker.
+                debug!("aural_playback_cleanup: refusing nested-runtime cleanup");
             }
         }
     })
@@ -351,8 +349,7 @@ pub extern "C" fn aural_playback_cleanup() {
 
 /// Clears engine globals and session-scoped playback identity.
 ///
-/// Callers that write these stores must already hold the lifecycle lock, except the nested
-/// runtime fallback in [`aural_playback_cleanup`].
+/// Callers that write these stores must already hold the lifecycle lock.
 pub(crate) fn cleanup_player_globals() {
     // Signal event listener to stop
     if let Some(tx) = PLAYER_EVENT_TX

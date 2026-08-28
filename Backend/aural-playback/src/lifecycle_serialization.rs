@@ -10,22 +10,6 @@ use std::future::Future;
 pub(crate) static LIFECYCLE: Lazy<tokio::sync::Mutex<()>> =
     Lazy::new(|| tokio::sync::Mutex::new(()));
 
-/// Whether a queued reconnect may tear down and rebuild after it has the lifecycle lock.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum ReconnectUnitPlan {
-    /// Generation moved or teardown started; do not touch the globals.
-    Abandon,
-    /// Still the generation this loop set out to recover.
-    CleanupAndBuild,
-}
-
-/// Whether exported init should build after waiting for the lifecycle lock.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum ExportedInitPlan {
-    AlreadyInitialized,
-    Build,
-}
-
 /// Outcome of [`run_serialized_init`] after the in-lock recheck.
 #[derive(Debug)]
 pub(crate) enum SerializedInitOutcome<T> {
@@ -64,46 +48,6 @@ pub(crate) fn start_reconnect_loop(
     })
 }
 
-pub(crate) fn plan_reconnect_unit(
-    recovering_generation: u64,
-    current_generation: u64,
-    teardown_in_progress: bool,
-) -> ReconnectUnitPlan {
-    if reconnect_may_proceed(
-        recovering_generation,
-        current_generation,
-        teardown_in_progress,
-    ) {
-        ReconnectUnitPlan::CleanupAndBuild
-    } else {
-        ReconnectUnitPlan::Abandon
-    }
-}
-
-pub(crate) fn plan_exported_init(session_present: bool) -> ExportedInitPlan {
-    if session_present {
-        ExportedInitPlan::AlreadyInitialized
-    } else {
-        ExportedInitPlan::Build
-    }
-}
-
-/// Whether a finished build should refuse to publish.
-///
-/// Teardown and a moved generation both discard the attempt. Only teardown may clear
-/// globals: a supersede means a newer generation already owns them.
-pub(crate) fn build_should_discard_on_commit(superseded: bool, tearing_down: bool) -> bool {
-    superseded || tearing_down
-}
-
-pub(crate) fn build_should_cleanup_globals(tearing_down: bool) -> bool {
-    tearing_down
-}
-
-pub(crate) fn failed_build_should_cleanup(tearing_down: bool) -> bool {
-    tearing_down
-}
-
 pub(crate) fn session_is_present() -> bool {
     SESSION.lock().unwrap_or_else(|e| e.into_inner()).is_some()
 }
@@ -120,7 +64,7 @@ pub(crate) async fn with_lifecycle_lock<T>(fut: impl Future<Output = T>) -> T {
 
 /// Rechecks the already-initialized no-op *after* acquiring the lock, then maybe builds.
 ///
-/// The future is created by the caller but only polled when the plan is [`ExportedInitPlan::Build`].
+/// `build` is not polled unless the in-lock recheck still sees no session.
 pub(crate) async fn run_serialized_init<P, B, T>(
     session_present: P,
     build: B,
@@ -130,13 +74,15 @@ where
     B: Future<Output = T>,
 {
     let _guard = acquire_lifecycle().await;
-    match plan_exported_init(session_present()) {
-        ExportedInitPlan::AlreadyInitialized => SerializedInitOutcome::AlreadyInitialized,
-        ExportedInitPlan::Build => SerializedInitOutcome::Built(build.await),
+    if session_present() {
+        SerializedInitOutcome::AlreadyInitialized
+    } else {
+        SerializedInitOutcome::Built(build.await)
     }
 }
 
-/// Revalidates, then optionally runs cleanup and build as one serialized unit.
+/// Revalidates with [`reconnect_may_proceed`], then optionally runs cleanup and build
+/// as one serialized unit. `build` is not polled on abandon.
 pub(crate) async fn run_reconnect_unit<C, B, T>(
     recovering_generation: u64,
     current_generation: impl Fn() -> u64,
@@ -149,18 +95,15 @@ where
     B: Future<Output = T>,
 {
     let _guard = acquire_lifecycle().await;
-    match plan_reconnect_unit(
+    if !reconnect_may_proceed(
         recovering_generation,
         current_generation(),
         teardown_in_progress(),
     ) {
-        ReconnectUnitPlan::Abandon => ReconnectUnitOutcome::Abandoned,
-        ReconnectUnitPlan::CleanupAndBuild => {
-            cleanup();
-            let built = build.await;
-            ReconnectUnitOutcome::Ran(built)
-        }
+        return ReconnectUnitOutcome::Abandoned;
     }
+    cleanup();
+    ReconnectUnitOutcome::Ran(build.await)
 }
 
 /// Marks the store/commit critical section that writes the engine globals.

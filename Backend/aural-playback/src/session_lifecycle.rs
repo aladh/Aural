@@ -683,7 +683,7 @@ pub(crate) async fn init_player_async(
     let result =
         build_player_async(access_token, activate_after_connect, resume_after_connect).await;
 
-    if result.is_err() && failed_build_should_cleanup(teardown_in_progress()) {
+    if result.is_err() && teardown_in_progress() {
         debug!("Initialization failed during teardown — clearing what it left behind");
         do_reconnect_cleanup();
     }
@@ -816,7 +816,7 @@ pub(crate) async fn build_player_async(
             );
             let tearing_down = teardown_in_progress();
 
-            if build_should_discard_on_commit(superseded, tearing_down) {
+            if superseded || tearing_down {
                 // Returning an error is not enough on the teardown path. This attempt has
                 // already stored its Session, Player and Spirc in the globals, so refusing
                 // to publish leaves them live and connected — on logout that means the
@@ -826,10 +826,10 @@ pub(crate) async fn build_player_async(
                 //
                 // A supersede on its own is the opposite case — a newer generation owns the
                 // globals by now, and tearing them down would destroy its work, not ours.
-                // Teardown outranks that: `init_player_async` clears both teardown flags as
-                // it starts, so a flag that is set now means no newer generation began after
-                // it, whatever the counter says.
-                if build_should_cleanup_globals(tearing_down) {
+                // Only teardown may clear globals. Teardown outranks a moved counter:
+                // `init_player_async` clears both teardown flags as it starts, so a flag
+                // that is set now means no newer generation began after it.
+                if tearing_down {
                     debug!(
                         "Generation {} finished during teardown — clearing what it built",
                         current_generation

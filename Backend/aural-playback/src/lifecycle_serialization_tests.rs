@@ -8,22 +8,6 @@ fn lock_globals() -> std::sync::MutexGuard<'static, ()> {
 }
 
 #[test]
-fn teardown_cleanup_runs_and_supersede_alone_does_not() {
-    assert!(build_should_discard_on_commit(true, false));
-    assert!(build_should_discard_on_commit(false, true));
-    assert!(build_should_discard_on_commit(true, true));
-    assert!(!build_should_discard_on_commit(false, false));
-
-    assert!(
-        !build_should_cleanup_globals(false),
-        "a superseded attempt must not tear down a newer generation"
-    );
-    assert!(build_should_cleanup_globals(true));
-    assert!(failed_build_should_cleanup(true));
-    assert!(!failed_build_should_cleanup(false));
-}
-
-#[test]
 fn reconnect_generation_is_captured_at_trigger_not_task_start() {
     let _guard = lock_globals();
     RECONNECTING.store(false, Ordering::SeqCst);
@@ -40,13 +24,12 @@ fn reconnect_generation_is_captured_at_trigger_not_task_start() {
     // A rebuild landed before the task ran. Loading the counter at task start
     // would adopt 3 and proceed to tear that session down.
     let at_task_start = 3;
-    assert_eq!(
-        plan_reconnect_unit(start.recovering_generation, at_task_start, false),
-        ReconnectUnitPlan::Abandon
+    assert!(
+        !reconnect_may_proceed(start.recovering_generation, at_task_start, false),
+        "a rebuild between trigger and task start must abandon before cleanup"
     );
-    assert_eq!(
-        plan_reconnect_unit(at_task_start, at_task_start, false),
-        ReconnectUnitPlan::CleanupAndBuild,
+    assert!(
+        reconnect_may_proceed(at_task_start, at_task_start, false),
         "capturing at task start would have adopted the newer generation"
     );
 
