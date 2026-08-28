@@ -231,6 +231,48 @@ func runPlaybackCommandPresentationChecks(_ check: CheckRunner) {
         check.equal("a nil-track snapshot adopts the incoming timing", clearedTrackSeek.timing, stoppedTiming)
         check.nil_("a nil-track snapshot supersedes the pending seek", clearedTrackSeek.pendingCommands[.seek])
 
+        let nilCurrentTrackSeekID = UUID(uuidString: "00000000-0000-0000-0000-00000000003C")!
+        var nilCurrentTrackSeek = PlaybackState(
+            accountEpoch: 1,
+            engineEpoch: 1,
+            session: .ready,
+            transport: .playing,
+            timing: priorSeekTiming
+        )
+        _ = PlaybackReducer.reduce(
+            &nilCurrentTrackSeek,
+            envelope: presentationEnvelope(
+                source: .command,
+                event: .commandStarted(PendingPlaybackCommand(
+                    id: nilCurrentTrackSeekID,
+                    kind: .seek,
+                    expectedTransport: nil,
+                    expectedTiming: seekTiming,
+                    startedAt: presentationDate
+                ))
+            )
+        )
+        _ = PlaybackReducer.reduce(
+            &nilCurrentTrackSeek,
+            envelope: presentationEnvelope(source: .user, event: .currentTrack(nil))
+        )
+        check.nil_("a nil current-track event supersedes a seek with no current URI", nilCurrentTrackSeek.pendingCommands[.seek])
+        check.equal("a nil current-track event resets timing", nilCurrentTrackSeek.timing.position, 0)
+        let afterNilCurrentTrack = nilCurrentTrackSeek
+        let nilCurrentTrackFinish = PlaybackReducer.reduce(
+            &nilCurrentTrackSeek,
+            envelope: presentationEnvelope(
+                source: .command,
+                event: .commandFinished(
+                    id: nilCurrentTrackSeekID,
+                    accepted: false,
+                    notice: PlaybackNotice(message: "Seek was rejected")
+                )
+            )
+        )
+        check.check("a finish after a nil current-track event is rejected", !nilCurrentTrackFinish)
+        check.equal("a nil current-track event cannot restore seek rollback timing", nilCurrentTrackSeek, afterNilCurrentTrack)
+
         var mismatchedSeek = PlaybackState(
             accountEpoch: 1,
             engineEpoch: 1,
