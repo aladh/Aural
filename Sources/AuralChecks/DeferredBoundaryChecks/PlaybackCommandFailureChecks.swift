@@ -1107,8 +1107,7 @@ func runPlaybackCommandFailureChecks(_ runner: CheckRunner) async {
             artworkURL: nil,
             kind: .playlist
         )
-        playlistStore.catalog.playlistStore.loadedURI = playlist.uri
-        playlistStore.catalog.playlistStore.tracks = [trackB]
+        playlistStore.catalog.playlistStore.replaceLoadedPlaylist(uri: playlist.uri, tracks: [trackB])
         playlistStore.playPlaylist(playlist)
         runner.equal("a loaded playlist presents the known first track", playlistStore.state.currentTrack?.uri, trackB.uri)
         _ = await waitUntil { playlistStore.state.pendingCommands[.transport] == nil }

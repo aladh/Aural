@@ -858,5 +858,33 @@ func runPlaybackCommandPresentationChecks(_ check: CheckRunner) {
             "a raw play is still confirmed by matching transport",
             raw.pendingCommands[.transport]
         )
+
+        let seekThenPlayID = UUID(uuidString: "00000000-0000-0000-0000-000000000046")!
+        let staleSeekID = UUID(uuidString: "00000000-0000-0000-0000-000000000047")!
+        var seekThenPlay = PlaybackState(
+            accountEpoch: 1,
+            engineEpoch: 1,
+            session: .ready,
+            transport: .playing,
+            currentTrack: trackA,
+            timing: priorPlayingTiming
+        )
+        _ = PlaybackReducer.reduce(
+            &seekThenPlay,
+            envelope: presentationEnvelope(
+                source: .command,
+                event: .commandStarted(PendingPlaybackCommand(
+                    id: staleSeekID,
+                    kind: .seek,
+                    expectedTransport: nil,
+                    expectedTiming: PlaybackTiming(position: 80, duration: 200, anchoredAt: presentationDate),
+                    startedAt: presentationDate
+                ))
+            )
+        )
+        startPlay(&seekThenPlay, id: seekThenPlayID)
+        check.nil_("a different-track play supersedes a pending seek", seekThenPlay.pendingCommands[.seek])
+        check.equal("a different-track play keeps target timing at zero", seekThenPlay.timing, optimisticTiming)
+        check.equal("a different-track play still presents B", seekThenPlay.currentTrack, trackB)
     }
 }

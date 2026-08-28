@@ -695,6 +695,9 @@ public enum PlaybackReducer {
             )
             candidate.pendingCommands[command.kind] = prepared
             if let expectedTrack = command.expectedTrack {
+                if playbackTrackURI(candidate.currentTrack?.uri) != playbackTrackURI(expectedTrack.uri) {
+                    candidate.pendingCommands[.seek] = nil
+                }
                 candidate.currentTrack = expectedTrack
             }
             if let expected = command.expectedTransport {
@@ -783,11 +786,7 @@ public enum PlaybackReducer {
         {
             let incoming = playbackTrackURI(incomingTrackURI)
             if incoming != targetURI {
-                if let expected = pending.expectedTransport, transport != expected {
-                    state.transport = expected
-                } else {
-                    state.transport = pending.expectedTransport ?? transport
-                }
+                state.transport = pending.expectedTransport ?? transport
                 return
             }
             if let expected = pending.expectedTransport, transport != expected {

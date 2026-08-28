@@ -20,7 +20,7 @@ final class PlaylistStore {
     }
     private(set) var sortedTracks: [CatalogTrack] = []
     var description = ""
-    internal(set) var loadedURI: String?
+    private(set) var loadedURI: String?
     private(set) var ownerURI: String?
     var isLoading = false
     var error: String?
@@ -56,6 +56,13 @@ final class PlaylistStore {
         isLoading = false
         error = nil
         metadata.replaceTracks([], from: .playlist)
+    }
+
+    /// Keeps `loadedURI` and `tracks` paired. Production loading still goes through `load(_:)`.
+    func replaceLoadedPlaylist(uri: String, tracks: [CatalogTrack]) {
+        loadedURI = uri
+        self.tracks = tracks
+        resortTracks()
     }
 
     func load(_ item: CatalogItem, force: Bool = false) async {
