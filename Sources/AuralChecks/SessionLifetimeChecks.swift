@@ -162,6 +162,7 @@ func runSessionLifetimeChecks(_ check: CheckRunner) {
             reconnect: Bool = false,
             kind: PlaybackCommandKind = .transport,
             pending: UUID? = nil,
+            resolution: PlaybackTransportCommandResolution? = nil,
             account: UInt64 = 1,
             engine: UInt64 = 1,
             currentAccount: UInt64 = 1,
@@ -174,6 +175,7 @@ func runSessionLifetimeChecks(_ check: CheckRunner) {
                 requiresReconnect: reconnect,
                 commandKind: kind,
                 pendingCommandID: pending,
+                finishedCommandResolution: resolution,
                 capturedAccountEpoch: account,
                 capturedEngineEpoch: engine,
                 currentAccountEpoch: currentAccount,
@@ -231,6 +233,84 @@ func runSessionLifetimeChecks(_ check: CheckRunner) {
         check.equal(
             "teardown stays inert",
             followUp(finishAccepted: false, succeeded: true, tearingDown: true),
+            .inert
+        )
+        check.equal(
+            "a confirmed play target still reports success after a late failure",
+            followUp(
+                finishAccepted: true,
+                succeeded: false,
+                reconnect: true,
+                resolution: .confirmed
+            ),
+            .reportSuccess
+        )
+        check.equal(
+            "a superseded play target stays inert after a late failure",
+            followUp(
+                finishAccepted: true,
+                succeeded: false,
+                reconnect: true,
+                resolution: .superseded
+            ),
+            .inert
+        )
+        check.equal(
+            "a superseded play stays inert after a later pause is pending",
+            followUp(
+                finishAccepted: true,
+                succeeded: false,
+                reconnect: true,
+                pending: other,
+                resolution: .superseded
+            ),
+            .inert
+        )
+        check.equal(
+            "a superseded play stays inert after a later pause cleared pending",
+            followUp(
+                finishAccepted: true,
+                succeeded: false,
+                reconnect: true,
+                resolution: .superseded
+            ),
+            .inert
+        )
+        check.equal(
+            "a confirmed play still reports success while a later pause is pending",
+            followUp(
+                finishAccepted: true,
+                succeeded: false,
+                reconnect: true,
+                pending: other,
+                resolution: .confirmed
+            ),
+            .reportSuccess
+        )
+        check.equal(
+            "consume-only acceptance without a captured resolution still reports failure",
+            followUp(finishAccepted: true, succeeded: false, reconnect: true),
+            .reportFailure(reconnect: true)
+        )
+        check.equal(
+            "a confirmed play is inert after an engine-epoch invalidation",
+            followUp(
+                finishAccepted: true,
+                succeeded: false,
+                reconnect: true,
+                resolution: .confirmed,
+                currentEngine: 2
+            ),
+            .inert
+        )
+        check.equal(
+            "a confirmed play is inert during teardown",
+            followUp(
+                finishAccepted: true,
+                succeeded: false,
+                resolution: .confirmed,
+                tearingDown: true
+            ),
             .inert
         )
     }

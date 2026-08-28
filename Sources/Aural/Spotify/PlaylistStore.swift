@@ -58,6 +58,13 @@ final class PlaylistStore {
         metadata.replaceTracks([], from: .playlist)
     }
 
+    /// Keeps `loadedURI` and `tracks` paired. Production loading still goes through `load(_:)`.
+    func replaceLoadedPlaylist(uri: String, tracks: [CatalogTrack]) {
+        loadedURI = uri
+        self.tracks = tracks
+        resortTracks()
+    }
+
     func load(_ item: CatalogItem, force: Bool = false) async {
         let currentSession = session.snapshot
         guard currentSession.isAvailable, item.kind == .playlist else { return }
