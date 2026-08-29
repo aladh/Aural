@@ -108,8 +108,8 @@ nonisolated struct SpotifyCredentials: Sendable {
     /// Injected so request construction and decoding can be tested without a network.
     typealias Transport = @Sendable (URLRequest) async throws -> (Data, URLResponse)
 
-    /// One attempt's outcome, naming the client token it carried so a refusal can name it too.
-    typealias Attempt = (body: Data, status: Int, clientToken: String?)
+    /// One attempt's outcome, naming the credentials it carried so a refusal can name them too.
+    typealias Attempt = (body: Data, status: Int, accessToken: String?, clientToken: String?)
 
     /// The headers the desktop client sends. `App-Platform` and the xpui origin are not
     /// cosmetic — neither host is a public API, and the requests that work are the ones shaped
@@ -125,8 +125,13 @@ nonisolated struct SpotifyCredentials: Sendable {
         await ClientTokenProvider.shared.invalidate(rejected: $0)
     }
 
+    static let invalidateSharedAccess: @Sendable (String) async throws -> Void = {
+        _ = try await KeymasterSession.shared.refreshIgnoringExpiry(rejected: $0)
+    }
+
     let accessToken: @Sendable () async throws -> String
     let clientToken: @Sendable () async throws -> String
+    let invalidateAccessToken: @Sendable (String) async throws -> Void
     let invalidateClientToken: @Sendable (String) async -> Void
     let transport: Transport
 
@@ -146,29 +151,57 @@ nonisolated struct SpotifyCredentials: Sendable {
         try await request.setValue(clientToken(), forHTTPHeaderField: "Client-Token")
     }
 
-    /// Runs the attempt, and runs it once more against a fresh client token when Spotify refuses
-    /// the first with a 401.
+    /// Runs the attempt, and runs it once more after invalidating the credentials that attempt
+    /// actually carried when Spotify refuses the first with a 401.
     ///
-    /// A 401 can be either credential, and the client token is the one nothing else would
-    /// notice: it is cached for the fortnight Spotify says it is good for, so a token revoked
-    /// before its stated expiry fails every request until the app is relaunched. The bearer
-    /// refreshes itself, so this costs one wasted retry at worst.
+    /// A 401 can be either credential. The client token is cached for the fortnight Spotify
+    /// says it is good for; the bearer is cached until five minutes before expiry. Either can
+    /// be revoked mid-validity, and retrying without naming the sent values would keep sending
+    /// the same dead pair. A second 401 is returned as-is so this cannot loop.
     ///
-    /// The token the request actually carried is named, not just "the current one" — concurrent
-    /// requests share a token, so one dead token is refused several times over and the later
-    /// refusals would otherwise discard the replacement the first one fetched.
+    /// The tokens the request actually carried are named, not just "the current ones" —
+    /// concurrent requests share a pair, so one dead pair is refused several times over and the
+    /// later refusals would otherwise discard the replacements the first one fetched.
     func retryingRefusedToken(
+        _ attempt: () async throws -> Attempt,
+    ) async throws -> (body: Data, status: Int) {
+        try await Self.retryingRefusedCredentials(
+            invalidateAccessToken: invalidateAccessToken,
+            invalidateClientToken: invalidateClientToken,
+            attempt
+        )
+    }
+
+    /// Bearer-only variant for hosts that do not carry a client token.
+    static func retryingRefusedCredentials(
+        invalidateAccessToken: @Sendable (String) async throws -> Void,
+        invalidateClientToken: (@Sendable (String) async -> Void)? = nil,
         _ attempt: () async throws -> Attempt,
     ) async throws -> (body: Data, status: Int) {
         let sent = try await attempt()
         guard sent.status == 401 else { return (sent.body, sent.status) }
 
+        // Client-token drop is non-throwing. Do it first so a throwing bearer refresh
+        // (grantRevoked, noGrant, or a superseded spend) cannot leave a dead client cached
+        // for the rest of its fortnight.
         if let rejected = sent.clientToken {
-            await invalidateClientToken(rejected)
+            await invalidateClientToken?(rejected)
+        }
+        if let rejected = sent.accessToken {
+            try await invalidateAccessToken(rejected)
         }
 
         let retried = try await attempt()
         return (retried.body, retried.status)
+    }
+
+    /// The access token a signed request actually put on the wire, without the `Bearer ` prefix.
+    static func accessTokenCarried(by request: URLRequest) -> String? {
+        guard let authorization = request.value(forHTTPHeaderField: "Authorization"),
+              authorization.hasPrefix("Bearer ")
+        else { return nil }
+        let token = String(authorization.dropFirst("Bearer ".count))
+        return token.isEmpty ? nil : token
     }
 }
 
@@ -189,12 +222,15 @@ nonisolated struct PartnerAPI: Sendable {
         clientToken: @escaping @Sendable () async throws -> String = {
             try await ClientTokenProvider.shared.token()
         },
+        invalidateAccessToken: @escaping @Sendable (String) async throws -> Void = SpotifyCredentials
+            .invalidateSharedAccess,
         invalidateClientToken: @escaping @Sendable (String) async -> Void = SpotifyCredentials.invalidateShared,
         transport: @escaping Transport = { try await URLSession.shared.data(for: $0) },
     ) {
         credentials = SpotifyCredentials(
             accessToken: accessToken,
             clientToken: clientToken,
+            invalidateAccessToken: invalidateAccessToken,
             invalidateClientToken: invalidateClientToken,
             transport: transport,
         )
@@ -574,7 +610,12 @@ nonisolated struct PartnerAPI: Sendable {
             throw PartnerAPIError.emptyPayload
         }
 
-        return (data, http.statusCode, request.value(forHTTPHeaderField: "Client-Token"))
+        return (
+            data,
+            http.statusCode,
+            SpotifyCredentials.accessTokenCarried(by: request),
+            request.value(forHTTPHeaderField: "Client-Token")
+        )
     }
 
     private static func failure(

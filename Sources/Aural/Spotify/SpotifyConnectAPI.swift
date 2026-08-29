@@ -300,12 +300,15 @@ nonisolated struct SpotifyConnectAPI: Sendable {
         clientToken: @escaping @Sendable () async throws -> String = {
             try await ClientTokenProvider.shared.token()
         },
+        invalidateAccessToken: @escaping @Sendable (String) async throws -> Void = SpotifyCredentials
+            .invalidateSharedAccess,
         invalidateClientToken: @escaping @Sendable (String) async -> Void = SpotifyCredentials.invalidateShared,
         transport: @escaping Transport = { try await URLSession.shared.data(for: $0) }
     ) {
         credentials = SpotifyCredentials(
             accessToken: accessToken,
             clientToken: clientToken,
+            invalidateAccessToken: invalidateAccessToken,
             invalidateClientToken: invalidateClientToken,
             transport: transport
         )
@@ -370,7 +373,12 @@ nonisolated struct SpotifyConnectAPI: Sendable {
         guard let http = response as? HTTPURLResponse else {
             throw SpotifyConnectAPIError.malformedResponse
         }
-        return (data, http.statusCode, request.value(forHTTPHeaderField: "Client-Token"))
+        return (
+            data,
+            http.statusCode,
+            SpotifyCredentials.accessTokenCarried(by: request),
+            request.value(forHTTPHeaderField: "Client-Token")
+        )
     }
 
     private func preflight(_ url: URL) async throws {

@@ -12,6 +12,7 @@ enum BoundaryChecksMain {
         runLoopbackParsingChecks(runner)
         await runLoopbackServerChecks(runner)
         await runAuthCookieCleanupChecks(runner)
+        await runAuthCredentialRetryChecks(runner)
         runURIChecks(runner)
         runFormattingChecks(runner)
         runPlaylistSortingChecks(runner)
