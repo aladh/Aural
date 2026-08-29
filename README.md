@@ -100,8 +100,9 @@ Spotify-side changes.
 
 Aural has no analytics, advertising, crash-reporting SDK, or Aural-operated server. Account data is
 requested directly from Spotify and rendered locally. Distribution builds store OAuth credentials
-in Keychain; self-signed development builds use local application preferences because changing
-development signatures cannot retain a stable Keychain ACL.
+in Keychain. Local development packaging reuses a stable project-local signing identity so
+that Keychain access policy survives rebuilds; leftover plaintext from older development
+builds is read once and then deleted.
 
 Read [PRIVACY.md](PRIVACY.md) before signing in. Report security issues through the private process
 in [SECURITY.md](SECURITY.md), not a public issue.

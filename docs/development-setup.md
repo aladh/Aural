@@ -50,8 +50,10 @@ keychain is first created. Grant the packaging script as a unit instead of appro
 `security` commands. Later builds reuse the project-local keychain until `.build/` is deleted; no
 login-keychain password is part of the workflow.
 
-On first launch, choose Connect and complete Spotify authorization in the browser. Authentication
-state is machine-local and intentionally not stored in Git. Follow the
+On first launch, choose Connect and complete Spotify authorization in the browser. The grant is
+stored in the macOS Keychain; leftover plaintext from older development builds is migrated once
+and then deleted. Authentication state is machine-local and intentionally not stored in Git.
+Follow the
 [product and acceptance contract](product-and-acceptance-contract.md) before exercising a live
 Spotify account; playback is opt-in during acceptance testing.
 

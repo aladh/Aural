@@ -7,11 +7,7 @@
 
 import Foundation
 
-#if AURAL_DISTRIBUTION
-    private typealias DefaultKeymasterTokenStore = KeymasterMigratingStore
-#else
-    private typealias DefaultKeymasterTokenStore = KeymasterDefaultsStore
-#endif
+private typealias DefaultKeymasterTokenStore = KeymasterMigratingStore
 
 /// The live keymaster grant: one access token, kept valid, shared by everything that needs it.
 ///
@@ -99,13 +95,15 @@ actor KeymasterSession {
     }
 
     /// Loads persisted state lazily on this actor rather than synchronously while the main-actor
-    /// controller is being initialized. A distribution build's Keychain lookup can take time to
-    /// resolve an older item's ACL; that must not prevent SwiftUI from presenting the window.
+    /// controller is being initialized. A Keychain lookup can take time to resolve an older
+    /// item's ACL; that must not prevent SwiftUI from presenting the window.
     ///
     /// The load itself is a single flight: `hasLoadedStore` is not set until the read finishes,
     /// so a concurrent early `accessToken()` cannot observe an empty grant and throw `noGrant`
     /// while the store still holds one. `adopt` and `clear` bump `generation` and win over a
-    /// stale read the same way a superseded refresh does.
+    /// stale read the same way a superseded refresh does. Leftover plaintext is never written
+    /// to Keychain from the detached read; that commit happens only if this generation still
+    /// owns the slot afterwards.
     private func loadStoredGrantIfNeeded() async {
         if hasLoadedStore { return }
 
@@ -129,10 +127,12 @@ actor KeymasterSession {
 
     private func commitStoreLoad(startedAt: Int) async {
         let store = store
-        let storedTokens = await Task.detached(priority: .utility) {
-            store.load()
+        let snapshot = await Task.detached(priority: .utility) {
+            store.loadGrant()
         }.value
-        applyLoadedGrant(storedTokens, startedAt: startedAt)
+        applyLoadedGrant(snapshot.tokens, startedAt: startedAt)
+        guard snapshot.needsSecurePersist else { return }
+        await persistLeftoverGrantIfCurrent(snapshot.tokens, startedAt: startedAt)
     }
 
     /// Only the in-flight load task assigns. Joiners wait for that task so they cannot observe
@@ -142,6 +142,39 @@ actor KeymasterSession {
         guard generation == startedAt, !hasLoadedStore else { return }
         tokens = storedTokens
         hasLoadedStore = true
+    }
+
+    /// Writes a leftover plaintext grant only when this load still owns the session. If
+    /// `adopt`/`clear` won while the Keychain write ran, restore that later disk state.
+    private func persistLeftoverGrantIfCurrent(_ leftover: KeymasterTokens?, startedAt: Int) async {
+        guard generation == startedAt, hasLoadedStore, let leftover else { return }
+        let store = store
+        do {
+            try await Task.detached(priority: .utility) {
+                try store.save(leftover)
+            }.value
+        } catch {
+            AuralLog.authentication.error(
+                "\(KeymasterGrantPersistenceDiagnostics.legacyMigrationSaveFailed, privacy: .public)"
+            )
+            return
+        }
+        guard generation != startedAt else { return }
+        reconcileStoreAfterSupersededPersist()
+    }
+
+    private func reconcileStoreAfterSupersededPersist() {
+        if let tokens {
+            do {
+                try store.save(tokens)
+            } catch {
+                AuralLog.authentication.error(
+                    "\(KeymasterGrantPersistenceDiagnostics.supersededPersistRepairFailed, privacy: .public)"
+                )
+            }
+        } else {
+            store.clear()
+        }
     }
 
     var username: String? {
