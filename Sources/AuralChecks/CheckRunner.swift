@@ -24,6 +24,12 @@ final class CheckRunner {
         body()
     }
 
+    func suite(_ name: String, _ body: () async -> Void) async {
+        currentSuite = name
+        print("◆ \(name)")
+        await body()
+    }
+
     func check(_ label: String, _ condition: Bool) {
         checksRun += 1
         if !condition { fail(label) }

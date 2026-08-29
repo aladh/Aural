@@ -24,6 +24,7 @@ enum BoundaryChecksMain {
         runPCMWriteSpaceChecks(runner)
         runEngineEventFanoutChecks(runner)
         await runPrivacySanitizationChecks(runner)
+        await runPaginationWalkChecks(runner)
         await runWorkflowChecks(runner)
         await runAccountEpochOwnershipChecks(runner)
         await runCommandEffectRegistryChecks(runner)
