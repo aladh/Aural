@@ -474,9 +474,51 @@ mod player_event_pump_policy {
         }
     }
 
+    #[derive(Clone)]
+    struct PlaybackGlobals {
+        is_playing: bool,
+        is_active: bool,
+        playing_seq: u64,
+        resume_position_ms: u32,
+        position_ms: u32,
+        track_uri: Option<String>,
+    }
+
+    fn capture_playback_globals() -> PlaybackGlobals {
+        PlaybackGlobals {
+            is_playing: IS_PLAYING.load(Ordering::SeqCst),
+            is_active: is_active_device(),
+            playing_seq: PLAYING_EVENT_SEQ.load(Ordering::SeqCst),
+            resume_position_ms: RESUME_POSITION_MS.load(Ordering::SeqCst),
+            position_ms: POSITION_MS.load(Ordering::SeqCst),
+            track_uri: CURRENT_TRACK_URI
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .clone(),
+        }
+    }
+
+    fn restore_playback_globals(snapshot: PlaybackGlobals) {
+        IS_PLAYING.store(snapshot.is_playing, Ordering::SeqCst);
+        set_active_device(snapshot.is_active);
+        PLAYING_EVENT_SEQ.store(snapshot.playing_seq, Ordering::SeqCst);
+        RESUME_POSITION_MS.store(snapshot.resume_position_ms, Ordering::SeqCst);
+        POSITION_MS.store(snapshot.position_ms, Ordering::SeqCst);
+        *CURRENT_TRACK_URI.lock().unwrap_or_else(|e| e.into_inner()) = snapshot.track_uri;
+    }
+
+    struct RestorePlaybackGlobals(PlaybackGlobals);
+
+    impl Drop for RestorePlaybackGlobals {
+        fn drop(&mut self) {
+            restore_playback_globals(self.0.clone());
+        }
+    }
+
     #[test]
     fn a_queued_load_does_not_establish_playing_for_resume() {
         let _guard = lock_lifecycle_test_globals();
+        let _restore = RestorePlaybackGlobals(capture_playback_globals());
         IS_PLAYING.store(false, Ordering::SeqCst);
         // The three queued-load play commands still record activity on Ok.
         set_active_device(true);
@@ -489,6 +531,7 @@ mod player_event_pump_policy {
     #[test]
     fn a_playing_event_is_the_authoritative_playing_transition() {
         let _guard = lock_lifecycle_test_globals();
+        let _restore = RestorePlaybackGlobals(capture_playback_globals());
         IS_PLAYING.store(false, Ordering::SeqCst);
         let seq_before = PLAYING_EVENT_SEQ.load(Ordering::SeqCst);
 
@@ -504,12 +547,12 @@ mod player_event_pump_policy {
                 .as_deref(),
             Some("spotify:track:0000000000000000000000")
         );
-        IS_PLAYING.store(false, Ordering::SeqCst);
     }
 
     #[test]
     fn paused_stopped_and_end_of_track_still_clear_playing() {
         let _guard = lock_lifecycle_test_globals();
+        let _restore = RestorePlaybackGlobals(capture_playback_globals());
         let track_id = synthetic_track();
 
         IS_PLAYING.store(true, Ordering::SeqCst);
