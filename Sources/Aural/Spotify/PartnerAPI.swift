@@ -15,6 +15,8 @@ nonisolated enum PartnerAPIError: Error, LocalizedError, Equatable {
     case emptyPayload
     /// A write Spotify answered with HTTP 200 and a failure `__typename`.
     case mutationRejected(String)
+    /// A paged walk hit `Pagination`'s request cap or failed to advance its offset.
+    case pagination(Pagination.Failure)
 
     var errorDescription: String? {
         switch self {
@@ -28,6 +30,8 @@ nonisolated enum PartnerAPIError: Error, LocalizedError, Equatable {
             "Spotify returned a GraphQL error"
         case .emptyPayload:
             "Spotify returned no data"
+        case let .pagination(failure):
+            failure.errorDescription
         }
     }
 }
@@ -330,22 +334,23 @@ nonisolated struct PartnerAPI: Sendable {
     /// and reordering, which can only name an item the app has seen.
     func playlist(id: String) async throws -> PathfinderPlaylistUnion {
         let uri = "spotify:playlist:\(id)"
-        let first = try await playlistPage(uri: uri, offset: 0)
-
-        var items = first.content?.items ?? []
-        let total = first.content?.totalCount
-        var offset = 0
-        var pageCount = items.count
-
-        while let next = Pagination.nextOffset(offset: offset, pageEntryCount: pageCount, totalCount: total) {
-            let page = try await playlistPage(uri: uri, offset: next)
-            let added = page.content?.items ?? []
-            items += added
-            offset = next
-            pageCount = added.count
+        var header: PathfinderPlaylistUnion?
+        let items: [PathfinderPlaylistItem] = try await paginate { offset in
+            let page = try await playlistPage(uri: uri, offset: offset)
+            if header == nil {
+                header = page
+            }
+            return Pagination.Page(
+                items: page.content?.items ?? [],
+                pageEntryCount: page.content?.items?.count ?? 0,
+                totalCount: header?.content?.totalCount
+            )
         }
 
-        return first.withItems(items)
+        guard let header else {
+            throw PartnerAPIError.emptyPayload
+        }
+        return header.withItems(items)
     }
 
     private func playlistPage(uri: String, offset: Int) async throws -> PathfinderPlaylistUnion {
@@ -420,11 +425,7 @@ nonisolated struct PartnerAPI: Sendable {
     private func libraryEntities<Entity: Decodable & Sendable>(
         filter: String,
     ) async throws -> [Entity] {
-        var entities: [Entity] = []
-        var nextOffset: Int? = 0
-        var total: Int?
-
-        while let offset = nextOffset {
+        try await paginate { offset in
             let response: PathfinderLibraryResponse<Entity> = try await query(
                 .libraryV3,
                 variables: PathfinderLibraryVariables(
@@ -437,17 +438,12 @@ nonisolated struct PartnerAPI: Sendable {
             guard let page = response.page else {
                 throw PartnerAPIError.emptyPayload
             }
-            if total == nil { total = page.totalCount }
-
-            entities += page.entities
-            nextOffset = Pagination.nextOffset(
-                offset: offset,
+            return Pagination.Page(
+                items: page.entities,
                 pageEntryCount: page.items?.count ?? 0,
-                totalCount: total
+                totalCount: page.totalCount
             )
         }
-
-        return entities
     }
 
     /// The user's saved tracks, walked to the end.
@@ -455,11 +451,7 @@ nonisolated struct PartnerAPI: Sendable {
     /// **Stopping at the first page hid every liked song past the fiftieth** — a silent
     /// truncation nobody notices until they look for a specific row that never arrives.
     func libraryTracks() async throws -> [PathfinderLibraryTrackItem] {
-        var items: [PathfinderLibraryTrackItem] = []
-        var nextOffset: Int? = 0
-        var total: Int?
-
-        while let offset = nextOffset {
+        try await paginate { offset in
             let response: PathfinderLibraryTracksResponse = try await query(
                 .fetchLibraryTracks,
                 variables: PathfinderLibraryTracksVariables(offset: offset, limit: 50),
@@ -468,17 +460,12 @@ nonisolated struct PartnerAPI: Sendable {
             guard let page = response.page else {
                 throw PartnerAPIError.emptyPayload
             }
-            if total == nil { total = page.totalCount }
-
-            items += page.items ?? []
-            nextOffset = Pagination.nextOffset(
-                offset: offset,
+            return Pagination.Page(
+                items: page.items ?? [],
                 pageEntryCount: page.items?.count ?? 0,
-                totalCount: total
+                totalCount: page.totalCount
             )
         }
-
-        return items
     }
 
     /// Which of these are in the library, keyed by id.
@@ -576,6 +563,17 @@ nonisolated struct PartnerAPI: Sendable {
     }
 
     // MARK: - Transport
+
+    /// One bounded walk for playlist contents, `libraryV3`, and saved tracks.
+    private func paginate<Item>(
+        fetchPage: (Int) async throws -> Pagination.Page<Item>
+    ) async throws -> [Item] {
+        do {
+            return try await Pagination.collect(fetchPage: fetchPage)
+        } catch let failure as Pagination.Failure {
+            throw PartnerAPIError.pagination(failure)
+        }
+    }
 
     /// Generic over the whole envelope rather than over a search payload: `getAlbum` answers
     /// with `data.albumUnion`, not `data.searchV2`, so the shape below `data` is the

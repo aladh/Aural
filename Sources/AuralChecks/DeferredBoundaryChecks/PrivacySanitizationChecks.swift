@@ -118,6 +118,32 @@ func runPrivacySanitizationChecks(_ check: CheckRunner) async {
             }
         )
 
+        check.equal(
+            "pagination cap failures keep a stable category",
+            PartnerAPIError.pagination(.pageLimitReached),
+            .pagination(.pageLimitReached)
+        )
+        check.equal(
+            "pagination cap failures omit payloads",
+            PartnerAPIError.pagination(.pageLimitReached).errorDescription ?? "",
+            "Spotify pagination exceeded the request limit"
+        )
+        omitSentinel(
+            check,
+            "pagination cap LocalizedError",
+            PartnerAPIError.pagination(.pageLimitReached).errorDescription
+        )
+        check.equal(
+            "pagination non-progress failures omit payloads",
+            PartnerAPIError.pagination(.offsetDidNotAdvance).errorDescription ?? "",
+            "Spotify pagination did not advance"
+        )
+        omitSentinel(
+            check,
+            "pagination non-progress LocalizedError",
+            PartnerAPIError.pagination(.offsetDidNotAdvance).errorDescription
+        )
+
         let connect = SpotifyConnectAPI(
             accessToken: { "fixture-access" },
             clientToken: { "fixture-client" },

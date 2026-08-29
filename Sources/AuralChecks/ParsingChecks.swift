@@ -14,6 +14,84 @@ func runParsingChecks(_ check: CheckRunner) {
         check.nil_("an emptied collection ends the walk", Pagination.nextOffset(offset: 40, pageEntryCount: 20, totalCount: 0))
     }
 
+    check.suite("Bounded pagination decisions") {
+        check.equal("maximum page bound is finite and explicit", Pagination.maximumPageCount, 500)
+
+        check.equal(
+            "ordinary totalCount names the next offset",
+            Pagination.decision(offset: 0, pageEntryCount: 50, totalCount: 130, pagesFetched: 1),
+            .fetch(offset: 50)
+        )
+        check.equal(
+            "exact page-boundary totalCount finishes",
+            Pagination.decision(offset: 0, pageEntryCount: 50, totalCount: 50, pagesFetched: 1),
+            .finished
+        )
+        check.equal(
+            "empty first page finishes",
+            Pagination.decision(offset: 0, pageEntryCount: 0, totalCount: nil, pagesFetched: 1),
+            .finished
+        )
+        check.equal(
+            "omitted totalCount finishes on an empty page",
+            Pagination.decision(offset: 50, pageEntryCount: 0, totalCount: nil, pagesFetched: 2),
+            .finished
+        )
+        check.equal(
+            "a repeated next offset fails rather than refetching",
+            Pagination.decision(
+                offset: 0,
+                pageEntryCount: 50,
+                totalCount: nil,
+                pagesFetched: 1,
+                requestedOffsets: [0, 50]
+            ),
+            .failed(.offsetDidNotAdvance)
+        )
+        check.equal(
+            "a next offset that does not move forward fails",
+            Pagination.decision(
+                offset: 50,
+                pageEntryCount: 50,
+                totalCount: nil,
+                pagesFetched: 2,
+                nextOffset: { offset, _, _ in offset }
+            ),
+            .failed(.offsetDidNotAdvance)
+        )
+        check.equal(
+            "exhausting the page cap fails instead of continuing",
+            Pagination.decision(
+                offset: 0,
+                pageEntryCount: 50,
+                totalCount: nil,
+                pagesFetched: Pagination.maximumPageCount
+            ),
+            .failed(.pageLimitReached)
+        )
+        check.equal(
+            "the last allowed page may still name a successor before the cap",
+            Pagination.decision(
+                offset: 0,
+                pageEntryCount: 50,
+                totalCount: nil,
+                pagesFetched: Pagination.maximumPageCount - 1
+            ),
+            .fetch(offset: 50)
+        )
+
+        check.equal(
+            "cap exhaustion uses a stable category",
+            Pagination.Failure.pageLimitReached.errorDescription,
+            "Spotify pagination exceeded the request limit"
+        )
+        check.equal(
+            "non-progress uses a stable category",
+            Pagination.Failure.offsetDidNotAdvance.errorDescription,
+            "Spotify pagination did not advance"
+        )
+    }
+
     check.suite("Loopback request-line parsing") {
         let crlf = LoopbackRequestParser.parseRequestLine("GET /login?code=abc&state=xyz HTTP/1.1\r\nHost: 127.0.0.1\n")
         check.notNil("CRLF GET line parses", crlf)
