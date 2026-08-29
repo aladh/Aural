@@ -6,6 +6,10 @@ pub(crate) static PLAYER: Lazy<Mutex<Option<Arc<Player>>>> = Lazy::new(|| Mutex:
 pub(crate) static SESSION: Lazy<Mutex<Option<Session>>> = Lazy::new(|| Mutex::new(None));
 pub(crate) static MIXER: Lazy<Mutex<Option<Arc<SoftMixer>>>> = Lazy::new(|| Mutex::new(None));
 pub(crate) static SPIRC: Lazy<Mutex<Option<Arc<Spirc>>>> = Lazy::new(|| Mutex::new(None));
+/// Local playing flag. `true` only after `PlayerEvent::Playing`. `Spirc::load`
+/// `Ok` means the command was queued, not that audio started, so the play
+/// commands must not store `true` here: `resume_playback` returns success
+/// without issuing play or its fallback whenever this flag is already set.
 pub(crate) static IS_PLAYING: AtomicBool = AtomicBool::new(false);
 pub(crate) static PLAYING_EVENT_SEQ: AtomicU64 = AtomicU64::new(0);
 
