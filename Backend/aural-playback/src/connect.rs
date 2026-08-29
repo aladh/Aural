@@ -255,8 +255,9 @@ fn enqueue_cluster_offer(
     }
 }
 
-/// Clears `applying` only if this claimant unwinds. The normal empty-queue path still
-/// clears under the mutex; doing both always would lose a concurrent enqueue.
+/// On unwind, continue draining remaining items (not the panicking one) so they are
+/// not stranded until a later offer. The empty-queue path still clears `applying` under
+/// the mutex. This Drop does not create another DrainClaim.
 struct DrainClaim;
 
 impl Drop for DrainClaim {
@@ -264,13 +265,16 @@ impl Drop for DrainClaim {
         if !std::thread::panicking() {
             return;
         }
-        let mut gate = lock_cluster_apply();
-        gate.applying = false;
+        drain_pending_clusters();
     }
 }
 
 fn drain_offered_clusters() {
     let _claim = DrainClaim;
+    drain_pending_clusters();
+}
+
+fn drain_pending_clusters() {
     loop {
         let Some(item) = pop_next_cluster_to_apply() else {
             return;
