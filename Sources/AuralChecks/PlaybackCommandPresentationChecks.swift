@@ -1462,4 +1462,501 @@ func runPlaybackCommandPresentationChecks(_ check: CheckRunner) {
         check.nil_("rejection after only a matching user .options event clears pending", rejectUser.pendingCommands[.options])
         check.nil_("rejection after only a matching user .options event has no confirmation", rejectUser.transportCommandResolutions[rejectUserID])
     }
+
+    check.suite("Remote transfer owner optimism is reducer-owned") {
+        let transferID = UUID(uuidString: "00000000-0000-0000-0000-000000000060")!
+        let confirmedID = UUID(uuidString: "00000000-0000-0000-0000-000000000061")!
+        let acceptedID = UUID(uuidString: "00000000-0000-0000-0000-000000000062")!
+        let laterID = UUID(uuidString: "00000000-0000-0000-0000-000000000063")!
+        let supersededID = UUID(uuidString: "00000000-0000-0000-0000-000000000064")!
+        let localID = UUID(uuidString: "00000000-0000-0000-0000-000000000065")!
+        let noneID = UUID(uuidString: "00000000-0000-0000-0000-000000000066")!
+        let noneRollbackID = UUID(uuidString: "00000000-0000-0000-0000-000000000067")!
+        let ownerA = PlaybackOwner.remote(PlaybackDevice(id: "speaker-a", name: "Speaker A", type: "speaker", isActive: true))
+        let deviceB = PlaybackDevice(id: "speaker-b", name: "Speaker B", type: "speaker", isActive: false)
+        let expectedB = PlaybackOwner.uncertain(deviceB)
+        let remoteB = PlaybackOwner.remote(PlaybackDevice(id: "speaker-b", name: "Speaker B", type: "speaker", isActive: true))
+        let renamedB = PlaybackOwner.remote(PlaybackDevice(id: "speaker-b", name: "Kitchen", type: "speaker", isActive: true))
+        let ownerC = PlaybackOwner.remote(PlaybackDevice(id: "phone", name: "Phone", type: "smartphone", isActive: true))
+        let localMac = PlaybackOwner.local(PlaybackDevice(id: "mac", name: "Mac", type: "computer", isActive: true))
+        let deviceD = PlaybackDevice(id: "speaker-d", name: "Speaker D", type: "speaker", isActive: false)
+
+        func startTransfer(
+            _ state: inout PlaybackState,
+            id: UUID,
+            expected: PlaybackOwner,
+            startedAt: Date = presentationDate
+        ) {
+            _ = PlaybackReducer.reduce(
+                &state,
+                envelope: presentationEnvelope(
+                    source: .command,
+                    event: .commandStarted(PendingPlaybackCommand(
+                        id: id,
+                        kind: .transfer,
+                        expectedTransport: nil,
+                        expectedOwner: expected,
+                        startedAt: startedAt
+                    ))
+                )
+            )
+        }
+
+        func connectionOwner(
+            _ state: inout PlaybackState,
+            owner: PlaybackOwner,
+            revision: UInt64
+        ) {
+            _ = PlaybackReducer.reduce(
+                &state,
+                envelope: presentationEnvelope(
+                    source: .engineConnection,
+                    revision: revision,
+                    event: .engineConnection(EngineConnectionSnapshot(
+                        session: .ready,
+                        owner: owner,
+                        localDeviceID: "mac"
+                    ))
+                )
+            )
+        }
+
+        func devicesOwner(
+            _ state: inout PlaybackState,
+            devices: [PlaybackDevice],
+            revision: UInt64,
+            lastRemoteDeviceID: String? = "speaker-a"
+        ) {
+            _ = PlaybackReducer.reduce(
+                &state,
+                envelope: presentationEnvelope(
+                    source: .engineDevices,
+                    revision: revision,
+                    event: .devices(PlaybackDeviceSnapshot(
+                        devices: devices,
+                        localDeviceID: "mac",
+                        revision: revision,
+                        lastRemoteDeviceID: lastRemoteDeviceID
+                    ))
+                )
+            )
+        }
+
+        var rejected = PlaybackState(
+            accountEpoch: 1,
+            engineEpoch: 1,
+            session: .ready,
+            owner: ownerA,
+            currentTrack: CurrentTrack(uri: "spotify:track:a")
+        )
+        startTransfer(&rejected, id: transferID, expected: expectedB)
+        check.equal("transfer applies the uncertain target atomically", rejected.owner, expectedB)
+        check.equal("transfer captures the exact prior owner", rejected.pendingCommands[.transfer]?.rollbackOwner, Optional(ownerA))
+        check.equal("transfer records the requested target owner", rejected.pendingCommands[.transfer]?.expectedOwner, Optional(expectedB))
+        connectionOwner(&rejected, owner: ownerA, revision: 1)
+        check.equal("a lagging prior-owner connection keeps the target", rejected.owner, expectedB)
+        check.equal("a lagging prior-owner connection does not confirm", rejected.pendingCommands[.transfer]?.id, transferID)
+        check.nil_("a lagging prior-owner connection is not a confirmation", rejected.transportCommandResolutions[transferID])
+        _ = PlaybackReducer.reduce(
+            &rejected,
+            envelope: presentationEnvelope(
+                source: .command,
+                event: .commandFinished(
+                    id: transferID,
+                    accepted: false,
+                    notice: PlaybackNotice(message: "Could not move playback to Speaker B")
+                )
+            )
+        )
+        check.equal("a rejected transfer restores the exact prior owner", rejected.owner, ownerA)
+        check.nil_("a rejected transfer clears its pending command", rejected.pendingCommands[.transfer])
+
+        var laggingDevices = PlaybackState(
+            accountEpoch: 1,
+            engineEpoch: 1,
+            session: .ready,
+            owner: ownerA,
+            currentTrack: CurrentTrack(uri: "spotify:track:a")
+        )
+        startTransfer(&laggingDevices, id: transferID, expected: expectedB)
+        devicesOwner(
+            &laggingDevices,
+            devices: [
+                PlaybackDevice(id: "mac", name: "Mac", type: "computer"),
+                PlaybackDevice(id: "speaker-a", name: "Speaker A", type: "speaker", isActive: true),
+                deviceB
+            ],
+            revision: 1
+        )
+        check.equal("a lagging prior-owner devices snapshot keeps the target", laggingDevices.owner, expectedB)
+        check.equal("a lagging prior-owner devices snapshot does not confirm", laggingDevices.pendingCommands[.transfer]?.id, transferID)
+        _ = PlaybackReducer.reduce(
+            &laggingDevices,
+            envelope: presentationEnvelope(
+                source: .command,
+                event: .commandFinished(
+                    id: transferID,
+                    accepted: false,
+                    notice: PlaybackNotice(message: "Could not move playback to Speaker B")
+                )
+            )
+        )
+        check.equal("lagging devices then rejection restores the exact prior owner", laggingDevices.owner, ownerA)
+
+        var confirmed = PlaybackState(
+            accountEpoch: 1,
+            engineEpoch: 1,
+            session: .ready,
+            owner: ownerA,
+            currentTrack: CurrentTrack(uri: "spotify:track:a")
+        )
+        startTransfer(&confirmed, id: confirmedID, expected: expectedB)
+        connectionOwner(&confirmed, owner: remoteB, revision: 1)
+        check.equal("an authoritative target connection adopts identified B", confirmed.owner, remoteB)
+        check.nil_("an authoritative target connection confirms the command", confirmed.pendingCommands[.transfer])
+        check.equal(
+            "an authoritative target connection records confirmation",
+            confirmed.transportCommandResolutions[confirmedID],
+            .confirmed
+        )
+        let capturedConfirmation = confirmed.transportCommandResolutions[confirmedID]
+        let lateFailure = PlaybackReducer.reduce(
+            &confirmed,
+            envelope: presentationEnvelope(
+                source: .command,
+                event: .commandFinished(
+                    id: confirmedID,
+                    accepted: false,
+                    notice: PlaybackNotice(message: "Could not move playback to Speaker B")
+                )
+            )
+        )
+        check.check("a late failure after transfer confirmation is accepted to consume the entry", lateFailure)
+        check.nil_("a late failure after transfer confirmation consumes the resolution", confirmed.transportCommandResolutions[confirmedID])
+        check.equal("a late failure after transfer confirmation keeps B", confirmed.owner, remoteB)
+        check.equal(
+            "a captured transfer confirmation still reports success after consume-only acceptance",
+            playbackCommandFollowUp(
+                finishAccepted: lateFailure,
+                operationSucceeded: false,
+                requiresReconnect: false,
+                commandKind: .transfer,
+                pendingCommandID: confirmed.pendingCommands[.transfer]?.id,
+                finishedCommandResolution: capturedConfirmation,
+                capturedAccountEpoch: 1,
+                capturedEngineEpoch: 1,
+                currentAccountEpoch: 1,
+                currentEngineEpoch: 1,
+                isTearingDown: false
+            ),
+            .reportSuccess
+        )
+
+        var renamed = PlaybackState(
+            accountEpoch: 1,
+            engineEpoch: 1,
+            session: .ready,
+            owner: ownerA,
+            currentTrack: CurrentTrack(uri: "spotify:track:a")
+        )
+        startTransfer(&renamed, id: confirmedID, expected: expectedB)
+        connectionOwner(&renamed, owner: renamedB, revision: 1)
+        check.equal("a same-id renamed target still confirms", renamed.owner, renamedB)
+        check.nil_("a same-id renamed target confirms the command", renamed.pendingCommands[.transfer])
+        check.equal("a same-id renamed target records confirmation", renamed.transportCommandResolutions[confirmedID], .confirmed)
+
+        var devicesConfirmed = PlaybackState(
+            accountEpoch: 1,
+            engineEpoch: 1,
+            session: .ready,
+            owner: ownerA,
+            currentTrack: CurrentTrack(uri: "spotify:track:a")
+        )
+        startTransfer(&devicesConfirmed, id: confirmedID, expected: expectedB)
+        devicesOwner(
+            &devicesConfirmed,
+            devices: [
+                PlaybackDevice(id: "mac", name: "Mac", type: "computer"),
+                PlaybackDevice(id: "speaker-a", name: "Speaker A", type: "speaker"),
+                PlaybackDevice(id: "speaker-b", name: "Speaker B", type: "speaker", isActive: true)
+            ],
+            revision: 1
+        )
+        check.equal("an active-B devices snapshot confirms the transfer", devicesConfirmed.owner, remoteB)
+        check.nil_("an active-B devices snapshot clears the pending transfer", devicesConfirmed.pendingCommands[.transfer])
+        check.equal("an active-B devices snapshot records confirmation", devicesConfirmed.transportCommandResolutions[confirmedID], .confirmed)
+
+        var uncertainTarget = PlaybackState(
+            accountEpoch: 1,
+            engineEpoch: 1,
+            session: .ready,
+            owner: ownerA,
+            currentTrack: CurrentTrack(uri: "spotify:track:a")
+        )
+        startTransfer(&uncertainTarget, id: transferID, expected: expectedB)
+        connectionOwner(&uncertainTarget, owner: expectedB, revision: 1)
+        check.equal("an uncertain target copy keeps the admitted owner", uncertainTarget.owner, expectedB)
+        check.equal("an uncertain target copy does not confirm", uncertainTarget.pendingCommands[.transfer]?.id, transferID)
+        check.nil_("an uncertain target copy is not a confirmation", uncertainTarget.transportCommandResolutions[transferID])
+        _ = PlaybackReducer.reduce(
+            &uncertainTarget,
+            envelope: presentationEnvelope(
+                source: .command,
+                event: .commandFinished(
+                    id: transferID,
+                    accepted: false,
+                    notice: PlaybackNotice(message: "Could not move playback to Speaker B")
+                )
+            )
+        )
+        check.equal("rejection after only an uncertain target copy restores A", uncertainTarget.owner, ownerA)
+
+        var accepted = PlaybackState(
+            accountEpoch: 1,
+            engineEpoch: 1,
+            session: .ready,
+            owner: ownerA
+        )
+        startTransfer(&accepted, id: acceptedID, expected: expectedB)
+        _ = PlaybackReducer.reduce(
+            &accepted,
+            envelope: presentationEnvelope(
+                source: .command,
+                event: .commandFinished(id: acceptedID, accepted: true, notice: nil)
+            )
+        )
+        check.equal("an accepted transfer without a snapshot keeps the admitted target", accepted.owner, expectedB)
+        check.nil_("an accepted transfer clears its pending command", accepted.pendingCommands[.transfer])
+
+        var superseded = PlaybackState(
+            accountEpoch: 1,
+            engineEpoch: 1,
+            session: .ready,
+            owner: ownerA,
+            currentTrack: CurrentTrack(uri: "spotify:track:a")
+        )
+        startTransfer(&superseded, id: supersededID, expected: expectedB)
+        connectionOwner(&superseded, owner: ownerC, revision: 1)
+        check.equal("an unrelated owner supersedes the optimistic target", superseded.owner, ownerC)
+        check.nil_("an unrelated owner clears the pending transfer", superseded.pendingCommands[.transfer])
+        check.equal(
+            "an unrelated owner records supersession",
+            superseded.transportCommandResolutions[supersededID],
+            .superseded
+        )
+        let capturedSupersession = superseded.transportCommandResolutions[supersededID]
+        let lateSuperseded = PlaybackReducer.reduce(
+            &superseded,
+            envelope: presentationEnvelope(
+                source: .command,
+                event: .commandFinished(
+                    id: supersededID,
+                    accepted: false,
+                    notice: PlaybackNotice(message: "Could not move playback to Speaker B")
+                )
+            )
+        )
+        check.check("a late failure after unrelated supersession consumes the entry", lateSuperseded)
+        check.equal("a late failure after unrelated supersession keeps C", superseded.owner, ownerC)
+        check.equal(
+            "a captured transfer supersession stays inert after a late failure",
+            playbackCommandFollowUp(
+                finishAccepted: lateSuperseded,
+                operationSucceeded: false,
+                requiresReconnect: false,
+                commandKind: .transfer,
+                pendingCommandID: superseded.pendingCommands[.transfer]?.id,
+                finishedCommandResolution: capturedSupersession,
+                capturedAccountEpoch: 1,
+                capturedEngineEpoch: 1,
+                currentAccountEpoch: 1,
+                currentEngineEpoch: 1,
+                isTearingDown: false
+            ),
+            .inert
+        )
+        check.equal(
+            "accepted completion after unrelated supersession stays inert",
+            playbackCommandFollowUp(
+                finishAccepted: true,
+                operationSucceeded: true,
+                requiresReconnect: false,
+                commandKind: .transfer,
+                pendingCommandID: nil,
+                finishedCommandResolution: .superseded,
+                capturedAccountEpoch: 1,
+                capturedEngineEpoch: 1,
+                currentAccountEpoch: 1,
+                currentEngineEpoch: 1,
+                isTearingDown: false
+            ),
+            .inert
+        )
+
+        var localSupersede = PlaybackState(
+            accountEpoch: 1,
+            engineEpoch: 1,
+            session: .ready,
+            owner: ownerA,
+            currentTrack: CurrentTrack(uri: "spotify:track:a")
+        )
+        startTransfer(&localSupersede, id: localID, expected: expectedB)
+        connectionOwner(&localSupersede, owner: localMac, revision: 1)
+        check.equal("an unrelated local owner supersedes the remote target", localSupersede.owner, localMac)
+        check.equal("an unrelated local owner records supersession", localSupersede.transportCommandResolutions[localID], .superseded)
+        _ = PlaybackReducer.reduce(
+            &localSupersede,
+            envelope: presentationEnvelope(
+                source: .command,
+                event: .commandFinished(id: localID, accepted: false, notice: PlaybackNotice(message: "Could not move playback to Speaker B"))
+            )
+        )
+        check.equal("a late failure after local supersession keeps this Mac", localSupersede.owner, localMac)
+
+        var noneSupersede = PlaybackState(
+            accountEpoch: 1,
+            engineEpoch: 1,
+            session: .ready,
+            owner: ownerA,
+            currentTrack: CurrentTrack(uri: "spotify:track:a")
+        )
+        startTransfer(&noneSupersede, id: noneID, expected: expectedB)
+        connectionOwner(&noneSupersede, owner: .none, revision: 1)
+        check.equal("an unrelated empty owner supersedes the remote target", noneSupersede.owner, .none)
+        check.equal("an unrelated empty owner records supersession", noneSupersede.transportCommandResolutions[noneID], .superseded)
+        _ = PlaybackReducer.reduce(
+            &noneSupersede,
+            envelope: presentationEnvelope(
+                source: .command,
+                event: .commandFinished(id: noneID, accepted: true, notice: nil)
+            )
+        )
+        check.equal("accepted completion after empty supersession keeps none", noneSupersede.owner, .none)
+
+        var noneRollback = PlaybackState(
+            accountEpoch: 1,
+            engineEpoch: 1,
+            session: .ready,
+            owner: .none,
+            currentTrack: CurrentTrack(uri: "spotify:track:a")
+        )
+        startTransfer(&noneRollback, id: noneRollbackID, expected: expectedB)
+        check.equal("a transfer from none still presents the target", noneRollback.owner, expectedB)
+        check.equal("a transfer from none captures empty rollback", noneRollback.pendingCommands[.transfer]?.rollbackOwner, Optional(PlaybackOwner.none))
+        connectionOwner(&noneRollback, owner: .none, revision: 1)
+        check.equal("a lagging empty prior owner keeps the target", noneRollback.owner, expectedB)
+        check.equal("a lagging empty prior owner keeps the pending command", noneRollback.pendingCommands[.transfer]?.id, noneRollbackID)
+        check.nil_(
+            "a lagging empty prior owner is not a resolution",
+            noneRollback.transportCommandResolutions[noneRollbackID]
+        )
+        _ = PlaybackReducer.reduce(
+            &noneRollback,
+            envelope: presentationEnvelope(
+                source: .command,
+                event: .commandFinished(
+                    id: noneRollbackID,
+                    accepted: false,
+                    notice: PlaybackNotice(message: "Could not move playback to Speaker B")
+                )
+            )
+        )
+        check.equal("rejection after a lagging empty snapshot restores none", noneRollback.owner, .none)
+
+        var laterTransfer = PlaybackState(
+            accountEpoch: 1,
+            engineEpoch: 1,
+            session: .ready,
+            owner: ownerA,
+            currentTrack: CurrentTrack(uri: "spotify:track:a")
+        )
+        startTransfer(&laterTransfer, id: confirmedID, expected: expectedB)
+        connectionOwner(&laterTransfer, owner: remoteB, revision: 1)
+        startTransfer(&laterTransfer, id: laterID, expected: .uncertain(deviceD))
+        check.equal(
+            "a later transfer does not drop the confirmed id",
+            laterTransfer.transportCommandResolutions[confirmedID],
+            .confirmed
+        )
+        check.equal("a later transfer is the pending transfer command", laterTransfer.pendingCommands[.transfer]?.id, laterID)
+        check.equal("a later transfer captures confirmed B as rollback", laterTransfer.pendingCommands[.transfer]?.rollbackOwner, Optional(remoteB))
+        check.equal("a later transfer presents D", laterTransfer.owner, PlaybackOwner.uncertain(deviceD))
+        let capturedLaterConfirmation = laterTransfer.transportCommandResolutions[confirmedID]
+        let lateFirstFinish = PlaybackReducer.reduce(
+            &laterTransfer,
+            envelope: presentationEnvelope(
+                source: .command,
+                event: .commandFinished(
+                    id: confirmedID,
+                    accepted: false,
+                    notice: PlaybackNotice(message: "Could not move playback to Speaker B")
+                )
+            )
+        )
+        check.check("a late first transfer finish after a later transfer consumes the first entry", lateFirstFinish)
+        check.nil_("a late first transfer finish removes the first resolution", laterTransfer.transportCommandResolutions[confirmedID])
+        check.equal("a late first transfer finish leaves the later command pending", laterTransfer.pendingCommands[.transfer]?.id, laterID)
+        check.equal("a late first transfer finish keeps D", laterTransfer.owner, PlaybackOwner.uncertain(deviceD))
+        check.equal(
+            "a late first transfer finish still reports success for the confirmed id",
+            playbackCommandFollowUp(
+                finishAccepted: lateFirstFinish,
+                operationSucceeded: false,
+                requiresReconnect: false,
+                commandKind: .transfer,
+                pendingCommandID: laterTransfer.pendingCommands[.transfer]?.id,
+                finishedCommandResolution: capturedLaterConfirmation,
+                capturedAccountEpoch: 1,
+                capturedEngineEpoch: 1,
+                currentAccountEpoch: 1,
+                currentEngineEpoch: 1,
+                isTearingDown: false
+            ),
+            .reportSuccess
+        )
+        _ = PlaybackReducer.reduce(
+            &laterTransfer,
+            envelope: presentationEnvelope(
+                source: .command,
+                event: .commandFinished(id: laterID, accepted: false, notice: PlaybackNotice(message: "Could not move playback to Speaker D"))
+            )
+        )
+        check.equal("a rejected later transfer restores confirmed B", laterTransfer.owner, remoteB)
+
+        var localTransfer = PlaybackState(
+            accountEpoch: 1,
+            engineEpoch: 1,
+            session: .ready,
+            owner: ownerA
+        )
+        _ = PlaybackReducer.reduce(
+            &localTransfer,
+            envelope: presentationEnvelope(
+                source: .command,
+                event: .commandStarted(PendingPlaybackCommand(
+                    id: localID,
+                    kind: .transfer,
+                    expectedTransport: nil,
+                    startedAt: presentationDate
+                ))
+            )
+        )
+        check.equal("transfer-to-this-Mac does not invent an owner target", localTransfer.owner, ownerA)
+        check.nil_("transfer-to-this-Mac does not capture owner rollback", localTransfer.pendingCommands[.transfer]?.rollbackOwner)
+        connectionOwner(&localTransfer, owner: ownerA, revision: 1)
+        check.equal("transfer-to-this-Mac still adopts connection owner A", localTransfer.owner, ownerA)
+        check.equal("a lagging A snapshot does not confirm a local transfer", localTransfer.pendingCommands[.transfer]?.id, localID)
+        _ = PlaybackReducer.reduce(
+            &localTransfer,
+            envelope: presentationEnvelope(
+                source: .command,
+                event: .commandFinished(
+                    id: localID,
+                    accepted: false,
+                    notice: PlaybackNotice(message: "Could not move playback to this Mac")
+                )
+            )
+        )
+        check.equal("a rejected local transfer leaves owner A", localTransfer.owner, ownerA)
+    }
 }

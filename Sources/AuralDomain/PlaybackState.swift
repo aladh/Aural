@@ -374,6 +374,10 @@ public struct PendingPlaybackCommand: Equatable, Sendable {
     public let expectedShuffle: Bool?
     /// Exact pre-command shuffle captured at `commandStarted` for a live shuffle command.
     public let rollbackShuffle: Bool?
+    /// Requested remote-transfer owner. Transfer-to-this-Mac leaves this nil.
+    public let expectedOwner: PlaybackOwner?
+    /// Exact pre-command owner captured at `commandStarted` for a remote transfer.
+    public let rollbackOwner: PlaybackOwner?
     public let startedAt: Date
 
     public init(
@@ -387,6 +391,8 @@ public struct PendingPlaybackCommand: Equatable, Sendable {
         rollbackPresentation: PlaybackPresentationSnapshot? = nil,
         expectedShuffle: Bool? = nil,
         rollbackShuffle: Bool? = nil,
+        expectedOwner: PlaybackOwner? = nil,
+        rollbackOwner: PlaybackOwner? = nil,
         startedAt: Date
     ) {
         self.id = id
@@ -399,14 +405,16 @@ public struct PendingPlaybackCommand: Equatable, Sendable {
         self.rollbackPresentation = rollbackPresentation
         self.expectedShuffle = expectedShuffle
         self.rollbackShuffle = rollbackShuffle
+        self.expectedOwner = expectedOwner
+        self.rollbackOwner = rollbackOwner
         self.startedAt = startedAt
     }
 }
 
-/// How a known-target transport command left `pendingCommands` without `commandFinished`.
-/// Stored per command id so a later pause/resume cannot recycle the nil catch-all.
-/// `commandFinished` consumes a matching entry (pending rollback or consume-only) so the
-/// map does not grow for the process/session lifetime.
+/// How a known-target transport, shuffle, or remote-transfer command left `pendingCommands`
+/// without `commandFinished`. Stored per command id so a later pause/resume cannot recycle
+/// the nil catch-all. `commandFinished` consumes a matching entry (pending rollback or
+/// consume-only) so the map does not grow for the process/session lifetime.
 public enum PlaybackTransportCommandResolution: Equatable, Sendable {
     case confirmed
     case superseded
@@ -571,7 +579,7 @@ public enum PlaybackReducer {
         case let .session(session):
             candidate.session = session
         case let .owner(owner):
-            candidate.owner = owner
+            reconcileOwner(owner, source: envelope.source, in: &candidate)
         case let .transport(transport):
             reconcileTransport(transport, incomingTrackURI: nil, in: &candidate)
         case let .enginePlayback(snapshot):
@@ -592,6 +600,7 @@ public enum PlaybackReducer {
                 adoptOwnerAfterTrackURIChange(
                     previousURI: previousURI,
                     incomingURI: incomingURI,
+                    source: envelope.source,
                     in: &candidate
                 )
                 applyEnginePlaybackOptions(snapshot, in: &candidate)
@@ -603,7 +612,7 @@ public enum PlaybackReducer {
             }
         case let .engineConnection(snapshot):
             if let session = snapshot.session { candidate.session = session }
-            candidate.owner = snapshot.owner
+            reconcileOwner(snapshot.owner, source: envelope.source, in: &candidate)
             candidate.devices.localDeviceID = snapshot.localDeviceID
         case let .presentation(presentation):
             let incomingURI = playbackTrackURI(presentation.currentTrack?.uri)
@@ -648,6 +657,7 @@ public enum PlaybackReducer {
             adoptOwnerAfterTrackURIChange(
                 previousURI: previousURI,
                 incomingURI: incomingURI,
+                source: envelope.source,
                 in: &candidate
             )
             if track == nil {
@@ -676,12 +686,12 @@ public enum PlaybackReducer {
         case let .devices(devices):
             guard devices.revision >= candidate.devices.revision else { return false }
             candidate.devices = devices
-            applyConnectionPlaybackOwner(&candidate)
+            applyConnectionPlaybackOwner(&candidate, source: envelope.source)
         case let .commandStarted(command):
             // Capture current presentation before applying the caller's target. The store must
-            // not mutate transport, timing, track, or shuffle first, or rollback records the
-            // optimistic values. Do not clear other commands' resolutions: a later pause must
-            // not recycle the already-reconciled-success path for a superseded play.
+            // not mutate transport, timing, track, shuffle, or owner first, or rollback records
+            // the optimistic values. Do not clear other commands' resolutions: a later pause
+            // must not recycle the already-reconciled-success path for a superseded play.
             let prepared = PendingPlaybackCommand(
                 id: command.id,
                 kind: command.kind,
@@ -705,6 +715,10 @@ public enum PlaybackReducer {
                 rollbackShuffle: command.rollbackShuffle ?? (
                     command.expectedShuffle == nil ? nil : candidate.options.shuffle
                 ),
+                expectedOwner: command.expectedOwner,
+                rollbackOwner: command.rollbackOwner ?? (
+                    command.expectedOwner == nil ? nil : candidate.owner
+                ),
                 startedAt: command.startedAt
             )
             candidate.pendingCommands[command.kind] = prepared
@@ -722,6 +736,9 @@ public enum PlaybackReducer {
             }
             if let expectedShuffle = command.expectedShuffle {
                 candidate.options.shuffle = expectedShuffle
+            }
+            if let expectedOwner = command.expectedOwner {
+                candidate.owner = expectedOwner
             }
         case let .commandFinished(id, accepted, notice):
             if let pair = candidate.pendingCommands.first(where: { $0.value.id == id }) {
@@ -743,6 +760,9 @@ public enum PlaybackReducer {
                     }
                     if let rollbackShuffle = pair.value.rollbackShuffle {
                         candidate.options.shuffle = rollbackShuffle
+                    }
+                    if let rollbackOwner = pair.value.rollbackOwner {
+                        candidate.owner = rollbackOwner
                     }
                     candidate.notice = notice
                 } else if let expectedShuffle = pair.value.expectedShuffle {
@@ -912,6 +932,65 @@ public enum PlaybackReducer {
         }
     }
 
+    /// A lagging snapshot of the pre-command owner must not undo a pending remote-transfer
+    /// target. Identity is the stable device id, never name or type. An authoritative
+    /// connection or devices snapshot whose identified local/remote owner matches the
+    /// target confirms the command so a late coordinator failure cannot restore the
+    /// prior owner. An unrelated identified owner, or a genuine empty owner that is
+    /// not the exact prior emptiness, supersedes: rollback is cleared and a later
+    /// finish stays inert. Uncertain copies of the target keep the pending command.
+    private static func reconcileOwner(
+        _ incoming: PlaybackOwner,
+        source: PlaybackEventSource,
+        in state: inout PlaybackState
+    ) {
+        guard let pending = state.pendingCommands[.transfer],
+              let expected = pending.expectedOwner
+        else {
+            state.owner = incoming
+            return
+        }
+        let expectedID = playbackOwnerStableDeviceID(expected)
+        let incomingID = playbackOwnerStableDeviceID(incoming)
+        let rollbackID = pending.rollbackOwner.flatMap(playbackOwnerStableDeviceID)
+        if let expectedID, incomingID == expectedID {
+            state.owner = incoming
+            if isIdentifiedPlaybackOwner(incoming),
+               source == .engineConnection || source == .engineDevices
+            {
+                state.pendingCommands[.transfer] = nil
+                state.transportCommandResolutions[pending.id] = .confirmed
+            }
+            return
+        }
+        if incomingID == rollbackID {
+            return
+        }
+        state.owner = incoming
+        state.pendingCommands[.transfer] = nil
+        state.transportCommandResolutions[pending.id] = .superseded
+    }
+
+    private static func playbackOwnerStableDeviceID(_ owner: PlaybackOwner) -> String? {
+        let id: String?
+        switch owner {
+        case .none, .uncertain(nil):
+            id = nil
+        case let .local(device), let .remote(device), let .uncertain(.some(device)):
+            id = device.id
+        }
+        return id.flatMap { $0.isEmpty ? nil : $0 }
+    }
+
+    private static func isIdentifiedPlaybackOwner(_ owner: PlaybackOwner) -> Bool {
+        switch owner {
+        case .local, .remote:
+            return true
+        case .none, .uncertain:
+            return false
+        }
+    }
+
     /// Holds optimistic seek timing until an incoming sample is at the expected millisecond
     /// position on the same track. A different track or empty URI supersedes the old seek and
     /// adopts the incoming timing so rollback cannot attach the previous track's position.
@@ -944,19 +1023,26 @@ public enum PlaybackReducer {
         }
     }
 
-    private static func applyConnectionPlaybackOwner(_ candidate: inout PlaybackState) {
+    private static func applyConnectionPlaybackOwner(
+        _ candidate: inout PlaybackState,
+        source: PlaybackEventSource
+    ) {
         let devices = candidate.devices
         let isLocalActive = devices.devices.contains {
             $0.isActive && $0.id == devices.localDeviceID
         }
-        candidate.owner = connectionPlaybackOwner(
-            isLocalActive: isLocalActive,
-            localDeviceID: devices.localDeviceID,
-            localDeviceName: devices.devices.first { $0.id == devices.localDeviceID }?.name ?? "",
-            devices: devices.devices,
-            currentTrackURI: candidate.currentTrack?.uri,
-            previousOwner: candidate.owner,
-            lastRemoteDeviceID: devices.lastRemoteDeviceID
+        reconcileOwner(
+            connectionPlaybackOwner(
+                isLocalActive: isLocalActive,
+                localDeviceID: devices.localDeviceID,
+                localDeviceName: devices.devices.first { $0.id == devices.localDeviceID }?.name ?? "",
+                devices: devices.devices,
+                currentTrackURI: candidate.currentTrack?.uri,
+                previousOwner: candidate.owner,
+                lastRemoteDeviceID: devices.lastRemoteDeviceID
+            ),
+            source: source,
+            in: &candidate
         )
     }
 
@@ -968,6 +1054,7 @@ public enum PlaybackReducer {
     private static func adoptOwnerAfterTrackURIChange(
         previousURI: String?,
         incomingURI: String?,
+        source: PlaybackEventSource,
         in candidate: inout PlaybackState
     ) {
         let previous = playbackTrackURI(previousURI)
@@ -975,14 +1062,14 @@ public enum PlaybackReducer {
         guard previous != incoming else { return }
         if incoming == nil {
             if case .uncertain = candidate.owner {
-                applyConnectionPlaybackOwner(&candidate)
+                applyConnectionPlaybackOwner(&candidate, source: source)
             }
             return
         }
         guard previous == nil else { return }
         switch candidate.owner {
         case .none, .uncertain(nil):
-            applyConnectionPlaybackOwner(&candidate)
+            applyConnectionPlaybackOwner(&candidate, source: source)
         default:
             break
         }
