@@ -1471,6 +1471,7 @@ func runPlaybackCommandPresentationChecks(_ check: CheckRunner) {
         let supersededID = UUID(uuidString: "00000000-0000-0000-0000-000000000064")!
         let localID = UUID(uuidString: "00000000-0000-0000-0000-000000000065")!
         let noneID = UUID(uuidString: "00000000-0000-0000-0000-000000000066")!
+        let noneRollbackID = UUID(uuidString: "00000000-0000-0000-0000-000000000067")!
         let ownerA = PlaybackOwner.remote(PlaybackDevice(id: "speaker-a", name: "Speaker A", type: "speaker", isActive: true))
         let deviceB = PlaybackDevice(id: "speaker-b", name: "Speaker B", type: "speaker", isActive: false)
         let expectedB = PlaybackOwner.uncertain(deviceB)
@@ -1831,6 +1832,36 @@ func runPlaybackCommandPresentationChecks(_ check: CheckRunner) {
             )
         )
         check.equal("accepted completion after empty supersession keeps none", noneSupersede.owner, .none)
+
+        var noneRollback = PlaybackState(
+            accountEpoch: 1,
+            engineEpoch: 1,
+            session: .ready,
+            owner: .none,
+            currentTrack: CurrentTrack(uri: "spotify:track:a")
+        )
+        startTransfer(&noneRollback, id: noneRollbackID, expected: expectedB)
+        check.equal("a transfer from none still presents the target", noneRollback.owner, expectedB)
+        check.equal("a transfer from none captures empty rollback", noneRollback.pendingCommands[.transfer]?.rollbackOwner, Optional(PlaybackOwner.none))
+        connectionOwner(&noneRollback, owner: .none, revision: 1)
+        check.equal("a lagging empty prior owner keeps the target", noneRollback.owner, expectedB)
+        check.equal("a lagging empty prior owner keeps the pending command", noneRollback.pendingCommands[.transfer]?.id, noneRollbackID)
+        check.nil_(
+            "a lagging empty prior owner is not a resolution",
+            noneRollback.transportCommandResolutions[noneRollbackID]
+        )
+        _ = PlaybackReducer.reduce(
+            &noneRollback,
+            envelope: presentationEnvelope(
+                source: .command,
+                event: .commandFinished(
+                    id: noneRollbackID,
+                    accepted: false,
+                    notice: PlaybackNotice(message: "Could not move playback to Speaker B")
+                )
+            )
+        )
+        check.equal("rejection after a lagging empty snapshot restores none", noneRollback.owner, .none)
 
         var laterTransfer = PlaybackState(
             accountEpoch: 1,
