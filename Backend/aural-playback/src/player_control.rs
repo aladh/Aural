@@ -180,7 +180,6 @@ pub extern "C" fn aural_playback_play_uri(uri_or_url: *const c_char, track_index
         match spirc.load(load_request) {
             Ok(_) => {
                 debug!("Spirc.load() succeeded");
-                IS_PLAYING.store(true, Ordering::SeqCst);
                 set_active_device(true);
                 0
             }

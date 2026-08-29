@@ -61,6 +61,8 @@ mod connect_cluster_apply_tests;
 #[cfg(test)]
 mod lifecycle_serialization_tests;
 #[cfg(test)]
+mod play_command_policy_tests;
+#[cfg(test)]
 mod queue_tests;
 #[cfg(test)]
 mod tests;

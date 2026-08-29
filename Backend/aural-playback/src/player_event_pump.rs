@@ -461,4 +461,95 @@ mod player_event_pump_policy {
     fn deactivation_does_not_overwrite_with_a_zero_live_position() {
         assert_eq!(resume_position_to_save_on_deactivation(0), None);
     }
+
+    fn synthetic_track() -> SpotifyUri {
+        parse_spotify_uri("spotify:track:0000000000000000000000").expect("synthetic track URI")
+    }
+
+    fn playing_event(position_ms: u32) -> PlayerEvent {
+        PlayerEvent::Playing {
+            play_request_id: 1,
+            track_id: synthetic_track(),
+            position_ms,
+        }
+    }
+
+    #[test]
+    fn a_queued_load_does_not_establish_playing_for_resume() {
+        let _guard = lock_lifecycle_test_globals();
+        IS_PLAYING.store(false, Ordering::SeqCst);
+        // The three queued-load play commands still record activity on Ok.
+        set_active_device(true);
+        assert!(
+            !IS_PLAYING.load(Ordering::SeqCst),
+            "resume must not short-circuit after a queued load that never played"
+        );
+    }
+
+    #[test]
+    fn a_playing_event_is_the_authoritative_playing_transition() {
+        let _guard = lock_lifecycle_test_globals();
+        IS_PLAYING.store(false, Ordering::SeqCst);
+        let seq_before = PLAYING_EVENT_SEQ.load(Ordering::SeqCst);
+
+        apply_player_event(playing_event(1_250), 1);
+
+        assert!(IS_PLAYING.load(Ordering::SeqCst));
+        assert!(PLAYING_EVENT_SEQ.load(Ordering::SeqCst) > seq_before);
+        assert_eq!(POSITION_MS.load(Ordering::SeqCst), 1_250);
+        assert_eq!(
+            CURRENT_TRACK_URI
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .as_deref(),
+            Some("spotify:track:0000000000000000000000")
+        );
+        IS_PLAYING.store(false, Ordering::SeqCst);
+    }
+
+    #[test]
+    fn paused_stopped_and_end_of_track_still_clear_playing() {
+        let _guard = lock_lifecycle_test_globals();
+        let track_id = synthetic_track();
+
+        IS_PLAYING.store(true, Ordering::SeqCst);
+        apply_player_event(
+            PlayerEvent::Paused {
+                play_request_id: 1,
+                track_id: track_id.clone(),
+                position_ms: 800,
+            },
+            1,
+        );
+        assert!(!IS_PLAYING.load(Ordering::SeqCst));
+        assert_eq!(POSITION_MS.load(Ordering::SeqCst), 800);
+
+        IS_PLAYING.store(true, Ordering::SeqCst);
+        apply_player_event(
+            PlayerEvent::Stopped {
+                play_request_id: 1,
+                track_id: track_id.clone(),
+            },
+            1,
+        );
+        assert!(!IS_PLAYING.load(Ordering::SeqCst));
+
+        IS_PLAYING.store(true, Ordering::SeqCst);
+        apply_player_event(
+            PlayerEvent::EndOfTrack {
+                play_request_id: 1,
+                track_id,
+            },
+            1,
+        );
+        assert!(!IS_PLAYING.load(Ordering::SeqCst));
+    }
+
+    #[test]
+    fn cleanup_still_clears_playing() {
+        let _guard = lock_lifecycle_test_globals();
+        IS_PLAYING.store(true, Ordering::SeqCst);
+        aural_playback_cleanup();
+        assert!(!IS_PLAYING.load(Ordering::SeqCst));
+    }
 }
