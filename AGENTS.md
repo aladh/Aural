@@ -198,9 +198,6 @@ The normal quality gate enforces several of these mechanically. Treat all of the
   replace fallback labels, but it must never reorder or erase a newer authoritative queue.
 - `Sources/Aural/Spotify/PlaybackCore.swift` is the only Swift file allowed to import
   `AuralPlaybackCore`. `RustPlaybackEngine.swift` is the only caller of `PlaybackCore`.
-  Every remaining C export in `aural_playback.h` must be called from `PlaybackCore.swift`;
-  `Scripts/check.sh` compares the header with the static archive and then requires each
-  header symbol to appear in that file.
 - Playlist writes use the injected `PlaylistMutating` port and `PlaylistMutationController`.
   Do not add add/remove methods to read-only `CatalogProviding`, and do not leak Pathfinder
   mutation DTOs into views.
