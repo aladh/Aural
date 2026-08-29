@@ -838,12 +838,12 @@ fn only_a_playing_event_stores_is_playing_true() {
         }
         let source = std::fs::read_to_string(&path).expect("read rust source");
         let production = strip_cfg_test_modules(&source);
-        if code_contains(production, "IS_PLAYING.store(true") {
+        if code_contains(&production, "IS_PLAYING.store(true") {
             files_with_true_store.push(file_name.to_string());
         }
         if file_name == "player_event_pump.rs" {
             playing_arm_stores_true = code_contains(
-                &match_arm_body(production, "PlayerEvent::Playing"),
+                &match_arm_body(&production, "PlayerEvent::Playing"),
                 "IS_PLAYING.store(true",
             );
         }
@@ -860,11 +860,59 @@ fn only_a_playing_event_stores_is_playing_true() {
     );
 }
 
-fn strip_cfg_test_modules(source: &str) -> &str {
-    source
-        .split_once("\n#[cfg(test)]\nmod ")
-        .map(|(production, _)| production)
-        .unwrap_or(source)
+fn strip_cfg_test_modules(source: &str) -> String {
+    let bytes = source.as_bytes();
+    let marker = "#[cfg(test)]";
+    let mut out = String::new();
+    let mut search_from = 0;
+    while let Some(rel) = source[search_from..].find(marker) {
+        let attr_start = search_from + rel;
+        out.push_str(&source[search_from..attr_start]);
+        let after_attr = attr_start + marker.len();
+        let ident = skip_ws_and_comments(bytes, after_attr);
+        if source[ident..].starts_with("mod ") {
+            let name_start = ident + 4;
+            let name_end = source[name_start..]
+                .find(|c: char| !c.is_ascii_alphanumeric() && c != '_')
+                .map(|idx| name_start + idx)
+                .unwrap_or(source.len());
+            let after_name = skip_ws_and_comments(bytes, name_end);
+            if after_name < bytes.len() && bytes[after_name] == b'{' {
+                search_from = matching_brace(bytes, after_name) + 1;
+                continue;
+            }
+            if after_name < bytes.len() && bytes[after_name] == b';' {
+                search_from = after_name + 1;
+                continue;
+            }
+        }
+        out.push_str(marker);
+        search_from = after_attr;
+    }
+    out.push_str(&source[search_from..]);
+    out
+}
+
+#[test]
+fn strip_cfg_test_modules_keeps_production_after_a_test_module() {
+    let source = concat!(
+        "fn before() {}\n",
+        "#[cfg(test)]\n",
+        "mod tests {\n",
+        "    IS_PLAYING.store(true, Ordering::SeqCst);\n",
+        "}\n",
+        "fn after() { IS_PLAYING.store(true, Ordering::SeqCst); }\n",
+    );
+    let stripped = strip_cfg_test_modules(source);
+    assert!(
+        !code_contains(&stripped, "mod tests"),
+        "the test module body must be omitted"
+    );
+    assert!(
+        code_contains(&stripped, "fn after"),
+        "production after a test module must still be scanned"
+    );
+    assert!(code_contains(&stripped, "IS_PLAYING.store(true"));
 }
 
 fn code_contains(source: &str, needle: &str) -> bool {
