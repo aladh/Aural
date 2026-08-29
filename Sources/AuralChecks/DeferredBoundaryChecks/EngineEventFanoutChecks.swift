@@ -202,6 +202,7 @@ private func collectSequential(
     return recorder.load()
 }
 
+@MainActor
 private func runTerminationAroundDelivery(_ check: CheckRunner) {
     let fanout = EngineEventFanout()
     let surviving = SequenceRecorder()
@@ -264,6 +265,7 @@ private func runTerminationAroundDelivery(_ check: CheckRunner) {
     check.equal("surviving subscriber still receives both assigned sequences", surviving.load(), [1, 2])
 }
 
+@MainActor
 private func runTerminationDuringDelivery(_ check: CheckRunner) {
     let fanout = EngineEventFanout()
     let surviving = SequenceRecorder()
@@ -309,6 +311,7 @@ private func runTerminationDuringDelivery(_ check: CheckRunner) {
     check.equal("surviving subscriber received both envelopes once", surviving.load(), [1, 2])
 }
 
+@MainActor
 private func runEmitAfterLastSubscriber(_ check: CheckRunner) {
     let fanout = EngineEventFanout()
     let terminated = DispatchSemaphore(value: 0)
