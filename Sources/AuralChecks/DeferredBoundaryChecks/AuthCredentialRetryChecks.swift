@@ -144,15 +144,11 @@ func runAuthCredentialRetryChecks(_ check: CheckRunner) async {
         try? await session.adopt(grant(access: "access-new", refresh: "refresh-new"))
         refresher.fail(KeymasterAuthError.grantRevoked)
 
-        var stale = false
-        do {
-            _ = try await pending.value
-        } catch KeymasterSessionError.noGrant {
-            stale = true
-        } catch {
-            check.check("stale invalid_grant is noGrant, got \(error)", false)
-        }
-        check.check("stale invalid_grant does not claim the replacement was revoked", stale)
+        check.equal(
+            "stale invalid_grant returns the replacement bearer",
+            try? await pending.value,
+            "access-new"
+        )
         check.equal("the adopted grant remains", store.stored?.refreshToken, "refresh-new")
         check.equal("stale invalid_grant does not clear cookies", cookies.count, 0)
         await session.drainActor()
@@ -174,18 +170,21 @@ func runAuthCredentialRetryChecks(_ check: CheckRunner) async {
 
         let superseded = Task { try await session.refreshIgnoringExpiry(rejected: "access-a") }
         await refresher.waitUntilParked()
+        let joinedAccess = Task { try await session.accessToken() }
+        _ = await session.hasGrant
         try? await session.adopt(grant(access: "access-adopted", refresh: "refresh-adopted"))
         refresher.complete(grant(access: "access-stale", refresh: "refresh-stale"))
 
-        var adoptStale = false
-        do {
-            _ = try await superseded.value
-        } catch KeymasterSessionError.noGrant {
-            adoptStale = true
-        } catch {
-            check.check("adopt during refresh is noGrant, got \(error)", false)
-        }
-        check.check("a refresh that loses to adopt does not persist", adoptStale)
+        check.equal(
+            "a refresh that loses to adopt returns the adopted bearer",
+            try? await superseded.value,
+            "access-adopted"
+        )
+        check.equal(
+            "a parallel accessToken during adopt returns the adopted bearer",
+            try? await joinedAccess.value,
+            "access-adopted"
+        )
         check.equal("adopted tokens survive the stale success", store.stored?.accessToken, "access-adopted")
 
         let loggedOut = Task { try await session.refreshIgnoringExpiry(rejected: "access-adopted") }
@@ -299,6 +298,36 @@ func runAuthCredentialRetryChecks(_ check: CheckRunner) async {
             ["access-a", "access-b"]
         )
         check.equal("retry carries the replacement client token", transport.clientTokens, ["client-a", "client-b"])
+    }
+
+    await check.suite("Partner 401 drops the client token even when bearer refresh throws") {
+        let tokens = CredentialSequence(values: ["access-a"])
+        let clients = CredentialSequence(values: ["client-a"])
+        let invalidatedClient = RecordingInvalidator()
+        let transport = ScriptedTransport(responses: [
+            (401, Data()),
+            (200, profileBody),
+        ])
+        let api = PartnerAPI(
+            accessToken: { tokens.next() },
+            clientToken: { clients.next() },
+            invalidateAccessToken: { _ in throw KeymasterSessionError.grantRevoked },
+            invalidateClientToken: { await invalidatedClient.record($0) },
+            transport: transport.send
+        )
+
+        var revoked = false
+        do {
+            _ = try await api.profile()
+        } catch KeymasterSessionError.grantRevoked {
+            revoked = true
+        } catch {
+            check.check("bearer revoke stays grantRevoked, got \(error)", false)
+        }
+        check.check("a revoked bearer still surfaces grantRevoked", revoked)
+        check.equal("the named client token is dropped before the bearer throw", await invalidatedClient.values, ["client-a"])
+        check.equal("a terminal bearer throw does not retry the request", transport.callCount, 1)
+        check.equal("access is fetched only for the first attempt", tokens.callCount, 1)
     }
 
     await check.suite("A second Partner 401 stops") {

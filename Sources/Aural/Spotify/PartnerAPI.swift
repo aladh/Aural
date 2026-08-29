@@ -181,11 +181,14 @@ nonisolated struct SpotifyCredentials: Sendable {
         let sent = try await attempt()
         guard sent.status == 401 else { return (sent.body, sent.status) }
 
-        if let rejected = sent.accessToken {
-            try await invalidateAccessToken(rejected)
-        }
+        // Client-token drop is non-throwing. Do it first so a throwing bearer refresh
+        // (grantRevoked, noGrant, or a superseded spend) cannot leave a dead client cached
+        // for the rest of its fortnight.
         if let rejected = sent.clientToken {
             await invalidateClientToken?(rejected)
+        }
+        if let rejected = sent.accessToken {
+            try await invalidateAccessToken(rejected)
         }
 
         let retried = try await attempt()

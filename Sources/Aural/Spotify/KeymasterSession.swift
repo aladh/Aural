@@ -40,8 +40,9 @@ actor KeymasterSession {
     private var tokens: KeymasterTokens?
     private var hasLoadedStore = false
     /// Concurrent first callers join this rather than observing `hasLoadedStore` before the
-    /// detached store read has assigned `tokens`.
-    private var storeLoadInFlight: Task<KeymasterTokens?, Never>?
+    /// detached store read has assigned `tokens`. The task includes the generation-guarded
+    /// assignment, not only the disk read.
+    private var storeLoadInFlight: Task<Void, Never>?
     private var refreshInFlight: Task<KeymasterTokens, Error>?
     /// Advanced by `supersedeRefresh()`. A refresh that was in flight when the grant was
     /// cleared or replaced must not write what it eventually returns — that would put the
@@ -109,15 +110,13 @@ actor KeymasterSession {
         if hasLoadedStore { return }
 
         if let storeLoadInFlight {
-            let storedTokens = await storeLoadInFlight.value
-            applyLoadedGrant(storedTokens)
+            await storeLoadInFlight.value
             return
         }
 
         let startedAt = generation
-        let store = store
-        let task = Task.detached(priority: .utility) {
-            store.load()
+        let task = Task {
+            await self.commitStoreLoad(startedAt: startedAt)
         }
         storeLoadInFlight = task
         defer {
@@ -125,18 +124,23 @@ actor KeymasterSession {
                 storeLoadInFlight = nil
             }
         }
+        await task.value
+    }
 
-        let storedTokens = await task.value
+    private func commitStoreLoad(startedAt: Int) async {
+        let store = store
+        let storedTokens = await Task.detached(priority: .utility) {
+            store.load()
+        }.value
         applyLoadedGrant(storedTokens, startedAt: startedAt)
     }
 
-    /// Joiners of `storeLoadInFlight` can resume before the owner assigns `tokens`.
-    /// Applying here with the same adopt/clear guards keeps `accessToken()` from throwing
-    /// `noGrant` while a grant is sitting in the just-finished read.
-    private func applyLoadedGrant(_ storedTokens: KeymasterTokens?, startedAt: Int? = nil) {
-        if let startedAt, generation != startedAt { return }
-        if hasLoadedStore { return }
-        tokens = tokens ?? storedTokens
+    /// Only the in-flight load task assigns. Joiners wait for that task so they cannot observe
+    /// `tokens == nil` after the disk read has finished. Adopt/clear bump `generation` and set
+    /// `hasLoadedStore` first, so a stale snapshot is discarded.
+    private func applyLoadedGrant(_ storedTokens: KeymasterTokens?, startedAt: Int) {
+        guard generation == startedAt, !hasLoadedStore else { return }
+        tokens = storedTokens
         hasLoadedStore = true
     }
 
@@ -192,7 +196,14 @@ actor KeymasterSession {
         }
 
         if refreshInFlight != nil || current.needsRefresh(now: now) {
-            return try await refreshed(from: current).accessToken
+            do {
+                return try await refreshed(from: current).accessToken
+            } catch KeymasterSessionError.noGrant {
+                if let tokens, !tokens.needsRefresh(now: now) {
+                    return tokens.accessToken
+                }
+                throw KeymasterSessionError.noGrant
+            }
         }
 
         return current.accessToken
@@ -215,7 +226,14 @@ actor KeymasterSession {
         guard current.accessToken == rejected else {
             return current.accessToken
         }
-        return try await refreshed(from: current).accessToken
+        do {
+            return try await refreshed(from: current).accessToken
+        } catch KeymasterSessionError.noGrant {
+            if let tokens, tokens.accessToken != rejected {
+                return tokens.accessToken
+            }
+            throw KeymasterSessionError.noGrant
+        }
     }
 
     private func refreshed(from current: KeymasterTokens) async throws -> KeymasterTokens {
@@ -225,7 +243,11 @@ actor KeymasterSession {
         // commit, not just the network call, so joiners observe the same persisted grant
         // or `KeymasterSessionError` as the owner.
         if let refreshInFlight {
-            return try await refreshInFlight.value
+            do {
+                return try await refreshInFlight.value
+            } catch is CancellationError {
+                throw KeymasterSessionError.noGrant
+            }
         }
 
         let startedAt = generation
