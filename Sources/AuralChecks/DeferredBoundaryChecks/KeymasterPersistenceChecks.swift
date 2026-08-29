@@ -40,10 +40,12 @@ func runKeymasterPersistenceChecks(_ check: CheckRunner) {
         let secure = RecordingTokenStore()
         let legacy = RecordingLegacyStore(tokens: tokens)
         let store = KeymasterMigratingStore(secureStore: secure, legacyStore: legacy)
+        let snapshot = store.loadGrant()
 
-        check.equal("legacy success returns the grant", store.load()?.refreshToken, "rt")
-        check.equal("legacy success writes the grant securely", secure.stored?.refreshToken, "rt")
-        check.equal("legacy success is a single secure save", secure.saveCount, 1)
+        check.equal("legacy success returns the grant", snapshot.tokens?.refreshToken, "rt")
+        check.check("legacy success asks the session to persist", snapshot.needsSecurePersist)
+        check.nil_("load does not write leftover onto the secure store", secure.stored)
+        check.equal("load does not save leftover itself", secure.saveCount, 0)
         check.nil_("legacy success deletes the plaintext copy", legacy.tokens)
     }
 
@@ -52,14 +54,16 @@ func runKeymasterPersistenceChecks(_ check: CheckRunner) {
         let secure = FailingTokenStore()
         let legacy = RecordingLegacyStore(tokens: tokens)
         let store = KeymasterMigratingStore(secureStore: secure, legacyStore: legacy)
+        let snapshot = store.loadGrant()
 
         check.equal(
             "a failed migration still returns the current-session grant",
-            store.load()?.refreshToken,
+            snapshot.tokens?.refreshToken,
             "rt"
         )
+        check.check("a leftover grant still needs a later secure persist", snapshot.needsSecurePersist)
         check.nil_("a failed migration does not retain plaintext", legacy.tokens)
-        check.nil_("a failed migration does not invent a secure copy", secure.stored)
+        check.nil_("load does not invent a secure copy", secure.stored)
     }
 
     check.suite("Unreadable leftover plaintext is still erased") {
@@ -120,11 +124,11 @@ func runKeymasterPersistenceSourceContractChecks(_ check: CheckRunner) {
                     && containsPersistenceToken(store, "UserDefaults.standard.removeObject(forKey: key)")
             )
             check.check(
-                "legacy plaintext is deleted after a migration attempt even when save fails",
+                "legacy plaintext is deleted without a load-time secure write",
                 containsPersistenceToken(store, "legacyStore.clear()")
-                    && containsPersistenceToken(store, "defer { legacyStore.clear() }")
-                    && containsPersistenceToken(store, "guard let tokens = legacyStore.load() else { return nil }")
-                    && containsPersistenceToken(store, KeymasterGrantPersistenceDiagnostics.legacyMigrationSaveFailed)
+                    && containsPersistenceToken(store, "needsSecurePersist: true")
+                    && containsPersistenceToken(session, "persistLeftoverGrantIfCurrent")
+                    && containsPersistenceToken(session, "store.loadGrant()")
             )
             check.check(
                 "corrupt stored grants decode through the sanitized codec",
@@ -139,8 +143,6 @@ func runKeymasterPersistenceSourceContractChecks(_ check: CheckRunner) {
                 !containsPersistenceToken(keychain, "kSecUseDataProtectionKeychain as String")
                     && !containsPersistenceToken(keychain, "[kSecUseDataProtectionKeychain")
                     && !containsPersistenceToken(keychain, "Shared keychain access group")
-                    && containsPersistenceToken(keychain, "omitted on purpose")
-                    && containsPersistenceToken(keychain, "errSecMissingEntitlement")
             )
         }
     }
@@ -190,6 +192,99 @@ func runKeymasterSessionPersistenceChecks(_ check: CheckRunner) async {
         await session.clear()
         check.nil_("clear removes the secure grant", secure.stored)
         check.nil_("clear removes leftover plaintext", legacy.tokens)
+    }
+
+    await check.suite("Session leftover load persists only after the generation still owns the slot") {
+        let leftover = persistenceGrant(access: "legacy-at", refresh: "legacy-rt")
+        let secure = RecordingTokenStore()
+        let legacy = RecordingLegacyStore(tokens: leftover)
+        let session = KeymasterSession(
+            store: KeymasterMigratingStore(secureStore: secure, legacyStore: legacy),
+            refresher: { _ in throw KeymasterAuthError.tokenExchangeFailed(500) },
+            cookieCleanup: {}
+        )
+        check.check("leftover plaintext becomes a current grant", await session.hasGrant)
+        check.equal("the session commits leftover plaintext securely", secure.stored?.refreshToken, "legacy-rt")
+        check.nil_("leftover plaintext is deleted after the committed load", legacy.tokens)
+        check.equal("the leftover bearer is live", try? await session.accessToken(), "legacy-at")
+    }
+
+    await check.suite("Failed leftover persist keeps the current-session grant") {
+        let leftover = persistenceGrant(access: "legacy-at", refresh: "legacy-rt")
+        let secure = FailingTokenStore()
+        let legacy = RecordingLegacyStore(tokens: leftover)
+        let session = KeymasterSession(
+            store: KeymasterMigratingStore(secureStore: secure, legacyStore: legacy),
+            refresher: { _ in throw KeymasterAuthError.tokenExchangeFailed(500) },
+            cookieCleanup: {}
+        )
+        check.check("a leftover grant still loads for this process", await session.hasGrant)
+        check.nil_("failed persist does not retain plaintext", legacy.tokens)
+        check.nil_("failed persist does not invent a secure copy", secure.stored)
+        check.equal("the leftover bearer stays in the current session", try? await session.accessToken(), "legacy-at")
+    }
+
+    await check.suite("Adopt during leftover load wins over the stale read") {
+        let leftover = persistenceGrant(access: "legacy-at", refresh: "legacy-rt")
+        let secure = GatedLoadTokenStore(initial: nil)
+        let legacy = RecordingLegacyStore(tokens: leftover)
+        let session = KeymasterSession(
+            store: KeymasterMigratingStore(secureStore: secure, legacyStore: legacy),
+            refresher: { _ in throw KeymasterAuthError.tokenExchangeFailed(500) },
+            cookieCleanup: {}
+        )
+        let first = Task { try await session.accessToken() }
+        await secure.waitUntilLoadEntered()
+        do {
+            try await session.adopt(persistenceGrant(access: "adopted-access", refresh: "adopted-refresh"))
+        } catch {
+            check.check("adopt during leftover load succeeds", false)
+        }
+        secure.releaseLoad()
+        check.equal("adopt during leftover load is the live bearer", try? await first.value, "adopted-access")
+        check.equal("the leftover snapshot is not persisted", secure.stored?.accessToken, "adopted-access")
+        check.nil_("leftover plaintext is still deleted", legacy.tokens)
+    }
+
+    await check.suite("Logout during leftover load wins over the stale read") {
+        let leftover = persistenceGrant(access: "legacy-at", refresh: "legacy-rt")
+        let secure = GatedLoadTokenStore(initial: nil)
+        let legacy = RecordingLegacyStore(tokens: leftover)
+        let session = KeymasterSession(
+            store: KeymasterMigratingStore(secureStore: secure, legacyStore: legacy),
+            refresher: { _ in throw KeymasterAuthError.tokenExchangeFailed(500) },
+            cookieCleanup: {}
+        )
+        let first = Task { await session.hasGrant }
+        await secure.waitUntilLoadEntered()
+        await session.clear()
+        secure.releaseLoad()
+        check.check("logout during leftover load leaves no grant", await first.value == false)
+        check.nil_("logout does not let leftover plaintext persist", secure.stored)
+        check.nil_("logout still deletes leftover plaintext", legacy.tokens)
+    }
+
+    await check.suite("Adopt during leftover persist repairs a stale secure write") {
+        let leftover = persistenceGrant(access: "legacy-at", refresh: "legacy-rt")
+        let secure = GatedFirstSaveTokenStore()
+        let legacy = RecordingLegacyStore(tokens: leftover)
+        let session = KeymasterSession(
+            store: KeymasterMigratingStore(secureStore: secure, legacyStore: legacy),
+            refresher: { _ in throw KeymasterAuthError.tokenExchangeFailed(500) },
+            cookieCleanup: {}
+        )
+        let first = Task { await session.hasGrant }
+        await secure.waitUntilFirstSaveEntered()
+        do {
+            try await session.adopt(persistenceGrant(access: "adopted-access", refresh: "adopted-refresh"))
+        } catch {
+            check.check("adopt during leftover persist succeeds", false)
+        }
+        secure.releaseFirstSave()
+        check.check("adopt during leftover persist keeps a grant", await first.value)
+        check.equal("the adopted grant is the live bearer", try? await session.accessToken(), "adopted-access")
+        check.equal("a stale leftover write does not remain on disk", secure.stored?.accessToken, "adopted-access")
+        check.nil_("leftover plaintext is still deleted", legacy.tokens)
     }
 }
 
@@ -279,7 +374,113 @@ private final class RecordingLegacyStore: KeymasterLegacyTokenReading, @unchecke
     }
 }
 
-private func auralPersistenceSourceFile(_ relativePath: String) throws -> String {
+private final class GatedLoadTokenStore: KeymasterTokenStoring, @unchecked Sendable {
+    private let lock = NSLock()
+    private var value: KeymasterTokens?
+    private var entered: CheckedContinuation<Void, Never>?
+    private var hasEntered = false
+    private let gate = DispatchSemaphore(value: 0)
+
+    init(initial: KeymasterTokens?) {
+        value = initial
+    }
+
+    var stored: KeymasterTokens? {
+        lock.withLock { value }
+    }
+
+    func load() -> KeymasterTokens? {
+        lock.lock()
+        let snapshot = value
+        let continuation = entered
+        entered = nil
+        hasEntered = true
+        lock.unlock()
+        continuation?.resume()
+        gate.wait()
+        return snapshot
+    }
+
+    func save(_ tokens: KeymasterTokens) throws {
+        lock.withLock { value = tokens }
+    }
+
+    func clear() {
+        lock.withLock { value = nil }
+    }
+
+    func waitUntilLoadEntered() async {
+        await withCheckedContinuation { continuation in
+            lock.lock()
+            if hasEntered {
+                lock.unlock()
+                continuation.resume()
+            } else {
+                entered = continuation
+                lock.unlock()
+            }
+        }
+    }
+
+    func releaseLoad() {
+        gate.signal()
+    }
+}
+
+private final class GatedFirstSaveTokenStore: KeymasterTokenStoring, @unchecked Sendable {
+    private let lock = NSLock()
+    private var value: KeymasterTokens?
+    private var saves = 0
+    private var entered: CheckedContinuation<Void, Never>?
+    private var hasEntered = false
+    private let gate = DispatchSemaphore(value: 0)
+
+    var stored: KeymasterTokens? {
+        lock.withLock { value }
+    }
+
+    func load() -> KeymasterTokens? {
+        lock.withLock { value }
+    }
+
+    func save(_ tokens: KeymasterTokens) throws {
+        lock.lock()
+        saves += 1
+        let shouldPark = saves == 1
+        if shouldPark {
+            hasEntered = true
+            let continuation = entered
+            entered = nil
+            lock.unlock()
+            continuation?.resume()
+            gate.wait()
+            lock.lock()
+        }
+        value = tokens
+        lock.unlock()
+    }
+
+    func clear() {
+        lock.withLock { value = nil }
+    }
+
+    func waitUntilFirstSaveEntered() async {
+        await withCheckedContinuation { continuation in
+            lock.lock()
+            if hasEntered {
+                lock.unlock()
+                continuation.resume()
+            } else {
+                entered = continuation
+                lock.unlock()
+            }
+        }
+    }
+
+    func releaseFirstSave() {
+        gate.signal()
+    }
+}
     let checksDirectory = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
     let sources = checksDirectory.deletingLastPathComponent().deletingLastPathComponent()
     let url = sources.appending(path: relativePath)

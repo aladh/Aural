@@ -15,8 +15,23 @@ import Foundation
 /// observe what was written cannot check it.
 nonisolated protocol KeymasterTokenStoring: Sendable {
     func load() -> KeymasterTokens?
+    func loadGrant() -> KeymasterGrantLoad
     func save(_ tokens: KeymasterTokens) throws
     func clear()
+}
+
+extension KeymasterTokenStoring {
+    func loadGrant() -> KeymasterGrantLoad {
+        KeymasterGrantLoad(tokens: load(), needsSecurePersist: false)
+    }
+}
+
+/// Result of reading persisted tokens. `needsSecurePersist` is true only for a leftover
+/// plaintext grant that `load()` itself must not write; the session commits it after it
+/// still owns the load generation.
+struct KeymasterGrantLoad: Sendable, Equatable {
+    var tokens: KeymasterTokens?
+    var needsSecurePersist: Bool
 }
 
 /// One-way reader for the retired defaults-backed grant. Production code must never write
@@ -86,10 +101,12 @@ nonisolated struct KeymasterLegacyDefaultsStore: KeymasterLegacyTokenReading {
 /// Secure storage with a one-way migration from the retired defaults-backed store.
 ///
 /// Every build uses Keychain as the writer. A leftover `keymaster.tokens.v1` value is
-/// read once, offered to the secure store, and then deleted even if that write fails so
-/// the rotating refresh token is not deliberately kept in plaintext. A successful decode
-/// still returns the grant for the current process; a corrupt blob fails closed after a
-/// sanitized diagnostic and the leftover plaintext is still deleted.
+/// read once and then deleted even if secure persistence later fails, so the rotating
+/// refresh token is not deliberately kept in plaintext. `load()` / `loadGrant()` never
+/// write the secure store: a concurrent `adopt` or `clear` already owns disk, and a
+/// leftover save belongs to `KeymasterSession` only after that load generation still
+/// holds the slot. A successful decode still returns the grant for the current process;
+/// a corrupt blob fails closed after a sanitized diagnostic.
 nonisolated struct KeymasterMigratingStore: KeymasterTokenStoring {
     private let secureStore: any KeymasterTokenStoring
     private let legacyStore: any KeymasterLegacyTokenReading
@@ -103,21 +120,19 @@ nonisolated struct KeymasterMigratingStore: KeymasterTokenStoring {
     }
 
     func load() -> KeymasterTokens? {
+        loadGrant().tokens
+    }
+
+    func loadGrant() -> KeymasterGrantLoad {
         if let tokens = secureStore.load() {
             legacyStore.clear()
-            return tokens
+            return KeymasterGrantLoad(tokens: tokens, needsSecurePersist: false)
         }
         defer { legacyStore.clear() }
-        guard let tokens = legacyStore.load() else { return nil }
-
-        do {
-            try secureStore.save(tokens)
-        } catch {
-            AuralLog.authentication.error(
-                "\(KeymasterGrantPersistenceDiagnostics.legacyMigrationSaveFailed, privacy: .public)"
-            )
+        guard let tokens = legacyStore.load() else {
+            return KeymasterGrantLoad(tokens: nil, needsSecurePersist: false)
         }
-        return tokens
+        return KeymasterGrantLoad(tokens: tokens, needsSecurePersist: true)
     }
 
     func save(_ tokens: KeymasterTokens) throws {

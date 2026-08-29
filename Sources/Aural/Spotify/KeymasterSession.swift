@@ -101,7 +101,9 @@ actor KeymasterSession {
     /// The load itself is a single flight: `hasLoadedStore` is not set until the read finishes,
     /// so a concurrent early `accessToken()` cannot observe an empty grant and throw `noGrant`
     /// while the store still holds one. `adopt` and `clear` bump `generation` and win over a
-    /// stale read the same way a superseded refresh does.
+    /// stale read the same way a superseded refresh does. Leftover plaintext is never written
+    /// to Keychain from the detached read; that commit happens only if this generation still
+    /// owns the slot afterwards.
     private func loadStoredGrantIfNeeded() async {
         if hasLoadedStore { return }
 
@@ -125,10 +127,12 @@ actor KeymasterSession {
 
     private func commitStoreLoad(startedAt: Int) async {
         let store = store
-        let storedTokens = await Task.detached(priority: .utility) {
-            store.load()
+        let snapshot = await Task.detached(priority: .utility) {
+            store.loadGrant()
         }.value
-        applyLoadedGrant(storedTokens, startedAt: startedAt)
+        applyLoadedGrant(snapshot.tokens, startedAt: startedAt)
+        guard snapshot.needsSecurePersist else { return }
+        await persistLeftoverGrantIfCurrent(snapshot.tokens, startedAt: startedAt)
     }
 
     /// Only the in-flight load task assigns. Joiners wait for that task so they cannot observe
@@ -138,6 +142,39 @@ actor KeymasterSession {
         guard generation == startedAt, !hasLoadedStore else { return }
         tokens = storedTokens
         hasLoadedStore = true
+    }
+
+    /// Writes a leftover plaintext grant only when this load still owns the session. If
+    /// `adopt`/`clear` won while the Keychain write ran, restore that later disk state.
+    private func persistLeftoverGrantIfCurrent(_ leftover: KeymasterTokens?, startedAt: Int) async {
+        guard generation == startedAt, hasLoadedStore, let leftover else { return }
+        let store = store
+        do {
+            try await Task.detached(priority: .utility) {
+                try store.save(leftover)
+            }.value
+        } catch {
+            AuralLog.authentication.error(
+                "\(KeymasterGrantPersistenceDiagnostics.legacyMigrationSaveFailed, privacy: .public)"
+            )
+            return
+        }
+        guard generation != startedAt else { return }
+        reconcileStoreAfterSupersededPersist()
+    }
+
+    private func reconcileStoreAfterSupersededPersist() {
+        if let tokens {
+            do {
+                try store.save(tokens)
+            } catch {
+                AuralLog.authentication.error(
+                    "\(KeymasterGrantPersistenceDiagnostics.legacyMigrationSaveFailed, privacy: .public)"
+                )
+            }
+        } else {
+            store.clear()
+        }
     }
 
     var username: String? {
