@@ -8,7 +8,7 @@ pure `AuralChecks` product and the shipping `AuralApp` executable.
 The executable pure suites cover protobuf, shuffle, playlist ordering, playback support policy,
 URI/pagination/loopback parsing, deterministic playback reducer traces, and the command-effect
 spike in [ADR 003](../../../docs/ADR-003-playback-command-effects.md). The concrete suite covers
-auth parsing and PKCE, wire codecs, catalog resolution, formatting, privacy-safe API failure
+auth parsing and PKCE, bearer 401 retry and grant-load single-flight, wire codecs, catalog resolution, formatting, privacy-safe API failure
 surfaces, injected coordinator/queue invalidation workflows, typed playback-command failures,
 `PlaybackEffectRegistry` task cancellation, transient mutation feedback, native playlist
 add/remove, native queue add/remove, PCM writer wake/bypass, and serialized engine event

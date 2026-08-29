@@ -39,6 +39,9 @@ actor KeymasterSession {
     private let cookieCleanup: @Sendable () -> Void
     private var tokens: KeymasterTokens?
     private var hasLoadedStore = false
+    /// Concurrent first callers join this rather than observing `hasLoadedStore` before the
+    /// detached store read has assigned `tokens`.
+    private var storeLoadInFlight: Task<KeymasterTokens?, Never>?
     private var refreshInFlight: Task<KeymasterTokens, Error>?
     /// Advanced by `supersedeRefresh()`. A refresh that was in flight when the grant was
     /// cleared or replaced must not write what it eventually returns — that would put the
@@ -97,14 +100,33 @@ actor KeymasterSession {
     /// Loads persisted state lazily on this actor rather than synchronously while the main-actor
     /// controller is being initialized. A distribution build's Keychain lookup can take time to
     /// resolve an older item's ACL; that must not prevent SwiftUI from presenting the window.
+    ///
+    /// The load itself is a single flight: `hasLoadedStore` is not set until the read finishes,
+    /// so a concurrent early `accessToken()` cannot observe an empty grant and throw `noGrant`
+    /// while the store still holds one. `adopt` and `clear` bump `generation` and win over a
+    /// stale read the same way a superseded refresh does.
     private func loadStoredGrantIfNeeded() async {
-        guard !hasLoadedStore else { return }
-        hasLoadedStore = true
+        if hasLoadedStore { return }
+
+        if let storeLoadInFlight {
+            _ = await storeLoadInFlight.value
+            return
+        }
+
         let startedAt = generation
         let store = store
-        let storedTokens = await Task.detached(priority: .utility) {
+        let task = Task.detached(priority: .utility) {
             store.load()
-        }.value
+        }
+        storeLoadInFlight = task
+        defer {
+            if storeLoadInFlight == task {
+                storeLoadInFlight = nil
+            }
+        }
+
+        let storedTokens = await task.value
+        hasLoadedStore = true
         guard generation == startedAt, tokens == nil else { return }
         tokens = storedTokens
     }
@@ -156,6 +178,9 @@ actor KeymasterSession {
     /// do anything at all, and "not authorized yet" is a state the UI already handles.
     func accessToken(now: Date = Date()) async throws -> String {
         await loadStoredGrantIfNeeded()
+        if let refreshInFlight {
+            return try await refreshInFlight.value.accessToken
+        }
         guard let current = tokens else {
             throw KeymasterSessionError.noGrant
         }
@@ -164,6 +189,26 @@ actor KeymasterSession {
             return current.accessToken
         }
 
+        return try await refreshed(from: current).accessToken
+    }
+
+    /// A token that is valid now, refreshing even when the clock still considers the current
+    /// access token live.
+    ///
+    /// HTTP 401 names the bearer that request actually sent. A token revoked mid-validity
+    /// (`needsRefresh` is still false for up to ~55 minutes) must be spent here or every retry
+    /// would carry the same dead credential. A late refusal for a bearer this session has
+    /// already replaced is inert: the replacement's rotating refresh token must not be spent.
+    /// Concurrent refusals of the same bearer join `refreshed(from:)` so that token is spent
+    /// once.
+    func refreshIgnoringExpiry(rejected: String) async throws -> String {
+        await loadStoredGrantIfNeeded()
+        guard let current = tokens else {
+            throw KeymasterSessionError.noGrant
+        }
+        guard current.accessToken == rejected else {
+            return current.accessToken
+        }
         return try await refreshed(from: current).accessToken
     }
 
@@ -211,6 +256,13 @@ actor KeymasterSession {
             clear()
             announceRevocation()
             throw KeymasterSessionError.grantRevoked
+        } catch {
+            // Adopt, logout, or a newer refresh already owns the slot; a cancelled or
+            // transient failure from this spend must not be reported as the replacement's.
+            guard startedAt == generation else {
+                throw KeymasterSessionError.noGrant
+            }
+            throw error
         }
 
         // Back on the actor. A logout that landed during the network call already cleared the

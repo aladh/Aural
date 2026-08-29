@@ -28,32 +28,41 @@ nonisolated struct SpotifyWebPlayerAPI: Sendable {
     static let queueURL = URL(string: "https://api.spotify.com/v1/me/player/queue")!
 
     private let accessToken: @Sendable () async throws -> String
+    private let invalidateAccessToken: @Sendable (String) async throws -> Void
     private let transport: Transport
 
     init(
         accessToken: @escaping @Sendable () async throws -> String = {
             try await KeymasterSession.shared.accessToken()
         },
+        invalidateAccessToken: @escaping @Sendable (String) async throws -> Void = SpotifyCredentials
+            .invalidateSharedAccess,
         transport: @escaping Transport = { try await URLSession.shared.data(for: $0) }
     ) {
         self.accessToken = accessToken
+        self.invalidateAccessToken = invalidateAccessToken
         self.transport = transport
     }
 
     func queue() async throws -> [CatalogTrack] {
-        var request = URLRequest(url: Self.queueURL)
-        request.httpMethod = "GET"
-        request.setValue("application/json", forHTTPHeaderField: "Accept")
-        try await request.setValue("Bearer \(accessToken())", forHTTPHeaderField: "Authorization")
+        let sent = try await SpotifyCredentials.retryingRefusedCredentials(
+            invalidateAccessToken: invalidateAccessToken
+        ) {
+            var request = URLRequest(url: Self.queueURL)
+            request.httpMethod = "GET"
+            request.setValue("application/json", forHTTPHeaderField: "Accept")
+            try await request.setValue("Bearer \(accessToken())", forHTTPHeaderField: "Authorization")
 
-        let (data, response) = try await transport(request)
-        guard let http = response as? HTTPURLResponse else {
-            throw SpotifyWebPlayerAPIError.malformedResponse
+            let (data, response) = try await transport(request)
+            guard let http = response as? HTTPURLResponse else {
+                throw SpotifyWebPlayerAPIError.malformedResponse
+            }
+            return (data, http.statusCode, SpotifyCredentials.accessTokenCarried(by: request), nil)
         }
-        guard http.statusCode == 200 else {
-            throw SpotifyWebPlayerAPIError.requestFailed(http.statusCode)
+        guard sent.status == 200 else {
+            throw SpotifyWebPlayerAPIError.requestFailed(sent.status)
         }
-        return try Self.decodeQueue(data)
+        return try Self.decodeQueue(sent.body)
     }
 
     static func decodeQueue(_ data: Data) throws -> [CatalogTrack] {
