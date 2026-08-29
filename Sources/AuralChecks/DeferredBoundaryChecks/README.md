@@ -6,10 +6,10 @@ non-shipping `AuralBoundaryChecks` executable against `AuralCore`; they are excl
 pure `AuralChecks` product and the shipping `AuralApp` executable.
 
 The executable pure suites cover protobuf, shuffle, playlist ordering, playback support policy,
-URI/pagination/loopback parsing, deterministic playback reducer traces, and the command-effect
+URI/pagination/loopback parsing, bounded pagination walks, deterministic playback reducer traces, and the command-effect
 spike in [ADR 003](../../../docs/ADR-003-playback-command-effects.md). The concrete suite covers
 auth parsing and PKCE, bearer 401 retry and grant-load single-flight, wire codecs, catalog resolution, formatting, privacy-safe API failure
-surfaces, bounded Partner API pagination walks, injected coordinator/queue invalidation workflows, typed playback-command failures,
+surfaces, Partner API pagination call sites, injected coordinator/queue invalidation workflows, typed playback-command failures,
 `PlaybackEffectRegistry` task cancellation, transient mutation feedback, native playlist
 add/remove, native queue add/remove, PCM writer wake/bypass, and serialized engine event
 fan-out ordering. Do not move check code back into `Sources/Aural`: test code must not ship

@@ -565,7 +565,7 @@ nonisolated struct PartnerAPI: Sendable {
     // MARK: - Transport
 
     /// One bounded walk for playlist contents, `libraryV3`, and saved tracks.
-    private func paginate<Item>(
+    private func paginate<Item: Sendable>(
         firstPage: Pagination.Page<Item>? = nil,
         fetchPage: @escaping @Sendable (Int) async throws -> Pagination.Page<Item>
     ) async throws -> [Item] {

@@ -29,7 +29,7 @@ public enum Pagination {
         }
     }
 
-    public struct Page<Item> {
+    public struct Page<Item: Sendable>: Sendable {
         public let items: [Item]
         public let pageEntryCount: Int
         public let totalCount: Int?
@@ -86,9 +86,9 @@ public enum Pagination {
     ///
     /// `nextOffset` defaults to `Pagination.nextOffset`. Checks may pass a non-advancing
     /// function to cover a stuck offset without a live endpoint. `firstPage`, when present,
-    /// is consumed at offset 0 so a caller that already fetched the header does not capture
+    /// is the offset-0 page so a caller that already fetched the header does not capture
     /// mutable walk state in `fetchPage`.
-    public static func collect<Item>(
+    public static func collect<Item: Sendable>(
         maximumPageCount: Int = maximumPageCount,
         firstPage: Page<Item>? = nil,
         nextOffset: @Sendable (Int, Int, Int?) -> Int? = {
@@ -96,36 +96,22 @@ public enum Pagination {
         },
         fetchPage: @Sendable (Int) async throws -> Page<Item>
     ) async throws -> [Item] {
+        guard maximumPageCount > 0 else {
+            throw Failure.pageLimitReached
+        }
+
         var items: [Item] = []
         var requestedOffsets: Set<Int> = []
-        var offset = 0
         var pagesFetched = 0
         var total: Int?
-        var seeded = firstPage
 
-        while true {
-            try Task.checkCancellation()
-            guard pagesFetched < maximumPageCount else {
-                throw Failure.pageLimitReached
-            }
-            guard requestedOffsets.insert(offset).inserted else {
-                throw Failure.offsetDidNotAdvance
-            }
-
+        func consume(_ page: Page<Item>, offset: Int) throws -> Int? {
+            requestedOffsets.insert(offset)
             pagesFetched += 1
-            let page: Page<Item>
-            if let seededPage = seeded {
-                page = seededPage
-                seeded = nil
-            } else {
-                page = try await fetchPage(offset)
-            }
-            try Task.checkCancellation()
             if total == nil {
                 total = page.totalCount
             }
             items += page.items
-
             switch decision(
                 offset: offset,
                 pageEntryCount: page.pageEntryCount,
@@ -136,12 +122,34 @@ public enum Pagination {
                 nextOffset: nextOffset
             ) {
             case .finished:
-                return items
+                return nil
             case let .fetch(next):
-                offset = next
+                return next
             case let .failed(failure):
                 throw failure
             }
+        }
+
+        try Task.checkCancellation()
+        let first: Page<Item>
+        if let firstPage {
+            first = firstPage
+        } else {
+            first = try await fetchPage(0)
+        }
+        try Task.checkCancellation()
+        guard var offset = try consume(first, offset: 0) else {
+            return items
+        }
+
+        while true {
+            try Task.checkCancellation()
+            let page = try await fetchPage(offset)
+            try Task.checkCancellation()
+            guard let next = try consume(page, offset: offset) else {
+                return items
+            }
+            offset = next
         }
     }
 }
