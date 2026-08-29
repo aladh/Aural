@@ -39,12 +39,12 @@ pub(crate) enum ClusterOfferDecision {
 /// cleanup, cleanup waiting for drain).
 ///
 /// Re-entry: `apply_cluster` delivers into Swift with no gate lock held. If that callback
-/// invokes cleanup on this thread, [`wait_for_cluster_mapping_idle`] must not wait for
+/// invokes cleanup on this thread, [`invalidate_cluster_generation`] must not wait for
 /// itself. Cleanup then bumps generation; remaining mapping steps re-check and stop.
 /// A concurrent new offer only enqueues while the drain claim is held, so it is not
 /// stranded: the claimant continues after mapping Drop, or teardown discards it after the
-/// bump. The drain `applying` flag is never cleared from Drop: an unconditional clear races a
-/// concurrent enqueue into a queued-with-no-claimant state.
+/// bump. The drain `applying` flag is cleared on empty-queue under the mutex, and on
+/// unwind of the claimant only; an unconditional Drop clear races a concurrent enqueue.
 struct ClusterApplyGate {
     pending: VecDeque<PendingCluster>,
     applying: bool,
@@ -57,6 +57,7 @@ struct PendingCluster {
     origin: ClusterOrigin,
     generation: u64,
     cluster: Cluster,
+    #[cfg(test)]
     after_pop: Option<Arc<dyn Fn() + Send + Sync>>,
 }
 
@@ -179,17 +180,35 @@ pub(crate) fn offer_cluster_after_decide(
     cluster: Cluster,
     after_decide: impl FnOnce(),
 ) {
-    offer_cluster_with_hooks(origin, generation, cluster, after_decide, None);
+    #[cfg(test)]
+    {
+        enqueue_cluster_offer(origin, generation, cluster, after_decide, None);
+    }
+    #[cfg(not(test))]
+    {
+        enqueue_cluster_offer(origin, generation, cluster, after_decide);
+    }
 }
 
 /// `after_pop` runs after this item is popped and generation-checked, before mapping begins.
 /// Tests use it to force pop/revalidate → teardown → apply.
+#[cfg(test)]
 pub(crate) fn offer_cluster_with_hooks(
     origin: ClusterOrigin,
     generation: u64,
     cluster: Cluster,
     after_decide: impl FnOnce(),
     after_pop: Option<Arc<dyn Fn() + Send + Sync>>,
+) {
+    enqueue_cluster_offer(origin, generation, cluster, after_decide, after_pop);
+}
+
+fn enqueue_cluster_offer(
+    origin: ClusterOrigin,
+    generation: u64,
+    cluster: Cluster,
+    after_decide: impl FnOnce(),
+    #[cfg(test)] after_pop: Option<Arc<dyn Fn() + Send + Sync>>,
 ) {
     let claimed = {
         let mut gate = lock_cluster_apply();
@@ -218,6 +237,7 @@ pub(crate) fn offer_cluster_with_hooks(
                     origin,
                     generation,
                     cluster,
+                    #[cfg(test)]
                     after_pop,
                 });
                 let claimed = !gate.applying;
@@ -235,11 +255,27 @@ pub(crate) fn offer_cluster_with_hooks(
     }
 }
 
+/// Clears `applying` only if this claimant unwinds. The normal empty-queue path still
+/// clears under the mutex; doing both always would lose a concurrent enqueue.
+struct DrainClaim;
+
+impl Drop for DrainClaim {
+    fn drop(&mut self) {
+        if !std::thread::panicking() {
+            return;
+        }
+        let mut gate = lock_cluster_apply();
+        gate.applying = false;
+    }
+}
+
 fn drain_offered_clusters() {
+    let _claim = DrainClaim;
     loop {
         let Some(item) = pop_next_cluster_to_apply() else {
             return;
         };
+        #[cfg(test)]
         if let Some(hook) = &item.after_pop {
             hook();
         }

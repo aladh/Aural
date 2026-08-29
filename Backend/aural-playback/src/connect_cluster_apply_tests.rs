@@ -455,3 +455,25 @@ fn a_replacement_generation_still_drains_after_invalidation_wait() {
     assert_eq!(applied_cluster_ids(), vec![BOOTSTRAP_DEVICE.to_string()]);
     assert_eq!(last_active_device(), BOOTSTRAP_DEVICE);
 }
+
+#[test]
+fn a_panicking_claimant_does_not_strand_the_next_offer() {
+    let _guard = lock_globals();
+    begin_generation(4);
+
+    let panicked = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        offer_cluster_with_hooks(
+            ClusterOrigin::BootstrapFetch,
+            4,
+            cluster_named(BOOTSTRAP_DEVICE),
+            || {},
+            Some(Arc::new(|| panic!("test claimant unwind"))),
+        );
+    }));
+    assert!(panicked.is_err());
+    assert!(applied_cluster_ids().is_empty());
+
+    offer_cluster(ClusterOrigin::PushedUpdate, 4, cluster_named(PUSH_DEVICE));
+    assert_eq!(applied_cluster_ids(), vec![PUSH_DEVICE.to_string()]);
+    assert_eq!(last_active_device(), PUSH_DEVICE);
+}

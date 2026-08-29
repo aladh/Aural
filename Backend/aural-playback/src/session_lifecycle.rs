@@ -704,7 +704,9 @@ pub(crate) async fn build_player_async(
     activate_after_connect: bool,
     resume_after_connect: bool,
 ) -> Result<(), String> {
-    let current_generation = invalidate_cluster_generation();
+    let current_generation = tokio::task::spawn_blocking(invalidate_cluster_generation)
+        .await
+        .map_err(|e| format!("cluster generation invalidation: {e}"))?;
     LAST_BUILD_GENERATION.store(current_generation, Ordering::SeqCst);
     debug!(
         "[WAKE +{}ms] init_player_async starting, generation={}",
