@@ -7,11 +7,7 @@
 
 import Foundation
 
-#if AURAL_DISTRIBUTION
-    private typealias DefaultKeymasterTokenStore = KeymasterMigratingStore
-#else
-    private typealias DefaultKeymasterTokenStore = KeymasterDefaultsStore
-#endif
+private typealias DefaultKeymasterTokenStore = KeymasterMigratingStore
 
 /// The live keymaster grant: one access token, kept valid, shared by everything that needs it.
 ///
@@ -99,8 +95,8 @@ actor KeymasterSession {
     }
 
     /// Loads persisted state lazily on this actor rather than synchronously while the main-actor
-    /// controller is being initialized. A distribution build's Keychain lookup can take time to
-    /// resolve an older item's ACL; that must not prevent SwiftUI from presenting the window.
+    /// controller is being initialized. A Keychain lookup can take time to resolve an older
+    /// item's ACL; that must not prevent SwiftUI from presenting the window.
     ///
     /// The load itself is a single flight: `hasLoadedStore` is not set until the read finishes,
     /// so a concurrent early `accessToken()` cannot observe an empty grant and throw `noGrant`

@@ -19,6 +19,41 @@ nonisolated protocol KeymasterTokenStoring: Sendable {
     func clear()
 }
 
+/// One-way reader for the retired defaults-backed grant. Production code must never write
+/// this value; leftover plaintext is deleted after a migration attempt.
+nonisolated protocol KeymasterLegacyTokenReading: Sendable {
+    func load() -> KeymasterTokens?
+    func clear()
+}
+
+/// Privacy-safe persistence diagnostics. Messages name a storage category and a reason;
+/// they must never include a token, username, payload, account id, or request data.
+enum KeymasterGrantPersistenceDiagnostics {
+    static func unreadableGrant(source: KeymasterStoredGrantCodec.Source) -> String {
+        "Stored grant is unreadable source=\(source.rawValue)"
+    }
+
+    static let legacyMigrationSaveFailed = "Legacy grant migration failed reason=secure-save"
+}
+
+enum KeymasterStoredGrantCodec {
+    enum Source: String, Sendable {
+        case secure
+        case legacy
+    }
+
+    static func decode(_ data: Data, source: Source) -> KeymasterTokens? {
+        do {
+            return try JSONDecoder().decode(KeymasterTokens.self, from: data)
+        } catch {
+            AuralLog.authentication.error(
+                "\(KeymasterGrantPersistenceDiagnostics.unreadableGrant(source: source), privacy: .public)"
+            )
+            return nil
+        }
+    }
+}
+
 /// The real store, in the same keychain service the Web API half uses.
 nonisolated struct KeymasterKeychainStore: KeymasterTokenStoring {
     func load() -> KeymasterTokens? {
@@ -34,18 +69,13 @@ nonisolated struct KeymasterKeychainStore: KeymasterTokenStoring {
     }
 }
 
-/// Stable storage for locally signed development builds, whose changing executable ACL cannot
-/// reliably reuse a Keychain item. Distribution builds migrate this legacy value into Keychain.
-nonisolated struct KeymasterDefaultsStore: KeymasterTokenStoring {
+/// Retired plaintext location used by older locally signed development builds.
+nonisolated struct KeymasterLegacyDefaultsStore: KeymasterLegacyTokenReading {
     private let key = "keymaster.tokens.v1"
 
     func load() -> KeymasterTokens? {
         guard let data = UserDefaults.standard.data(forKey: key) else { return nil }
-        return try? JSONDecoder().decode(KeymasterTokens.self, from: data)
-    }
-
-    func save(_ tokens: KeymasterTokens) throws {
-        UserDefaults.standard.set(try JSONEncoder().encode(tokens), forKey: key)
+        return KeymasterStoredGrantCodec.decode(data, source: .legacy)
     }
 
     func clear() {
@@ -53,14 +83,24 @@ nonisolated struct KeymasterDefaultsStore: KeymasterTokenStoring {
     }
 }
 
-/// Secure production storage with a one-way migration from the legacy defaults-backed store.
+/// Secure storage with a one-way migration from the retired defaults-backed store.
 ///
-/// The legacy value is deleted only after Keychain accepts the same grant. If Keychain is
-/// temporarily unavailable, the current session can still recover and a later save retries the
-/// migration rather than discarding a valid rotating refresh token.
+/// Every build uses Keychain as the writer. A leftover `keymaster.tokens.v1` value is
+/// read once, offered to the secure store, and then deleted even if that write fails so
+/// the rotating refresh token is not deliberately kept in plaintext. A successful decode
+/// still returns the grant for the current process; a corrupt blob fails closed after a
+/// sanitized diagnostic rather than presenting as a silent sign-out.
 nonisolated struct KeymasterMigratingStore: KeymasterTokenStoring {
-    private let secureStore = KeymasterKeychainStore()
-    private let legacyStore = KeymasterDefaultsStore()
+    private let secureStore: any KeymasterTokenStoring
+    private let legacyStore: any KeymasterLegacyTokenReading
+
+    init(
+        secureStore: any KeymasterTokenStoring = KeymasterKeychainStore(),
+        legacyStore: any KeymasterLegacyTokenReading = KeymasterLegacyDefaultsStore()
+    ) {
+        self.secureStore = secureStore
+        self.legacyStore = legacyStore
+    }
 
     func load() -> KeymasterTokens? {
         if let tokens = secureStore.load() {
@@ -71,17 +111,18 @@ nonisolated struct KeymasterMigratingStore: KeymasterTokenStoring {
 
         do {
             try secureStore.save(tokens)
-            legacyStore.clear()
         } catch {
-            // Keep the legacy copy until a secure write succeeds; losing a rotating refresh
-            // token here would force an otherwise unnecessary sign-in.
+            AuralLog.authentication.error(
+                "\(KeymasterGrantPersistenceDiagnostics.legacyMigrationSaveFailed, privacy: .public)"
+            )
         }
+        legacyStore.clear()
         return tokens
     }
 
     func save(_ tokens: KeymasterTokens) throws {
+        defer { legacyStore.clear() }
         try secureStore.save(tokens)
-        legacyStore.clear()
     }
 
     func clear() {
