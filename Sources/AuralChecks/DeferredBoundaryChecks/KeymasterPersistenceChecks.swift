@@ -62,6 +62,16 @@ func runKeymasterPersistenceChecks(_ check: CheckRunner) {
         check.nil_("a failed migration does not invent a secure copy", secure.stored)
     }
 
+    check.suite("Unreadable leftover plaintext is still erased") {
+        let secure = RecordingTokenStore()
+        let legacy = UnreadableLegacyStore()
+        let store = KeymasterMigratingStore(secureStore: secure, legacyStore: legacy)
+
+        check.nil_("corrupt leftover plaintext fails closed", store.load())
+        check.check("corrupt leftover plaintext is still deleted", !legacy.retained)
+        check.nil_("corrupt leftover plaintext is not copied securely", secure.stored)
+    }
+
     check.suite("Adopt, refresh, and clear persist only to the secure store") {
         let secure = RecordingTokenStore()
         let legacy = RecordingLegacyStore(tokens: persistenceGrant(access: "old", refresh: "old-rt"))
@@ -113,6 +123,7 @@ func runKeymasterPersistenceSourceContractChecks(_ check: CheckRunner) {
                 "legacy plaintext is deleted after a migration attempt even when save fails",
                 containsPersistenceToken(store, "legacyStore.clear()")
                     && containsPersistenceToken(store, "defer { legacyStore.clear() }")
+                    && containsPersistenceToken(store, "guard let tokens = legacyStore.load() else { return nil }")
                     && containsPersistenceToken(store, KeymasterGrantPersistenceDiagnostics.legacyMigrationSaveFailed)
             )
             check.check(
@@ -228,6 +239,21 @@ private final class FailingTokenStore: KeymasterTokenStoring, @unchecked Sendabl
     }
 
     func clear() {}
+}
+
+private final class UnreadableLegacyStore: KeymasterLegacyTokenReading, @unchecked Sendable {
+    private let lock = NSLock()
+    private var value = true
+
+    var retained: Bool {
+        lock.withLock { value }
+    }
+
+    func load() -> KeymasterTokens? { nil }
+
+    func clear() {
+        lock.withLock { value = false }
+    }
 }
 
 private final class RecordingLegacyStore: KeymasterLegacyTokenReading, @unchecked Sendable {

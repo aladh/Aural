@@ -89,7 +89,7 @@ nonisolated struct KeymasterLegacyDefaultsStore: KeymasterLegacyTokenReading {
 /// read once, offered to the secure store, and then deleted even if that write fails so
 /// the rotating refresh token is not deliberately kept in plaintext. A successful decode
 /// still returns the grant for the current process; a corrupt blob fails closed after a
-/// sanitized diagnostic rather than presenting as a silent sign-out.
+/// sanitized diagnostic and the leftover plaintext is still deleted.
 nonisolated struct KeymasterMigratingStore: KeymasterTokenStoring {
     private let secureStore: any KeymasterTokenStoring
     private let legacyStore: any KeymasterLegacyTokenReading
@@ -107,6 +107,7 @@ nonisolated struct KeymasterMigratingStore: KeymasterTokenStoring {
             legacyStore.clear()
             return tokens
         }
+        defer { legacyStore.clear() }
         guard let tokens = legacyStore.load() else { return nil }
 
         do {
@@ -116,7 +117,6 @@ nonisolated struct KeymasterMigratingStore: KeymasterTokenStoring {
                 "\(KeymasterGrantPersistenceDiagnostics.legacyMigrationSaveFailed, privacy: .public)"
             )
         }
-        legacyStore.clear()
         return tokens
     }
 
