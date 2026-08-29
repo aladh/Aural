@@ -99,6 +99,9 @@ public enum Pagination {
 
         while true {
             try Task.checkCancellation()
+            guard pagesFetched < maximumPageCount else {
+                throw Failure.pageLimitReached
+            }
             guard requestedOffsets.insert(offset).inserted else {
                 throw Failure.offsetDidNotAdvance
             }

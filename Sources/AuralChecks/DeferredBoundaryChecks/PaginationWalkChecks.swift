@@ -57,6 +57,19 @@ func runPaginationWalkChecks(_ check: CheckRunner) async {
             Pagination.Page(items: [Int](), pageEntryCount: 0, totalCount: 0)
         }
 
+        let zeroCap = OffsetRecorder()
+        await expectCollectFailure(
+            check,
+            "a zero page cap fails before any fetch",
+            Pagination.Failure.pageLimitReached
+        ) {
+            try await Pagination.collect(maximumPageCount: 0) { offset in
+                zeroCap.record(offset)
+                return Pagination.Page(items: [offset], pageEntryCount: 0, totalCount: 0)
+            }
+        }
+        check.equal("a zero page cap does not fetch", zeroCap.values, [])
+
         let capOffsets = OffsetRecorder()
         await expectCollectFailure(
             check,
