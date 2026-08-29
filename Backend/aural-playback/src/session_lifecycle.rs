@@ -704,6 +704,7 @@ pub(crate) async fn build_player_async(
     activate_after_connect: bool,
     resume_after_connect: bool,
 ) -> Result<(), String> {
+    wait_for_cluster_mapping_idle();
     // Increment session generation - this invalidates any old cluster listeners
     let current_generation = SESSION_GENERATION.fetch_add(1, Ordering::SeqCst) + 1;
     LAST_BUILD_GENERATION.store(current_generation, Ordering::SeqCst);

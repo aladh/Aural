@@ -363,3 +363,90 @@ fn a_prior_generation_push_does_not_apply_after_replacement() {
     assert_eq!(applied_cluster_ids(), vec![BOOTSTRAP_DEVICE.to_string()]);
     assert_eq!(last_active_device(), BOOTSTRAP_DEVICE);
 }
+
+#[test]
+fn pop_then_generation_advance_does_not_apply() {
+    let _guard = lock_globals();
+    begin_generation(4);
+
+    let popped = Arc::new(Barrier::new(2));
+    let torn_down = Arc::new(Barrier::new(2));
+
+    thread::scope(|scope| {
+        scope.spawn(|| {
+            let popped = Arc::clone(&popped);
+            let torn_down = Arc::clone(&torn_down);
+            offer_cluster_with_hooks(
+                ClusterOrigin::BootstrapFetch,
+                4,
+                cluster_named(BOOTSTRAP_DEVICE),
+                || {},
+                Some(Arc::new(move || {
+                    popped.wait();
+                    torn_down.wait();
+                })),
+            );
+        });
+        scope.spawn(|| {
+            popped.wait();
+            wait_for_cluster_mapping_idle();
+            SESSION_GENERATION.store(5, Ordering::SeqCst);
+            discard_retained_cluster_offers();
+            LAST_ACTIVE_DEVICE_ID
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .clear();
+            torn_down.wait();
+        });
+    });
+
+    assert!(applied_cluster_ids().is_empty());
+    assert!(last_active_device().is_empty());
+}
+
+#[test]
+fn a_new_offer_is_not_stranded_while_invalidation_waits() {
+    let _guard = lock_globals();
+    begin_generation(4);
+
+    let popped = Arc::new(Barrier::new(3));
+    let offered = Arc::new(Barrier::new(2));
+    let torn_down = Arc::new(Barrier::new(2));
+
+    thread::scope(|scope| {
+        scope.spawn(|| {
+            let popped = Arc::clone(&popped);
+            let torn_down = Arc::clone(&torn_down);
+            offer_cluster_with_hooks(
+                ClusterOrigin::BootstrapFetch,
+                4,
+                cluster_named(BOOTSTRAP_DEVICE),
+                || {},
+                Some(Arc::new(move || {
+                    popped.wait();
+                    torn_down.wait();
+                })),
+            );
+        });
+        scope.spawn(|| {
+            popped.wait();
+            offer_cluster(ClusterOrigin::PushedUpdate, 4, cluster_named(PUSH_DEVICE));
+            offered.wait();
+        });
+        scope.spawn(|| {
+            popped.wait();
+            wait_for_cluster_mapping_idle();
+            offered.wait();
+            SESSION_GENERATION.store(5, Ordering::SeqCst);
+            discard_retained_cluster_offers();
+            LAST_ACTIVE_DEVICE_ID
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .clear();
+            torn_down.wait();
+        });
+    });
+
+    assert!(applied_cluster_ids().is_empty());
+    assert!(last_active_device().is_empty());
+}

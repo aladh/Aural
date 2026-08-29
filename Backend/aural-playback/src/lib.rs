@@ -51,7 +51,7 @@ pub(crate) use std::ffi::{c_char, CStr, CString};
 pub(crate) use std::sync::atomic::{
     AtomicBool, AtomicU16, AtomicU32, AtomicU64, AtomicU8, Ordering,
 };
-pub(crate) use std::sync::{Arc, Mutex};
+pub(crate) use std::sync::{Arc, Condvar, Mutex};
 pub(crate) use std::time::{Duration, SystemTime, UNIX_EPOCH};
 pub(crate) use tokio::runtime::Runtime;
 pub(crate) use tokio::sync::mpsc;

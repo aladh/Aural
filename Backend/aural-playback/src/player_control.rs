@@ -318,6 +318,10 @@ pub extern "C" fn aural_playback_cleanup() {
     ffi_void("aural_playback_cleanup", || {
         debug!("aural_playback_cleanup called - clearing all state");
 
+        // Wait for an in-flight apply_cluster to finish under its origin generation
+        // before bumping. A popped-not-yet-mapping item is not waited on; begin_cluster_mapping
+        // re-checks after that gap. Same-thread mapping (callback → cleanup) does not wait.
+        wait_for_cluster_mapping_idle();
         // Invalidate the current generation first, so anything already in flight — most
         // importantly a reconnect loop sleeping between attempts — sees that what it was
         // recovering no longer exists and abandons instead of rebuilding over the teardown.

@@ -1,5 +1,6 @@
 use crate::*;
 use std::collections::VecDeque;
+use std::thread::ThreadId;
 
 /// Who produced a cluster that wants to be mapped through [`apply_cluster`].
 ///
@@ -20,7 +21,7 @@ pub(crate) enum ClusterOfferDecision {
     Enqueue { mark_pushed: bool },
 }
 
-/// Linearizes bootstrap vs push for one session generation.
+/// Linearizes bootstrap vs push for one session generation, and mapping vs teardown.
 ///
 /// A flag checked before `apply_cluster` is not enough: the bootstrap can observe "no push
 /// yet", a push can apply, and the bootstrap can still apply afterwards. Decision and enqueue
@@ -28,9 +29,27 @@ pub(crate) enum ClusterOfferDecision {
 /// dropped, so Swift callbacks cannot re-enter this lock. Nested `offer_cluster` from a
 /// callback only enqueues. The bootstrap task is not aborted when superseded; it re-checks
 /// generation here and at apply time instead.
+///
+/// `applying` is the drain claim (empty-queue clear only). `mapping` is in-flight
+/// [`apply_cluster`]. Invalidation waits on `mapping` only, before bumping
+/// `SESSION_GENERATION`, so an already-started map finishes under its origin generation.
+/// A popped item that has not begun mapping is not waited on: tests can inject teardown in
+/// that gap, and [`begin_cluster_mapping`] re-checks generation so the item does not apply.
+/// Waiting on `applying` would deadlock that schedule (drain claimed, hook waiting for
+/// cleanup, cleanup waiting for drain).
+///
+/// Re-entry: `apply_cluster` delivers into Swift with no gate lock held. If that callback
+/// invokes cleanup on this thread, [`wait_for_cluster_mapping_idle`] must not wait for
+/// itself. Cleanup then bumps generation; remaining mapping steps re-check and stop.
+/// A concurrent new offer only enqueues while the drain claim is held, so it is not
+/// stranded: the claimant continues after mapping Drop, or teardown discards it after the
+/// bump. The drain `applying` flag is never cleared from Drop: an unconditional clear races a
+/// concurrent enqueue into a queued-with-no-claimant state.
 struct ClusterApplyGate {
     pending: VecDeque<PendingCluster>,
     applying: bool,
+    mapping: bool,
+    mapping_thread: Option<ThreadId>,
     pushed_generation: Option<u64>,
 }
 
@@ -38,15 +57,19 @@ struct PendingCluster {
     origin: ClusterOrigin,
     generation: u64,
     cluster: Cluster,
+    after_pop: Option<Arc<dyn Fn() + Send + Sync>>,
 }
 
 static CLUSTER_APPLY: Lazy<Mutex<ClusterApplyGate>> = Lazy::new(|| {
     Mutex::new(ClusterApplyGate {
         pending: VecDeque::new(),
         applying: false,
+        mapping: false,
+        mapping_thread: None,
         pushed_generation: None,
     })
 });
+static CLUSTER_APPLY_CV: Condvar = Condvar::new();
 
 pub(crate) fn cluster_offer_decision(
     origin: ClusterOrigin,
@@ -68,6 +91,51 @@ fn lock_cluster_apply() -> std::sync::MutexGuard<'static, ClusterApplyGate> {
     CLUSTER_APPLY.lock().unwrap_or_else(|e| e.into_inner())
 }
 
+fn cluster_generation_current(generation: u64) -> bool {
+    listener_may_act(generation, SESSION_GENERATION.load(Ordering::SeqCst))
+}
+
+/// Waits until no [`apply_cluster`] is running on another thread.
+///
+/// Does not wait for a drain that has only popped. Does not wait for this thread's own
+/// mapping (Swift callback → cleanup). Never holds the gate lock across the wait's sleep,
+/// Swift delivery, or `await`.
+pub(crate) fn wait_for_cluster_mapping_idle() {
+    let mut gate = lock_cluster_apply();
+    let current = std::thread::current().id();
+    while gate.mapping && gate.mapping_thread != Some(current) {
+        gate = CLUSTER_APPLY_CV
+            .wait(gate)
+            .unwrap_or_else(|e| e.into_inner());
+    }
+}
+
+struct ClusterMappingGuard;
+
+impl Drop for ClusterMappingGuard {
+    fn drop(&mut self) {
+        let mut gate = lock_cluster_apply();
+        gate.mapping = false;
+        gate.mapping_thread = None;
+        CLUSTER_APPLY_CV.notify_all();
+    }
+}
+
+fn begin_cluster_mapping(item: &PendingCluster) -> Option<ClusterMappingGuard> {
+    let mut gate = lock_cluster_apply();
+    if !cluster_generation_current(item.generation) {
+        return None;
+    }
+    if item.origin == ClusterOrigin::BootstrapFetch
+        && gate.pushed_generation == Some(item.generation)
+    {
+        return None;
+    }
+    gate.mapping = true;
+    gate.mapping_thread = Some(std::thread::current().id());
+    Some(ClusterMappingGuard)
+}
+
 /// Drops not-yet-applied clusters so a replaced session cannot retain them after logout.
 pub(crate) fn discard_retained_cluster_offers() {
     let mut gate = lock_cluster_apply();
@@ -78,7 +146,7 @@ pub(crate) fn discard_retained_cluster_offers() {
 /// Offers a cluster for the shared [`apply_cluster`] mapping.
 ///
 /// If a push for this generation is already queued or applied, the bootstrap is discarded. If
-/// the bootstrap already won an apply, a later push is still applied after it. Callers must not
+/// the bootstrap already won an apply, a later push still applies after it. Callers must not
 /// hold this function's lock — there is none across `apply_cluster` or any `await`.
 pub(crate) fn offer_cluster(origin: ClusterOrigin, generation: u64, cluster: Cluster) {
     offer_cluster_after_decide(origin, generation, cluster, || {});
@@ -92,6 +160,18 @@ pub(crate) fn offer_cluster_after_decide(
     generation: u64,
     cluster: Cluster,
     after_decide: impl FnOnce(),
+) {
+    offer_cluster_with_hooks(origin, generation, cluster, after_decide, None);
+}
+
+/// `after_pop` runs after this item is popped and generation-checked, before mapping begins.
+/// Tests use it to force pop/revalidate → teardown → apply.
+pub(crate) fn offer_cluster_with_hooks(
+    origin: ClusterOrigin,
+    generation: u64,
+    cluster: Cluster,
+    after_decide: impl FnOnce(),
+    after_pop: Option<Arc<dyn Fn() + Send + Sync>>,
 ) {
     let claimed = {
         let mut gate = lock_cluster_apply();
@@ -120,6 +200,7 @@ pub(crate) fn offer_cluster_after_decide(
                     origin,
                     generation,
                     cluster,
+                    after_pop,
                 });
                 let claimed = !gate.applying;
                 if claimed {
@@ -141,9 +222,15 @@ fn drain_offered_clusters() {
         let Some(item) = pop_next_cluster_to_apply() else {
             return;
         };
+        if let Some(hook) = &item.after_pop {
+            hook();
+        }
+        let Some(_mapping) = begin_cluster_mapping(&item) else {
+            continue;
+        };
         #[cfg(test)]
         record_applied_cluster(&item.cluster);
-        apply_cluster(item.cluster);
+        apply_cluster(item.generation, item.cluster);
     }
 }
 
@@ -154,8 +241,7 @@ fn pop_next_cluster_to_apply() -> Option<PendingCluster> {
             gate.applying = false;
             return None;
         };
-        let current_generation = SESSION_GENERATION.load(Ordering::SeqCst);
-        if !listener_may_act(item.generation, current_generation) {
+        if !cluster_generation_current(item.generation) {
             continue;
         }
         if item.origin == ClusterOrigin::BootstrapFetch
@@ -183,7 +269,10 @@ pub(crate) fn reset_cluster_apply_test_state() {
     let mut gate = lock_cluster_apply();
     gate.pending.clear();
     gate.applying = false;
+    gate.mapping = false;
+    gate.mapping_thread = None;
     gate.pushed_generation = None;
+    CLUSTER_APPLY_CV.notify_all();
     drop(gate);
     APPLIED_CLUSTER_IDS
         .lock()
@@ -517,6 +606,7 @@ pub(crate) async fn fetch_cluster(session: &Session) -> Result<Cluster, String> 
 /// Session-sourced clusters (HTTP bootstrap and dealer push) must enter through
 /// [`offer_cluster`] so a slower bootstrap cannot last-write-win a newer push. This function
 /// remains the single mapping onto active device, devices, playback, and queue.
+/// `generation` is the origin session; mapping stops if that session has been replaced.
 ///
 /// Our own activity is derived from the cluster rather than inferred from whichever command
 /// ran last. This is the same comparison `SpircTask` makes internally; Aural runs a second
@@ -525,16 +615,31 @@ pub(crate) async fn fetch_cluster(session: &Session) -> Result<Cluster, String> 
 ///
 /// The device list rides along and used to be dropped on the floor, so Swift asked
 /// `/me/player/devices` for what was already here.
-pub(crate) fn apply_cluster(cluster: Cluster) {
+pub(crate) fn apply_cluster(generation: u64, cluster: Cluster) {
+    if !cluster_generation_current(generation) {
+        return;
+    }
     set_active_device(is_active_in_cluster(
         &cluster.active_device_id,
         current_device_id().as_deref(),
     ));
+    if !cluster_generation_current(generation) {
+        return;
+    }
     notify_active_device_id(&cluster.active_device_id);
+    if !cluster_generation_current(generation) {
+        return;
+    }
     notify_devices(&cluster.device, &cluster.active_device_id);
 
     if let Some(player_state) = cluster.player_state.into_option() {
+        if !cluster_generation_current(generation) {
+            return;
+        }
         send_playback_state(&player_state);
+        if !cluster_generation_current(generation) {
+            return;
+        }
         process_and_send_queue(player_state);
     }
 }
