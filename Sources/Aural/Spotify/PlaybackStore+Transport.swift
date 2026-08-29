@@ -102,8 +102,8 @@ extension PlaybackStore {
                 local: .shuffle(enabled),
                 remote: .shuffle(enabled)
             ) { [weak self] accepted in
-                guard let self, accepted else { return }
-                Task { await self.environment.preferences.setShuffleEnabled(self.isShuffleEnabled) }
+                guard accepted else { return }
+                Task { await self?.environment.preferences.setShuffleEnabled(enabled) }
             }
             return
         }

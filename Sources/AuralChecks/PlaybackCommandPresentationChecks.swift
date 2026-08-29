@@ -1375,5 +1375,56 @@ func runPlaybackCommandPresentationChecks(_ check: CheckRunner) {
         )
         check.equal("a rejected repeat options command does not restore shuffle", repeatPending.options.shuffle, false)
         check.equal("a rejected repeat options command does not restore repeat", repeatPending.options.repeatMode, .track)
+
+        let restoreID = UUID(uuidString: "00000000-0000-0000-0000-000000000055")!
+        var restored = PlaybackState(
+            accountEpoch: 1,
+            engineEpoch: 1,
+            session: .ready,
+            options: PlaybackOptions(shuffle: true, repeatMode: .off)
+        )
+        startShuffle(&restored, id: restoreID, expected: false)
+        _ = PlaybackReducer.reduce(
+            &restored,
+            envelope: presentationEnvelope(
+                source: .user,
+                event: .options(PlaybackOptions(shuffle: true, repeatMode: .track))
+            )
+        )
+        check.equal("a restoring .options event keeps optimistic off", restored.options.shuffle, false)
+        check.equal("a restoring .options event still adopts repeat", restored.options.repeatMode, .track)
+        check.equal("a restoring .options event does not confirm off", restored.pendingCommands[.options]?.id, restoreID)
+        _ = PlaybackReducer.reduce(
+            &restored,
+            envelope: presentationEnvelope(
+                source: .command,
+                event: .commandFinished(id: restoreID, accepted: true, notice: nil)
+            )
+        )
+        check.equal("an accepted shuffle after a restoring .options event keeps off", restored.options.shuffle, false)
+        check.equal("an accepted shuffle after a restoring .options event keeps adopted repeat", restored.options.repeatMode, .track)
+
+        let confirmOptionsID = UUID(uuidString: "00000000-0000-0000-0000-000000000056")!
+        var confirmOptions = PlaybackState(
+            accountEpoch: 1,
+            engineEpoch: 1,
+            session: .ready,
+            options: PlaybackOptions(shuffle: true)
+        )
+        startShuffle(&confirmOptions, id: confirmOptionsID, expected: false)
+        _ = PlaybackReducer.reduce(
+            &confirmOptions,
+            envelope: presentationEnvelope(
+                source: .user,
+                event: .options(PlaybackOptions(shuffle: false))
+            )
+        )
+        check.equal("a matching .options event keeps off", confirmOptions.options.shuffle, false)
+        check.nil_("a matching .options event confirms the shuffle command", confirmOptions.pendingCommands[.options])
+        check.equal(
+            "a matching .options event records confirmation",
+            confirmOptions.transportCommandResolutions[confirmOptionsID],
+            .confirmed
+        )
     }
 }

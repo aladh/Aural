@@ -60,6 +60,7 @@ private final class GatedLocalEngine: LocalPlaybackEngine, @unchecked Sendable {
             condition.wait()
         }
         let result = self.result
+        allowed = false
         condition.unlock()
         return result
     }
@@ -1279,7 +1280,6 @@ func runPlaybackCommandFailureChecks(_ runner: CheckRunner) async {
         _ = await waitUntil { localRejected.state.pendingCommands[.options] == nil }
         runner.equal("local shuffle rejection restores on", localRejected.state.options.shuffle, true)
         runner.equal("local shuffle rejection uses the action notice", localRejected.transientCommandError, "Could not update shuffle")
-        for _ in 0..<50 { await Task.yield() }
         runner.check("local shuffle rejection does not persist off", await localRejectedPrefs.shuffleWrites.isEmpty)
         await localRejected.shutdownForTermination()
 
@@ -1314,7 +1314,6 @@ func runPlaybackCommandFailureChecks(_ runner: CheckRunner) async {
         runner.equal("remote shuffle presents off before completion", remoteRejected.state.options.shuffle, false)
         _ = await waitUntil { remoteRejected.state.pendingCommands[.options] == nil }
         runner.equal("remote shuffle rejection restores on", remoteRejected.state.options.shuffle, true)
-        for _ in 0..<50 { await Task.yield() }
         runner.check("remote shuffle rejection does not persist off", await remoteRejectedPrefs.shuffleWrites.isEmpty)
         await remoteRejected.shutdownForTermination()
 
@@ -1350,7 +1349,6 @@ func runPlaybackCommandFailureChecks(_ runner: CheckRunner) async {
         await laggingRemote.fail()
         _ = await waitUntil { laggingStore.state.pendingCommands[.options] == nil }
         runner.equal("lagging on then rejection restores on", laggingStore.state.options.shuffle, true)
-        for _ in 0..<50 { await Task.yield() }
         runner.check("lagging on then rejection does not persist off", await laggingPrefs.shuffleWrites.isEmpty)
         await laggingStore.shutdownForTermination()
 
@@ -1397,7 +1395,6 @@ func runPlaybackCommandFailureChecks(_ runner: CheckRunner) async {
         localGate.finish(with: .error)
         _ = await waitUntil { localRace.state.pendingCommands[.options] == nil }
         runner.equal("local lagging on then rejection restores on", localRace.state.options.shuffle, true)
-        for _ in 0..<50 { await Task.yield() }
         runner.check("local lagging on then rejection does not persist off", await localRacePrefs.shuffleWrites.isEmpty)
         await localRace.shutdownForTermination()
 
@@ -1425,7 +1422,6 @@ func runPlaybackCommandFailureChecks(_ runner: CheckRunner) async {
         joining.toggleShuffle()
         runner.equal("route refusal leaves shuffle unchanged", joining.state.options.shuffle, joiningBefore.options.shuffle)
         runner.check("route refusal does not start a pending shuffle", joining.state.pendingCommands.isEmpty)
-        for _ in 0..<50 { await Task.yield() }
         runner.check("route refusal does not persist shuffle", await joiningPrefs.shuffleWrites.isEmpty)
         await joining.shutdownForTermination()
 
@@ -1444,7 +1440,6 @@ func runPlaybackCommandFailureChecks(_ runner: CheckRunner) async {
         duplicateStore.toggleShuffle()
         runner.equal("a duplicate shuffle does not change options", duplicateStore.state.options, afterFirstShuffle.options)
         runner.equal("a duplicate shuffle keeps the original command", duplicateStore.state.pendingCommands[.options]?.id, afterFirstShuffle.pendingCommands[.options]?.id)
-        for _ in 0..<50 { await Task.yield() }
         runner.check("a duplicate shuffle does not persist", await duplicatePrefs.shuffleWrites.isEmpty)
         if let commandID = duplicateStore.state.pendingCommands[.options]?.id {
             duplicateStore.effects.cancel(.command(commandID))
@@ -1469,7 +1464,6 @@ func runPlaybackCommandFailureChecks(_ runner: CheckRunner) async {
         _ = await waitUntil { await cancelRemote.sendCount == 1 }
         runner.equal("cancellation keeps optimistic off", cancelStore.state.options.shuffle, optimisticCancel.options.shuffle)
         runner.equal("cancellation leaves the pending shuffle until teardown", cancelStore.state.pendingCommands[.options]?.id, optimisticCancel.pendingCommands[.options]?.id)
-        for _ in 0..<50 { await Task.yield() }
         runner.check("cancellation does not persist shuffle", await cancelPrefs.shuffleWrites.isEmpty)
         await cancelStore.shutdownForTermination()
 
@@ -1493,9 +1487,54 @@ func runPlaybackCommandFailureChecks(_ runner: CheckRunner) async {
         runner.nil_("an engine-epoch bump drops the pending shuffle", staleStore.state.pendingCommands[.options])
         runner.equal("an engine-epoch bump does not roll back off", staleStore.state.options.shuffle, optimisticShuffle.options.shuffle)
         runner.check("an engine-epoch bump clears shuffle confirmation state", staleStore.state.transportCommandResolutions.isEmpty)
-        for _ in 0..<50 { await Task.yield() }
         runner.check("an engine-epoch bump does not persist shuffle", await stalePrefs.shuffleWrites.isEmpty)
         await staleStore.shutdownForTermination()
+
+        let restoreRemote = GatedFailingRemoteClient()
+        let restorePrefs = RecordingPreferences(shuffle: true)
+        let restoreStore = await restoredStore(
+            local: ScriptedLocalEngine(result: .ok),
+            remote: restoreRemote,
+            preferences: restorePrefs
+        )
+        seedLiveShuffle(restoreStore, local: false, shuffle: true)
+        restoreStore.toggleShuffle()
+        let restorePending = await waitUntil { restoreStore.state.pendingCommands[.options] != nil }
+        runner.check("remote shuffle is pending before a restoring options event", restorePending)
+        _ = await waitUntil { await restoreRemote.sendCount == 1 }
+        _ = restoreStore.send(.options(PlaybackOptions(shuffle: true)), source: .user)
+        runner.equal("a restoring options event keeps optimistic off", restoreStore.state.options.shuffle, false)
+        runner.notNil("a restoring options event keeps rollback ownership", restoreStore.state.pendingCommands[.options])
+        await restoreRemote.fail()
+        _ = await waitUntil { restoreStore.state.pendingCommands[.options] == nil }
+        runner.equal("restore then rejection restores on", restoreStore.state.options.shuffle, true)
+        runner.check("restore then rejection does not persist off", await restorePrefs.shuffleWrites.isEmpty)
+        await restoreStore.shutdownForTermination()
+
+        let persistGate = GatedLocalEngine()
+        let persistPrefs = RecordingPreferences(shuffle: true)
+        let persistStore = await restoredStore(
+            local: persistGate,
+            remote: ScriptedRemoteClient(.succeed),
+            preferences: persistPrefs
+        )
+        seedLiveShuffle(persistStore, local: true, shuffle: true)
+        persistStore.toggleShuffle()
+        let persistPending = await waitUntil { persistStore.state.pendingCommands[.options] != nil }
+        runner.check("local shuffle is pending before the admitted persist", persistPending)
+        persistGate.finish(with: .ok)
+        _ = await waitUntil { persistStore.state.pendingCommands[.options] == nil }
+        persistStore.toggleShuffle()
+        let secondPending = await waitUntil { persistStore.state.pendingCommands[.options] != nil }
+        runner.check("a later shuffle is pending before the first persist lands", secondPending)
+        runner.equal("a later shuffle presents on before the first persist lands", persistStore.state.options.shuffle, true)
+        _ = await waitUntil { await persistPrefs.shuffleWrites == [false] }
+        runner.equal("accepted shuffle persists the admitted off, not the later on", await persistPrefs.shuffleWrites, [false])
+        persistGate.finish(with: .error)
+        _ = await waitUntil { persistStore.state.pendingCommands[.options] == nil }
+        runner.equal("rejected later shuffle restores the admitted off", persistStore.state.options.shuffle, false)
+        runner.equal("rejected later shuffle does not persist on", await persistPrefs.shuffleWrites, [false])
+        await persistStore.shutdownForTermination()
 
         let preferenceOnlyPrefs = RecordingPreferences(shuffle: false)
         let preferenceOnly = await restoredStore(

@@ -665,7 +665,9 @@ public enum PlaybackReducer {
                 in: &candidate
             )
         case let .options(options):
-            candidate.options = options
+            candidate.options.repeatMode = options.repeatMode
+            candidate.options.repeatFlags = options.repeatFlags
+            reconcileShuffle(options.shuffle, in: &candidate)
         case let .queue(incoming):
             candidate.queue = mergePlaybackQueueSnapshots(
                 current: candidate.queue,
@@ -743,6 +745,8 @@ public enum PlaybackReducer {
                         candidate.options.shuffle = rollbackShuffle
                     }
                     candidate.notice = notice
+                } else if let expectedShuffle = pair.value.expectedShuffle {
+                    candidate.options.shuffle = expectedShuffle
                 }
             } else if candidate.transportCommandResolutions[id] != nil {
                 // Consume a confirmed/superseded entry without touching presentation.
@@ -883,6 +887,7 @@ public enum PlaybackReducer {
     /// A lagging pre-command shuffle sample must not undo the pending target. Matching the
     /// requested value confirms the command so a late coordinator failure cannot restore the
     /// prior Boolean. Repeat options commands have no expected shuffle and keep current adoption.
+    /// Shuffle is two-valued, so any non-matching sample is the prior value and is held.
     private static func reconcileShuffle(_ incoming: Bool?, in state: inout PlaybackState) {
         guard let incoming else { return }
         guard let pending = state.pendingCommands[.options],
@@ -897,10 +902,6 @@ public enum PlaybackReducer {
             state.transportCommandResolutions[pending.id] = .confirmed
             return
         }
-        if let rollback = pending.rollbackShuffle, incoming == rollback {
-            return
-        }
-        state.options.shuffle = incoming
     }
 
     /// Holds optimistic seek timing until an incoming sample is at the expected millisecond
