@@ -389,9 +389,7 @@ fn pop_then_generation_advance_does_not_apply() {
         });
         scope.spawn(|| {
             popped.wait();
-            wait_for_cluster_mapping_idle();
-            SESSION_GENERATION.store(5, Ordering::SeqCst);
-            discard_retained_cluster_offers();
+            invalidate_cluster_generation();
             LAST_ACTIVE_DEVICE_ID
                 .lock()
                 .unwrap_or_else(|e| e.into_inner())
@@ -405,7 +403,7 @@ fn pop_then_generation_advance_does_not_apply() {
 }
 
 #[test]
-fn a_new_offer_is_not_stranded_while_invalidation_waits() {
+fn a_replacement_generation_still_drains_after_invalidation_wait() {
     let _guard = lock_globals();
     begin_generation(4);
 
@@ -437,8 +435,7 @@ fn a_new_offer_is_not_stranded_while_invalidation_waits() {
             popped.wait();
             wait_for_cluster_mapping_idle();
             offered.wait();
-            SESSION_GENERATION.store(5, Ordering::SeqCst);
-            discard_retained_cluster_offers();
+            invalidate_cluster_generation();
             LAST_ACTIVE_DEVICE_ID
                 .lock()
                 .unwrap_or_else(|e| e.into_inner())
@@ -449,4 +446,12 @@ fn a_new_offer_is_not_stranded_while_invalidation_waits() {
 
     assert!(applied_cluster_ids().is_empty());
     assert!(last_active_device().is_empty());
+
+    offer_cluster(
+        ClusterOrigin::BootstrapFetch,
+        SESSION_GENERATION.load(Ordering::SeqCst),
+        cluster_named(BOOTSTRAP_DEVICE),
+    );
+    assert_eq!(applied_cluster_ids(), vec![BOOTSTRAP_DEVICE.to_string()]);
+    assert_eq!(last_active_device(), BOOTSTRAP_DEVICE);
 }

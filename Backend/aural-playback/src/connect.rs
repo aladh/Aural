@@ -95,11 +95,29 @@ fn cluster_generation_current(generation: u64) -> bool {
     listener_may_act(generation, SESSION_GENERATION.load(Ordering::SeqCst))
 }
 
-/// Waits until no [`apply_cluster`] is running on another thread.
+/// Waits until no [`apply_cluster`] is running on another thread, then advances
+/// `SESSION_GENERATION` and drops pending offers while still holding the gate lock.
 ///
-/// Does not wait for a drain that has only popped. Does not wait for this thread's own
-/// mapping (Swift callback → cleanup). Never holds the gate lock across the wait's sleep,
-/// Swift delivery, or `await`.
+/// `begin_cluster_mapping` uses that same lock, so it cannot start mapping under the
+/// outgoing generation in the gap after idle and before the bump. Condvar wait releases
+/// the lock; Swift delivery and `await` never hold it. Same-thread mapping (callback →
+/// cleanup) does not wait for itself.
+pub(crate) fn invalidate_cluster_generation() -> u64 {
+    let mut gate = lock_cluster_apply();
+    let current = std::thread::current().id();
+    while gate.mapping && gate.mapping_thread != Some(current) {
+        gate = CLUSTER_APPLY_CV
+            .wait(gate)
+            .unwrap_or_else(|e| e.into_inner());
+    }
+    let invalidated = SESSION_GENERATION.fetch_add(1, Ordering::SeqCst) + 1;
+    gate.pending.clear();
+    gate.pushed_generation = None;
+    invalidated
+}
+
+/// Wait-only helper for tests that need to observe idle without bumping.
+#[cfg(test)]
 pub(crate) fn wait_for_cluster_mapping_idle() {
     let mut gate = lock_cluster_apply();
     let current = std::thread::current().id();
