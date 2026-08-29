@@ -102,7 +102,7 @@ func runTransportRetryChecks(_ check: CheckRunner) async {
         ])
         check.equal(
             "networkConnectionLost retries",
-            try? await partnerAPI(transport: lostThenOk.send).profile()?.name,
+            (try? await partnerAPI(transport: lostThenOk.send).profile())?.name,
             "Listener"
         )
 
@@ -112,7 +112,7 @@ func runTransportRetryChecks(_ check: CheckRunner) async {
         ])
         check.equal(
             "cannotConnectToHost retries",
-            try? await partnerAPI(transport: hostThenOk.send).profile()?.name,
+            (try? await partnerAPI(transport: hostThenOk.send).profile())?.name,
             "Listener"
         )
 
@@ -437,9 +437,7 @@ private final class RecordingSleeper: @unchecked Sendable {
     }
 
     func sleep(_ seconds: TimeInterval) async throws {
-        lock.lock()
-        recorded.append(seconds)
-        lock.unlock()
+        lock.withLock { recorded.append(seconds) }
         try Task.checkCancellation()
     }
 }
@@ -455,12 +453,13 @@ private final class ParkUntilCancelledSleeper: @unchecked Sendable {
     }
 
     func sleep(_ seconds: TimeInterval) async throws {
-        lock.lock()
-        recorded.append(seconds)
-        let waiter = started
-        started = nil
-        didStart = true
-        lock.unlock()
+        let waiter: CheckedContinuation<Void, Never>? = lock.withLock {
+            recorded.append(seconds)
+            let waiter = started
+            started = nil
+            didStart = true
+            return waiter
+        }
         waiter?.resume()
         try await Task.sleep(nanoseconds: 60_000_000_000)
     }
