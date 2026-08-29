@@ -277,6 +277,28 @@ func runSessionLifetimeChecks(_ check: CheckRunner) {
             .inert
         )
         check.equal(
+            "a confirmed transfer still reports success after a late failure",
+            followUp(
+                finishAccepted: true,
+                succeeded: false,
+                reconnect: true,
+                kind: .transfer,
+                resolution: .confirmed
+            ),
+            .reportSuccess
+        )
+        check.equal(
+            "a superseded transfer stays inert after an accepted coordinator result",
+            followUp(
+                finishAccepted: true,
+                succeeded: true,
+                reconnect: true,
+                kind: .transfer,
+                resolution: .superseded
+            ),
+            .inert
+        )
+        check.equal(
             "a confirmed play still reports success while a later pause is pending",
             followUp(
                 finishAccepted: true,

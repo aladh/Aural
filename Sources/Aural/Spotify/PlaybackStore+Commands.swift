@@ -16,6 +16,7 @@ extension PlaybackStore {
         expectedTiming: PlaybackTiming? = nil,
         expectedTrack: CurrentTrack? = nil,
         expectedShuffle: Bool? = nil,
+        expectedOwner: PlaybackOwner? = nil,
         operation: LocalPlaybackOperation,
         kind: PlaybackCommandKind = .transport,
         completion: @escaping @MainActor (Bool) -> Void = { _ in }
@@ -39,6 +40,7 @@ extension PlaybackStore {
                 expectedTiming: expectedTiming,
                 expectedTrack: expectedTrack,
                 expectedShuffle: expectedShuffle,
+                expectedOwner: expectedOwner,
                 startedAt: environment.clock.now()
             )),
             source: .command
@@ -204,9 +206,10 @@ extension PlaybackStore {
     }
 
     /// Local and remote command finishes share this policy so a matching engine snapshot cannot
-    /// drop `play` / `togglePlayback` / shuffle completions, including when the coordinator later
-    /// fails. The finished command's resolution is captured before `commandFinished` so follow-up
-    /// can treat consume-only reducer acceptance as confirmed success or superseded inertness.
+    /// drop `play` / `togglePlayback` / shuffle / remote-transfer completions, including when the
+    /// coordinator later fails. The finished command's resolution is captured before
+    /// `commandFinished` so follow-up can treat consume-only reducer acceptance as confirmed
+    /// success or superseded inertness.
     /// Epoch, teardown, unknown ids, and options finishes without a captured confirmation stay
     /// inert.
     private func applyCommandOutcome(

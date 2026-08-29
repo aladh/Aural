@@ -1577,4 +1577,298 @@ func runPlaybackCommandFailureChecks(_ runner: CheckRunner) async {
         runner.equal("preference-only shuffle persists on", await preferenceOnlyPrefs.shuffleWrites, [true])
         await preferenceOnly.shutdownForTermination()
     }
+
+    await runner.suite("Remote transfer owner admission is reducer-owned") {
+        let clockNow = Date(timeIntervalSince1970: 1_800_000_000)
+        let priorPlayingTiming = PlaybackTiming(position: 40, duration: 200, anchoredAt: clockNow.addingTimeInterval(-10))
+        let current = CurrentTrack(
+            uri: "spotify:track:a",
+            title: "A",
+            artist: "Artist",
+            duration: 200,
+            metadataSource: .catalog
+        )
+        let ownerA = PlaybackOwner.remote(
+            PlaybackDevice(id: "speaker-a", name: "Speaker A", type: "speaker", isActive: true)
+        )
+        let expectedB = PlaybackOwner.uncertain(
+            PlaybackDevice(id: "speaker-b", name: "Speaker B", type: "speaker")
+        )
+        let remoteB = PlaybackOwner.remote(
+            PlaybackDevice(id: "speaker-b", name: "Speaker B", type: "speaker", isActive: true)
+        )
+        let ownerC = PlaybackOwner.remote(
+            PlaybackDevice(id: "phone", name: "Phone", type: "smartphone", isActive: true)
+        )
+        let speakerB = ConnectDevice(id: "speaker-b", name: "Speaker B", type: "speaker", isActive: false)
+        let speakerD = ConnectDevice(id: "speaker-d", name: "Speaker D", type: "speaker", isActive: false)
+        let thisMac = ConnectDevice(id: "mac", name: "Mac", type: "computer", isActive: false)
+
+        @MainActor
+        func seedRemoteOwner(_ player: PlaybackStore, owner: PlaybackOwner = ownerA) {
+            _ = player.send(.session(.ready), source: .account)
+            _ = player.send(
+                .devices(PlaybackDeviceSnapshot(
+                    devices: [
+                        PlaybackDevice(id: "mac", name: "Mac", type: "computer"),
+                        PlaybackDevice(id: "speaker-a", name: "Speaker A", type: "speaker", isActive: true),
+                        PlaybackDevice(id: "speaker-b", name: "Speaker B", type: "speaker"),
+                        PlaybackDevice(id: "speaker-d", name: "Speaker D", type: "speaker"),
+                        PlaybackDevice(id: "phone", name: "Phone", type: "smartphone")
+                    ],
+                    localDeviceID: "mac",
+                    revision: 1
+                )),
+                source: .engineDevices,
+                revision: 1
+            )
+            _ = player.send(.owner(owner), source: .command)
+            _ = player.send(
+                .presentation(PlaybackPresentationSnapshot(
+                    currentTrack: current,
+                    transport: .playing,
+                    timing: priorPlayingTiming
+                )),
+                source: .user
+            )
+        }
+
+        @MainActor
+        func sendConnectionOwner(_ player: PlaybackStore, owner: PlaybackOwner, revision: UInt64) {
+            _ = player.send(
+                .engineConnection(EngineConnectionSnapshot(
+                    session: .ready,
+                    owner: owner,
+                    localDeviceID: "mac"
+                )),
+                source: .engineConnection,
+                revision: revision
+            )
+        }
+
+        let localRejected = playbackStore(
+            commandEnvironment(
+                local: ScriptedLocalEngine(result: .error),
+                remote: ScriptedRemoteClient(.succeed)
+            )
+        )
+        seedRemoteOwner(localRejected)
+        localRejected.transferPlayback(to: speakerB)
+        runner.equal("local transfer presents uncertain B before completion", localRejected.state.owner, expectedB)
+        runner.notNil("local transfer is pending before completion", localRejected.state.pendingCommands[.transfer])
+        runner.equal("local transfer captures owner A", localRejected.state.pendingCommands[.transfer]?.rollbackOwner, Optional(ownerA))
+        _ = await waitUntil { localRejected.state.pendingCommands[.transfer] == nil }
+        runner.equal("local transfer rejection restores A", localRejected.state.owner, ownerA)
+        runner.equal(
+            "local transfer rejection uses the action notice",
+            localRejected.transientCommandError,
+            "Could not move playback to Speaker B"
+        )
+        await localRejected.shutdownForTermination()
+
+        let localAcceptedEngine = ScriptedLocalEngine(result: .ok)
+        let localAccepted = playbackStore(
+            commandEnvironment(
+                local: localAcceptedEngine,
+                remote: ScriptedRemoteClient(.succeed)
+            )
+        )
+        seedRemoteOwner(localAccepted)
+        localAccepted.transferPlayback(to: speakerB)
+        _ = await waitUntil { localAccepted.state.pendingCommands[.transfer] == nil }
+        runner.equal("accepted local transfer keeps admitted B", localAccepted.state.owner, expectedB)
+        runner.equal("accepted local transfer announces success", localAccepted.transientCommandError, "Playing on Speaker B")
+        let transferredDevice: String?
+        switch localAcceptedEngine.operations.first {
+        case let .transferToDevice(id):
+            transferredDevice = id
+        default:
+            transferredDevice = nil
+        }
+        runner.equal("accepted local transfer reached the engine", transferredDevice, "speaker-b")
+        runner.equal("accepted local transfer sent one engine operation", localAcceptedEngine.operations.count, 1)
+        localAccepted.transferPlayback(to: speakerD)
+        runner.equal(
+            "a later local transfer presents D before completion",
+            localAccepted.state.owner,
+            PlaybackOwner.uncertain(PlaybackDevice(id: "speaker-d", name: "Speaker D", type: "speaker"))
+        )
+        _ = await waitUntil { localAccepted.state.pendingCommands[.transfer] == nil }
+        runner.equal(
+            "an accepted later local transfer keeps D",
+            localAccepted.state.owner,
+            PlaybackOwner.uncertain(PlaybackDevice(id: "speaker-d", name: "Speaker D", type: "speaker"))
+        )
+        await localAccepted.shutdownForTermination()
+
+        let laggingGate = GatedLocalEngine()
+        let laggingStore = playbackStore(
+            commandEnvironment(local: laggingGate, remote: ScriptedRemoteClient(.succeed))
+        )
+        seedRemoteOwner(laggingStore)
+        laggingStore.transferPlayback(to: speakerB)
+        let laggingPending = await waitUntil { laggingStore.state.pendingCommands[.transfer] != nil }
+        runner.check("remote transfer is pending before a lagging A snapshot", laggingPending)
+        sendConnectionOwner(laggingStore, owner: ownerA, revision: 1)
+        runner.equal("a lagging A snapshot keeps optimistic B", laggingStore.state.owner, expectedB)
+        runner.notNil("a lagging A snapshot keeps rollback ownership", laggingStore.state.pendingCommands[.transfer])
+        laggingGate.finish(with: .error)
+        _ = await waitUntil { laggingStore.state.pendingCommands[.transfer] == nil }
+        runner.equal("lagging A then rejection restores A", laggingStore.state.owner, ownerA)
+        runner.equal(
+            "lagging A then rejection uses the action notice",
+            laggingStore.transientCommandError,
+            "Could not move playback to Speaker B"
+        )
+        await laggingStore.shutdownForTermination()
+
+        let confirmGate = GatedLocalEngine()
+        let confirmStore = playbackStore(
+            commandEnvironment(local: confirmGate, remote: ScriptedRemoteClient(.succeed))
+        )
+        seedRemoteOwner(confirmStore)
+        confirmStore.transferPlayback(to: speakerB)
+        _ = await waitUntil { confirmStore.state.pendingCommands[.transfer] != nil }
+        let confirmedCommandID = confirmStore.state.pendingCommands[.transfer]?.id
+        sendConnectionOwner(confirmStore, owner: remoteB, revision: 1)
+        runner.nil_("an authoritative B snapshot confirms transfer", confirmStore.state.pendingCommands[.transfer])
+        runner.equal(
+            "an authoritative B snapshot records transfer confirmation",
+            confirmedCommandID.flatMap { confirmStore.state.transportCommandResolutions[$0] },
+            Optional(PlaybackTransportCommandResolution.confirmed)
+        )
+        confirmGate.finish(with: .error)
+        _ = await waitUntil { confirmStore.state.transportCommandResolutions.isEmpty && confirmStore.transientCommandError == "Playing on Speaker B" }
+        runner.equal("confirmed B then failure keeps B", confirmStore.state.owner, remoteB)
+        runner.equal("confirmed B then failure announces success once", confirmStore.transientCommandError, "Playing on Speaker B")
+        runner.check("confirmed B then failure consumes the resolution entry", confirmStore.state.transportCommandResolutions.isEmpty)
+        await confirmStore.shutdownForTermination()
+
+        let supersedeGate = GatedLocalEngine()
+        let supersedeStore = playbackStore(
+            commandEnvironment(local: supersedeGate, remote: ScriptedRemoteClient(.succeed))
+        )
+        seedRemoteOwner(supersedeStore)
+        supersedeStore.transferPlayback(to: speakerB)
+        _ = await waitUntil { supersedeStore.state.pendingCommands[.transfer] != nil }
+        sendConnectionOwner(supersedeStore, owner: ownerC, revision: 1)
+        runner.equal("an unrelated owner C supersedes B", supersedeStore.state.owner, ownerC)
+        runner.nil_("an unrelated owner C clears the pending transfer", supersedeStore.state.pendingCommands[.transfer])
+        supersedeGate.finish(with: .error)
+        _ = await waitUntil { supersedeStore.state.transportCommandResolutions.isEmpty }
+        runner.equal("unrelated C then late failure keeps C", supersedeStore.state.owner, ownerC)
+        runner.nil_("unrelated C then late failure does not announce success", supersedeStore.transientCommandError)
+        await supersedeStore.shutdownForTermination()
+
+        let noneGate = GatedLocalEngine()
+        let noneStore = playbackStore(
+            commandEnvironment(local: noneGate, remote: ScriptedRemoteClient(.succeed))
+        )
+        seedRemoteOwner(noneStore)
+        noneStore.transferPlayback(to: speakerB)
+        _ = await waitUntil { noneStore.state.pendingCommands[.transfer] != nil }
+        sendConnectionOwner(noneStore, owner: .none, revision: 1)
+        runner.equal("an unrelated empty owner supersedes B", noneStore.state.owner, .none)
+        noneGate.finish(with: .ok)
+        _ = await waitUntil { noneStore.state.transportCommandResolutions.isEmpty }
+        runner.equal("accepted completion after empty supersession keeps none", noneStore.state.owner, .none)
+        runner.nil_("unrelated empty supersession does not announce success", noneStore.transientCommandError)
+        await noneStore.shutdownForTermination()
+
+        let joining = playbackStore(
+            commandEnvironment(
+                local: ScriptedLocalEngine(result: .ok),
+                remote: ScriptedRemoteClient(.succeed)
+            )
+        )
+        _ = joining.send(.owner(ownerA), source: .command)
+        let joiningBefore = joining.state
+        joining.transferPlayback(to: speakerB)
+        runner.equal("route refusal leaves owner unchanged", joining.state.owner, joiningBefore.owner)
+        runner.check("route refusal does not start a pending transfer", joining.state.pendingCommands.isEmpty)
+        await joining.shutdownForTermination()
+
+        let duplicateGate = GatedLocalEngine()
+        let duplicateStore = playbackStore(
+            commandEnvironment(local: duplicateGate, remote: ScriptedRemoteClient(.succeed))
+        )
+        seedRemoteOwner(duplicateStore)
+        duplicateStore.transferPlayback(to: speakerB)
+        let transferPending = await waitUntil { duplicateStore.state.pendingCommands[.transfer] != nil }
+        runner.check("the first transfer is pending before a duplicate", transferPending)
+        let afterFirstTransfer = duplicateStore.state
+        duplicateStore.transferPlayback(to: speakerD)
+        runner.equal("a duplicate transfer does not change owner", duplicateStore.state.owner, afterFirstTransfer.owner)
+        runner.equal(
+            "a duplicate transfer keeps the original command",
+            duplicateStore.state.pendingCommands[.transfer]?.id,
+            afterFirstTransfer.pendingCommands[.transfer]?.id
+        )
+        duplicateGate.finish(with: .error)
+        _ = await waitUntil { duplicateStore.state.pendingCommands[.transfer] == nil }
+        runner.equal("duplicate then rejection restores A", duplicateStore.state.owner, ownerA)
+        await duplicateStore.shutdownForTermination()
+
+        let cancelGate = GatedLocalEngine()
+        let cancelStore = playbackStore(
+            commandEnvironment(local: cancelGate, remote: ScriptedRemoteClient(.succeed))
+        )
+        seedRemoteOwner(cancelStore)
+        cancelStore.transferPlayback(to: speakerB)
+        let cancelPending = await waitUntil { cancelStore.state.pendingCommands[.transfer] != nil }
+        runner.check("remote transfer is pending before cancellation", cancelPending)
+        let optimisticCancel = cancelStore.state
+        if let commandID = cancelStore.state.pendingCommands[.transfer]?.id {
+            cancelStore.effects.cancel(.command(commandID))
+        }
+        runner.equal("cancellation keeps optimistic B", cancelStore.state.owner, optimisticCancel.owner)
+        runner.equal(
+            "cancellation leaves the pending transfer until teardown",
+            cancelStore.state.pendingCommands[.transfer]?.id,
+            optimisticCancel.pendingCommands[.transfer]?.id
+        )
+        await cancelStore.shutdownForTermination()
+
+        let staleStore = playbackStore(
+            commandEnvironment(
+                local: GatedLocalEngine(),
+                remote: ScriptedRemoteClient(.succeed)
+            )
+        )
+        seedRemoteOwner(staleStore)
+        staleStore.transferPlayback(to: speakerB)
+        let stalePending = await waitUntil { staleStore.state.pendingCommands[.transfer] != nil }
+        runner.check("transfer is pending before an engine-epoch bump", stalePending)
+        _ = staleStore.send(
+            .engineConnection(EngineConnectionSnapshot(session: .recovering, owner: .none, localDeviceID: nil)),
+            source: .engineConnection,
+            revision: 1,
+            engineEpoch: staleStore.engineGeneration + 1
+        )
+        runner.nil_("an engine-epoch bump drops the pending transfer", staleStore.state.pendingCommands[.transfer])
+        runner.check("an engine-epoch bump does not restore A through rollback", staleStore.state.owner != ownerA)
+        runner.check("an engine-epoch bump clears transfer confirmation state", staleStore.state.transportCommandResolutions.isEmpty)
+        runner.equal("an engine-epoch bump applies the new connection owner", staleStore.state.owner, .none)
+        await staleStore.shutdownForTermination()
+
+        let localMacStore = playbackStore(
+            commandEnvironment(
+                local: ScriptedLocalEngine(result: .error),
+                remote: ScriptedRemoteClient(.succeed)
+            )
+        )
+        seedRemoteOwner(localMacStore)
+        localMacStore.transferPlayback(to: thisMac)
+        runner.equal("transfer-to-this-Mac does not present uncertain local ownership", localMacStore.state.owner, ownerA)
+        runner.notNil("transfer-to-this-Mac is still admitted", localMacStore.state.pendingCommands[.transfer])
+        runner.nil_("transfer-to-this-Mac does not capture owner rollback", localMacStore.state.pendingCommands[.transfer]?.rollbackOwner)
+        _ = await waitUntil { localMacStore.state.pendingCommands[.transfer] == nil }
+        runner.equal("a rejected transfer-to-this-Mac leaves owner A", localMacStore.state.owner, ownerA)
+        runner.equal(
+            "a rejected transfer-to-this-Mac uses the local action notice",
+            localMacStore.transientCommandError,
+            "Could not move playback to this Mac"
+        )
+        await localMacStore.shutdownForTermination()
+    }
 }

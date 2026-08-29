@@ -251,25 +251,19 @@ extension PlaybackStore {
             )
             return
         }
-        let previousOwner = state.owner
-        send(
-            .owner(.uncertain(PlaybackDevice(
+        performCommand(
+            "Could not move playback to \(device.name)",
+            expectedOwner: .uncertain(PlaybackDevice(
                 id: device.id,
                 name: device.name,
                 type: device.type,
                 isActive: false
-            ))),
-            source: .command
-        )
-        performCommand(
-            "Could not move playback to \(device.name)",
+            )),
             operation: .transferToDevice(device.id),
             kind: .transfer
         ) { [weak self] accepted in
             if accepted {
                 self?.showTransientCommandError("Playing on \(device.name)")
-            } else {
-                self?.send(.owner(previousOwner), source: .command)
             }
         }
     }

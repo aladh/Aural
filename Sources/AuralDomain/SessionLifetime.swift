@@ -137,6 +137,11 @@ public struct ConnectQueueCallbackWatermark: Equatable, Sendable {
 /// A known play target is confirmed only by that target's identity, not by a lagging prior
 /// track that happens to already be `.playing`. An unrelated or empty track supersedes the
 /// optimistic target: rollback is cleared and a later finish stays inert.
+/// Remote transfer confirmation uses the same per-command-id map. A lagging snapshot of the
+/// exact prior owner cannot undo the target. An authoritative connection or devices snapshot
+/// whose stable device identity matches the remote target records `.confirmed` so a late
+/// rejection cannot restore the prior owner. An unrelated owner, including local/none when that
+/// emptiness is not the captured prior owner, records `.superseded` and stays inert.
 /// Seek confirmation and track-switch supersession both clear pending `.seek`, so a later
 /// finish stays inert: `pendingCommandID == nil` cannot tell those cases apart, and seek
 /// completions have no success side effect.
