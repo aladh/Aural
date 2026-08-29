@@ -11,6 +11,7 @@ enum AuralChecksMain {
         runPlaybackSupportChecks(runner)
         runParsingChecks(runner)
         await runPaginationCollectChecks(runner)
+        runSpotifyTransientRetryChecks(runner)
         runPlaybackProjectionContractChecks(runner)
         runPlaybackReducerChecks(runner)
         runPlaybackCommandPresentationChecks(runner)

@@ -107,13 +107,43 @@ nonisolated struct PathfinderMutationResult: Decodable, Sendable {
 /// authorized identically — a keymaster bearer identifying the user and a client token
 /// identifying the application, both from the single grant this app now performs (see
 /// `plans/single-grant-partner-api.md`) — and they refuse identically. Held in one place so the
-/// refusal rule below is written once rather than three times.
+/// 401 rule and the bounded transient-read retry are written once rather than per client.
 nonisolated struct SpotifyCredentials: Sendable {
     /// Injected so request construction and decoding can be tested without a network.
     typealias Transport = @Sendable (URLRequest) async throws -> (Data, URLResponse)
 
     /// One attempt's outcome, naming the credentials it carried so a refusal can name them too.
-    typealias Attempt = (body: Data, status: Int, accessToken: String?, clientToken: String?)
+    struct Attempt: Sendable {
+        let body: Data
+        let status: Int
+        let accessToken: String?
+        let clientToken: String?
+        let retryAfter: String?
+
+        init(
+            body: Data,
+            status: Int,
+            accessToken: String?,
+            clientToken: String?,
+            retryAfter: String? = nil
+        ) {
+            self.body = body
+            self.status = status
+            self.accessToken = accessToken
+            self.clientToken = clientToken
+            self.retryAfter = retryAfter
+        }
+
+        init(body: Data, http: HTTPURLResponse, request: URLRequest) {
+            self.init(
+                body: body,
+                status: http.statusCode,
+                accessToken: SpotifyCredentials.accessTokenCarried(by: request),
+                clientToken: request.value(forHTTPHeaderField: "Client-Token"),
+                retryAfter: http.value(forHTTPHeaderField: "Retry-After")
+            )
+        }
+    }
 
     /// The headers the desktop client sends. `App-Platform` and the xpui origin are not
     /// cosmetic — neither host is a public API, and the requests that work are the ones shaped
@@ -138,6 +168,7 @@ nonisolated struct SpotifyCredentials: Sendable {
     let invalidateAccessToken: @Sendable (String) async throws -> Void
     let invalidateClientToken: @Sendable (String) async -> Void
     let transport: Transport
+    let retryTiming: SpotifyTransientRetry.Timing
 
     /// Signs a request as the desktop client: both credentials, and the headers naming which
     /// client is asking. Both, always — the bearer identifies the user, the client token the
@@ -155,21 +186,27 @@ nonisolated struct SpotifyCredentials: Sendable {
         try await request.setValue(clientToken(), forHTTPHeaderField: "Client-Token")
     }
 
-    /// Runs the attempt, and runs it once more after invalidating the credentials that attempt
-    /// actually carried when Spotify refuses the first with a 401.
+    /// Runs the attempt under the shared 401 and, for `.safe` reads, transient-retry policy.
     ///
     /// A 401 can be either credential. The client token is cached for the fortnight Spotify
     /// says it is good for; the bearer is cached until five minutes before expiry. Either can
     /// be revoked mid-validity, and retrying without naming the sent values would keep sending
-    /// the same dead pair. A second 401 is returned as-is so this cannot loop.
+    /// the same dead pair. A second 401 is returned as-is so this cannot loop. That 401 retry
+    /// counts toward `SpotifyTransientRetry.maximumAttempts` and happens at most once.
     ///
     /// The tokens the request actually carried are named, not just "the current ones" —
     /// concurrent requests share a pair, so one dead pair is refused several times over and the
     /// later refusals would otherwise discard the replacements the first one fetched.
+    ///
+    /// `.unsafe` writes keep a single transport attempt plus that 401 retry: a lost 5xx or
+    /// timeout response after Spotify applied a mutation must not be replayed.
     func retryingRefusedToken(
+        replay: SpotifyTransientRetry.Replay = .unsafe,
         _ attempt: () async throws -> Attempt,
     ) async throws -> (body: Data, status: Int) {
         try await Self.retryingRefusedCredentials(
+            replay: replay,
+            retryTiming: retryTiming,
             invalidateAccessToken: invalidateAccessToken,
             invalidateClientToken: invalidateClientToken,
             attempt
@@ -178,25 +215,70 @@ nonisolated struct SpotifyCredentials: Sendable {
 
     /// Bearer-only variant for hosts that do not carry a client token.
     static func retryingRefusedCredentials(
+        replay: SpotifyTransientRetry.Replay = .unsafe,
+        retryTiming: SpotifyTransientRetry.Timing = .production,
         invalidateAccessToken: @Sendable (String) async throws -> Void,
         invalidateClientToken: (@Sendable (String) async -> Void)? = nil,
         _ attempt: () async throws -> Attempt,
     ) async throws -> (body: Data, status: Int) {
-        let sent = try await attempt()
-        guard sent.status == 401 else { return (sent.body, sent.status) }
+        var didInvalidateCredentials = false
+        var completedAttempts = 0
 
-        // Client-token drop is non-throwing. Do it first so a throwing bearer refresh
-        // (grantRevoked, noGrant, or a superseded spend) cannot leave a dead client cached
-        // for the rest of its fortnight.
-        if let rejected = sent.clientToken {
-            await invalidateClientToken?(rejected)
-        }
-        if let rejected = sent.accessToken {
-            try await invalidateAccessToken(rejected)
-        }
+        while true {
+            try Task.checkCancellation()
+            completedAttempts += 1
 
-        let retried = try await attempt()
-        return (retried.body, retried.status)
+            do {
+                let sent = try await attempt()
+                if sent.status == 401 {
+                    if didInvalidateCredentials || completedAttempts >= SpotifyTransientRetry.maximumAttempts {
+                        return (sent.body, sent.status)
+                    }
+                    // Client-token drop is non-throwing. Do it first so a throwing bearer refresh
+                    // (grantRevoked, noGrant, or a superseded spend) cannot leave a dead client cached
+                    // for the rest of its fortnight.
+                    if let rejected = sent.clientToken {
+                        await invalidateClientToken?(rejected)
+                    }
+                    if let rejected = sent.accessToken {
+                        try await invalidateAccessToken(rejected)
+                    }
+                    didInvalidateCredentials = true
+                    continue
+                }
+
+                if replay == .safe,
+                   completedAttempts < SpotifyTransientRetry.maximumAttempts,
+                   let delay = SpotifyTransientRetry.delay(
+                       status: sent.status,
+                       retryAfterHeader: sent.retryAfter,
+                       completedAttempts: completedAttempts,
+                       now: retryTiming.now(),
+                       unitJitter: retryTiming.unitJitter()
+                   )
+                {
+                    try await retryTiming.sleep(delay)
+                    continue
+                }
+
+                return (sent.body, sent.status)
+            } catch let error as CancellationError {
+                throw error
+            } catch let error as URLError {
+                if replay == .safe,
+                   completedAttempts < SpotifyTransientRetry.maximumAttempts,
+                   SpotifyTransientRetry.isRetryableURLError(error)
+                {
+                    let delay = SpotifyTransientRetry.backoffDelay(
+                        completedAttempts: completedAttempts,
+                        unitJitter: retryTiming.unitJitter()
+                    )
+                    try await retryTiming.sleep(delay)
+                    continue
+                }
+                throw error
+            }
+        }
     }
 
     /// The access token a signed request actually put on the wire, without the `Bearer ` prefix.
@@ -230,6 +312,7 @@ nonisolated struct PartnerAPI: Sendable {
             .invalidateSharedAccess,
         invalidateClientToken: @escaping @Sendable (String) async -> Void = SpotifyCredentials.invalidateShared,
         transport: @escaping Transport = { try await URLSession.shared.data(for: $0) },
+        retryTiming: SpotifyTransientRetry.Timing = .production,
     ) {
         credentials = SpotifyCredentials(
             accessToken: accessToken,
@@ -237,6 +320,7 @@ nonisolated struct PartnerAPI: Sendable {
             invalidateAccessToken: invalidateAccessToken,
             invalidateClientToken: invalidateClientToken,
             transport: transport,
+            retryTiming: retryTiming,
         )
     }
 
@@ -496,9 +580,10 @@ nonisolated struct PartnerAPI: Sendable {
     private func mutateLibrary(_ operation: PathfinderOperation, uris: [String]) async throws {
         guard !uris.isEmpty else { return }
 
-        let response: PathfinderLibraryMutationResponse = try await query(
+        let response: PathfinderLibraryMutationResponse = try await transact(
             operation,
             variables: PathfinderLibraryWriteVariables(libraryItemUris: uris),
+            replay: .unsafe,
         )
 
         if response.failure != nil {
@@ -555,7 +640,11 @@ nonisolated struct PartnerAPI: Sendable {
         _ operation: PathfinderOperation,
         variables: some Encodable & Sendable,
     ) async throws {
-        let response: PathfinderMutationResponse = try await query(operation, variables: variables)
+        let response: PathfinderMutationResponse = try await transact(
+            operation,
+            variables: variables,
+            replay: .unsafe,
+        )
 
         if response.failure != nil {
             throw PartnerAPIError.mutationRejected(operation.name)
@@ -583,7 +672,15 @@ nonisolated struct PartnerAPI: Sendable {
         _ operation: PathfinderOperation,
         variables: some Encodable & Sendable,
     ) async throws -> Envelope {
-        let sent = try await credentials.retryingRefusedToken {
+        try await transact(operation, variables: variables, replay: .safe)
+    }
+
+    private func transact<Envelope: Decodable & Sendable>(
+        _ operation: PathfinderOperation,
+        variables: some Encodable & Sendable,
+        replay: SpotifyTransientRetry.Replay,
+    ) async throws -> Envelope {
+        let sent = try await credentials.retryingRefusedToken(replay: replay) {
             try await send(operation, variables: variables)
         }
 
@@ -609,12 +706,7 @@ nonisolated struct PartnerAPI: Sendable {
             throw PartnerAPIError.emptyPayload
         }
 
-        return (
-            data,
-            http.statusCode,
-            SpotifyCredentials.accessTokenCarried(by: request),
-            request.value(forHTTPHeaderField: "Client-Token")
-        )
+        return SpotifyCredentials.Attempt(body: data, http: http, request: request)
     }
 
     private static func failure(

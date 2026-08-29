@@ -25,7 +25,8 @@ private func partnerAPI(status: Int, body: String) -> PartnerAPI {
         accessToken: { "fixture-access" },
         clientToken: { "fixture-client" },
         invalidateClientToken: { _ in },
-        transport: rejectedTransport(status: status, body: Data(body.utf8))
+        transport: rejectedTransport(status: status, body: Data(body.utf8)),
+        retryTiming: .immediate
     )
 }
 
@@ -148,7 +149,8 @@ func runPrivacySanitizationChecks(_ check: CheckRunner) async {
             accessToken: { "fixture-access" },
             clientToken: { "fixture-client" },
             invalidateClientToken: { _ in },
-            transport: rejectedTransport(status: 502, body: Data(privacySentinel.utf8))
+            transport: rejectedTransport(status: 502, body: Data(privacySentinel.utf8)),
+            retryTiming: .immediate
         )
         await expectFailure(
             check,
@@ -163,7 +165,8 @@ func runPrivacySanitizationChecks(_ check: CheckRunner) async {
             transport: rejectedTransport(
                 status: 429,
                 body: Data("{\"error\":\"\(privacySentinel)\"}".utf8)
-            )
+            ),
+            retryTiming: .immediate
         )
         await expectFailure(
             check,
@@ -175,7 +178,8 @@ func runPrivacySanitizationChecks(_ check: CheckRunner) async {
         do {
             _ = try await SpotifyWebPlayerAPI(
                 accessToken: { "fixture-access" },
-                transport: rejectedTransport(status: 403, body: Data(privacySentinel.utf8))
+                transport: rejectedTransport(status: 403, body: Data(privacySentinel.utf8)),
+                retryTiming: .immediate
             ).queue()
             check.check("forbidden queue failures throw", false)
         } catch let error as SpotifyWebPlayerAPIError {
@@ -189,7 +193,8 @@ func runPrivacySanitizationChecks(_ check: CheckRunner) async {
             accessToken: { "fixture-access" },
             clientToken: { "fixture-client" },
             invalidateClientToken: { _ in },
-            transport: rejectedTransport(status: 500, body: Data(privacySentinel.utf8))
+            transport: rejectedTransport(status: 500, body: Data(privacySentinel.utf8)),
+            retryTiming: .immediate
         )
         await expectFailure(
             check,
