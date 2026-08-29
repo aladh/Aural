@@ -120,6 +120,7 @@ public enum Pagination {
             } else {
                 page = try await fetchPage(offset)
             }
+            try Task.checkCancellation()
             if total == nil {
                 total = page.totalCount
             }

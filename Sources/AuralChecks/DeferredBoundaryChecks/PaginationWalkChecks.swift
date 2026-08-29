@@ -138,6 +138,31 @@ func runPaginationWalkChecks(_ check: CheckRunner) async {
         }
         check.check("cancelling a walk surfaces CancellationError", cancelled)
         check.equal("cancellation does not fetch past the parked page", fetches.values, [0, 1])
+
+        let returnedAfterCancel = ReleaseGate()
+        let returnedFetches = OffsetRecorder()
+        let returnedPending = Task {
+            try await Pagination.collect { offset in
+                returnedFetches.record(offset)
+                if offset > 0 {
+                    await returnedAfterCancel.park()
+                }
+                return Pagination.Page(items: [offset], pageEntryCount: 1, totalCount: nil)
+            }
+        }
+        await returnedAfterCancel.waitUntilEntered()
+        returnedPending.cancel()
+        returnedAfterCancel.open()
+        var cancelledAfterReturn = false
+        do {
+            _ = try await returnedPending.value
+        } catch is CancellationError {
+            cancelledAfterReturn = true
+        } catch {
+            check.check("post-fetch cancellation stays CancellationError, got \(error)", false)
+        }
+        check.check("a cancelled walk does not succeed after a terminal page returns", cancelledAfterReturn)
+        check.equal("post-fetch cancellation still fetched the parked page", returnedFetches.values, [0, 1])
     }
 
     await check.suite("PartnerAPI paged walks") {
