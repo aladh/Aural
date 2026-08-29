@@ -765,6 +765,27 @@ fn init_player_nested_runtime_does_not_clear_teardown_flags() {
     SLEEPING.store(false, Ordering::SeqCst);
 }
 
+/// `Converter::f64_to_f32` already returns the owned `Vec<f32>` whose storage
+/// remains alive through the synchronous Swift callback. Cloning that buffer on
+/// every PCM chunk is a hot-path no-op this crate must not reintroduce.
+#[test]
+fn proxy_sink_write_keeps_converted_sample_storage() {
+    let mut converter = librespot_playback::convert::Converter::new(None);
+    let converted: Vec<f32> = converter.f64_to_f32(&[0.25, -0.5]);
+    assert_eq!(converted, [0.25_f32, -0.5]);
+
+    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src/proxy_sink.rs");
+    let source = std::fs::read_to_string(&path).expect("read proxy_sink.rs");
+    assert!(
+        source.contains("converter.f64_to_f32(samples)"),
+        "ProxySink::write must convert packets through Converter::f64_to_f32"
+    );
+    assert!(
+        !source.contains("to_vec("),
+        "ProxySink::write must keep the Vec Converter already allocated"
+    );
+}
+
 const FFI_PANIC_BARRIERS: &[&str] = &[
     "ffi_command",
     "ffi_query_i32",

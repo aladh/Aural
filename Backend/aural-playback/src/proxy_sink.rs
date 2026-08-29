@@ -103,7 +103,9 @@ impl Sink for ProxySink {
             .samples()
             .map_err(|e| SinkError::OnWrite(format!("Failed to get samples: {}", e)))?;
 
-        let samples_f32: Vec<f32> = converter.f64_to_f32(samples).to_vec();
+        // Converter already returns the owned Vec whose storage lives through the
+        // synchronous Swift callback below.
+        let samples_f32 = converter.f64_to_f32(samples);
 
         // Copy callback ref before invoking — avoids holding lock during call to Swift
         let cb = {
