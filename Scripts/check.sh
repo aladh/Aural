@@ -67,7 +67,8 @@ fi
 # exact set comparison below is the contract check.
 header_symbols="$(mktemp /tmp/aural-header-symbols.XXXXXX)"
 library_symbols="$(mktemp /tmp/aural-library-symbols.XXXXXX)"
-trap 'rm -f "$header_symbols" "$library_symbols"' EXIT
+consumed_symbols="$(mktemp /tmp/aural-consumed-symbols.XXXXXX)"
+trap 'rm -f "$header_symbols" "$library_symbols" "$consumed_symbols"' EXIT
 rg -o --pcre2 'aural_playback_[a-z0-9_]+(?=\s*\()' \
     "$project_root/Sources/AuralPlaybackCore/aural_playback.h" | sort -u > "$header_symbols"
 (nm -gU "$backend_lib" 2>/dev/null || true) \
@@ -75,6 +76,21 @@ rg -o --pcre2 'aural_playback_[a-z0-9_]+(?=\s*\()' \
     | sort -u > "$library_symbols"
 if ! diff -u "$header_symbols" "$library_symbols"; then
     print -u2 "The C header and libaural_playback.a export different Aural symbols"
+    exit 1
+fi
+
+# Dead C exports cannot regrow silently: every remaining header symbol must be
+# called from the sole AuralPlaybackCore adapter. Reuses the header extractor's
+# call-site token pattern rather than a second parser or generated binding.
+# Line comments and quoted strings are dropped first so a mention is not a call.
+playback_core="$project_root/Sources/Aural/Spotify/PlaybackCore.swift"
+sed -e 's://.*::' -e 's/"[^"]*"//g' "$playback_core" \
+    | rg -o --pcre2 'aural_playback_[a-z0-9_]+(?=\s*\()' \
+    | sort -u > "$consumed_symbols"
+unused_header_exports="$(comm -23 "$header_symbols" "$consumed_symbols")"
+if [[ -n "$unused_header_exports" ]]; then
+    print -u2 "Header exports not called from PlaybackCore.swift:"
+    print -u2 "$unused_header_exports"
     exit 1
 fi
 

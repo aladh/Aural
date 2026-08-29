@@ -124,19 +124,6 @@ pub extern "C" fn aural_playback_clear_streaming_credentials() {
     })
 }
 
-/// The Spotify account id the last successful streaming grant authenticated as, or null.
-/// Free with `aural_playback_free_string`.
-#[no_mangle]
-pub extern "C" fn aural_playback_last_grant_account() -> *mut c_char {
-    ffi_owned_string("aural_playback_last_grant_account", || {
-        let account = LAST_GRANT_ACCOUNT
-            .lock()
-            .unwrap_or_else(|e| e.into_inner())
-            .clone();
-        account.map_or(std::ptr::null_mut(), into_owned_c_string)
-    })
-}
-
 /// Completes the one-time streaming authorization with a token Swift has already minted:
 /// connects once, and lets librespot persist the AP credentials every later init uses.
 ///
@@ -174,10 +161,6 @@ pub extern "C" fn aural_playback_authorize_streaming(access_token: *const c_char
                 .connect(credentials, true)
                 .await
                 .map_err(|e| format!("Connect failed: {:?}", e))?;
-            // Recorded before shutdown: this is the account the browser was signed into, which
-            // Swift compares against the Web API account before accepting the grant.
-            *LAST_GRANT_ACCOUNT.lock().unwrap_or_else(|e| e.into_inner()) =
-                Some(session.username().to_string());
             session.shutdown();
             Ok::<(), String>(())
         }) {

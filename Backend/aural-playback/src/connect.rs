@@ -472,30 +472,6 @@ pub(crate) fn notify_devices(
     }
 }
 
-/// Sends the active device ID to the registered callback if it changed since the last update.
-/// Called on every cluster update — deduplicates so Swift only sees actual changes.
-///
-/// An empty ID means "no device is active" and is forwarded as such. It used to be
-/// dropped, which left Swift showing the previous active device forever once playback
-/// stopped everywhere.
-pub(crate) fn notify_active_device_id(device_id: &str) {
-    // Only notify if the active device actually changed
-    let mut last = LAST_ACTIVE_DEVICE_ID
-        .lock()
-        .unwrap_or_else(|e| e.into_inner());
-    if *last == device_id {
-        return;
-    }
-    *last = device_id.to_string();
-    drop(last);
-
-    if let Some(callback) = registered_callback(&CONTROL_CALLBACKS.active_device) {
-        if let Ok(c_str) = CString::new(device_id) {
-            callback(c_str.as_ptr());
-        }
-    }
-}
-
 /// Sends connection state update to the registered callback
 pub(crate) fn notify_connection_state_change() {
     if let Some(callback) = registered_callback(&CONTROL_CALLBACKS.connection_state) {
@@ -687,10 +663,6 @@ pub(crate) fn apply_cluster(generation: u64, cluster: Cluster) {
         &cluster.active_device_id,
         current_device_id().as_deref(),
     ));
-    if !cluster_generation_current(generation) {
-        return;
-    }
-    notify_active_device_id(&cluster.active_device_id);
     if !cluster_generation_current(generation) {
         return;
     }
