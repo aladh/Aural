@@ -490,6 +490,8 @@ private final class GatedFirstSaveTokenStore: KeymasterTokenStoring, @unchecked 
         gate.signal()
     }
 }
+
+private func auralPersistenceSourceFile(_ relativePath: String) throws -> String {
     let checksDirectory = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
     let sources = checksDirectory.deletingLastPathComponent().deletingLastPathComponent()
     let url = sources.appending(path: relativePath)
