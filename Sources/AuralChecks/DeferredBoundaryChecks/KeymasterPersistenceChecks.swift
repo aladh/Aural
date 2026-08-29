@@ -136,8 +136,10 @@ func runKeymasterPersistenceSourceContractChecks(_ check: CheckRunner) {
             )
             check.check(
                 "data-protection keychain is not selected and the stale access-group comment is gone",
-                !containsPersistenceToken(keychain, "kSecUseDataProtectionKeychain")
+                !containsPersistenceToken(keychain, "kSecUseDataProtectionKeychain as String")
+                    && !containsPersistenceToken(keychain, "[kSecUseDataProtectionKeychain")
                     && !containsPersistenceToken(keychain, "Shared keychain access group")
+                    && containsPersistenceToken(keychain, "omitted on purpose")
                     && containsPersistenceToken(keychain, "errSecMissingEntitlement")
             )
         }
