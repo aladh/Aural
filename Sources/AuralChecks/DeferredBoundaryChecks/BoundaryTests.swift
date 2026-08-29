@@ -18,6 +18,7 @@ enum BoundaryChecksMain {
         runTrackAttributeChecks(runner)
         runFixtureContractChecks(runner)
         runPCMWriteSpaceChecks(runner)
+        runEngineEventFanoutChecks(runner)
         await runPrivacySanitizationChecks(runner)
         await runWorkflowChecks(runner)
         await runAccountEpochOwnershipChecks(runner)

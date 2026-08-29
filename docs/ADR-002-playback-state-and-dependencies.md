@@ -35,8 +35,10 @@ could still combine values from different account, engine, command, queue, or se
   Playlist add/remove is a focused `PlaylistMutating` port injected beside read-only
   `CatalogProviding`; views consume catalog models and `PlaylistMutationController`, not
   Pathfinder DTOs.
-- `RustPlaybackEngine` is the process-lifetime callback adapter. It emits a bounded typed stream;
-  PCM continues directly to `AudioRenderer` and never enters the state architecture.
+- `RustPlaybackEngine` is the process-lifetime callback adapter. It emits a bounded typed stream
+  whose process-local sequence is assigned and delivered by one re-entry-safe drain so every
+  subscriber observes strictly increasing order across playback, queue, connection, and devices
+  callbacks. PCM continues directly to `AudioRenderer` and never enters the state architecture.
 - The `AuralApp` scene in `AuralCore` is the production composition root; the shipping `AuralApp`
   target is a deliberately thin launcher. Views receive feature stores or narrow immutable
   playback values/actions. Stores and views do not construct production APIs or call the C bridge.
