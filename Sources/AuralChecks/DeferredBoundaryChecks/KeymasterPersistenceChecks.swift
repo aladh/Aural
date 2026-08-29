@@ -33,6 +33,15 @@ func runKeymasterPersistenceChecks(_ check: CheckRunner) {
             "migration-failure diagnostic omits the payload sentinel",
             !KeymasterGrantPersistenceDiagnostics.legacyMigrationSaveFailed.contains(sentinel)
         )
+        check.equal(
+            "superseded-repair diagnostic names the category and reason",
+            KeymasterGrantPersistenceDiagnostics.supersededPersistRepairFailed,
+            "Superseded grant repair failed reason=secure-save"
+        )
+        check.check(
+            "superseded-repair diagnostic omits the payload sentinel",
+            !KeymasterGrantPersistenceDiagnostics.supersededPersistRepairFailed.contains(sentinel)
+        )
     }
 
     check.suite("Legacy grant migrates one way into the secure store") {

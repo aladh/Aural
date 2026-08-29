@@ -169,7 +169,7 @@ actor KeymasterSession {
                 try store.save(tokens)
             } catch {
                 AuralLog.authentication.error(
-                    "\(KeymasterGrantPersistenceDiagnostics.legacyMigrationSaveFailed, privacy: .public)"
+                    "\(KeymasterGrantPersistenceDiagnostics.supersededPersistRepairFailed, privacy: .public)"
                 )
             }
         } else {

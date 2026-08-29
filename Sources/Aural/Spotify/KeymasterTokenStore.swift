@@ -49,6 +49,7 @@ enum KeymasterGrantPersistenceDiagnostics {
     }
 
     static let legacyMigrationSaveFailed = "Legacy grant migration failed reason=secure-save"
+    static let supersededPersistRepairFailed = "Superseded grant repair failed reason=secure-save"
 }
 
 enum KeymasterStoredGrantCodec {
