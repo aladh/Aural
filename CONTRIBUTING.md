@@ -95,8 +95,7 @@ canonical list of accepted decisions:
 - Rust/librespot owns the streaming session, Spotify Connect, decoding, reconnects, and queue truth.
   Build, reconnect cleanup+build, and exported cleanup serialize through one async lifecycle mutex
   so those operations cannot interleave writes to the engine globals.
-- `AuralDomain` owns atomic playback state, the reducer, queue precedence, pagination walks,
-  Spotify transient-retry classification, and other pure policies.
+- `AuralDomain` owns atomic playback state, the reducer, queue precedence, and pure policies.
 - `AuralCore` owns the app implementation behind the thin shipping `AuralApp` executable.
 - `PlaybackStore` publishes reducer state, `PlaybackCoordinator` serializes effects, and
   `PlaybackEnvironment.live` assembles production dependencies once.
