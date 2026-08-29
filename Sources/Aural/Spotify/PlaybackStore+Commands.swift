@@ -15,6 +15,7 @@ extension PlaybackStore {
         expecting expectedPlaybackState: Bool? = nil,
         expectedTiming: PlaybackTiming? = nil,
         expectedTrack: CurrentTrack? = nil,
+        expectedShuffle: Bool? = nil,
         operation: LocalPlaybackOperation,
         kind: PlaybackCommandKind = .transport,
         completion: @escaping @MainActor (Bool) -> Void = { _ in }
@@ -37,6 +38,7 @@ extension PlaybackStore {
                 expectedTransport: expectedPlaybackState.map { $0 ? .playing : .paused },
                 expectedTiming: expectedTiming,
                 expectedTrack: expectedTrack,
+                expectedShuffle: expectedShuffle,
                 startedAt: environment.clock.now()
             )),
             source: .command
@@ -73,6 +75,7 @@ extension PlaybackStore {
         expecting expectedPlaybackState: Bool? = nil,
         expectedTiming: PlaybackTiming? = nil,
         expectedTrack: CurrentTrack? = nil,
+        expectedShuffle: Bool? = nil,
         local: LocalPlaybackOperation,
         remote command: SpotifyConnectCommand,
         completion: @escaping @MainActor (Bool) -> Void = { _ in }
@@ -83,6 +86,7 @@ extension PlaybackStore {
             expecting: expectedPlaybackState,
             expectedTiming: expectedTiming,
             expectedTrack: expectedTrack,
+            expectedShuffle: expectedShuffle,
             local: local,
             remote: { api, from, to in try await api.send(command, from: from, to: to) },
             completion: completion
@@ -95,6 +99,7 @@ extension PlaybackStore {
         expecting expectedPlaybackState: Bool? = nil,
         expectedTiming: PlaybackTiming? = nil,
         expectedTrack: CurrentTrack? = nil,
+        expectedShuffle: Bool? = nil,
         local: LocalPlaybackOperation,
         remote: @escaping @Sendable (any RemotePlaybackClient, String, String) async throws -> Void,
         completion: @escaping @MainActor (Bool) -> Void = { _ in }
@@ -107,6 +112,7 @@ extension PlaybackStore {
                 expecting: expectedPlaybackState,
                 expectedTiming: expectedTiming,
                 expectedTrack: expectedTrack,
+                expectedShuffle: expectedShuffle,
                 operation: local,
                 kind: kind,
                 completion: completion
@@ -125,6 +131,7 @@ extension PlaybackStore {
                 expecting: expectedPlaybackState,
                 expectedTiming: expectedTiming,
                 expectedTrack: expectedTrack,
+                expectedShuffle: expectedShuffle,
                 from: from,
                 to: to,
                 operation: remote,
@@ -139,6 +146,7 @@ extension PlaybackStore {
         expecting expectedPlaybackState: Bool?,
         expectedTiming: PlaybackTiming?,
         expectedTrack: CurrentTrack?,
+        expectedShuffle: Bool?,
         from sourceID: String,
         to targetID: String,
         operation: @escaping @Sendable (any RemotePlaybackClient, String, String) async throws -> Void,
@@ -162,6 +170,7 @@ extension PlaybackStore {
                 expectedTransport: expectedPlaybackState.map { $0 ? .playing : .paused },
                 expectedTiming: expectedTiming,
                 expectedTrack: expectedTrack,
+                expectedShuffle: expectedShuffle,
                 startedAt: environment.clock.now()
             )),
             source: .command
@@ -195,10 +204,11 @@ extension PlaybackStore {
     }
 
     /// Local and remote command finishes share this policy so a matching engine snapshot cannot
-    /// drop `play` / `togglePlayback` completions, including when the coordinator later fails.
-    /// The finished command's resolution is captured before `commandFinished` so follow-up can
-    /// treat consume-only reducer acceptance as confirmed success or superseded inertness.
-    /// Epoch, teardown, non-transport kinds, and unknown ids stay inert.
+    /// drop `play` / `togglePlayback` / shuffle completions, including when the coordinator later
+    /// fails. The finished command's resolution is captured before `commandFinished` so follow-up
+    /// can treat consume-only reducer acceptance as confirmed success or superseded inertness.
+    /// Epoch, teardown, unknown ids, and options finishes without a captured confirmation stay
+    /// inert.
     private func applyCommandOutcome(
         commandID: UUID,
         kind: PlaybackCommandKind,

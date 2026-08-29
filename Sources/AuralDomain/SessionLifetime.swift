@@ -127,7 +127,9 @@ public struct ConnectQueueCallbackWatermark: Equatable, Sendable {
 /// resolution before `commandFinished`; the reducer consumes that map entry.
 /// Follow-up then evaluates the captured resolution before `finishAccepted`: confirmed
 /// reports success, superseded stays inert, so consume-only acceptance cannot turn a
-/// coordinator failure into `reportFailure`.
+/// coordinator failure into `reportFailure`. Shuffle options confirmation uses the same
+/// per-command-id map; a matching engine shuffle sample records `.confirmed` so a late
+/// rejection cannot restore the prior Boolean or rewrite preference.
 /// `PlaybackReducer.reconcileTransport` may also drop a pending *transport* command when an
 /// engine snapshot already matches `expectedTransport` without recording a resolution. A
 /// later rejected finish on that same lifetime with no pending transport command is then
@@ -138,7 +140,9 @@ public struct ConnectQueueCallbackWatermark: Equatable, Sendable {
 /// Seek confirmation and track-switch supersession both clear pending `.seek`, so a later
 /// finish stays inert: `pendingCommandID == nil` cannot tell those cases apart, and seek
 /// completions have no success side effect.
-/// Non-transport kinds and a newer pending id stay inert.
+/// Options commands without a captured resolution keep the non-transport inert path when
+/// the pending command is already gone. A newer pending id stays inert unless a captured
+/// confirmation for the finished id reports success.
 public enum PlaybackCommandFollowUp: Equatable, Sendable {
     case reportSuccess
     case reportFailure(reconnect: Bool)
@@ -163,15 +167,13 @@ public func playbackCommandFollowUp(
         && capturedAccountEpoch == currentAccountEpoch
         && capturedEngineEpoch == currentEngineEpoch
     guard sameLifetime else { return .inert }
-    if commandKind == .transport {
-        switch finishedCommandResolution {
-        case .confirmed:
-            return .reportSuccess
-        case .superseded:
-            return .inert
-        case nil:
-            break
-        }
+    switch finishedCommandResolution {
+    case .confirmed:
+        return .reportSuccess
+    case .superseded:
+        return .inert
+    case nil:
+        break
     }
     if finishAccepted {
         return operationSucceeded ? .reportSuccess : .reportFailure(reconnect: requiresReconnect)

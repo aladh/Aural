@@ -370,6 +370,10 @@ public struct PendingPlaybackCommand: Equatable, Sendable {
     public let expectedTrack: CurrentTrack?
     /// Exact presentation captured at `commandStarted` for a known play target.
     public let rollbackPresentation: PlaybackPresentationSnapshot?
+    /// Requested shuffle value for a live options command. Repeat commands leave this nil.
+    public let expectedShuffle: Bool?
+    /// Exact pre-command shuffle captured at `commandStarted` for a live shuffle command.
+    public let rollbackShuffle: Bool?
     public let startedAt: Date
 
     public init(
@@ -381,6 +385,8 @@ public struct PendingPlaybackCommand: Equatable, Sendable {
         rollbackTiming: PlaybackTiming? = nil,
         expectedTrack: CurrentTrack? = nil,
         rollbackPresentation: PlaybackPresentationSnapshot? = nil,
+        expectedShuffle: Bool? = nil,
+        rollbackShuffle: Bool? = nil,
         startedAt: Date
     ) {
         self.id = id
@@ -391,6 +397,8 @@ public struct PendingPlaybackCommand: Equatable, Sendable {
         self.rollbackTiming = rollbackTiming
         self.expectedTrack = expectedTrack
         self.rollbackPresentation = rollbackPresentation
+        self.expectedShuffle = expectedShuffle
+        self.rollbackShuffle = rollbackShuffle
         self.startedAt = startedAt
     }
 }
@@ -657,7 +665,9 @@ public enum PlaybackReducer {
                 in: &candidate
             )
         case let .options(options):
-            candidate.options = options
+            candidate.options.repeatMode = options.repeatMode
+            candidate.options.repeatFlags = options.repeatFlags
+            reconcileShuffle(options.shuffle, source: envelope.source, in: &candidate)
         case let .queue(incoming):
             candidate.queue = mergePlaybackQueueSnapshots(
                 current: candidate.queue,
@@ -669,9 +679,9 @@ public enum PlaybackReducer {
             applyConnectionPlaybackOwner(&candidate)
         case let .commandStarted(command):
             // Capture current presentation before applying the caller's target. The store must
-            // not mutate transport, timing, or track first, or rollback records the optimistic values.
-            // Do not clear other commands' resolutions: a later pause must not recycle the
-            // already-reconciled-success path for a superseded play.
+            // not mutate transport, timing, track, or shuffle first, or rollback records the
+            // optimistic values. Do not clear other commands' resolutions: a later pause must
+            // not recycle the already-reconciled-success path for a superseded play.
             let prepared = PendingPlaybackCommand(
                 id: command.id,
                 kind: command.kind,
@@ -691,6 +701,10 @@ public enum PlaybackReducer {
                         timing: candidate.timing
                     )
                 ),
+                expectedShuffle: command.expectedShuffle,
+                rollbackShuffle: command.rollbackShuffle ?? (
+                    command.expectedShuffle == nil ? nil : candidate.options.shuffle
+                ),
                 startedAt: command.startedAt
             )
             candidate.pendingCommands[command.kind] = prepared
@@ -705,6 +719,9 @@ public enum PlaybackReducer {
             }
             if let expected = command.expectedTiming {
                 candidate.timing = expected
+            }
+            if let expectedShuffle = command.expectedShuffle {
+                candidate.options.shuffle = expectedShuffle
             }
         case let .commandFinished(id, accepted, notice):
             if let pair = candidate.pendingCommands.first(where: { $0.value.id == id }) {
@@ -724,7 +741,12 @@ public enum PlaybackReducer {
                             candidate.timing = rollback
                         }
                     }
+                    if let rollbackShuffle = pair.value.rollbackShuffle {
+                        candidate.options.shuffle = rollbackShuffle
+                    }
                     candidate.notice = notice
+                } else if let expectedShuffle = pair.value.expectedShuffle {
+                    candidate.options.shuffle = expectedShuffle
                 }
             } else if candidate.transportCommandResolutions[id] != nil {
                 // Consume a confirmed/superseded entry without touching presentation.
@@ -851,7 +873,7 @@ public enum PlaybackReducer {
         _ snapshot: EnginePlaybackSnapshot,
         in candidate: inout PlaybackState
     ) {
-        if let shuffle = snapshot.shuffle { candidate.options.shuffle = shuffle }
+        reconcileShuffle(snapshot.shuffle, source: .enginePlayback, in: &candidate)
         if snapshot.repeatMode != nil || snapshot.repeatFlags != nil {
             let flags = snapshot.repeatFlags
                 ?? snapshot.repeatMode?.flags
@@ -859,6 +881,34 @@ public enum PlaybackReducer {
             candidate.options.repeatFlags = flags
             candidate.options.repeatMode = snapshot.repeatMode
                 ?? RepeatMode(context: flags.context, track: flags.track)
+        }
+    }
+
+    /// A lagging pre-command shuffle sample must not undo the pending target. Only an
+    /// authoritative engine-playback sample matching the requested value confirms the command
+    /// so a late coordinator failure cannot restore the prior Boolean. User/preference
+    /// `.options` events, including setRepeat copies of the optimistic Boolean, hold the
+    /// pending target and cannot record confirmation. Repeat options commands have no
+    /// expected shuffle and keep current adoption.
+    private static func reconcileShuffle(
+        _ incoming: Bool?,
+        source: PlaybackEventSource,
+        in state: inout PlaybackState
+    ) {
+        guard let incoming else { return }
+        guard let pending = state.pendingCommands[.options],
+              let expected = pending.expectedShuffle
+        else {
+            state.options.shuffle = incoming
+            return
+        }
+        if incoming == expected {
+            state.options.shuffle = incoming
+            if source == .enginePlayback {
+                state.pendingCommands[.options] = nil
+                state.transportCommandResolutions[pending.id] = .confirmed
+            }
+            return
         }
     }
 

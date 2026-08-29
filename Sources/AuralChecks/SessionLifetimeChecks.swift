@@ -313,5 +313,45 @@ func runSessionLifetimeChecks(_ check: CheckRunner) {
             ),
             .inert
         )
+        check.equal(
+            "a confirmed shuffle still reports success after a late failure",
+            followUp(
+                finishAccepted: true,
+                succeeded: false,
+                reconnect: true,
+                kind: .options,
+                resolution: .confirmed
+            ),
+            .reportSuccess
+        )
+        check.equal(
+            "a confirmed shuffle still reports success while a later options command is pending",
+            followUp(
+                finishAccepted: true,
+                succeeded: false,
+                reconnect: true,
+                kind: .options,
+                pending: other,
+                resolution: .confirmed
+            ),
+            .reportSuccess
+        )
+        check.equal(
+            "a confirmed shuffle is inert after an engine-epoch invalidation",
+            followUp(
+                finishAccepted: true,
+                succeeded: false,
+                reconnect: true,
+                kind: .options,
+                resolution: .confirmed,
+                currentEngine: 2
+            ),
+            .inert
+        )
+        check.equal(
+            "an options finish without a captured resolution stays inert when pending is gone",
+            followUp(finishAccepted: false, succeeded: false, reconnect: true, kind: .options),
+            .inert
+        )
     }
 }
