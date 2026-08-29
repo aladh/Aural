@@ -300,7 +300,7 @@ func runKeymasterSessionPersistenceChecks(_ check: CheckRunner) async {
 private func persistenceGrant(
     access: String,
     refresh: String,
-    expiresAt: Date = Date(timeIntervalSince1970: 2_000_000)
+    expiresAt: Date = Date().addingTimeInterval(3_600)
 ) -> KeymasterTokens {
     KeymasterTokens(
         accessToken: access,
