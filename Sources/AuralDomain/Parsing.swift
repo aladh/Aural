@@ -66,7 +66,9 @@ public enum Pagination {
         pagesFetched: Int,
         requestedOffsets: Set<Int> = [],
         maximumPageCount: Int = maximumPageCount,
-        nextOffset: (Int, Int, Int?) -> Int? = { Pagination.nextOffset(offset: $0, pageEntryCount: $1, totalCount: $2) }
+        nextOffset: @Sendable (Int, Int, Int?) -> Int? = {
+            Pagination.nextOffset(offset: $0, pageEntryCount: $1, totalCount: $2)
+        }
     ) -> Decision {
         guard let next = nextOffset(offset, pageEntryCount, totalCount) else {
             return .finished
@@ -83,19 +85,23 @@ public enum Pagination {
     /// Walks `fetchPage` from offset 0 until `decision` finishes or fails.
     ///
     /// `nextOffset` defaults to `Pagination.nextOffset`. Checks may pass a non-advancing
-    /// function to cover a stuck offset without a live endpoint.
+    /// function to cover a stuck offset without a live endpoint. `firstPage`, when present,
+    /// is consumed at offset 0 so a caller that already fetched the header does not capture
+    /// mutable walk state in `fetchPage`.
     public static func collect<Item>(
         maximumPageCount: Int = maximumPageCount,
-        nextOffset: (Int, Int, Int?) -> Int? = {
+        firstPage: Page<Item>? = nil,
+        nextOffset: @Sendable (Int, Int, Int?) -> Int? = {
             Pagination.nextOffset(offset: $0, pageEntryCount: $1, totalCount: $2)
         },
-        fetchPage: (Int) async throws -> Page<Item>
+        fetchPage: @Sendable (Int) async throws -> Page<Item>
     ) async throws -> [Item] {
         var items: [Item] = []
         var requestedOffsets: Set<Int> = []
         var offset = 0
         var pagesFetched = 0
         var total: Int?
+        var seeded = firstPage
 
         while true {
             try Task.checkCancellation()
@@ -107,7 +113,13 @@ public enum Pagination {
             }
 
             pagesFetched += 1
-            let page = try await fetchPage(offset)
+            let page: Page<Item>
+            if let seededPage = seeded {
+                page = seededPage
+                seeded = nil
+            } else {
+                page = try await fetchPage(offset)
+            }
             if total == nil {
                 total = page.totalCount
             }

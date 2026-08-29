@@ -334,23 +334,23 @@ nonisolated struct PartnerAPI: Sendable {
     /// and reordering, which can only name an item the app has seen.
     func playlist(id: String) async throws -> PathfinderPlaylistUnion {
         let uri = "spotify:playlist:\(id)"
-        var header: PathfinderPlaylistUnion?
-        let items: [PathfinderPlaylistItem] = try await paginate { offset in
+        let first = try await playlistPage(uri: uri, offset: 0)
+        let total = first.content?.totalCount
+        let items: [PathfinderPlaylistItem] = try await paginate(
+            firstPage: Pagination.Page(
+                items: first.content?.items ?? [],
+                pageEntryCount: first.content?.items?.count ?? 0,
+                totalCount: total
+            )
+        ) { offset in
             let page = try await playlistPage(uri: uri, offset: offset)
-            if header == nil {
-                header = page
-            }
             return Pagination.Page(
                 items: page.content?.items ?? [],
                 pageEntryCount: page.content?.items?.count ?? 0,
-                totalCount: header?.content?.totalCount
+                totalCount: total
             )
         }
-
-        guard let header else {
-            throw PartnerAPIError.emptyPayload
-        }
-        return header.withItems(items)
+        return first.withItems(items)
     }
 
     private func playlistPage(uri: String, offset: Int) async throws -> PathfinderPlaylistUnion {
@@ -566,10 +566,11 @@ nonisolated struct PartnerAPI: Sendable {
 
     /// One bounded walk for playlist contents, `libraryV3`, and saved tracks.
     private func paginate<Item>(
-        fetchPage: (Int) async throws -> Pagination.Page<Item>
+        firstPage: Pagination.Page<Item>? = nil,
+        fetchPage: @escaping @Sendable (Int) async throws -> Pagination.Page<Item>
     ) async throws -> [Item] {
         do {
-            return try await Pagination.collect(fetchPage: fetchPage)
+            return try await Pagination.collect(firstPage: firstPage, fetchPage: fetchPage)
         } catch let failure as Pagination.Failure {
             throw PartnerAPIError.pagination(failure)
         }

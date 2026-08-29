@@ -214,7 +214,7 @@ private func expectCollect(
     _ check: CheckRunner,
     _ label: String,
     expected: [Int],
-    fetchPage: @escaping (Int) async throws -> Pagination.Page<Int>
+    fetchPage: @escaping @Sendable (Int) async throws -> Pagination.Page<Int>
 ) async {
     do {
         let items = try await Pagination.collect(maximumPageCount: 8, fetchPage: fetchPage)
