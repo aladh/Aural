@@ -109,7 +109,8 @@ actor KeymasterSession {
         if hasLoadedStore { return }
 
         if let storeLoadInFlight {
-            _ = await storeLoadInFlight.value
+            let storedTokens = await storeLoadInFlight.value
+            applyLoadedGrant(storedTokens)
             return
         }
 
@@ -126,9 +127,17 @@ actor KeymasterSession {
         }
 
         let storedTokens = await task.value
+        applyLoadedGrant(storedTokens, startedAt: startedAt)
+    }
+
+    /// Joiners of `storeLoadInFlight` can resume before the owner assigns `tokens`.
+    /// Applying here with the same adopt/clear guards keeps `accessToken()` from throwing
+    /// `noGrant` while a grant is sitting in the just-finished read.
+    private func applyLoadedGrant(_ storedTokens: KeymasterTokens?, startedAt: Int? = nil) {
+        if let startedAt, generation != startedAt { return }
+        if hasLoadedStore { return }
+        tokens = tokens ?? storedTokens
         hasLoadedStore = true
-        guard generation == startedAt, tokens == nil else { return }
-        tokens = storedTokens
     }
 
     var username: String? {
@@ -178,18 +187,15 @@ actor KeymasterSession {
     /// do anything at all, and "not authorized yet" is a state the UI already handles.
     func accessToken(now: Date = Date()) async throws -> String {
         await loadStoredGrantIfNeeded()
-        if let refreshInFlight {
-            return try await refreshInFlight.value.accessToken
-        }
         guard let current = tokens else {
             throw KeymasterSessionError.noGrant
         }
 
-        guard current.needsRefresh(now: now) else {
-            return current.accessToken
+        if refreshInFlight != nil || current.needsRefresh(now: now) {
+            return try await refreshed(from: current).accessToken
         }
 
-        return try await refreshed(from: current).accessToken
+        return current.accessToken
     }
 
     /// A token that is valid now, refreshing even when the clock still considers the current
@@ -215,16 +221,18 @@ actor KeymasterSession {
     private func refreshed(from current: KeymasterTokens) async throws -> KeymasterTokens {
         // A second caller during a refresh joins the one already running. Two concurrent
         // refreshes would each spend the same rotating token, and the loser's replacement
-        // would be the one Spotify has already invalidated.
+        // would be the one Spotify has already invalidated. The in-flight task is the
+        // commit, not just the network call, so joiners observe the same persisted grant
+        // or `KeymasterSessionError` as the owner.
         if let refreshInFlight {
             return try await refreshInFlight.value
         }
 
         let startedAt = generation
-        let task = Task { [refresher] () throws -> KeymasterTokens in
-            try await refresher(current.refreshToken)
+        let current = current
+        let task = Task {
+            try await self.commitRefresh(from: current, startedAt: startedAt)
         }
-
         refreshInFlight = task
         // Only if the slot still holds *this* run. `adopt` and `clear` both empty it, and a
         // later refresh can have filled it again by the time this one unwinds — clearing that
@@ -235,10 +243,13 @@ actor KeymasterSession {
                 refreshInFlight = nil
             }
         }
+        return try await task.value
+    }
 
+    private func commitRefresh(from current: KeymasterTokens, startedAt: Int) async throws -> KeymasterTokens {
         let renewed: KeymasterTokens
         do {
-            renewed = try await task.value
+            renewed = try await refresher(current.refreshToken)
         } catch KeymasterAuthError.grantRevoked {
             // Nothing to retry: this refresh token is dead and every later attempt spends the
             // same one. Left in place it fails forever and survives relaunch, because the

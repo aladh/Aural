@@ -40,9 +40,19 @@ func runAuthCredentialRetryChecks(_ check: CheckRunner) async {
 
         let first = Task { try await session.refreshIgnoringExpiry(rejected: "access-a") }
         await refresher.waitUntilParked()
-        let second = Task { try await session.refreshIgnoringExpiry(rejected: "access-a") }
-        let joinedAccess = Task { try await session.accessToken() }
+        let started = StartedGate(count: 2)
+        let second = Task {
+            started.mark()
+            return try await session.refreshIgnoringExpiry(rejected: "access-a")
+        }
+        let joinedAccess = Task {
+            started.mark()
+            return try await session.accessToken()
+        }
+        await started.wait()
+        _ = await session.hasGrant
         check.equal("the second 401 joins rather than starting a second spend", refresher.attemptCount, 1)
+        check.equal("no overlapping refresh spend while the first is in flight", refresher.overlappingSpends, 0)
 
         refresher.complete(grant(access: "access-b", refresh: "refresh-b"))
         check.equal("first waiter receives the replacement", try? await first.value, "access-b")
@@ -484,9 +494,14 @@ private final class ParkingRefresher: @unchecked Sendable {
     private var entered: CheckedContinuation<Void, Never>?
     private var attempts = 0
     private var spentTokens: [String] = []
+    private var overlapping = 0
 
     var attemptCount: Int {
         lock.withLock { attempts }
+    }
+
+    var overlappingSpends: Int {
+        lock.withLock { overlapping }
     }
 
     var spent: [String] {
@@ -496,6 +511,9 @@ private final class ParkingRefresher: @unchecked Sendable {
     func refresh(_ refreshToken: String) async throws -> KeymasterTokens {
         try await withCheckedThrowingContinuation { continuation in
             lock.lock()
+            if parked != nil {
+                overlapping += 1
+            }
             attempts += 1
             spentTokens.append(refreshToken)
             parked = continuation
@@ -611,6 +629,40 @@ private final class ScriptedTransport: @unchecked Sendable {
     }
 }
 
+private final class StartedGate: @unchecked Sendable {
+    private let lock = NSLock()
+    private let target: Int
+    private var marked = 0
+    private var waiter: CheckedContinuation<Void, Never>?
+
+    init(count: Int) {
+        target = count
+    }
+
+    func mark() {
+        lock.lock()
+        marked += 1
+        let ready = marked >= target
+        let waiter = waiter
+        if ready { self.waiter = nil }
+        lock.unlock()
+        if ready { waiter?.resume() }
+    }
+
+    func wait() async {
+        await withCheckedContinuation { continuation in
+            lock.lock()
+            if marked >= target {
+                lock.unlock()
+                continuation.resume()
+            } else {
+                waiter = continuation
+                lock.unlock()
+            }
+        }
+    }
+}
+
 private extension KeymasterSession {
     /// Completes a hop onto this actor so a just-created revocation stream can install.
     func drainActor() async {
@@ -643,6 +695,15 @@ private final class RevocationProbe: @unchecked Sendable {
         let lock = NSLock()
         var announcements = 0
         var waiter: CheckedContinuation<Void, Never>?
+
+        func noteAnnouncement() {
+            lock.lock()
+            announcements += 1
+            let waiter = waiter
+            self.waiter = nil
+            lock.unlock()
+            waiter?.resume()
+        }
     }
 
     init(_ stream: AsyncStream<Void>) {
@@ -650,12 +711,7 @@ private final class RevocationProbe: @unchecked Sendable {
         self.state = state
         listener = Task {
             for await _ in stream {
-                state.lock.lock()
-                state.announcements += 1
-                let waiter = state.waiter
-                state.waiter = nil
-                state.lock.unlock()
-                waiter?.resume()
+                state.noteAnnouncement()
             }
         }
     }
