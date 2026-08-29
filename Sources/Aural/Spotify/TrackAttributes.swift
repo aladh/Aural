@@ -105,7 +105,7 @@ nonisolated struct TrackAttributesAPI: Sendable {
             throw TrackAttributesAPIError.emptyResponse
         }
 
-        return Attempt(body: data, http: http, request: request)
+        return SpotifyCredentials.Attempt(body: data, http: http, request: request)
     }
 
     // MARK: - Request encoding

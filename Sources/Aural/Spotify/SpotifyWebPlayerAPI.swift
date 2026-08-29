@@ -63,7 +63,7 @@ nonisolated struct SpotifyWebPlayerAPI: Sendable {
             guard let http = response as? HTTPURLResponse else {
                 throw SpotifyWebPlayerAPIError.malformedResponse
             }
-            return Attempt(body: data, http: http, request: request)
+            return SpotifyCredentials.Attempt(body: data, http: http, request: request)
         }
         guard sent.status == 200 else {
             throw SpotifyWebPlayerAPIError.requestFailed(sent.status)

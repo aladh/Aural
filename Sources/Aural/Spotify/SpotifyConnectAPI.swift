@@ -375,7 +375,7 @@ nonisolated struct SpotifyConnectAPI: Sendable {
         guard let http = response as? HTTPURLResponse else {
             throw SpotifyConnectAPIError.malformedResponse
         }
-        return Attempt(body: data, http: http, request: request)
+        return SpotifyCredentials.Attempt(body: data, http: http, request: request)
     }
 
     private func preflight(_ url: URL) async throws {

@@ -706,7 +706,7 @@ nonisolated struct PartnerAPI: Sendable {
             throw PartnerAPIError.emptyPayload
         }
 
-        return Attempt(body: data, http: http, request: request)
+        return SpotifyCredentials.Attempt(body: data, http: http, request: request)
     }
 
     private static func failure(
