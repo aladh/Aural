@@ -184,7 +184,9 @@ The normal quality gate enforces several of these mechanically. Treat all of the
   epoch before applying a result. Selection-scoped and request-scoped work needs equivalent stale
   result protection and cancellation.
 - Ordered callback sources carry revisions. Session/engine generations prevent a stale callback or
-  teardown from mutating a replacement session.
+  teardown from mutating a replacement session. `RustPlaybackEngine` assigns the process-local
+  envelope sequence and delivers it on one drain so subscribers observe strictly increasing order;
+  `AsyncStream.Continuation.yield` and `onTermination` must not run while that lock is held.
 - Rust player-session lifecycle operations that write `SESSION`, `SPIRC`, `PLAYER`, `MIXER`, or
   `PLAYER_EVENT_TX` (exported init build, reconnect cleanup+build, and exported cleanup) serialize
   through one async mutex in `aural-playback`. Do not hold a per-global `Mutex` guard across
