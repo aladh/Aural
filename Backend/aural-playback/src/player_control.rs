@@ -421,6 +421,7 @@ pub(crate) fn cleanup_player_globals() {
         .lock()
         .unwrap_or_else(|e| e.into_inner())
         .clear();
+    discard_retained_cluster_offers();
 
     // Reset the connection snapshot: not ready, not connected, no device ID.
     // reconnect_attempt is deliberately preserved - it drives exponential backoff and

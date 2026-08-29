@@ -1,4 +1,203 @@
 use crate::*;
+use std::collections::VecDeque;
+
+/// Who produced a cluster that wants to be mapped through [`apply_cluster`].
+///
+/// The HTTP bootstrap is a one-shot snapshot of whatever the service had when the PUT
+/// returned. A dealer `ClusterUpdate` is a later observation of the same session. They share
+/// one apply path, but they must not last-write-win: a slower bootstrap can otherwise overwrite a
+/// newer push and receive a later `stamped_snapshot` revision, which Swift cannot reject.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum ClusterOrigin {
+    BootstrapFetch,
+    PushedUpdate,
+}
+
+/// Whether an offered cluster may enter the per-generation apply queue.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum ClusterOfferDecision {
+    Discard,
+    Enqueue { mark_pushed: bool },
+}
+
+/// Linearizes bootstrap vs push for one session generation.
+///
+/// A flag checked before `apply_cluster` is not enough: the bootstrap can observe "no push
+/// yet", a push can apply, and the bootstrap can still apply afterwards. Decision and enqueue
+/// share this mutex; [`apply_cluster`] runs only from the claimant drain, after the guard is
+/// dropped, so Swift callbacks cannot re-enter this lock. Nested `offer_cluster` from a
+/// callback only enqueues. The bootstrap task is not aborted when superseded; it re-checks
+/// generation here and at apply time instead.
+struct ClusterApplyGate {
+    pending: VecDeque<PendingCluster>,
+    applying: bool,
+    pushed_generation: Option<u64>,
+}
+
+struct PendingCluster {
+    origin: ClusterOrigin,
+    generation: u64,
+    cluster: Cluster,
+}
+
+static CLUSTER_APPLY: Lazy<Mutex<ClusterApplyGate>> = Lazy::new(|| {
+    Mutex::new(ClusterApplyGate {
+        pending: VecDeque::new(),
+        applying: false,
+        pushed_generation: None,
+    })
+});
+
+pub(crate) fn cluster_offer_decision(
+    origin: ClusterOrigin,
+    listener_generation: u64,
+    current_generation: u64,
+    pushed_in_this_generation: bool,
+) -> ClusterOfferDecision {
+    if !listener_may_act(listener_generation, current_generation) {
+        return ClusterOfferDecision::Discard;
+    }
+    match origin {
+        ClusterOrigin::PushedUpdate => ClusterOfferDecision::Enqueue { mark_pushed: true },
+        ClusterOrigin::BootstrapFetch if pushed_in_this_generation => ClusterOfferDecision::Discard,
+        ClusterOrigin::BootstrapFetch => ClusterOfferDecision::Enqueue { mark_pushed: false },
+    }
+}
+
+fn lock_cluster_apply() -> std::sync::MutexGuard<'static, ClusterApplyGate> {
+    CLUSTER_APPLY.lock().unwrap_or_else(|e| e.into_inner())
+}
+
+/// Drops not-yet-applied clusters so a replaced session cannot retain them after logout.
+pub(crate) fn discard_retained_cluster_offers() {
+    let mut gate = lock_cluster_apply();
+    gate.pending.clear();
+    gate.pushed_generation = None;
+}
+
+/// Offers a cluster for the shared [`apply_cluster`] mapping.
+///
+/// If a push for this generation is already queued or applied, the bootstrap is discarded. If
+/// the bootstrap already won an apply, a later push is still applied after it. Callers must not
+/// hold this function's lock — there is none across `apply_cluster` or any `await`.
+pub(crate) fn offer_cluster(origin: ClusterOrigin, generation: u64, cluster: Cluster) {
+    offer_cluster_after_decide(origin, generation, cluster, || {});
+}
+
+/// `after_decide` runs after enqueue-or-discard and before this thread applies or returns.
+/// Tests use it to force decide/apply interleaving. It must not wait on this drain completing
+/// if it also offers another cluster from the same thread.
+pub(crate) fn offer_cluster_after_decide(
+    origin: ClusterOrigin,
+    generation: u64,
+    cluster: Cluster,
+    after_decide: impl FnOnce(),
+) {
+    let claimed = {
+        let mut gate = lock_cluster_apply();
+        let current_generation = SESSION_GENERATION.load(Ordering::SeqCst);
+        let pushed_in_this_generation = gate.pushed_generation == Some(generation);
+        match cluster_offer_decision(
+            origin,
+            generation,
+            current_generation,
+            pushed_in_this_generation,
+        ) {
+            ClusterOfferDecision::Discard => {
+                debug!(
+                    "Cluster offer discarded (origin={:?}, generation={}, current={})",
+                    origin, generation, current_generation
+                );
+                drop(gate);
+                after_decide();
+                return;
+            }
+            ClusterOfferDecision::Enqueue { mark_pushed } => {
+                if mark_pushed {
+                    gate.pushed_generation = Some(generation);
+                }
+                gate.pending.push_back(PendingCluster {
+                    origin,
+                    generation,
+                    cluster,
+                });
+                let claimed = !gate.applying;
+                if claimed {
+                    gate.applying = true;
+                }
+                claimed
+            }
+        }
+    };
+
+    after_decide();
+    if claimed {
+        drain_offered_clusters();
+    }
+}
+
+fn drain_offered_clusters() {
+    loop {
+        let Some(item) = pop_next_cluster_to_apply() else {
+            return;
+        };
+        #[cfg(test)]
+        record_applied_cluster(&item.cluster);
+        apply_cluster(item.cluster);
+    }
+}
+
+fn pop_next_cluster_to_apply() -> Option<PendingCluster> {
+    let mut gate = lock_cluster_apply();
+    loop {
+        let Some(item) = gate.pending.pop_front() else {
+            gate.applying = false;
+            return None;
+        };
+        let current_generation = SESSION_GENERATION.load(Ordering::SeqCst);
+        if !listener_may_act(item.generation, current_generation) {
+            continue;
+        }
+        if item.origin == ClusterOrigin::BootstrapFetch
+            && gate.pushed_generation == Some(item.generation)
+        {
+            continue;
+        }
+        return Some(item);
+    }
+}
+
+#[cfg(test)]
+static APPLIED_CLUSTER_IDS: Lazy<Mutex<Vec<String>>> = Lazy::new(|| Mutex::new(Vec::new()));
+
+#[cfg(test)]
+fn record_applied_cluster(cluster: &Cluster) {
+    APPLIED_CLUSTER_IDS
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .push(cluster.active_device_id.clone());
+}
+
+#[cfg(test)]
+pub(crate) fn reset_cluster_apply_test_state() {
+    let mut gate = lock_cluster_apply();
+    gate.pending.clear();
+    gate.applying = false;
+    gate.pushed_generation = None;
+    drop(gate);
+    APPLIED_CLUSTER_IDS
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .clear();
+}
+
+#[cfg(test)]
+pub(crate) fn applied_cluster_ids() -> Vec<String> {
+    APPLIED_CLUSTER_IDS
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .clone()
+}
 
 /// Builds the current connection state info struct, stamped with a fresh revision.
 ///
@@ -264,9 +463,10 @@ pub(crate) fn spawn_initial_cluster_fetch(session: &Session, generation: u64) {
                     cluster.device.len(),
                     cluster.active_device_id
                 );
-                // Same handling a pushed update gets, so there is one path into Swift rather
-                // than two that can drift.
-                apply_cluster(cluster);
+                // Same mapping a pushed update gets. The offer gate discards this snapshot
+                // when a dealer push for this generation already won, so a slower HTTP reply
+                // cannot last-write-win a newer cluster under a later stamp.
+                offer_cluster(ClusterOrigin::BootstrapFetch, generation, cluster);
             }
             Err(e) => debug!("Initial cluster fetch failed: {}", e),
         }
@@ -313,6 +513,10 @@ pub(crate) async fn fetch_cluster(session: &Session) -> Result<Cluster, String> 
 
 /// Everything a cluster says, delivered to Swift. Shared by the push and the initial fetch,
 /// so what the app learns cannot depend on which of the two told it.
+///
+/// Session-sourced clusters (HTTP bootstrap and dealer push) must enter through
+/// [`offer_cluster`] so a slower bootstrap cannot last-write-win a newer push. This function
+/// remains the single mapping onto active device, devices, playback, and queue.
 ///
 /// Our own activity is derived from the cluster rather than inferred from whichever command
 /// ran last. This is the same comparison `SpircTask` makes internally; Aural runs a second
@@ -363,7 +567,7 @@ pub(crate) fn spawn_cluster_listener(session: &Session, generation: u64) -> Resu
             match msg_result {
                 Ok(cluster_update) => {
                     if let Some(cluster) = cluster_update.cluster.into_option() {
-                        apply_cluster(cluster);
+                        offer_cluster(ClusterOrigin::PushedUpdate, generation, cluster);
                     }
                 }
                 Err(e) => {
