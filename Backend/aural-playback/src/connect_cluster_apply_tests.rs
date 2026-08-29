@@ -461,16 +461,13 @@ fn a_panicking_claimant_does_not_strand_the_next_offer() {
     let _guard = lock_globals();
     begin_generation(4);
 
-    let panicked = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        offer_cluster_with_hooks(
-            ClusterOrigin::BootstrapFetch,
-            4,
-            cluster_named(BOOTSTRAP_DEVICE),
-            || {},
-            Some(Arc::new(|| panic!("test claimant unwind"))),
-        );
-    }));
-    assert!(panicked.is_err());
+    offer_cluster_with_hooks(
+        ClusterOrigin::BootstrapFetch,
+        4,
+        cluster_named(BOOTSTRAP_DEVICE),
+        || {},
+        Some(Arc::new(|| panic!("test claimant unwind"))),
+    );
     assert!(applied_cluster_ids().is_empty());
 
     offer_cluster(ClusterOrigin::PushedUpdate, 4, cluster_named(PUSH_DEVICE));
@@ -490,20 +487,17 @@ fn a_queued_offer_drains_after_the_claimant_unwinds() {
         scope.spawn(|| {
             let popped = Arc::clone(&popped);
             let queued = Arc::clone(&queued);
-            let panicked = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                offer_cluster_with_hooks(
-                    ClusterOrigin::BootstrapFetch,
-                    4,
-                    cluster_named(BOOTSTRAP_DEVICE),
-                    || {},
-                    Some(Arc::new(move || {
-                        popped.wait();
-                        queued.wait();
-                        panic!("test claimant unwind");
-                    })),
-                );
-            }));
-            assert!(panicked.is_err());
+            offer_cluster_with_hooks(
+                ClusterOrigin::BootstrapFetch,
+                4,
+                cluster_named(BOOTSTRAP_DEVICE),
+                || {},
+                Some(Arc::new(move || {
+                    popped.wait();
+                    queued.wait();
+                    panic!("test claimant unwind");
+                })),
+            );
         });
         scope.spawn(|| {
             popped.wait();

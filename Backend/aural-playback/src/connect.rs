@@ -1,5 +1,6 @@
 use crate::*;
 use std::collections::VecDeque;
+use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::thread::ThreadId;
 
 /// Who produced a cluster that wants to be mapped through [`apply_cluster`].
@@ -255,9 +256,9 @@ fn enqueue_cluster_offer(
     }
 }
 
-/// On unwind, continue draining remaining items (not the panicking one) so they are
-/// not stranded until a later offer. The empty-queue path still clears `applying` under
-/// the mutex. This Drop does not create another DrainClaim.
+/// Clears `applying` on unexpected claimant unwind. Item panics are caught in
+/// [`drain_pending_clusters`] so remaining work is not drained from Drop (a second
+/// panic there would abort).
 struct DrainClaim;
 
 impl Drop for DrainClaim {
@@ -265,7 +266,8 @@ impl Drop for DrainClaim {
         if !std::thread::panicking() {
             return;
         }
-        drain_pending_clusters();
+        let mut gate = lock_cluster_apply();
+        gate.applying = false;
     }
 }
 
@@ -279,17 +281,21 @@ fn drain_pending_clusters() {
         let Some(item) = pop_next_cluster_to_apply() else {
             return;
         };
-        #[cfg(test)]
-        if let Some(hook) = &item.after_pop {
-            hook();
-        }
-        let Some(_mapping) = begin_cluster_mapping(&item) else {
-            continue;
-        };
-        #[cfg(test)]
-        record_applied_cluster(&item.cluster);
-        apply_cluster(item.generation, item.cluster);
+        let _ = catch_unwind(AssertUnwindSafe(|| apply_offered_cluster(item)));
     }
+}
+
+fn apply_offered_cluster(item: PendingCluster) {
+    #[cfg(test)]
+    if let Some(hook) = &item.after_pop {
+        hook();
+    }
+    let Some(_mapping) = begin_cluster_mapping(&item) else {
+        return;
+    };
+    #[cfg(test)]
+    record_applied_cluster(&item.cluster);
+    apply_cluster(item.generation, item.cluster);
 }
 
 fn pop_next_cluster_to_apply() -> Option<PendingCluster> {
