@@ -19,17 +19,10 @@ fn cluster_named(active_device_id: &str) -> Cluster {
 fn begin_generation(generation: u64) {
     reset_cluster_apply_test_state();
     SESSION_GENERATION.store(generation, Ordering::SeqCst);
-    LAST_ACTIVE_DEVICE_ID
-        .lock()
-        .unwrap_or_else(|e| e.into_inner())
-        .clear();
 }
 
-fn last_active_device() -> String {
-    LAST_ACTIVE_DEVICE_ID
-        .lock()
-        .unwrap_or_else(|e| e.into_inner())
-        .clone()
+fn last_applied_device() -> Option<String> {
+    applied_cluster_ids().last().cloned()
 }
 
 /// Replica of a per-generation "push seen" flag checked before apply. Bootstrap can pass
@@ -143,7 +136,7 @@ fn pushed_before_bootstrap_discards_the_bootstrap() {
     );
 
     assert_eq!(applied_cluster_ids(), vec![PUSH_DEVICE.to_string()]);
-    assert_eq!(last_active_device(), PUSH_DEVICE);
+    assert_eq!(last_applied_device().as_deref(), Some(PUSH_DEVICE));
 }
 
 #[test]
@@ -162,7 +155,7 @@ fn bootstrap_before_push_leaves_the_push_as_last_writer() {
         applied_cluster_ids(),
         vec![BOOTSTRAP_DEVICE.to_string(), PUSH_DEVICE.to_string()]
     );
-    assert_eq!(last_active_device(), PUSH_DEVICE);
+    assert_eq!(last_applied_device().as_deref(), Some(PUSH_DEVICE));
 }
 
 #[test]
@@ -217,7 +210,7 @@ fn decide_then_apply_interleaving_keeps_the_push_as_last_writer() {
     });
 
     assert_eq!(applied, vec![PUSH_DEVICE.to_string()]);
-    assert_eq!(last_active_device(), PUSH_DEVICE);
+    assert_eq!(last_applied_device().as_deref(), Some(PUSH_DEVICE));
 }
 
 #[test]
@@ -250,7 +243,6 @@ fn a_stale_generation_enqueued_before_teardown_does_not_apply() {
     });
 
     assert!(applied_cluster_ids().is_empty());
-    assert!(last_active_device().is_empty());
 }
 
 #[test]
@@ -266,7 +258,6 @@ fn a_superseded_offer_never_enqueues() {
     );
 
     assert!(applied_cluster_ids().is_empty());
-    assert!(last_active_device().is_empty());
 }
 
 #[test]
@@ -300,7 +291,6 @@ fn cleanup_drops_a_pending_bootstrap_instead_of_publishing_it() {
     });
 
     assert!(applied_cluster_ids().is_empty());
-    assert!(last_active_device().is_empty());
 }
 
 #[test]
@@ -323,7 +313,7 @@ fn a_new_generation_can_bootstrap_after_a_prior_generation_push() {
         applied_cluster_ids(),
         vec![PUSH_DEVICE.to_string(), BOOTSTRAP_DEVICE.to_string()]
     );
-    assert_eq!(last_active_device(), BOOTSTRAP_DEVICE);
+    assert_eq!(last_applied_device().as_deref(), Some(BOOTSTRAP_DEVICE));
 }
 
 #[test]
@@ -361,7 +351,7 @@ fn a_prior_generation_push_does_not_apply_after_replacement() {
     });
 
     assert_eq!(applied_cluster_ids(), vec![BOOTSTRAP_DEVICE.to_string()]);
-    assert_eq!(last_active_device(), BOOTSTRAP_DEVICE);
+    assert_eq!(last_applied_device().as_deref(), Some(BOOTSTRAP_DEVICE));
 }
 
 #[test]
@@ -390,16 +380,11 @@ fn pop_then_generation_advance_does_not_apply() {
         scope.spawn(|| {
             popped.wait();
             invalidate_cluster_generation();
-            LAST_ACTIVE_DEVICE_ID
-                .lock()
-                .unwrap_or_else(|e| e.into_inner())
-                .clear();
             torn_down.wait();
         });
     });
 
     assert!(applied_cluster_ids().is_empty());
-    assert!(last_active_device().is_empty());
 }
 
 #[test]
@@ -436,16 +421,11 @@ fn a_replacement_generation_still_drains_after_invalidation_wait() {
             wait_for_cluster_mapping_idle();
             offered.wait();
             invalidate_cluster_generation();
-            LAST_ACTIVE_DEVICE_ID
-                .lock()
-                .unwrap_or_else(|e| e.into_inner())
-                .clear();
             torn_down.wait();
         });
     });
 
     assert!(applied_cluster_ids().is_empty());
-    assert!(last_active_device().is_empty());
 
     offer_cluster(
         ClusterOrigin::BootstrapFetch,
@@ -453,7 +433,7 @@ fn a_replacement_generation_still_drains_after_invalidation_wait() {
         cluster_named(BOOTSTRAP_DEVICE),
     );
     assert_eq!(applied_cluster_ids(), vec![BOOTSTRAP_DEVICE.to_string()]);
-    assert_eq!(last_active_device(), BOOTSTRAP_DEVICE);
+    assert_eq!(last_applied_device().as_deref(), Some(BOOTSTRAP_DEVICE));
 }
 
 #[test]
@@ -472,7 +452,7 @@ fn a_panicking_claimant_does_not_strand_the_next_offer() {
 
     offer_cluster(ClusterOrigin::PushedUpdate, 4, cluster_named(PUSH_DEVICE));
     assert_eq!(applied_cluster_ids(), vec![PUSH_DEVICE.to_string()]);
-    assert_eq!(last_active_device(), PUSH_DEVICE);
+    assert_eq!(last_applied_device().as_deref(), Some(PUSH_DEVICE));
 }
 
 #[test]
@@ -507,5 +487,5 @@ fn a_queued_offer_drains_after_the_claimant_unwinds() {
     });
 
     assert_eq!(applied_cluster_ids(), vec![PUSH_DEVICE.to_string()]);
-    assert_eq!(last_active_device(), PUSH_DEVICE);
+    assert_eq!(last_applied_device().as_deref(), Some(PUSH_DEVICE));
 }

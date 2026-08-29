@@ -619,62 +619,41 @@ fn connection_snapshot_json_keeps_legacy_fields_and_adds_generation() {
 fn exported_c_function_signatures_are_stable() {
     let _: extern "C" fn(*mut c_char) = aural_playback_free_string;
     let _: extern "C" fn() = aural_playback_clear_streaming_credentials;
-    let _: extern "C" fn() = aural_playback_clear_audio_buffer;
     let _: extern "C" fn() = aural_playback_cleanup;
-    let _: extern "C" fn() -> *mut c_char = aural_playback_last_grant_account;
-    let _: extern "C" fn() -> *mut c_char = aural_playback_get_connection_state;
     let _: extern "C" fn() -> *mut c_char = aural_playback_get_queue_snapshot;
 
-    let _: [extern "C" fn() -> i32; 13] = [
+    let _: [extern "C" fn() -> i32; 8] = [
         aural_playback_force_reconnect,
-        aural_playback_is_session_connected,
         aural_playback_pause,
         aural_playback_resume,
-        aural_playback_stop,
         aural_playback_shutdown,
         aural_playback_disconnect,
-        aural_playback_is_playing,
-        aural_playback_is_active_device,
         aural_playback_next,
         aural_playback_previous,
         aural_playback_transfer_to_local,
-        aural_playback_is_spirc_ready,
     ];
 
     let _: extern "C" fn(*const c_char) -> i32 = aural_playback_authorize_streaming;
     let _: extern "C" fn(*const c_char) -> i32 = aural_playback_init_player;
     let _: extern "C" fn(*const c_char) -> i32 = aural_playback_play_tracks;
-    let _: extern "C" fn(*const c_char) -> i32 = aural_playback_play_radio;
     let _: extern "C" fn(*const c_char) -> i32 = aural_playback_transfer_playback;
     let _: extern "C" fn(*const c_char) -> i32 = aural_playback_add_to_queue;
     let _: extern "C" fn(*const c_char, i32) -> i32 = aural_playback_play_uri;
     let _: extern "C" fn(u32) -> i32 = aural_playback_seek;
     let _: extern "C" fn() -> u32 = aural_playback_get_position_ms;
-    let _: extern "C" fn(u16) -> i32 = aural_playback_set_volume;
     let _: extern "C" fn(u8) = aural_playback_set_bitrate;
-    let _: extern "C" fn() -> u8 = aural_playback_get_bitrate;
     let _: extern "C" fn(u16) = aural_playback_set_initial_volume;
     let _: extern "C" fn(bool) -> i32 = aural_playback_set_shuffle;
     let _: extern "C" fn(bool) -> i32 = aural_playback_set_repeat_context;
     let _: extern "C" fn(bool) -> i32 = aural_playback_set_repeat_track;
     let _: extern "C" fn(bool) = aural_playback_set_gapless;
-    let _: extern "C" fn() -> bool = aural_playback_get_gapless;
 
     let _: extern "C" fn(extern "C" fn(*const c_char)) = aural_playback_register_queue_callback;
     let _: extern "C" fn(extern "C" fn(*const c_char)) =
         aural_playback_register_playback_state_callback;
-    let _: extern "C" fn(extern "C" fn(*const c_char)) = aural_playback_register_loading_callback;
-    let _: extern "C" fn(extern "C" fn(*const c_char)) =
-        aural_playback_register_session_client_changed_callback;
-    let _: extern "C" fn(extern "C" fn(*const c_char)) = aural_playback_register_set_queue_callback;
-    let _: extern "C" fn(extern "C" fn(*const c_char)) =
-        aural_playback_register_active_device_callback;
     let _: extern "C" fn(extern "C" fn(*const c_char)) = aural_playback_register_devices_callback;
     let _: extern "C" fn(extern "C" fn(*const c_char)) =
         aural_playback_register_connection_state_callback;
-    let _: extern "C" fn(extern "C" fn(u16)) = aural_playback_register_volume_callback;
-    let _: extern "C" fn(extern "C" fn()) = aural_playback_register_became_inactive_callback;
-    let _: extern "C" fn(extern "C" fn()) = aural_playback_register_became_active_callback;
     let _: extern "C" fn(extern "C" fn(*const f32, usize)) =
         aural_playback_register_audio_data_callback;
     let _: extern "C" fn(extern "C" fn(u8)) = aural_playback_register_audio_control_callback;
@@ -816,7 +795,7 @@ fn exported_c_functions_enter_through_the_panic_barrier() {
 }
 
 /// `Spirc::load` Ok is queued, not playing. `resume_playback` trusts `IS_PLAYING` for its
-/// early return, so a queued `play_uri` / `play_tracks` / radio load must not store true.
+/// early return, so a queued `play_uri` / `play_tracks` load must not store true.
 /// Production code (excluding `tests.rs` / `*_tests.rs` and `#[cfg(test)]` modules) may
 /// write `IS_PLAYING=true` only from the `PlayerEvent::Playing` arm.
 #[test]

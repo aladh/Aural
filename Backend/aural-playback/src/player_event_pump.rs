@@ -191,10 +191,6 @@ fn apply_player_event(event: PlayerEvent, event_listener_generation: u64) {
             // replace the requested/context track identity.
             CURRENT_DURATION_MS.store(duration_ms, Ordering::SeqCst);
         }
-        PlayerEvent::VolumeChanged { volume } => {
-            debug!("VolumeChanged event: {}", volume);
-            check_and_send_volume(volume as u32);
-        }
         PlayerEvent::ShuffleChanged { shuffle } => {
             debug!("PlayerEvent::ShuffleChanged: {}", shuffle);
             SHUFFLE_STATE.store(shuffle, Ordering::SeqCst);
@@ -240,22 +236,12 @@ fn apply_player_event(event: PlayerEvent, event_listener_generation: u64) {
             // value. The baton is handed from the saved point to the live
             // one, and a retry after a load that never plays still finds it.
             RESUME_POSITION_MS.store(0, Ordering::SeqCst);
-
-            if let Some(callback) = registered_callback(&CONTROL_CALLBACKS.loading) {
-                let notification = stamped_snapshot(|stamp| LoadingNotification {
-                    revision: stamp.revision,
-                    session_generation: stamp.session_generation,
-                    track_uri: track_uri_str,
-                    position_ms,
-                });
-                send_json(callback, &notification);
-            }
         }
         PlayerEvent::SetQueue {
             context_uri,
-            current_track,
             next_tracks,
             prev_tracks,
+            ..
         } => {
             debug!(
                 "SetQueue event: context={}, next={}, prev={}",
@@ -264,21 +250,6 @@ fn apply_player_event(event: PlayerEvent, event_listener_generation: u64) {
                 prev_tracks.len()
             );
             update_current_context_uri(&context_uri);
-            if let Some(callback) = registered_callback(&CONTROL_CALLBACKS.set_queue) {
-                let to_track_info = |t: QueueTrack| QueueTrackInfo {
-                    uri: t.uri,
-                    provider: t.provider,
-                };
-                let notification = stamped_snapshot(|stamp| SetQueueNotification {
-                    revision: stamp.revision,
-                    session_generation: stamp.session_generation,
-                    context_uri,
-                    current_track: current_track.map(to_track_info),
-                    next_tracks: next_tracks.into_iter().map(to_track_info).collect(),
-                    prev_tracks: prev_tracks.into_iter().map(to_track_info).collect(),
-                });
-                send_json(callback, &notification);
-            }
         }
         // librespot emits SessionDisconnected when the local Connect device
         // becomes INACTIVE — not when the network session fails.
@@ -344,10 +315,6 @@ fn apply_player_event(event: PlayerEvent, event_listener_generation: u64) {
             } else {
                 notify_connection_state_change();
             }
-
-            if let Some(callback) = registered_callback(&CONTROL_CALLBACKS.became_inactive) {
-                callback();
-            }
         }
         // Emitted when the local Connect device becomes ACTIVE. Carries the
         // session's connection id, but says nothing about network health -
@@ -366,9 +333,6 @@ fn apply_player_event(event: PlayerEvent, event_listener_generation: u64) {
 
             // Notify connection state change
             notify_connection_state_change();
-            if let Some(callback) = registered_callback(&CONTROL_CALLBACKS.became_active) {
-                callback();
-            }
         }
         PlayerEvent::SessionClientChanged {
             client_id,
@@ -380,35 +344,8 @@ fn apply_player_event(event: PlayerEvent, event_listener_generation: u64) {
                 "SessionClientChanged event: id={}, name={}, brand={}, model={}",
                 client_id, client_name, client_brand_name, client_model_name
             );
-            if let Some(callback) = registered_callback(&CONTROL_CALLBACKS.session_client_changed) {
-                send_json(
-                    callback,
-                    &SessionClientInfo {
-                        client_id,
-                        client_name,
-                        client_brand_name,
-                        client_model_name,
-                    },
-                );
-            }
         }
         _ => {}
-    }
-}
-
-/// Checks if volume changed and sends callback if so
-pub(crate) fn check_and_send_volume(volume: u32) {
-    let volume_u16 = volume as u16;
-    let last = LAST_VOLUME.load(Ordering::SeqCst);
-
-    // Only send callback if volume actually changed
-    if volume_u16 != last {
-        LAST_VOLUME.store(volume_u16, Ordering::SeqCst);
-        debug!("Volume changed: {} -> {}", last, volume_u16);
-
-        if let Some(callback) = registered_callback(&CONTROL_CALLBACKS.volume) {
-            callback(volume_u16);
-        }
     }
 }
 
@@ -482,6 +419,7 @@ mod player_event_pump_policy {
         resume_position_ms: u32,
         position_ms: u32,
         track_uri: Option<String>,
+        context_uri: Option<String>,
     }
 
     fn capture_playback_globals() -> PlaybackGlobals {
@@ -495,6 +433,10 @@ mod player_event_pump_policy {
                 .lock()
                 .unwrap_or_else(|e| e.into_inner())
                 .clone(),
+            context_uri: CURRENT_CONTEXT_URI
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .clone(),
         }
     }
 
@@ -505,6 +447,9 @@ mod player_event_pump_policy {
         RESUME_POSITION_MS.store(snapshot.resume_position_ms, Ordering::SeqCst);
         POSITION_MS.store(snapshot.position_ms, Ordering::SeqCst);
         *CURRENT_TRACK_URI.lock().unwrap_or_else(|e| e.into_inner()) = snapshot.track_uri;
+        *CURRENT_CONTEXT_URI
+            .lock()
+            .unwrap_or_else(|e| e.into_inner()) = snapshot.context_uri;
     }
 
     struct RestorePlaybackGlobals(PlaybackGlobals);
@@ -573,6 +518,88 @@ mod player_event_pump_policy {
             1,
         );
         assert!(!IS_PLAYING.load(Ordering::SeqCst));
+    }
+
+    #[test]
+    fn loading_still_updates_track_position_and_resume_state() {
+        let _guard = lock_lifecycle_test_globals();
+        let _restore = RestorePlaybackGlobals(capture_playback_globals());
+        RESUME_POSITION_MS.store(9_001, Ordering::SeqCst);
+        POSITION_MS.store(400, Ordering::SeqCst);
+        *CURRENT_TRACK_URI.lock().unwrap_or_else(|e| e.into_inner()) =
+            Some("spotify:track:outgoing".to_string());
+
+        apply_player_event(
+            PlayerEvent::Loading {
+                play_request_id: 1,
+                track_id: synthetic_track(),
+                position_ms: 250,
+            },
+            1,
+        );
+
+        assert_eq!(POSITION_MS.load(Ordering::SeqCst), 250);
+        assert_eq!(RESUME_POSITION_MS.load(Ordering::SeqCst), 0);
+        assert_eq!(
+            CURRENT_TRACK_URI
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .as_deref(),
+            Some("spotify:track:0000000000000000000000")
+        );
+    }
+
+    #[test]
+    fn set_queue_still_updates_context() {
+        let _guard = lock_lifecycle_test_globals();
+        let _restore = RestorePlaybackGlobals(capture_playback_globals());
+        *CURRENT_CONTEXT_URI
+            .lock()
+            .unwrap_or_else(|e| e.into_inner()) = None;
+
+        apply_player_event(
+            PlayerEvent::SetQueue {
+                context_uri: "spotify:playlist:context".to_string(),
+                current_track: None,
+                next_tracks: Vec::new(),
+                prev_tracks: Vec::new(),
+            },
+            1,
+        );
+
+        assert_eq!(
+            CURRENT_CONTEXT_URI
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .as_deref(),
+            Some("spotify:playlist:context")
+        );
+    }
+
+    #[test]
+    fn session_connected_and_disconnected_still_update_active_state() {
+        let _guard = lock_lifecycle_test_globals();
+        let _restore = RestorePlaybackGlobals(capture_playback_globals());
+        set_active_device(false);
+        apply_player_event(
+            PlayerEvent::SessionConnected {
+                connection_id: "conn".to_string(),
+                user_name: String::new(),
+            },
+            1,
+        );
+        assert!(is_active_device());
+
+        POSITION_MS.store(1_200, Ordering::SeqCst);
+        apply_player_event(
+            PlayerEvent::SessionDisconnected {
+                connection_id: "conn".to_string(),
+                user_name: String::new(),
+            },
+            1,
+        );
+        assert!(!is_active_device());
+        assert_eq!(RESUME_POSITION_MS.load(Ordering::SeqCst), 1_200);
     }
 
     #[test]

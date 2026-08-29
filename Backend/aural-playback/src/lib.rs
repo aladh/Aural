@@ -41,7 +41,7 @@ pub(crate) use librespot_core::SpotifyUri;
 pub(crate) use librespot_playback::config::{AudioFormat, Bitrate, PlayerConfig};
 pub(crate) use librespot_playback::mixer::softmixer::SoftMixer;
 pub(crate) use librespot_playback::mixer::{Mixer, MixerConfig, NoOpVolume};
-pub(crate) use librespot_playback::player::{Player, PlayerEvent, QueueTrack};
+pub(crate) use librespot_playback::player::{Player, PlayerEvent};
 pub(crate) use librespot_protocol::connect::{Cluster, ClusterUpdate, MemberType, PutStateRequest};
 pub(crate) use librespot_protocol::player::{PlayerState, ProvidedTrack};
 pub(crate) use log::debug;

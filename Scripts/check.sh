@@ -78,6 +78,22 @@ if ! diff -u "$header_symbols" "$library_symbols"; then
     exit 1
 fi
 
+# Dead C exports cannot regrow silently: every remaining header symbol must be
+# consumed through the sole AuralPlaybackCore adapter. Reuses the header list above
+# rather than a second parser or generated binding.
+playback_core="$project_root/Sources/Aural/Spotify/PlaybackCore.swift"
+unused_header_exports=""
+while IFS= read -r symbol; do
+    if ! rg -q --fixed-strings "$symbol" "$playback_core"; then
+        unused_header_exports+="${symbol}"$'\n'
+    fi
+done < "$header_symbols"
+if [[ -n "$unused_header_exports" ]]; then
+    print -u2 "Header exports not consumed by PlaybackCore.swift:"
+    print -u2 "$unused_header_exports"
+    exit 1
+fi
+
 swift_arguments=(
     --disable-sandbox
     --package-path "$project_root"

@@ -151,6 +151,7 @@ pub(crate) fn ffi_command(export: &'static str, work: impl FnOnce() -> i32) -> i
 }
 
 /// Defined fallback when an FFI flag query panics: conservative `0` / false.
+#[cfg(test)]
 pub(crate) fn ffi_query_i32(export: &'static str, work: impl FnOnce() -> i32) -> i32 {
     ffi_catch(export, 0, work)
 }
@@ -161,11 +162,13 @@ pub(crate) fn ffi_query_u32(export: &'static str, work: impl FnOnce() -> u32) ->
 }
 
 /// Defined fallback when an FFI `u8` query panics: conservative `0`.
+#[cfg(test)]
 pub(crate) fn ffi_query_u8(export: &'static str, work: impl FnOnce() -> u8) -> u8 {
     ffi_catch(export, 0, work)
 }
 
 /// Defined fallback when an FFI `bool` query panics: conservative `false`.
+#[cfg(test)]
 pub(crate) fn ffi_query_bool(export: &'static str, work: impl FnOnce() -> bool) -> bool {
     ffi_catch(export, false, work)
 }
@@ -236,108 +239,6 @@ pub extern "C" fn aural_playback_register_playback_state_callback(
     })
 }
 
-/// Registers a callback to receive volume change notifications.
-/// Called when the volume is changed remotely (e.g., from another Spotify Connect device).
-/// The callback receives the new volume (0-65535).
-#[no_mangle]
-pub extern "C" fn aural_playback_register_volume_callback(callback: extern "C" fn(u16)) {
-    ffi_void("aural_playback_register_volume_callback", || {
-        *CONTROL_CALLBACKS
-            .volume
-            .lock()
-            .unwrap_or_else(|e| e.into_inner()) = Some(callback);
-    })
-}
-
-/// Registers a callback to receive loading notifications.
-/// Called when a new track starts loading (before metadata is fetched).
-/// This fires earlier than TrackChanged (~180ms vs ~620ms after command).
-/// The callback receives JSON with track_uri and position_ms.
-#[no_mangle]
-pub extern "C" fn aural_playback_register_loading_callback(callback: extern "C" fn(*const c_char)) {
-    ffi_void("aural_playback_register_loading_callback", || {
-        *CONTROL_CALLBACKS
-            .loading
-            .lock()
-            .unwrap_or_else(|e| e.into_inner()) = Some(callback);
-    })
-}
-
-/// Registers a callback fired when this device stops being the active Connect device.
-///
-/// This is an activity notification, not a health one: it fires on an explicit
-/// disconnect, on shutdown, and whenever another device takes over playback. Do not
-/// treat it as a connection failure - read the connection snapshot for that.
-#[no_mangle]
-pub extern "C" fn aural_playback_register_became_inactive_callback(callback: extern "C" fn()) {
-    ffi_void("aural_playback_register_became_inactive_callback", || {
-        *CONTROL_CALLBACKS
-            .became_inactive
-            .lock()
-            .unwrap_or_else(|e| e.into_inner()) = Some(callback);
-    })
-}
-
-/// Registers a callback fired when this device becomes the active Connect device.
-///
-/// Also an activity notification: the session was already connected beforehand, so this
-/// says nothing about readiness. Use the connection snapshot to decide when commands
-/// can be sent.
-#[no_mangle]
-pub extern "C" fn aural_playback_register_became_active_callback(callback: extern "C" fn()) {
-    ffi_void("aural_playback_register_became_active_callback", || {
-        *CONTROL_CALLBACKS
-            .became_active
-            .lock()
-            .unwrap_or_else(|e| e.into_inner()) = Some(callback);
-    })
-}
-
-/// Registers a callback to receive session client changed notifications.
-#[unsafe(no_mangle)]
-pub extern "C" fn aural_playback_register_session_client_changed_callback(
-    callback: extern "C" fn(*const c_char),
-) {
-    ffi_void(
-        "aural_playback_register_session_client_changed_callback",
-        || {
-            *CONTROL_CALLBACKS
-                .session_client_changed
-                .lock()
-                .unwrap_or_else(|e| e.into_inner()) = Some(callback);
-        },
-    )
-}
-
-/// Registers a callback to receive set queue notifications.
-/// Called when the queue is set/modified (via set_queue command from mobile app).
-/// The callback receives JSON with next_tracks and prev_tracks arrays containing uri and provider.
-#[no_mangle]
-pub extern "C" fn aural_playback_register_set_queue_callback(
-    callback: extern "C" fn(*const c_char),
-) {
-    ffi_void("aural_playback_register_set_queue_callback", || {
-        *CONTROL_CALLBACKS
-            .set_queue
-            .lock()
-            .unwrap_or_else(|e| e.into_inner()) = Some(callback);
-    })
-}
-
-/// Registers a callback to receive active device ID changes from cluster updates.
-/// Called on every cluster update with the current active device ID string.
-#[no_mangle]
-pub extern "C" fn aural_playback_register_active_device_callback(
-    callback: extern "C" fn(*const c_char),
-) {
-    ffi_void("aural_playback_register_active_device_callback", || {
-        *CONTROL_CALLBACKS
-            .active_device
-            .lock()
-            .unwrap_or_else(|e| e.into_inner()) = Some(callback);
-    })
-}
-
 /// Registers a callback to receive the Connect device list from cluster updates.
 ///
 /// The payload wraps the `/me/player/devices`-shaped array with the same revision and session
@@ -388,17 +289,4 @@ pub extern "C" fn aural_playback_register_audio_control_callback(callback: exter
     ffi_void("aural_playback_register_audio_control_callback", || {
         proxy_sink::register_audio_control_callback(callback);
     })
-}
-
-/// Returns the current connection state as a JSON string.
-/// Caller must free the returned string using aural_playback_free_string().
-#[no_mangle]
-pub extern "C" fn aural_playback_get_connection_state() -> *mut c_char {
-    ffi_owned_string(
-        "aural_playback_get_connection_state",
-        || match serde_json::to_string(&build_connection_state_info()) {
-            Ok(json) => into_owned_c_string(json),
-            Err(_) => std::ptr::null_mut(),
-        },
-    )
 }

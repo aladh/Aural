@@ -7,14 +7,6 @@ pub(crate) const ERROR_NEEDS_REINIT: i32 = -2;
 /// Session is not yet connected; the caller should wait for readiness.
 pub(crate) const ERROR_NOT_CONNECTED: i32 = -3;
 
-/// Returns 1 if the session is connected and ready for commands, 0 otherwise.
-#[no_mangle]
-pub extern "C" fn aural_playback_is_session_connected() -> i32 {
-    ffi_query_i32("aural_playback_is_session_connected", || {
-        i32::from(with_connection(|c| c.session_connected))
-    })
-}
-
 /// Helper to check if session is connected. Returns ERROR_NOT_CONNECTED if not.
 ///
 /// Also detects zombie sessions: the Session object may have been invalidated
@@ -148,9 +140,8 @@ pub extern "C" fn aural_playback_play_uri(uri_or_url: *const c_char, track_index
         };
 
         // Create LoadRequest - use from_context_uri for albums/playlists/artists,
-        // from_tracks for single tracks (legacy behavior, prefer using radio for tracks)
+        // from_tracks for a single track URI.
         let load_request = if uri_str.starts_with("spotify:track:") {
-            // Legacy single-track behavior - prefer using aural_playback_play_radio instead
             debug!("Spirc.load(LoadRequest::from_tracks([{}]))", uri_str);
             LoadRequest::from_tracks(
                 vec![uri_str.clone()],
@@ -198,45 +189,11 @@ pub extern "C" fn aural_playback_pause() -> i32 {
     ffi_command("aural_playback_pause", pause_playback)
 }
 
-/// Clears any buffered audio samples.
-/// The Swift-side callback handles the flush synchronously before returning.
-/// Note: aural_playback_disconnect() already handles this internally.
-#[no_mangle]
-pub extern "C" fn aural_playback_clear_audio_buffer() {
-    ffi_void("aural_playback_clear_audio_buffer", || {
-        debug!("aural_playback_clear_audio_buffer called");
-        proxy_sink::ProxySink::clear_buffer();
-    })
-}
-
 /// Resumes playback.
 /// Returns 0 on success, -1 on error, -2 if channel closed (needs reinit).
 #[no_mangle]
 pub extern "C" fn aural_playback_resume() -> i32 {
     ffi_command("aural_playback_resume", resume_playback)
-}
-
-/// Stops playback completely.
-/// Returns 0 on success, -1 on error.
-#[no_mangle]
-pub extern "C" fn aural_playback_stop() -> i32 {
-    ffi_command("aural_playback_stop", || {
-        debug!("aural_playback_stop called");
-        // Stops at the Player rather than through Spirc: this is a local teardown of
-        // playback, not a Connect command.
-        let player_guard = PLAYER.lock().unwrap_or_else(|e| e.into_inner());
-        match player_guard.as_ref() {
-            Some(player) => {
-                player.stop();
-                IS_PLAYING.store(false, Ordering::SeqCst);
-                0
-            }
-            None => {
-                debug!("Stop error: player not initialized");
-                -1
-            }
-        }
-    })
 }
 
 /// Shuts down the Spirc connection and sends goodbye to other devices.
@@ -403,12 +360,6 @@ pub(crate) fn cleanup_player_globals() {
     *CURRENT_CONTEXT_URI
         .lock()
         .unwrap_or_else(|e| e.into_inner()) = None;
-    LAST_VOLUME.store(0, Ordering::SeqCst);
-    LAST_ACTIVE_DEVICE_ID
-        .lock()
-        .unwrap_or_else(|e| e.into_inner())
-        .clear();
-
     // The cluster describes an account, so both of these belong to the session being torn
     // down. `aural_playback_get_queue_snapshot` is what the queue bootstrap reads on a cold start,
     // and its whole guard rests on nil meaning "no cluster update has arrived" — a surviving
@@ -437,23 +388,6 @@ pub(crate) fn cleanup_player_globals() {
     notify_connection_state_change();
 
     debug!("aural_playback_cleanup complete - ready for reinitialization");
-}
-
-/// Returns 1 if currently playing, 0 otherwise.
-#[no_mangle]
-pub extern "C" fn aural_playback_is_playing() -> i32 {
-    ffi_query_i32("aural_playback_is_playing", || {
-        i32::from(IS_PLAYING.load(Ordering::SeqCst))
-    })
-}
-
-/// Returns 1 if this device is the active Spotify Connect device, 0 otherwise.
-/// When not active, playback controls should use Web API instead of Spirc.
-#[no_mangle]
-pub extern "C" fn aural_playback_is_active_device() -> i32 {
-    ffi_query_i32("aural_playback_is_active_device", || {
-        i32::from(is_active_device())
-    })
 }
 
 /// Returns the last position reported by the Player.
@@ -506,130 +440,6 @@ pub extern "C" fn aural_playback_seek(position_ms: u32) -> i32 {
             return e;
         }
         spirc_command("Seek", |spirc| spirc.set_position_ms(position_ms))
-    })
-}
-
-/// Async core of radio playback. Safe to call from both sync (via block_on) and async contexts.
-pub(crate) async fn play_radio_async(uri_str: &str) -> i32 {
-    if let Err(e) = require_session_connected() {
-        return e;
-    }
-
-    let session = {
-        let guard = SESSION.lock().unwrap_or_else(|e| e.into_inner());
-        match guard.as_ref() {
-            Some(s) => s.clone(),
-            None => {
-                debug!("Play radio error: session not initialized");
-                return -1;
-            }
-        }
-    };
-
-    // Resolve the radio playlist URI
-    let playlist_uri: Result<String, String> = async {
-        let spotify_uri = parse_spotify_uri(uri_str)?;
-
-        let response = session
-            .spclient()
-            .get_radio_for_track(&spotify_uri)
-            .await
-            .map_err(|e| format!("Failed to get radio: {:?}", e))?;
-
-        let json: serde_json::Value = serde_json::from_slice(&response)
-            .map_err(|e| format!("Failed to parse radio response: {:?}", e))?;
-
-        // The API returns a playlist URI in mediaItems
-        // Format: { "mediaItems": [{ "uri": "spotify:playlist:xxx" }] }
-        json.get("mediaItems")
-            .and_then(|items| items.as_array())
-            .and_then(|items| items.first())
-            .and_then(|item| item.get("uri"))
-            .and_then(|u| u.as_str())
-            .filter(|uri| uri.starts_with("spotify:playlist:"))
-            .map(|s| s.to_string())
-            .ok_or_else(|| "No radio playlist found in response".to_string())
-    }
-    .await;
-
-    let playlist_uri = match playlist_uri {
-        Ok(uri) => uri,
-        Err(_e) => {
-            debug!("Play radio error: {}", _e);
-            return -1;
-        }
-    };
-
-    let current_track_uri = CURRENT_TRACK_URI
-        .lock()
-        .unwrap_or_else(|e| e.into_inner())
-        .clone();
-    let seek_to = if current_track_uri.as_deref() == Some(uri_str) {
-        current_position_ms()
-    } else {
-        0
-    };
-
-    debug!("Loading radio playlist: {} at {}ms", playlist_uri, seek_to);
-
-    let Some(spirc) = current_spirc("Play radio") else {
-        return -1;
-    };
-
-    if let Err(e) = ensure_active_for_playback(&spirc) {
-        return e;
-    }
-
-    let load_request = LoadRequest::from_context_uri(
-        playlist_uri.clone(),
-        LoadRequestOptions {
-            start_playing: true,
-            seek_to,
-            playing_track: Some(PlayingTrack::Uri(uri_str.to_string())),
-            ..Default::default()
-        },
-    );
-    match spirc.load(load_request) {
-        Ok(_) => {
-            set_active_device(true);
-            0
-        }
-        Err(_e) => {
-            debug!("Play radio error: {:?}", _e);
-            -1
-        }
-    }
-}
-
-/// Plays radio for a seed track.
-/// Gets the radio playlist URI and loads it directly via Spirc.
-/// Returns 0 on success, -1 on error.
-#[no_mangle]
-pub extern "C" fn aural_playback_play_radio(track_uri: *const c_char) -> i32 {
-    ffi_command("aural_playback_play_radio", || {
-        let Some(uri_str) = (unsafe { c_string_arg(track_uri) }) else {
-            debug!("Play radio error: track_uri is null or not valid UTF-8");
-            return -1;
-        };
-
-        debug!("aural_playback_play_radio called: {}", uri_str);
-
-        match block_on_export(play_radio_async(&uri_str)) {
-            Ok(code) | Err(code) => code,
-        }
-    })
-}
-
-/// Sets the playback volume (0-65535).
-/// Returns 0 on success, -1 on error, -2 if channel closed (needs reinit).
-#[no_mangle]
-pub extern "C" fn aural_playback_set_volume(volume: u16) -> i32 {
-    ffi_command("aural_playback_set_volume", || {
-        debug!("aural_playback_set_volume called: {}", volume);
-        if let Err(e) = require_session_connected() {
-            return e;
-        }
-        spirc_command("Set volume", |spirc| spirc.set_volume(volume))
     })
 }
 
@@ -694,15 +504,6 @@ pub extern "C" fn aural_playback_set_bitrate(bitrate: u8) {
     })
 }
 
-/// Gets the current bitrate setting.
-/// 0 = 96 kbps, 1 = 160 kbps, 2 = 320 kbps
-#[no_mangle]
-pub extern "C" fn aural_playback_get_bitrate() -> u8 {
-    ffi_query_u8("aural_playback_get_bitrate", || {
-        BITRATE_SETTING.load(Ordering::SeqCst)
-    })
-}
-
 /// Sets gapless playback (true = enabled, false = disabled).
 /// Enabled by default. Takes effect on next player initialization (restart playback to apply).
 #[no_mangle]
@@ -715,14 +516,6 @@ pub extern "C" fn aural_playback_set_gapless(enabled: bool) {
                 enabled
             );
         }
-    })
-}
-
-/// Gets the current gapless playback setting.
-#[no_mangle]
-pub extern "C" fn aural_playback_get_gapless() -> bool {
-    ffi_query_bool("aural_playback_get_gapless", || {
-        GAPLESS_SETTING.load(Ordering::SeqCst)
     })
 }
 
@@ -826,14 +619,6 @@ pub extern "C" fn aural_playback_transfer_playback(to_device_id: *const c_char) 
                 -1
             }
         }
-    })
-}
-
-/// Returns 1 if Spirc is initialized and connected to Spotify Connect, 0 otherwise.
-#[no_mangle]
-pub extern "C" fn aural_playback_is_spirc_ready() -> i32 {
-    ffi_query_i32("aural_playback_is_spirc_ready", || {
-        i32::from(with_connection(|c| c.spirc_ready))
     })
 }
 
