@@ -282,7 +282,8 @@ func runAuthCredentialRetryChecks(_ check: CheckRunner) async {
             clientToken: { clients.next() },
             invalidateAccessToken: { await invalidatedAccess.record($0) },
             invalidateClientToken: { await invalidatedClient.record($0) },
-            transport: transport.send
+            transport: transport.send,
+            retryTiming: .immediate
         )
 
         let profile = try? await api.profile()
@@ -313,7 +314,8 @@ func runAuthCredentialRetryChecks(_ check: CheckRunner) async {
             clientToken: { clients.next() },
             invalidateAccessToken: { _ in throw KeymasterSessionError.grantRevoked },
             invalidateClientToken: { await invalidatedClient.record($0) },
-            transport: transport.send
+            transport: transport.send,
+            retryTiming: .immediate
         )
 
         var revoked = false
@@ -345,7 +347,8 @@ func runAuthCredentialRetryChecks(_ check: CheckRunner) async {
             clientToken: { clients.next() },
             invalidateAccessToken: { await invalidatedAccess.record($0) },
             invalidateClientToken: { await invalidatedClient.record($0) },
-            transport: transport.send
+            transport: transport.send,
+            retryTiming: .immediate
         )
 
         var status = 0
@@ -373,7 +376,8 @@ func runAuthCredentialRetryChecks(_ check: CheckRunner) async {
         let api = SpotifyWebPlayerAPI(
             accessToken: { tokens.next() },
             invalidateAccessToken: { await invalidated.record($0) },
-            transport: transport.send
+            transport: transport.send,
+            retryTiming: .immediate
         )
 
         let tracks = try? await api.queue()
@@ -395,7 +399,8 @@ func runAuthCredentialRetryChecks(_ check: CheckRunner) async {
         let api = SpotifyWebPlayerAPI(
             accessToken: { tokens.next() },
             invalidateAccessToken: { await invalidated.record($0) },
-            transport: transport.send
+            transport: transport.send,
+            retryTiming: .immediate
         )
 
         var status = 0

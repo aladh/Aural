@@ -20,7 +20,8 @@ and `com.spotify.extendedmetadata.*`) and show playlist requests using
 Use `Content-Type: application/x-protobuf` and the same keymaster bearer, client token, and desktop
 client headers as other private requests (see `SpotifyCredentials.sign`). A 401 means one of those
 credentials may be stale; invalidate the exact bearer and client token that request carried, and
-retry once.
+retry once. This POST is a metadata read, so transient HTTP 429/5xx and interrupt-class network
+errors also retry through the shared `SpotifyCredentials` policy.
 
 Request (`BatchedEntityRequest`) — one `EntityRequest` per track, each asking for two extensions:
 

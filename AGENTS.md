@@ -196,6 +196,11 @@ The normal quality gate enforces several of these mechanically. Treat all of the
   lock, not only before waiting. This is not the cross-language lifecycle actor.
 - Queue source precedence and context identity belong to `QueueService`. Metadata enrichment may
   replace fallback labels, but it must never reorder or erase a newer authoritative queue.
+- Credentialed Spotify HTTP reads share one bounded transient retry in `SpotifyCredentials`
+  (`SpotifyTransientRetry`): honor 429 `Retry-After`, retry only explicit 5xx and interrupt-class
+  `URLError`s, cap attempts and delay, and replay only classified-safe reads. Writes keep one
+  attempt plus at most one named 401 credential retry. Inject clock/sleeper/jitter in checks;
+  do not wall-clock sleep.
 - `Sources/Aural/Spotify/PlaybackCore.swift` is the only Swift file allowed to import
   `AuralPlaybackCore`. `RustPlaybackEngine.swift` is the only caller of `PlaybackCore`.
 - Playlist writes use the injected `PlaylistMutating` port and `PlaylistMutationController`.

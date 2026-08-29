@@ -7,6 +7,7 @@
 //
 
 import Foundation
+import AuralDomain
 
 /// Popularity, tempo, and musical key for one track.
 ///
@@ -52,6 +53,7 @@ nonisolated struct TrackAttributesAPI: Sendable {
             .invalidateSharedAccess,
         invalidateClientToken: @escaping @Sendable (String) async -> Void = SpotifyCredentials.invalidateShared,
         transport: @escaping Transport = { try await URLSession.shared.data(for: $0) },
+        retryTiming: SpotifyTransientRetry.Timing = .production,
     ) {
         credentials = SpotifyCredentials(
             accessToken: accessToken,
@@ -59,10 +61,14 @@ nonisolated struct TrackAttributesAPI: Sendable {
             invalidateAccessToken: invalidateAccessToken,
             invalidateClientToken: invalidateClientToken,
             transport: transport,
+            retryTiming: retryTiming,
         )
     }
 
     /// Attributes for one batch of track uris, keyed by uri.
+    ///
+    /// This POST is a metadata read: the body names uris to look up and does not write
+    /// library or playback state, so the shared replay-safe retry applies.
     ///
     /// Tracks Spotify answered for but has no attributes for are absent rather
     /// than mapped to empty values, so a caller cannot cache an absence that a
@@ -70,7 +76,7 @@ nonisolated struct TrackAttributesAPI: Sendable {
     func attributes(for uris: [String]) async throws -> [String: TrackAttributes] {
         guard !uris.isEmpty else { return [:] }
 
-        let sent = try await credentials.retryingRefusedToken {
+        let sent = try await credentials.retryingRefusedToken(replay: .safe) {
             try await send(uris)
         }
 
@@ -99,12 +105,7 @@ nonisolated struct TrackAttributesAPI: Sendable {
             throw TrackAttributesAPIError.emptyResponse
         }
 
-        return (
-            data,
-            http.statusCode,
-            SpotifyCredentials.accessTokenCarried(by: request),
-            request.value(forHTTPHeaderField: "Client-Token")
-        )
+        return Attempt(body: data, http: http, request: request)
     }
 
     // MARK: - Request encoding

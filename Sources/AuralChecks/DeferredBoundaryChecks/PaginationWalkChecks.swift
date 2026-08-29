@@ -59,7 +59,7 @@ func runPaginationWalkChecks(_ check: CheckRunner) async {
         ) {
             _ = try await partnerAPI(transport: failed.send).libraryTracks()
         }
-        check.equal("a mid-walk HTTP error does not fetch further pages", failed.offsets(for: "fetchLibraryTracks"), [0, 1])
+        check.equal("a mid-walk HTTP error retries that page then stays typed", failed.offsets(for: "fetchLibraryTracks"), [0, 1, 1, 1])
     }
 }
 
@@ -69,7 +69,8 @@ private func partnerAPI(transport: @escaping SpotifyCredentials.Transport) -> Pa
         clientToken: { "fixture-client" },
         invalidateAccessToken: { _ in },
         invalidateClientToken: { _ in },
-        transport: transport
+        transport: transport,
+        retryTiming: .immediate
     )
 }
 

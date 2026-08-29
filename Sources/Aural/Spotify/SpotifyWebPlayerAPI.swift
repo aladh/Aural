@@ -1,3 +1,4 @@
+import AuralDomain
 import Foundation
 
 nonisolated enum SpotifyWebPlayerAPIError: Error, LocalizedError, Equatable {
@@ -30,6 +31,7 @@ nonisolated struct SpotifyWebPlayerAPI: Sendable {
     private let accessToken: @Sendable () async throws -> String
     private let invalidateAccessToken: @Sendable (String) async throws -> Void
     private let transport: Transport
+    private let retryTiming: SpotifyTransientRetry.Timing
 
     init(
         accessToken: @escaping @Sendable () async throws -> String = {
@@ -37,15 +39,19 @@ nonisolated struct SpotifyWebPlayerAPI: Sendable {
         },
         invalidateAccessToken: @escaping @Sendable (String) async throws -> Void = SpotifyCredentials
             .invalidateSharedAccess,
-        transport: @escaping Transport = { try await URLSession.shared.data(for: $0) }
+        transport: @escaping Transport = { try await URLSession.shared.data(for: $0) },
+        retryTiming: SpotifyTransientRetry.Timing = .production
     ) {
         self.accessToken = accessToken
         self.invalidateAccessToken = invalidateAccessToken
         self.transport = transport
+        self.retryTiming = retryTiming
     }
 
     func queue() async throws -> [CatalogTrack] {
         let sent = try await SpotifyCredentials.retryingRefusedCredentials(
+            replay: .safe,
+            retryTiming: retryTiming,
             invalidateAccessToken: invalidateAccessToken
         ) {
             var request = URLRequest(url: Self.queueURL)
@@ -57,7 +63,7 @@ nonisolated struct SpotifyWebPlayerAPI: Sendable {
             guard let http = response as? HTTPURLResponse else {
                 throw SpotifyWebPlayerAPIError.malformedResponse
             }
-            return (data, http.statusCode, SpotifyCredentials.accessTokenCarried(by: request), nil)
+            return Attempt(body: data, http: http, request: request)
         }
         guard sent.status == 200 else {
             throw SpotifyWebPlayerAPIError.requestFailed(sent.status)
