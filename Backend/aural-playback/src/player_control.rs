@@ -318,12 +318,12 @@ pub extern "C" fn aural_playback_cleanup() {
     ffi_void("aural_playback_cleanup", || {
         debug!("aural_playback_cleanup called - clearing all state");
 
-        // Invalidate the current generation first, so anything already in flight — most
-        // importantly a reconnect loop sleeping between attempts — sees that what it was
-        // recovering no longer exists and abandons instead of rebuilding over the teardown.
-        // This bump is *before* waiting on the lifecycle lock so an in-flight commit can
-        // observe supersession while it still holds that lock.
-        let invalidated = SESSION_GENERATION.fetch_add(1, Ordering::SeqCst) + 1;
+        // Wait for an in-flight apply_cluster, then bump generation under the same gate
+        // lock so mapping cannot begin for the outgoing session. A popped-not-yet-mapping
+        // item is not waited on; begin_cluster_mapping re-checks after that gap.
+        // Same-thread mapping (callback → cleanup) does not wait. The bump remains
+        // before the lifecycle lock so an in-flight commit can observe supersession.
+        let invalidated = invalidate_cluster_generation();
         debug!(
             "aural_playback_cleanup invalidated generation, now {}",
             invalidated
@@ -421,6 +421,7 @@ pub(crate) fn cleanup_player_globals() {
         .lock()
         .unwrap_or_else(|e| e.into_inner())
         .clear();
+    discard_retained_cluster_offers();
 
     // Reset the connection snapshot: not ready, not connected, no device ID.
     // reconnect_attempt is deliberately preserved - it drives exponential backoff and
