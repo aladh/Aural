@@ -1525,7 +1525,7 @@ func runPlaybackCommandFailureChecks(_ runner: CheckRunner) async {
         _ = await waitUntil { await matchingRemote.sendCount == 1 }
         _ = matchingStore.send(.options(PlaybackOptions(shuffle: false, repeatMode: .track)), source: .user)
         runner.equal("a matching user options event keeps optimistic off", matchingStore.state.options.shuffle, false)
-        runner.equal("a matching user options event still adopts repeat", matchingStore.state.repeatMode, .track)
+        runner.equal("a matching user options event still adopts repeat", matchingStore.state.options.repeatMode, .track)
         runner.notNil("a matching user options event keeps the pending shuffle command", matchingStore.state.pendingCommands[.options])
         runner.check(
             "a matching user options event does not record confirmation",
