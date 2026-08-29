@@ -1511,6 +1511,32 @@ func runPlaybackCommandFailureChecks(_ runner: CheckRunner) async {
         runner.check("restore then rejection does not persist off", await restorePrefs.shuffleWrites.isEmpty)
         await restoreStore.shutdownForTermination()
 
+        let matchingRemote = GatedFailingRemoteClient()
+        let matchingPrefs = RecordingPreferences(shuffle: true)
+        let matchingStore = await restoredStore(
+            local: ScriptedLocalEngine(result: .ok),
+            remote: matchingRemote,
+            preferences: matchingPrefs
+        )
+        seedLiveShuffle(matchingStore, local: false, shuffle: true)
+        matchingStore.toggleShuffle()
+        let matchingPending = await waitUntil { matchingStore.state.pendingCommands[.options] != nil }
+        runner.check("remote shuffle is pending before a matching user options event", matchingPending)
+        _ = await waitUntil { await matchingRemote.sendCount == 1 }
+        _ = matchingStore.send(.options(PlaybackOptions(shuffle: false, repeatMode: .track)), source: .user)
+        runner.equal("a matching user options event keeps optimistic off", matchingStore.state.options.shuffle, false)
+        runner.equal("a matching user options event still adopts repeat", matchingStore.state.repeatMode, .track)
+        runner.notNil("a matching user options event keeps the pending shuffle command", matchingStore.state.pendingCommands[.options])
+        runner.check(
+            "a matching user options event does not record confirmation",
+            matchingStore.state.transportCommandResolutions.isEmpty
+        )
+        await matchingRemote.fail()
+        _ = await waitUntil { matchingStore.state.pendingCommands[.options] == nil }
+        runner.equal("rejection after only a matching user options event restores on", matchingStore.state.options.shuffle, true)
+        runner.check("rejection after only a matching user options event does not persist off", await matchingPrefs.shuffleWrites.isEmpty)
+        await matchingStore.shutdownForTermination()
+
         let persistGate = GatedLocalEngine()
         let persistPrefs = RecordingPreferences(shuffle: true)
         let persistStore = await restoredStore(

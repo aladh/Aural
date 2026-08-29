@@ -1404,27 +1404,62 @@ func runPlaybackCommandPresentationChecks(_ check: CheckRunner) {
         check.equal("an accepted shuffle after a restoring .options event keeps off", restored.options.shuffle, false)
         check.equal("an accepted shuffle after a restoring .options event keeps adopted repeat", restored.options.repeatMode, .track)
 
-        let confirmOptionsID = UUID(uuidString: "00000000-0000-0000-0000-000000000056")!
-        var confirmOptions = PlaybackState(
+        let matchingUserID = UUID(uuidString: "00000000-0000-0000-0000-000000000056")!
+        var matchingUser = PlaybackState(
+            accountEpoch: 1,
+            engineEpoch: 1,
+            session: .ready,
+            options: PlaybackOptions(shuffle: true, repeatMode: .off)
+        )
+        startShuffle(&matchingUser, id: matchingUserID, expected: false)
+        _ = PlaybackReducer.reduce(
+            &matchingUser,
+            envelope: presentationEnvelope(
+                source: .user,
+                event: .options(PlaybackOptions(shuffle: false, repeatMode: .track))
+            )
+        )
+        check.equal("a matching user .options event keeps optimistic off", matchingUser.options.shuffle, false)
+        check.equal("a matching user .options event still adopts repeat", matchingUser.options.repeatMode, .track)
+        check.equal("a matching user .options event does not confirm off", matchingUser.pendingCommands[.options]?.id, matchingUserID)
+        check.nil_("a matching user .options event is not a confirmation", matchingUser.transportCommandResolutions[matchingUserID])
+        engineShuffle(&matchingUser, shuffle: false, revision: 1)
+        check.equal("an engine sample after a matching user .options event keeps off", matchingUser.options.shuffle, false)
+        check.nil_("an engine sample after a matching user .options event confirms shuffle", matchingUser.pendingCommands[.options])
+        check.equal(
+            "an engine sample after a matching user .options event records confirmation",
+            matchingUser.transportCommandResolutions[matchingUserID],
+            .confirmed
+        )
+
+        let rejectUserID = UUID(uuidString: "00000000-0000-0000-0000-000000000057")!
+        var rejectUser = PlaybackState(
             accountEpoch: 1,
             engineEpoch: 1,
             session: .ready,
             options: PlaybackOptions(shuffle: true)
         )
-        startShuffle(&confirmOptions, id: confirmOptionsID, expected: false)
+        startShuffle(&rejectUser, id: rejectUserID, expected: false)
         _ = PlaybackReducer.reduce(
-            &confirmOptions,
+            &rejectUser,
             envelope: presentationEnvelope(
                 source: .user,
                 event: .options(PlaybackOptions(shuffle: false))
             )
         )
-        check.equal("a matching .options event keeps off", confirmOptions.options.shuffle, false)
-        check.nil_("a matching .options event confirms the shuffle command", confirmOptions.pendingCommands[.options])
-        check.equal(
-            "a matching .options event records confirmation",
-            confirmOptions.transportCommandResolutions[confirmOptionsID],
-            .confirmed
+        _ = PlaybackReducer.reduce(
+            &rejectUser,
+            envelope: presentationEnvelope(
+                source: .command,
+                event: .commandFinished(
+                    id: rejectUserID,
+                    accepted: false,
+                    notice: PlaybackNotice(message: "Could not update shuffle")
+                )
+            )
         )
+        check.equal("rejection after only a matching user .options event restores on", rejectUser.options.shuffle, true)
+        check.nil_("rejection after only a matching user .options event clears pending", rejectUser.pendingCommands[.options])
+        check.nil_("rejection after only a matching user .options event has no confirmation", rejectUser.transportCommandResolutions[rejectUserID])
     }
 }

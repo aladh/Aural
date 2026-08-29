@@ -667,7 +667,7 @@ public enum PlaybackReducer {
         case let .options(options):
             candidate.options.repeatMode = options.repeatMode
             candidate.options.repeatFlags = options.repeatFlags
-            reconcileShuffle(options.shuffle, in: &candidate)
+            reconcileShuffle(options.shuffle, source: envelope.source, in: &candidate)
         case let .queue(incoming):
             candidate.queue = mergePlaybackQueueSnapshots(
                 current: candidate.queue,
@@ -873,7 +873,7 @@ public enum PlaybackReducer {
         _ snapshot: EnginePlaybackSnapshot,
         in candidate: inout PlaybackState
     ) {
-        reconcileShuffle(snapshot.shuffle, in: &candidate)
+        reconcileShuffle(snapshot.shuffle, source: .enginePlayback, in: &candidate)
         if snapshot.repeatMode != nil || snapshot.repeatFlags != nil {
             let flags = snapshot.repeatFlags
                 ?? snapshot.repeatMode?.flags
@@ -884,11 +884,17 @@ public enum PlaybackReducer {
         }
     }
 
-    /// A lagging pre-command shuffle sample must not undo the pending target. Matching the
-    /// requested value confirms the command so a late coordinator failure cannot restore the
-    /// prior Boolean. Repeat options commands have no expected shuffle and keep current adoption.
-    /// Shuffle is two-valued, so any non-matching sample is the prior value and is held.
-    private static func reconcileShuffle(_ incoming: Bool?, in state: inout PlaybackState) {
+    /// A lagging pre-command shuffle sample must not undo the pending target. Only an
+    /// authoritative engine-playback sample matching the requested value confirms the command
+    /// so a late coordinator failure cannot restore the prior Boolean. User/preference
+    /// `.options` events, including setRepeat copies of the optimistic Boolean, hold the
+    /// pending target and cannot record confirmation. Repeat options commands have no
+    /// expected shuffle and keep current adoption.
+    private static func reconcileShuffle(
+        _ incoming: Bool?,
+        source: PlaybackEventSource,
+        in state: inout PlaybackState
+    ) {
         guard let incoming else { return }
         guard let pending = state.pendingCommands[.options],
               let expected = pending.expectedShuffle
@@ -898,8 +904,10 @@ public enum PlaybackReducer {
         }
         if incoming == expected {
             state.options.shuffle = incoming
-            state.pendingCommands[.options] = nil
-            state.transportCommandResolutions[pending.id] = .confirmed
+            if source == .enginePlayback {
+                state.pendingCommands[.options] = nil
+                state.transportCommandResolutions[pending.id] = .confirmed
+            }
             return
         }
     }
