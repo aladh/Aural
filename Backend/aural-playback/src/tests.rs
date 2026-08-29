@@ -815,6 +815,113 @@ fn exported_c_functions_enter_through_the_panic_barrier() {
     }
 }
 
+/// `Spirc::load` Ok is queued, not playing. `resume_playback` trusts `IS_PLAYING` for its
+/// early return, so a queued `play_uri` / `play_tracks` / radio load must not store true.
+/// Production code (excluding `tests.rs` / `*_tests.rs` and `#[cfg(test)]` modules) may
+/// write `IS_PLAYING=true` only from the `PlayerEvent::Playing` arm.
+#[test]
+fn only_a_playing_event_stores_is_playing_true() {
+    let src_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
+    let mut files_with_true_store = Vec::new();
+    let mut playing_arm_stores_true = false;
+    for entry in std::fs::read_dir(&src_dir).expect("src dir") {
+        let path = entry.expect("dir entry").path();
+        if path.extension().and_then(|ext| ext.to_str()) != Some("rs") {
+            continue;
+        }
+        let file_name = path
+            .file_name()
+            .and_then(|name| name.to_str())
+            .unwrap_or_default();
+        if file_name == "tests.rs" || file_name.ends_with("_tests.rs") {
+            continue;
+        }
+        let source = std::fs::read_to_string(&path).expect("read rust source");
+        let production = strip_cfg_test_modules(&source);
+        if code_contains(production, "IS_PLAYING.store(true") {
+            files_with_true_store.push(file_name.to_string());
+        }
+        if file_name == "player_event_pump.rs" {
+            playing_arm_stores_true = code_contains(
+                &match_arm_body(production, "PlayerEvent::Playing"),
+                "IS_PLAYING.store(true",
+            );
+        }
+    }
+    files_with_true_store.sort();
+    assert_eq!(
+        files_with_true_store,
+        vec!["player_event_pump.rs".to_string()],
+        "queued play commands must not store IS_PLAYING=true"
+    );
+    assert!(
+        playing_arm_stores_true,
+        "PlayerEvent::Playing must remain the authoritative IS_PLAYING=true write"
+    );
+}
+
+fn strip_cfg_test_modules(source: &str) -> &str {
+    source
+        .split_once("\n#[cfg(test)]\nmod ")
+        .map(|(production, _)| production)
+        .unwrap_or(source)
+}
+
+fn code_contains(source: &str, needle: &str) -> bool {
+    let bytes = source.as_bytes();
+    let needle = needle.as_bytes();
+    let mut i = 0;
+    while i < bytes.len() {
+        match scan_code_byte(bytes, i) {
+            Scan::Skip(next) => i = next,
+            Scan::Byte(_, next) => {
+                if bytes[i..].starts_with(needle) {
+                    return true;
+                }
+                i = next;
+            }
+        }
+    }
+    false
+}
+
+fn match_arm_body(source: &str, pattern: &str) -> String {
+    let start = source
+        .find(pattern)
+        .unwrap_or_else(|| panic!("missing {pattern}"));
+    let bytes = source.as_bytes();
+    let arrow = start
+        + source[start..]
+            .find("=>")
+            .unwrap_or_else(|| panic!("{pattern} is not a match arm"));
+    let brace = next_unquoted(bytes, arrow + 2, b'{')
+        .unwrap_or_else(|| panic!("{pattern} arm has no body"));
+    let end = matching_brace(bytes, brace);
+    source[brace + 1..end].to_string()
+}
+
+fn matching_brace(bytes: &[u8], open: usize) -> usize {
+    let mut depth = 0usize;
+    let mut i = open;
+    while i < bytes.len() {
+        match scan_code_byte(bytes, i) {
+            Scan::Skip(next) => i = next,
+            Scan::Byte(b, next) => {
+                if b == b'{' {
+                    depth += 1;
+                } else if b == b'}' {
+                    depth -= 1;
+                    if depth == 0 {
+                        return i;
+                    }
+                }
+                i = next;
+            }
+        }
+    }
+    panic!("unbalanced brace")
+}
+
 fn exported_c_functions(source: &str) -> Vec<(String, String)> {
     let bytes = source.as_bytes();
     let needle = b"pub extern \"C\" fn ";

@@ -516,19 +516,6 @@ mod player_event_pump_policy {
     }
 
     #[test]
-    fn a_queued_load_does_not_establish_playing_for_resume() {
-        let _guard = lock_lifecycle_test_globals();
-        let _restore = RestorePlaybackGlobals(capture_playback_globals());
-        IS_PLAYING.store(false, Ordering::SeqCst);
-        // The three queued-load play commands still record activity on Ok.
-        set_active_device(true);
-        assert!(
-            !IS_PLAYING.load(Ordering::SeqCst),
-            "resume must not short-circuit after a queued load that never played"
-        );
-    }
-
-    #[test]
     fn a_playing_event_is_the_authoritative_playing_transition() {
         let _guard = lock_lifecycle_test_globals();
         let _restore = RestorePlaybackGlobals(capture_playback_globals());
