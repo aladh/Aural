@@ -834,7 +834,8 @@ func runPlaylistMutationChecks(_ runner: CheckRunner) async {
             )
             runner.check(
                 "the product contract distinguishes mutation success from a stale playlist refresh",
-                containsToken(contract, "A committed write stays successful if that refresh fails")
+                containsToken(contract, "Write failure, cancellation, and stale account/session results")
+                    && containsToken(contract, "A committed write stays successful if that refresh fails")
                     && containsToken(contract, "Retry reloads rows without")
             )
             runner.check(

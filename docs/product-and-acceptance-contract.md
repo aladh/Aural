@@ -105,7 +105,7 @@ ADRs; historical measurements belong in the performance baseline.
   occurrences by Pathfinder UID (`CatalogTrack.id`), never by track URI. Read-only playlists do
   not advertise or route those commands.
 - Successful add/remove refresh only the affected open playlist and report through
-  `TransientFeedbackPresenter`. Failure, cancellation, and stale account/session results leave
+  `TransientFeedbackPresenter`. Write failure, cancellation, and stale account/session results leave
   presentation state unchanged. A committed write stays successful if that refresh fails; the open
   playlist then keeps its previous rows, shows that they may be stale, and Retry reloads rows without
   repeating the mutation.
