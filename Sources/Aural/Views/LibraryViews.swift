@@ -105,9 +105,7 @@ struct SearchView: View {
             isConnected: playback.isConnected
         )) {
             guard playback.isConnected else { return }
-            try? await Task.sleep(for: .milliseconds(300))
-            guard !Task.isCancelled else { return }
-            await store.search(searchText)
+            await store.scheduleSearch(searchText)
         }
     }
 
