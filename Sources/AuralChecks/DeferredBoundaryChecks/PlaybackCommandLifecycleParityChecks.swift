@@ -309,7 +309,6 @@ private func seedRoute(_ player: PlaybackStore, _ route: LifecycleRoute) {
             source: .engineDevices,
             revision: 1
         )
-        _ = player.send(.owner(.local), source: .command)
     case .remote:
         _ = player.send(
             .devices(PlaybackDeviceSnapshot(
