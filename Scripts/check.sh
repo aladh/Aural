@@ -3,16 +3,7 @@ set -euo pipefail
 
 project_root="${0:A:h:h}"
 build_configuration="${AURAL_BUILD_CONFIGURATION:-debug}"
-sdk_path="$(xcrun --show-sdk-path)"
-compatible_sdk="/Library/Developer/CommandLineTools/SDKs/MacOSX26.5.sdk"
-if [[ -d "$compatible_sdk" ]]; then
-    sdk_path="$compatible_sdk"
-fi
-
-mkdir -p "$project_root/.build/module-cache"
-export SDKROOT="$sdk_path"
-export CLANG_MODULE_CACHE_PATH="$project_root/.build/module-cache"
-export SWIFTPM_MODULECACHE_OVERRIDE="$project_root/.build/module-cache"
+source "$project_root/Scripts/swiftpm-env.sh"
 
 case "$build_configuration" in
     debug|release) ;;
@@ -333,6 +324,10 @@ if ! rg -q 'key: macos-rust-\$\{\{ hashFiles\(' "$ci_workflow"; then
 fi
 if ! rg -U -q --fixed-strings $'          echo "SWIFT_TOOLCHAIN_KEY=$(shasum -a 256 "$RUNNER_TEMP/swift-toolchain.txt" | awk \'{print $1}\')" >> "$GITHUB_ENV"\n\n      - name: Cache SwiftPM build directory\n        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0\n        with:\n          path: |\n            .build/*\n            !.build/aural-signing\n          key: macos-swiftpm-${{ runner.os }}-${{ runner.arch }}-${{ env.SWIFT_TOOLCHAIN_KEY }}-${{ hashFiles(\'Package.swift\', \'Package.resolved\') }}-${{ github.sha }}\n          restore-keys: |\n            macos-swiftpm-${{ runner.os }}-${{ runner.arch }}-${{ env.SWIFT_TOOLCHAIN_KEY }}-' "$ci_workflow"; then
     print -u2 "CI must hash the Swift toolchain, then cache .build with a per-commit key and compatible restore prefix"
+    exit 1
+fi
+if ! rg -U -q --fixed-strings $'      - name: Run checks\n        run: ./Scripts/check.sh\n\n      - name: Compile release Aural with AURAL_DISTRIBUTION\n        run: ./Scripts/compile-release-aural.sh' "$ci_workflow"; then
+    print -u2 "CI must compile release Aural with AURAL_DISTRIBUTION after the unfiltered debug gate"
     exit 1
 fi
 
