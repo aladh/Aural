@@ -1,6 +1,5 @@
 use super::*;
 use serde::Serialize;
-use std::collections::HashMap;
 use std::fs;
 use std::path::PathBuf;
 
@@ -54,12 +53,16 @@ fn write_canonical_fixture(name: &str, payload: &impl Serialize) {
 }
 
 fn converted_queue_item(uri: &str, provider: &str, uid: &str) -> QueueItem {
-    to_queue_item(&ProvidedTrack {
+    to_queue_item(&provided_track(uri, provider, uid))
+}
+
+fn provided_track(uri: &str, provider: &str, uid: &str) -> ProvidedTrack {
+    ProvidedTrack {
         uri: uri.to_string(),
         provider: provider.to_string(),
         uid: uid.to_string(),
         ..Default::default()
-    })
+    }
 }
 
 fn playback_minimal() -> PlaybackStateUpdate {
@@ -110,60 +113,39 @@ fn queue_minimal() -> QueueState {
 }
 
 fn protocol_next_full() -> ProtocolQueueTrack {
-    let mut metadata = HashMap::new();
-    metadata.insert("is_queued".to_string(), "true".to_string());
-    let mut restrictions = serde_json::Map::new();
-    restrictions.insert(
-        "disallow_resuming_reasons".to_string(),
-        serde_json::json!(["not_active_device"]),
-    );
-    ProtocolQueueTrack {
-        uri: "spotify:track:fixtureDup".to_string(),
-        uid: "occ-a".to_string(),
-        provider: "queue".to_string(),
-        metadata,
-        removed: Vec::new(),
-        blocked: Vec::new(),
-        restrictions: Some(restrictions),
-        album_uri: "spotify:album:fixtureAlbum".to_string(),
-        disallow_reasons: vec!["not_active_device".to_string()],
-        artist_uri: "spotify:artist:fixtureArtist".to_string(),
-    }
+    let mut track = provided_track("spotify:track:fixtureDup", "queue", "occ-a");
+    track
+        .metadata
+        .insert("is_queued".to_string(), "true".to_string());
+    track.album_uri = "spotify:album:fixtureAlbum".to_string();
+    track.artist_uri = "spotify:artist:fixtureArtist".to_string();
+    track.disallow_reasons = vec!["not_active_device".to_string()];
+    track
+        .restrictions
+        .mut_or_insert_default()
+        .disallow_resuming_reasons = vec!["not_active_device".to_string()];
+    to_protocol_track(&track)
 }
 
 fn protocol_next_omitted() -> ProtocolQueueTrack {
-    ProtocolQueueTrack {
-        uri: "spotify:track:fixtureAutoplay".to_string(),
-        uid: String::new(),
-        provider: "autoplay".to_string(),
-        metadata: HashMap::new(),
-        removed: Vec::new(),
-        blocked: Vec::new(),
-        restrictions: None,
-        album_uri: String::new(),
-        disallow_reasons: Vec::new(),
-        artist_uri: String::new(),
-    }
+    to_protocol_track(&provided_track(
+        "spotify:track:fixtureAutoplay",
+        "autoplay",
+        "",
+    ))
 }
 
 fn protocol_prev_full() -> ProtocolQueueTrack {
-    let mut metadata = HashMap::new();
-    metadata.insert(
+    let mut track = provided_track("spotify:track:fixturePrev", "context", "occ-prev");
+    track.metadata.insert(
         "context_uri".to_string(),
         "spotify:playlist:fixtureContext".to_string(),
     );
-    ProtocolQueueTrack {
-        uri: "spotify:track:fixturePrev".to_string(),
-        uid: "occ-prev".to_string(),
-        provider: "context".to_string(),
-        metadata,
-        removed: vec!["removed-reason".to_string()],
-        blocked: vec!["blocked-reason".to_string()],
-        restrictions: None,
-        album_uri: "spotify:album:fixtureAlbum".to_string(),
-        disallow_reasons: Vec::new(),
-        artist_uri: "spotify:artist:fixtureArtist".to_string(),
-    }
+    track.removed = vec!["removed-reason".to_string()];
+    track.blocked = vec!["blocked-reason".to_string()];
+    track.album_uri = "spotify:album:fixtureAlbum".to_string();
+    track.artist_uri = "spotify:artist:fixtureArtist".to_string();
+    to_protocol_track(&track)
 }
 
 fn queue_full() -> QueueState {

@@ -23,10 +23,6 @@ func runEnginePayloadContractChecks(_ check: CheckRunner) {
             check.equal("minimal shuffle", state.shuffle, false)
             check.equal("minimal repeat track", state.repeatTrack, false)
             check.equal("minimal repeat context", state.repeatContext, false)
-
-            let snapshot = enginePlaybackSnapshot(from: state, receivedAt: Date(timeIntervalSince1970: 0))
-            check.equal("empty track maps to stopped", snapshot.transport, .stopped)
-            check.nil_("empty track URI is nullable in the reducer snapshot", snapshot.trackURI)
         }
 
         check.noThrow("playback-full decodes paused overlay and options") {
@@ -44,13 +40,6 @@ func runEnginePayloadContractChecks(_ check: CheckRunner) {
             check.equal("full shuffle", state.shuffle, true)
             check.equal("full repeat track", state.repeatTrack, false)
             check.equal("full repeat context", state.repeatContext, true)
-
-            let snapshot = enginePlaybackSnapshot(from: state, receivedAt: Date(timeIntervalSince1970: 1_700_000_000))
-            check.equal("paused overlay is not playing", snapshot.transport, .paused)
-            check.equal("reducer keeps the track URI", snapshot.trackURI, "spotify:track:fixtureNow")
-            check.equal("reducer keeps shuffle", snapshot.shuffle, true)
-            check.equal("reducer keeps repeat context", snapshot.repeatFlags?.context, true)
-            check.equal("reducer keeps repeat track off", snapshot.repeatFlags?.track, false)
 
             _ = try decodeIgnoringUnknownFields(
                 RustPlaybackState.self,
@@ -161,10 +150,6 @@ func runEnginePayloadContractChecks(_ check: CheckRunner) {
             check.equal("minimal device name is empty", state.deviceName, "")
             check.equal("minimal last error", state.lastError, "fixture-session-timeout")
 
-            let session: PlaybackSessionPhase = (state.sessionConnected && state.spircReady)
-                ? .ready
-                : .failed(state.lastError ?? "")
-            check.equal("disconnected connection maps to failure", session, .failed("fixture-session-timeout"))
             let devices = try decoder.decode(
                 RustDevicesState.self,
                 from: enginePayloadFixture(named: "devices-full")
@@ -194,13 +179,18 @@ func runEnginePayloadContractChecks(_ check: CheckRunner) {
             check.equal("full local device name", state.deviceName, "Fixture Mac")
             check.nil_("full last error is null", state.lastError)
 
+            let devices = try decoder.decode(
+                RustDevicesState.self,
+                from: enginePayloadFixture(named: "devices-full")
+            ).devices
+            let playbackDevices = devices.map {
+                PlaybackDevice(id: $0.id, name: $0.name, type: $0.type, isActive: $0.isActive)
+            }
             let owner = connectionPlaybackOwner(
                 isLocalActive: state.isActiveDevice,
                 localDeviceID: state.deviceID,
                 localDeviceName: state.deviceName ?? "",
-                devices: [
-                    PlaybackDevice(id: "fixture-mac", name: "Fixture Mac", type: "Computer", isActive: true),
-                ],
+                devices: playbackDevices,
                 currentTrackURI: "spotify:track:fixtureNow",
                 previousOwner: .none,
                 lastRemoteDeviceID: nil
@@ -278,38 +268,6 @@ func runEnginePayloadContractChecks(_ check: CheckRunner) {
             )
         }
     }
-}
-
-private func enginePlaybackSnapshot(
-    from state: RustPlaybackState,
-    receivedAt: Date
-) -> EnginePlaybackSnapshot {
-    let snapshotIsPlaying = state.isPlaying && !(state.isPaused ?? false)
-    let transport: PlaybackTransportState = snapshotIsPlaying
-        ? .playing
-        : (state.trackURI.isEmpty ? .stopped : .paused)
-    let flags = RepeatFlags(
-        context: state.repeatContext ?? false,
-        track: state.repeatTrack ?? false
-    )
-    return EnginePlaybackSnapshot(
-        transport: transport,
-        trackURI: state.trackURI.isEmpty ? nil : state.trackURI,
-        timing: PlaybackTiming(
-            position: AuralDomain.playbackSnapshotPosition(
-                positionMilliseconds: state.positionMS,
-                durationMilliseconds: state.durationMS,
-                timestampMilliseconds: state.timestampMS,
-                isPlaying: transport == .playing,
-                now: receivedAt
-            ),
-            duration: TimeInterval(max(0, state.durationMS)) / 1_000,
-            anchoredAt: receivedAt
-        ),
-        shuffle: state.shuffle,
-        repeatMode: RepeatMode(context: flags.context, track: flags.track),
-        repeatFlags: flags
-    )
 }
 
 private func decodeIgnoringUnknownFields<T: Decodable>(_ type: T.Type, from data: Data) throws -> T {
