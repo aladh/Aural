@@ -104,6 +104,7 @@ private actor LifecycleRemoteClient: RemotePlaybackClient {
     private var continuation: CheckedContinuation<Void, Error>?
     private var pendingResult: Result<Void, Error>?
     private(set) var sendCount = 0
+    private(set) var completedCount = 0
 
     init(_ behavior: Behavior) {
         self.behavior = behavior
@@ -111,6 +112,7 @@ private actor LifecycleRemoteClient: RemotePlaybackClient {
 
     func send(_: SpotifyConnectCommand, from _: String, to _: String) async throws {
         sendCount += 1
+        defer { completedCount += 1 }
         switch behavior {
         case .succeed:
             return
@@ -677,6 +679,11 @@ func runPlaybackCommandLifecycleParityChecks(_ runner: CheckRunner) async {
                 } else {
                     await cancelRemote.finish(success: true)
                 }
+                let cancelSettled = await waitUntil {
+                    if route == .local { return cancelLocal.executeCount == 1 }
+                    return await cancelRemote.completedCount >= 1
+                }
+                runner.check("\(label) cancelled command settles after finish", cancelSettled)
                 runner.check("\(label) cancelled command reports no completion", cancelCompletions.isEmpty)
                 runner.notNil("\(label) cancellation leaves the pending command", cancelled.state.pendingCommands[kind.commandKind])
                 await cancelled.shutdownForTermination()
