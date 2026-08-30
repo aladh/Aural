@@ -7,9 +7,9 @@ import Foundation
 /// setters in other files are out of scope for this file-bounded guard.
 ///
 /// Comment and string handling uses `uncommentedSource` on the whole buffer. Nested
-/// `/* */` state carries across lines because block-comment newlines are kept. Setter
-/// detection then drops remaining quoted string contents so a documented example is
-/// not an accessor.
+/// `/* */` and `"""` state carry across lines because those interiors keep newlines.
+/// Setter detection then drops remaining quoted string contents so a documented
+/// example is not an accessor.
 enum PlaybackStoreProjectionContract {
     static func explicitSetterLines(in source: String) -> [String] {
         let originalLines = source.split(separator: "\n", omittingEmptySubsequences: false).map(String.init)
@@ -42,12 +42,15 @@ enum PlaybackStoreProjectionContract {
         var blockDepth = 0
         var inLineComment = false
         var inString = false
+        var inMultilineString = false
         var escaped = false
         while index < source.endIndex {
             let next = source.index(after: index)
             let startsPair = next < source.endIndex
             let pair = startsPair ? String(source[index...next]) : ""
             let character = source[index]
+            let tripleEnd = source.index(index, offsetBy: 3, limitedBy: source.endIndex)
+            let isTripleQuote = tripleEnd.map { source[index..<$0] == "\"\"\"" } ?? false
 
             if inLineComment {
                 if character == "\n" {
@@ -74,6 +77,19 @@ enum PlaybackStoreProjectionContract {
                 continue
             }
 
+            if inMultilineString {
+                if isTripleQuote, let tripleEnd {
+                    inMultilineString = false
+                    index = tripleEnd
+                } else {
+                    if character == "\n" {
+                        result.append("\n")
+                    }
+                    index = next
+                }
+                continue
+            }
+
             if inString {
                 result.append(character)
                 if escaped {
@@ -87,6 +103,11 @@ enum PlaybackStoreProjectionContract {
                 continue
             }
 
+            if isTripleQuote, let tripleEnd {
+                inMultilineString = true
+                index = tripleEnd
+                continue
+            }
             if pair == "/*" {
                 blockDepth = 1
                 index = source.index(after: next)
