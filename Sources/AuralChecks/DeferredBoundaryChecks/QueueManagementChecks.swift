@@ -268,19 +268,6 @@ private func seedAuthoritativeQueue(_ player: PlaybackStore, revision: UInt64 = 
     )
 }
 
-private func waitUntil(
-    timeoutNanoseconds: UInt64 = 200_000_000,
-    _ condition: @MainActor () async -> Bool
-) async -> Bool {
-    let deadline = DispatchTime.now().uptimeNanoseconds + timeoutNanoseconds
-    while DispatchTime.now().uptimeNanoseconds < deadline {
-        if Task.isCancelled { return false }
-        if await condition() { return true }
-        await Task.yield()
-    }
-    return false
-}
-
 @MainActor
 private func yieldPasses(_ count: Int = 8) async {
     for _ in 0 ..< count { await Task.yield() }

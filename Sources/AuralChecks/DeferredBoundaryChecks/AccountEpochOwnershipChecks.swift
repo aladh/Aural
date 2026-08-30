@@ -152,18 +152,6 @@ private func epochEnvironment(
     )
 }
 
-@MainActor
-private func waitUntil(_ condition: @MainActor () async -> Bool) async -> Bool {
-    let clock = ContinuousClock()
-    let deadline = clock.now + .seconds(2)
-    while clock.now < deadline {
-        if Task.isCancelled { return false }
-        if await condition() { return true }
-        await Task.yield()
-    }
-    return false
-}
-
 private func auralSourceFile(_ relativePath: String) throws -> String {
     let checksDirectory = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
     let sources = checksDirectory.deletingLastPathComponent().deletingLastPathComponent()

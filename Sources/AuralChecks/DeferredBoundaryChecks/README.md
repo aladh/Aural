@@ -19,7 +19,9 @@ fan-out ordering, and Rust-produced engine JSON contract fixtures under `Fixture
 in the application executable.
 
 These checks intentionally use the custom runner rather than XCTest/Swift Testing so the complete
-verification path remains available with the supported Command Line Tools installation.
+verification path remains available with the supported Command Line Tools installation. Concrete
+suites share one `@MainActor` `waitUntil` helper that polls with `Task.yield` until the condition,
+cancellation, or a two-second `ContinuousClock` deadline.
 
 Both executables accept optional suite-name arguments after `--`. `--list` prints the registered
 names. `--help` prints usage. No arguments still run every registered suite in the current order.

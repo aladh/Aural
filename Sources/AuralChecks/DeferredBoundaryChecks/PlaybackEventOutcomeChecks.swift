@@ -227,18 +227,6 @@ private struct IdleCatalog: CatalogProviding {
     func playlist(id _: String) async throws -> PathfinderPlaylistUnion { throw OutcomeCheckFailure.unavailable }
 }
 
-@MainActor
-private func waitUntil(_ condition: @MainActor () async -> Bool) async -> Bool {
-    let clock = ContinuousClock()
-    let deadline = clock.now + .seconds(2)
-    while clock.now < deadline {
-        if Task.isCancelled { return false }
-        if await condition() { return true }
-        await Task.yield()
-    }
-    return false
-}
-
 private func outcomeEnvironment(
     local: any LocalPlaybackEngine = IdleLocalEngine(),
     remote: any RemotePlaybackClient,

@@ -244,18 +244,6 @@ private struct IdleCatalog: CatalogProviding {
 }
 
 @MainActor
-private func waitUntil(_ condition: @MainActor () async -> Bool) async -> Bool {
-    let clock = ContinuousClock()
-    let deadline = clock.now + .seconds(2)
-    while clock.now < deadline {
-        if Task.isCancelled { return false }
-        if await condition() { return true }
-        await Task.yield()
-    }
-    return false
-}
-
-@MainActor
 private func localCommandOutcome(
     _ coordinator: PlaybackCoordinator,
     _ runner: CheckRunner,
