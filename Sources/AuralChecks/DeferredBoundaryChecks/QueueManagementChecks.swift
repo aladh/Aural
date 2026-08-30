@@ -1183,11 +1183,14 @@ func runQueueManagementChecks(_ runner: CheckRunner) async {
                 contextURI: "spotify:track:now"
             )
         }
-        runner.check("acceptConnect parks", await waitUntil { await acceptHook.connectAcceptIsParked() })
-        await acceptHook.resumeConnectAccept()
-        await acceptHook.resumeConnectAccept()
-        runner.equal("acceptConnect applies after one resume", (await acceptTask.value)?.snapshot.revision, 4)
-        runner.equal("a second acceptConnect resume is inert", await acceptHook.connectAcceptIsParked(), false)
+        let acceptParked = await waitUntil { await acceptHook.connectAcceptIsParked() }
+        runner.check("acceptConnect parks", acceptParked)
+        if acceptParked {
+            await acceptHook.resumeConnectAccept()
+            await acceptHook.resumeConnectAccept()
+            runner.equal("acceptConnect applies after one resume", (await acceptTask.value)?.snapshot.revision, 4)
+            runner.equal("a second acceptConnect resume is inert", await acceptHook.connectAcceptIsParked(), false)
+        }
 
         await acceptHook.parkNextConnectAccept()
         let cancelledTask = Task {
@@ -1203,12 +1206,11 @@ func runQueueManagementChecks(_ runner: CheckRunner) async {
             await waitUntil { await acceptHook.connectAcceptIsParked() }
         )
         cancelledTask.cancel()
-        runner.nil_("cancelled parked acceptConnect does not apply", await cancelledTask.value)
-        runner.equal(
-            "cancellation does not leak an acceptConnect continuation",
-            await acceptHook.connectAcceptIsParked(),
-            false
-        )
+        let acceptReleased = await waitUntil { await acceptHook.connectAcceptIsParked() == false }
+        runner.check("cancellation does not leak an acceptConnect continuation", acceptReleased)
+        if acceptReleased {
+            runner.nil_("cancelled parked acceptConnect does not apply", await cancelledTask.value)
+        }
 
         let replaceHook = QueueServiceTestHook()
         let replaceService = isolatedQueueService(hook: replaceHook)

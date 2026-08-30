@@ -1,66 +1,109 @@
 import Foundation
 @testable import AuralCore
 
-/// Lock-protected continuation so cancellation can resume without hopping back
-/// onto an actor that is already waiting in that continuation.
+/// Lock-protected continuation so cancellation and resume do not hop onto an
+/// actor that is already waiting in that continuation.
 private final class ParkedGate: @unchecked Sendable {
+    private struct Storage {
+        var pending = false
+        var waiting = false
+        var resumeRequested = false
+        var continuation: CheckedContinuation<Void, Never>?
+        var generation: UInt64 = 0
+    }
+
     private let lock = NSLock()
-    private var pending = false
-    private var continuation: CheckedContinuation<Void, Never>?
-    private var generation: UInt64 = 0
+    private var storage = Storage()
+
+    private func withStorage<T>(_ body: (inout Storage) -> T) -> T {
+        lock.lock()
+        defer { lock.unlock() }
+        return body(&storage)
+    }
 
     func parkNext() {
-        lock.lock()
-        pending = true
-        lock.unlock()
+        let displaced = withStorage { storage -> CheckedContinuation<Void, Never>? in
+            storage.pending = true
+            storage.resumeRequested = false
+            let parked = storage.continuation
+            storage.continuation = nil
+            return parked
+        }
+        displaced?.resume()
     }
 
     func isParked() -> Bool {
-        lock.lock()
-        defer { lock.unlock() }
-        return continuation != nil
+        withStorage { $0.continuation != nil }
     }
 
     func resume() {
-        lock.lock()
-        let parked = continuation
-        continuation = nil
-        lock.unlock()
+        let parked = withStorage { storage -> CheckedContinuation<Void, Never>? in
+            if let parked = storage.continuation {
+                storage.continuation = nil
+                return parked
+            }
+            if storage.waiting {
+                storage.resumeRequested = true
+            }
+            return nil
+        }
         parked?.resume()
     }
 
     func waitIfPending() async {
-        lock.lock()
-        guard pending else {
-            lock.unlock()
-            return
+        let id = withStorage { storage -> UInt64 in
+            guard storage.pending else { return 0 }
+            storage.pending = false
+            storage.waiting = true
+            storage.resumeRequested = false
+            storage.generation &+= 1
+            return storage.generation
         }
-        pending = false
-        generation &+= 1
-        let id = generation
-        lock.unlock()
+        guard id != 0 else { return }
+        defer {
+            withStorage { storage in
+                if storage.generation == id {
+                    storage.waiting = false
+                }
+            }
+        }
 
         await withTaskCancellationHandler {
             await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
-                lock.lock()
-                if Task.isCancelled || generation != id {
-                    lock.unlock()
-                    continuation.resume()
-                    return
+                enum Install {
+                    case resumeNow
+                    case displaced(CheckedContinuation<Void, Never>)
+                    case stored
                 }
-                self.continuation = continuation
-                lock.unlock()
+                let install = withStorage { storage -> Install in
+                    if Task.isCancelled || storage.generation != id || storage.resumeRequested {
+                        storage.resumeRequested = false
+                        return .resumeNow
+                    }
+                    let displaced = storage.continuation
+                    storage.continuation = continuation
+                    if let displaced {
+                        return .displaced(displaced)
+                    }
+                    return .stored
+                }
+                switch install {
+                case .resumeNow:
+                    continuation.resume()
+                case let .displaced(previous):
+                    previous.resume()
+                case .stored:
+                    break
+                }
             }
         } onCancel: {
-            lock.lock()
-            let parked: CheckedContinuation<Void, Never>?
-            if generation == id {
-                parked = continuation
-                continuation = nil
-            } else {
-                parked = nil
+            let parked = withStorage { storage -> CheckedContinuation<Void, Never>? in
+                guard storage.generation == id else { return nil }
+                let parked = storage.continuation
+                storage.continuation = nil
+                storage.resumeRequested = false
+                return parked
             }
-            lock.unlock()
             parked?.resume()
         }
     }
