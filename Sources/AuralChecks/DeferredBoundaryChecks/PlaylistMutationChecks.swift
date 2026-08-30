@@ -129,6 +129,7 @@ private func makeCatalog(
         attributesProvider: MutationCheckAttributes(),
         playlistMutations: services,
         session: session,
+        clock: SystemPlaybackClock(),
         feedback: feedback
     )
 }

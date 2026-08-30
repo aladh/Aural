@@ -33,19 +33,33 @@ final class SearchStore {
     }
     var isEmpty: Bool { tracks.isEmpty && albums.isEmpty && artists.isEmpty && playlists.isEmpty }
 
+    /// Delay before a view-driven query is admitted. Try Again calls `search`
+    /// directly and must not wait this interval again.
+    static let queryAdmissionDelay: TimeInterval = 0.3
+
     @ObservationIgnored private let provider: any CatalogProviding
     @ObservationIgnored private let metadata: CatalogMetadataRepository
     @ObservationIgnored private let session: CatalogSessionAvailability
+    @ObservationIgnored private let clock: any PlaybackClock
     @ObservationIgnored private var requestScope: UInt64 = 0
+    @ObservationIgnored private var debounceGeneration: UInt64 = 0
     @ObservationIgnored private var searchTask: Task<Void, Never>?
+    @ObservationIgnored private var debounceTask: Task<Void, Never>?
 
-    init(provider: any CatalogProviding, metadata: CatalogMetadataRepository, session: CatalogSessionAvailability) {
+    init(
+        provider: any CatalogProviding,
+        metadata: CatalogMetadataRepository,
+        session: CatalogSessionAvailability,
+        clock: any PlaybackClock
+    ) {
         self.provider = provider
         self.metadata = metadata
         self.session = session
+        self.clock = clock
     }
 
     func reset() {
+        invalidatePendingAdmission()
         requestScope &+= 1
         searchTask?.cancel()
         searchTask = nil
@@ -53,11 +67,54 @@ final class SearchStore {
         isSearching = false
     }
 
+    /// Immediate admission for Try Again. Invalidates a pending debounce so a
+    /// later timer cannot start a second fetch for a superseded query.
     func search(_ term: String) async {
+        invalidatePendingAdmission()
+        await performSearch(term.trimmingCharacters(in: .whitespacesAndNewlines))
+    }
+
+    /// View-driven query path. Cancelled or superseded before the delay leaves
+    /// committed results and `isSearching` unchanged.
+    func scheduleSearch(_ term: String) async {
+        debounceGeneration &+= 1
+        let token = debounceGeneration
+        debounceTask?.cancel()
+        let query = term.trimmingCharacters(in: .whitespacesAndNewlines)
+        let scheduledEpoch = session.accountEpoch
+        let scheduledRevision = session.snapshot.revision
+        let scheduledAvailable = session.isAvailable
+        let task = Task { [weak self] in
+            guard let self else { return }
+            do {
+                try await self.clock.sleep(seconds: Self.queryAdmissionDelay)
+            } catch {
+                return
+            }
+            guard token == self.debounceGeneration, !Task.isCancelled else { return }
+            guard self.session.accountEpoch == scheduledEpoch,
+                self.session.snapshot.revision == scheduledRevision,
+                self.session.isAvailable == scheduledAvailable
+            else { return }
+            await self.performSearch(query)
+        }
+        debounceTask = task
+        await withTaskCancellationHandler { await task.value } onCancel: { task.cancel() }
+        if token == debounceGeneration {
+            debounceTask = nil
+        }
+    }
+
+    private func invalidatePendingAdmission() {
+        debounceGeneration &+= 1
+        debounceTask?.cancel()
+        debounceTask = nil
+    }
+
+    private func performSearch(_ query: String) async {
         requestScope &+= 1
         let requestID = requestScope
         searchTask?.cancel()
-        let query = term.trimmingCharacters(in: .whitespacesAndNewlines)
         guard session.isAvailable, !query.isEmpty else {
             clearResults()
             isSearching = false

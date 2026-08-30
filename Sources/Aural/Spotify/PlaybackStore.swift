@@ -241,6 +241,7 @@ final class PlaybackStore {
             attributesProvider: environment.trackAttributes,
             playlistMutations: environment.playlistMutations,
             session: catalogSession,
+            clock: environment.clock,
             feedback: feedback
         )
         effects.replace(.engineEvents, with: Task { [weak self] in
