@@ -203,7 +203,7 @@ playback_store_sources=(
     "$project_root/Sources/Aural/Spotify/PlaybackStore+Transport.swift"
 )
 store_state_assignments="$(
-    rg -N '(^|[^[:alnum:].])(self\.)?state[[:space:]]*=' "${playback_store_sources[@]}" \
+    rg -N '(^|[^[:alnum:]_.])(self\.)?state[[:space:]]*=' "${playback_store_sources[@]}" \
         | rg -v 'let state' \
         | rg -v 'state[[:space:]]*==' \
         | rg -v ':[^:]*//' \
@@ -217,7 +217,7 @@ if [[ "$store_state_assignments" != "$expected_store_state_assignments" ]]; then
     print -u2 "${store_state_assignments:-<none>}"
     exit 1
 fi
-if rg -N '(^|[^[:alnum:].])(self\.)?state\.[A-Za-z0-9_.\[\]]+[[:space:]]*=' "${playback_store_sources[@]}" \
+if rg -N '(^|[^[:alnum:]_.])(self\.)?state\.[A-Za-z0-9_.\[\]]+[[:space:]]*=' "${playback_store_sources[@]}" \
     | rg -v 'let state' \
     | rg -v '==' \
     | rg -v ':[^:]*//'; then

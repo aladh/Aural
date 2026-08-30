@@ -66,6 +66,14 @@ func runPlaybackStoreStateWriterContractChecks(_ check: CheckRunner) {
             "qualified reads are not member mutations",
             PlaybackStoreStateWriterContract.memberMutationLines(in: "let flags = self.state.options.repeatFlags").isEmpty
         )
+        check.check(
+            "underscore-prefixed identifiers are not store-state assignments",
+            PlaybackStoreStateWriterContract.assignmentLines(in: "playback_state = next").isEmpty
+        )
+        check.check(
+            "underscore-prefixed identifiers are not store-state member mutations",
+            PlaybackStoreStateWriterContract.memberMutationLines(in: "playback_state.options.repeatMode = .track").isEmpty
+        )
 
         check.check(
             "comparisons are not assignments",

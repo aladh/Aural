@@ -938,10 +938,11 @@ func runRepeatTransitionChecks(_ runner: CheckRunner) async {
             )
             let mutations = sources.flatMap(playbackStoreStateMemberMutations)
             runner.equal("PlaybackStore files have no direct state member mutation", mutations, [String]())
+            let transport = try auralSourceFile("Aural/Spotify/PlaybackStore+Transport.swift")
             runner.check(
                 "cycleRepeat no longer assigns presentation outside the reducer",
-                !containsToken(try auralSourceFile("Aural/Spotify/PlaybackStore+Transport.swift"), "setRepeat(")
-                    && !containsToken(try auralSourceFile("Aural/Spotify/PlaybackStore+Transport.swift"), "reconcileRepeatCommandFailure")
+                !containsToken(transport, "setRepeat(")
+                    && !containsToken(transport, "reconcileRepeatCommandFailure")
             )
         }
     }
