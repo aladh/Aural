@@ -1,32 +1,45 @@
 import AuralDomain
 
-/// Narrow immutable projection used by catalog views. It exposes only the playback facts and
-/// actions those views need, keeping the app-owned PlaybackStore at the scene composition edge.
-struct CatalogPlaybackAccess {
-    let isConnected: Bool
-    let accountEpoch: UInt64
-    let canStartPlayback: Bool
-    let hasCurrentTrack: Bool
-    let currentTrackURI: String
-    let statusText: String
-    let connect: @MainActor () -> Void
-    let playURI: @MainActor (String) -> Void
-    let playTrack: @MainActor (CatalogTrack) -> Void
-    let playPlaylist: @MainActor (CatalogItem) -> Void
-    let addToQueue: @MainActor ([String]) -> Void
+/// Narrow catalog-facing playback surface. Holds the scene-owned `PlaybackStore` without
+/// snapshotting playback facts or rebuilding action closures, so constructing and passing
+/// this value does not register observation dependencies. Leaves read the facts they render
+/// and call through to the same store methods. Equality is player identity.
+@MainActor
+struct CatalogPlaybackAccess: Equatable {
+    private let player: PlaybackStore
 
-    @MainActor
     init(player: PlaybackStore) {
-        isConnected = player.isConnected
-        accountEpoch = player.state.accountEpoch
-        canStartPlayback = player.canStartPlayback
-        hasCurrentTrack = player.hasCurrentTrack
-        currentTrackURI = player.trackURI
-        statusText = player.statusText
-        connect = { [weak player] in player?.connect() }
-        playURI = { [weak player] uri in player?.play(uri: uri) }
-        playTrack = { [weak player] track in player?.play(track: track) }
-        playPlaylist = { [weak player] item in player?.playPlaylist(item) }
-        addToQueue = { [weak player] uris in player?.addToQueue(uris: uris) }
+        self.player = player
+    }
+
+    var isConnected: Bool { player.isConnected }
+    var accountEpoch: UInt64 { player.state.accountEpoch }
+    var canStartPlayback: Bool { player.canStartPlayback }
+    var hasCurrentTrack: Bool { player.hasCurrentTrack }
+    var currentTrackURI: String { player.trackURI }
+    var statusText: String { player.statusText }
+
+    func connect() {
+        player.connect()
+    }
+
+    func playURI(_ uri: String) {
+        player.play(uri: uri)
+    }
+
+    func playTrack(_ track: CatalogTrack) {
+        player.play(track: track)
+    }
+
+    func playPlaylist(_ item: CatalogItem) {
+        player.playPlaylist(item)
+    }
+
+    func addToQueue(_ uris: [String]) {
+        player.addToQueue(uris: uris)
+    }
+
+    static func == (lhs: CatalogPlaybackAccess, rhs: CatalogPlaybackAccess) -> Bool {
+        lhs.player === rhs.player
     }
 }

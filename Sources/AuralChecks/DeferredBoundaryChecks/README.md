@@ -13,7 +13,8 @@ Connect metadata HTTP method/count/order,
 wire codecs, catalog resolution, formatting, privacy-safe API failure
 surfaces, Partner API pagination call sites, injected coordinator/queue invalidation workflows, optional QueueService scheduling hooks that production never awaits, typed playback-command failures,
 local/remote command-lifecycle parity,
-`PlaybackEffectRegistry` task cancellation, transient mutation feedback, native playlist
+`PlaybackEffectRegistry` task cancellation, transient mutation feedback, catalog playback
+access observation topology, native playlist
 add/remove, native queue add/remove, PCM writer wake/bypass, serialized engine event
 fan-out ordering, and Rust-produced engine JSON contract fixtures under `Fixtures/engine`. Do not move check code back into `Sources/Aural`: test code must not ship
 in the application executable.

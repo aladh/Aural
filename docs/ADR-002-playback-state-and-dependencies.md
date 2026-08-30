@@ -40,8 +40,9 @@ could still combine values from different account, engine, command, queue, or se
   subscriber observes strictly increasing order across playback, queue, connection, and devices
   callbacks. PCM continues directly to `AudioRenderer` and never enters the state architecture.
 - The `AuralApp` scene in `AuralCore` is the production composition root; the shipping `AuralApp`
-  target is a deliberately thin launcher. Views receive feature stores or narrow immutable
-  playback values/actions. Stores and views do not construct production APIs or call the C bridge.
+  target is a deliberately thin launcher. Views receive feature stores or a narrow catalog
+  playback access keyed by store identity: computed facts and methods, not a snapshotted bag of
+  per-render closures. Stores and views do not construct production APIs or call the C bridge.
   `TransientFeedbackPresenter` is composed once there and injected into `PlaybackStore` and
   `RootView`. Transient mutation success/info/failure is not `PlaybackState` and is not a
   NotificationCenter or generic event bus.
