@@ -76,9 +76,11 @@ func runPlaybackProjectionContractChecks(_ check: CheckRunner) {
                 contentsOf: sources.appending(path: "Aural/Views/SidePanelView.swift"),
                 encoding: .utf8
             )
-            let projections = try String(
-                contentsOf: sources.appending(path: "Aural/Spotify/PlaybackStore+Projections.swift"),
-                encoding: .utf8
+            let projections = PlaybackStoreProjectionContract.uncommentedSource(
+                try String(
+                    contentsOf: sources.appending(path: "Aural/Spotify/PlaybackStore+Projections.swift"),
+                    encoding: .utf8
+                )
             )
             check.check(
                 "production VoiceOver label uses displayedTrackTitle and displayedArtistName",
