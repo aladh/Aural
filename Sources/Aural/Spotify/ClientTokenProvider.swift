@@ -106,8 +106,8 @@ nonisolated struct UserDefaultsDeviceIdStore: DeviceIdStoring {
 
     func deviceId() -> String {
         if let existing = UserDefaults.standard.string(forKey: Self.key),
-           existing.count == 40,
-           existing.allSatisfy(\.isHexDigit)
+            existing.count == 40,
+            existing.allSatisfy(\.isHexDigit)
         {
             return existing
         }
@@ -187,9 +187,9 @@ nonisolated enum ClientTokenRequest {
         }
 
         guard responseType == 1,
-              let granted = ProtobufReader.firstBytes(field: 2, in: data),
-              let token = ProtobufReader.firstString(field: 1, in: granted),
-              !token.isEmpty
+            let granted = ProtobufReader.firstBytes(field: 2, in: data),
+            let token = ProtobufReader.firstString(field: 1, in: granted),
+            !token.isEmpty
         else {
             throw ClientTokenError.malformedResponse
         }

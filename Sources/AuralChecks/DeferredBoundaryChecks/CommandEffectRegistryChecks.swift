@@ -150,9 +150,11 @@ func runCommandEffectRegistryChecks(_ runner: CheckRunner) async {
         let effects = PlaybackEffectRegistry()
         let commandID = UUID()
         let previousCancelled = CancellationFlag()
-        effects.replace(.command(commandID), with: Task<Void, Never> {}, onCancel: {
-            previousCancelled.mark()
-        })
+        effects.replace(
+            .command(commandID), with: Task<Void, Never> {},
+            onCancel: {
+                previousCancelled.mark()
+            })
         effects.replace(.command(commandID), with: Task<Void, Never> {})
         runner.check("replacing a token runs the previous onCancel", previousCancelled.isSet)
     }

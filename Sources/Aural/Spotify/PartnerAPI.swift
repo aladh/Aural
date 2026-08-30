@@ -248,14 +248,14 @@ nonisolated struct SpotifyCredentials: Sendable {
                 }
 
                 if replay == .safe,
-                   completedAttempts < SpotifyTransientRetry.maximumAttempts,
-                   let delay = SpotifyTransientRetry.delay(
-                       status: sent.status,
-                       retryAfterHeader: sent.retryAfter,
-                       completedAttempts: completedAttempts,
-                       now: retryTiming.now(),
-                       unitJitter: retryTiming.unitJitter()
-                   )
+                    completedAttempts < SpotifyTransientRetry.maximumAttempts,
+                    let delay = SpotifyTransientRetry.delay(
+                        status: sent.status,
+                        retryAfterHeader: sent.retryAfter,
+                        completedAttempts: completedAttempts,
+                        now: retryTiming.now(),
+                        unitJitter: retryTiming.unitJitter()
+                    )
                 {
                     try await retryTiming.sleep(delay)
                     continue
@@ -266,8 +266,8 @@ nonisolated struct SpotifyCredentials: Sendable {
                 throw error
             } catch let error as URLError {
                 if replay == .safe,
-                   completedAttempts < SpotifyTransientRetry.maximumAttempts,
-                   SpotifyTransientRetry.isRetryableURLError(error)
+                    completedAttempts < SpotifyTransientRetry.maximumAttempts,
+                    SpotifyTransientRetry.isRetryableURLError(error)
                 {
                     let delay = SpotifyTransientRetry.backoffDelay(
                         completedAttempts: completedAttempts,
@@ -284,7 +284,7 @@ nonisolated struct SpotifyCredentials: Sendable {
     /// The access token a signed request actually put on the wire, without the `Bearer ` prefix.
     static func accessTokenCarried(by request: URLRequest) -> String? {
         guard let authorization = request.value(forHTTPHeaderField: "Authorization"),
-              authorization.hasPrefix("Bearer ")
+            authorization.hasPrefix("Bearer ")
         else { return nil }
         let token = String(authorization.dropFirst("Bearer ".count))
         return token.isEmpty ? nil : token
@@ -455,19 +455,23 @@ nonisolated struct PartnerAPI: Sendable {
         trackUris: [String],
         position: PlaylistItemPosition = .bottom,
     ) async throws {
-        try await mutate(.addToPlaylist, variables: PathfinderAddVariables(
-            playlistUri: "spotify:playlist:\(playlistId)",
-            playlistItemUris: trackUris,
-            newPosition: position,
-        ))
+        try await mutate(
+            .addToPlaylist,
+            variables: PathfinderAddVariables(
+                playlistUri: "spotify:playlist:\(playlistId)",
+                playlistItemUris: trackUris,
+                newPosition: position,
+            ))
     }
 
     /// Removes the named **occurrences**, not every copy of a track.
     func removeFromPlaylist(playlistId: String, uids: [String]) async throws {
-        try await mutate(.removeFromPlaylist, variables: PathfinderRemoveVariables(
-            playlistUri: "spotify:playlist:\(playlistId)",
-            uids: uids,
-        ))
+        try await mutate(
+            .removeFromPlaylist,
+            variables: PathfinderRemoveVariables(
+                playlistUri: "spotify:playlist:\(playlistId)",
+                uids: uids,
+            ))
     }
 
     func moveInPlaylist(
@@ -475,11 +479,13 @@ nonisolated struct PartnerAPI: Sendable {
         uids: [String],
         position: PlaylistItemPosition,
     ) async throws {
-        try await mutate(.moveItemsInPlaylist, variables: PathfinderMoveVariables(
-            playlistUri: "spotify:playlist:\(playlistId)",
-            uids: uids,
-            newPosition: position,
-        ))
+        try await mutate(
+            .moveItemsInPlaylist,
+            variables: PathfinderMoveVariables(
+                playlistUri: "spotify:playlist:\(playlistId)",
+                uids: uids,
+                newPosition: position,
+            ))
     }
 
     // MARK: - Library
@@ -760,8 +766,8 @@ nonisolated struct PartnerAPI: Sendable {
         operation: PathfinderOperation,
     ) throws -> Envelope {
         if let envelope = try? JSONDecoder().decode(PathfinderErrorEnvelope.self, from: data),
-           let errors = envelope.errors,
-           !errors.isEmpty
+            let errors = envelope.errors,
+            !errors.isEmpty
         {
             let retired = errors.contains { error in
                 error.extensions?.code == "PERSISTED_QUERY_NOT_FOUND"

@@ -61,10 +61,11 @@ final class PlaylistStore {
         guard currentSession.isAvailable, item.kind == .playlist else { return }
         if loadedURI == item.uri, !tracks.isEmpty, !force { return }
         if isLoading,
-           loadedURI == item.uri,
-           loadSessionSnapshot == currentSession,
-           let loadTask,
-           !force {
+            loadedURI == item.uri,
+            loadSessionSnapshot == currentSession,
+            let loadTask,
+            !force
+        {
             await loadTask.value
             return
         }
@@ -144,12 +145,13 @@ final class PlaylistStore {
         _ identity: AccountScopedRequestIdentity,
         uri: String
     ) -> Bool {
-        loadedURI == uri && identity.isCurrent(
-            requestID: requestScope,
-            accountEpoch: session.accountEpoch,
-            sessionRevision: session.snapshot.revision,
-            isAvailable: session.isAvailable,
-            isCancelled: Task.isCancelled
-        )
+        loadedURI == uri
+            && identity.isCurrent(
+                requestID: requestScope,
+                accountEpoch: session.accountEpoch,
+                sessionRevision: session.snapshot.revision,
+                isAvailable: session.isAvailable,
+                isCancelled: Task.isCancelled
+            )
     }
 }

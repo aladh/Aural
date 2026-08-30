@@ -49,47 +49,59 @@ func runPlaybackCommandLifecycleChecks(_ check: CheckRunner) {
         _ = PlaybackReducer.reduce(
             &state,
             envelope: lifecycleEnvelope(
-                event: .commandStarted(PendingPlaybackCommand(
-                    id: transportID,
-                    kind: .transport,
-                    expectedTransport: .playing,
-                    expectedTiming: timing,
-                    expectedTrack: track,
-                    startedAt: lifecycleDate
-                ))
+                event: .commandStarted(
+                    PendingPlaybackCommand(
+                        id: transportID,
+                        kind: .transport,
+                        expectedTransport: .playing,
+                        expectedTiming: timing,
+                        expectedTrack: track,
+                        startedAt: lifecycleDate
+                    ))
             )
         )
-        check.equal("transport records expected playback", state.pendingCommands[.transport]?.expectedTransport, Optional(PlaybackTransportState.playing))
-        check.equal("transport records expected timing", state.pendingCommands[.transport]?.expectedTiming, Optional(timing))
-        check.equal("transport records expected track", state.pendingCommands[.transport]?.expectedTrack, Optional(track))
+        check.equal(
+            "transport records expected playback", state.pendingCommands[.transport]?.expectedTransport,
+            Optional(PlaybackTransportState.playing))
+        check.equal(
+            "transport records expected timing", state.pendingCommands[.transport]?.expectedTiming, Optional(timing))
+        check.equal(
+            "transport records expected track", state.pendingCommands[.transport]?.expectedTrack, Optional(track))
 
         _ = PlaybackReducer.reduce(
             &state,
             envelope: lifecycleEnvelope(
-                event: .commandStarted(PendingPlaybackCommand(
-                    id: optionsID,
-                    kind: .options,
-                    expectedTransport: nil,
-                    expectedShuffle: false,
-                    expectedRepeatFlags: repeatFlags,
-                    startedAt: lifecycleDate
-                ))
+                event: .commandStarted(
+                    PendingPlaybackCommand(
+                        id: optionsID,
+                        kind: .options,
+                        expectedTransport: nil,
+                        expectedShuffle: false,
+                        expectedRepeatFlags: repeatFlags,
+                        startedAt: lifecycleDate
+                    ))
             )
         )
-        check.equal("options records expected shuffle", state.pendingCommands[.options]?.expectedShuffle, Optional(false))
-        check.equal("options records expected repeat flags", state.pendingCommands[.options]?.expectedRepeatFlags, Optional(repeatFlags))
-        check.equal("an options command leaves the transport command pending", state.pendingCommands[.transport]?.id, transportID)
+        check.equal(
+            "options records expected shuffle", state.pendingCommands[.options]?.expectedShuffle, Optional(false))
+        check.equal(
+            "options records expected repeat flags", state.pendingCommands[.options]?.expectedRepeatFlags,
+            Optional(repeatFlags))
+        check.equal(
+            "an options command leaves the transport command pending", state.pendingCommands[.transport]?.id,
+            transportID)
 
         _ = PlaybackReducer.reduce(
             &state,
             envelope: lifecycleEnvelope(
-                event: .commandStarted(PendingPlaybackCommand(
-                    id: transferID,
-                    kind: .transfer,
-                    expectedTransport: nil,
-                    expectedOwner: owner,
-                    startedAt: lifecycleDate
-                ))
+                event: .commandStarted(
+                    PendingPlaybackCommand(
+                        id: transferID,
+                        kind: .transfer,
+                        expectedTransport: nil,
+                        expectedOwner: owner,
+                        startedAt: lifecycleDate
+                    ))
             )
         )
         check.equal("transfer records expected owner", state.pendingCommands[.transfer]?.expectedOwner, Optional(owner))
@@ -123,12 +135,13 @@ func runPlaybackCommandLifecycleChecks(_ check: CheckRunner) {
         _ = PlaybackReducer.reduce(
             &state,
             envelope: lifecycleEnvelope(
-                event: .commandStarted(PendingPlaybackCommand(
-                    id: pauseID,
-                    kind: .transport,
-                    expectedTransport: .paused,
-                    startedAt: lifecycleDate
-                ))
+                event: .commandStarted(
+                    PendingPlaybackCommand(
+                        id: pauseID,
+                        kind: .transport,
+                        expectedTransport: .paused,
+                        startedAt: lifecycleDate
+                    ))
             )
         )
         check.equal("pause applies optimistic paused transport", state.transport, .paused)

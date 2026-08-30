@@ -129,7 +129,9 @@ private struct IdleFeedbackAttributes: TrackAttributesProviding {
 private enum FeedbackCheckFailure: Error { case unavailable }
 
 private struct IdleFeedbackCatalog: CatalogProviding {
-    func searchTracks(_: String, limit _: Int) async throws -> [PathfinderTrack] { throw FeedbackCheckFailure.unavailable }
+    func searchTracks(_: String, limit _: Int) async throws -> [PathfinderTrack] {
+        throw FeedbackCheckFailure.unavailable
+    }
     func home() async throws -> PathfinderHome { throw FeedbackCheckFailure.unavailable }
     func libraryPlaylists() async throws -> [PathfinderPlaylist] { throw FeedbackCheckFailure.unavailable }
     func libraryAlbums() async throws -> [PathfinderAlbum] { throw FeedbackCheckFailure.unavailable }
@@ -213,14 +215,15 @@ private func seedReady(_ player: PlaybackStore) {
 private func seedRemoteOwner(_ player: PlaybackStore) {
     seedReady(player)
     _ = player.send(
-        .devices(PlaybackDeviceSnapshot(
-            devices: [
-                PlaybackDevice(id: "mac", name: "Mac", type: "computer", isActive: false),
-                PlaybackDevice(id: "speaker", name: "Speaker", type: "speaker", isActive: true),
-            ],
-            localDeviceID: "mac",
-            revision: 1
-        )),
+        .devices(
+            PlaybackDeviceSnapshot(
+                devices: [
+                    PlaybackDevice(id: "mac", name: "Mac", type: "computer", isActive: false),
+                    PlaybackDevice(id: "speaker", name: "Speaker", type: "speaker", isActive: true),
+                ],
+                localDeviceID: "mac",
+                revision: 1
+            )),
         source: .engineDevices,
         revision: 1
     )

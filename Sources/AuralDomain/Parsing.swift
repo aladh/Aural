@@ -223,12 +223,12 @@ public enum LoopbackRequestParser {
             return nil
         }
         guard components.scheme == "http",
-              components.host == "127.0.0.1",
-              components.user == nil,
-              components.password == nil,
-              components.port == nil,
-              components.fragment == nil,
-              components.path == callbackPath
+            components.host == "127.0.0.1",
+            components.user == nil,
+            components.password == nil,
+            components.port == nil,
+            components.fragment == nil,
+            components.path == callbackPath
         else {
             return nil
         }

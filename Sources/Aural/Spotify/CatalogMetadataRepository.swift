@@ -72,8 +72,7 @@ final class CatalogMetadataRepository {
         // knows one of the queued uris enrich it before that page is replaced.
         if let retainedURIs = retainedTrackURIsBySource[source] {
             for (uri, track) in tracksBySource[source] ?? [:]
-                where retainedURIs.contains(uri) && replacement[uri] == nil
-            {
+            where retainedURIs.contains(uri) && replacement[uri] == nil {
                 replacement[uri] = track
             }
         }
@@ -181,7 +180,7 @@ final class CatalogMetadataRepository {
         requestsInFlight.formUnion(uris)
 
         for offset in stride(from: 0, to: uris.count, by: Self.batchSize) {
-            let batch = Array(uris[offset ..< min(offset + Self.batchSize, uris.count)])
+            let batch = Array(uris[offset..<min(offset + Self.batchSize, uris.count)])
             let taskID = UUID()
             enrichmentTasks[taskID] = Task { [weak self] in
                 guard let self else { return }

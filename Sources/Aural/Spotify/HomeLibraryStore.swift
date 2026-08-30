@@ -186,15 +186,15 @@ final class HomeLibraryStore {
         let currentSession = session.snapshot
         guard currentSession.isAvailable else { return }
         if let task = sectionTasks[section],
-           !force,
-           sectionSessionSnapshots[section] == currentSession
+            !force,
+            sectionSessionSnapshots[section] == currentSession
         {
             await task.value
             return
         }
         if !force,
-           loadedSections.contains(section),
-           loadedSessionSnapshots[section] == currentSession
+            loadedSections.contains(section),
+            loadedSessionSnapshots[section] == currentSession
         {
             return
         }

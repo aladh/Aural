@@ -30,7 +30,8 @@ private func components(of color: NSColor) throws -> (red: CGFloat, green: CGFlo
 
 private func imagesMatch(_ expected: NSBitmapImageRep, _ actual: NSBitmapImageRep) throws -> Bool {
     guard expected.pixelsWide == actual.pixelsWide,
-          expected.pixelsHigh == actual.pixelsHigh else {
+        expected.pixelsHigh == actual.pixelsHigh
+    else {
         return false
     }
 
@@ -42,7 +43,8 @@ private func imagesMatch(_ expected: NSBitmapImageRep, _ actual: NSBitmapImageRe
     for y in 0..<expected.pixelsHigh {
         for x in 0..<expected.pixelsWide {
             guard let expectedColor = expected.colorAt(x: x, y: y),
-                  let actualColor = actual.colorAt(x: x, y: y) else {
+                let actualColor = actual.colorAt(x: x, y: y)
+            else {
                 return false
             }
             let lhs = try components(of: expectedColor)
@@ -69,10 +71,12 @@ do {
         let expected = try bitmap(at: expectedURL.appendingPathComponent(filename))
         let actual = try bitmap(at: actualURL.appendingPathComponent(filename))
         guard try imagesMatch(expected, actual) else {
-            throw CocoaError(.fileReadCorruptFile, userInfo: [
-                NSFilePathErrorKey: actualURL.appendingPathComponent(filename).path,
-                NSLocalizedDescriptionKey: "Icon representation does not survive its ICNS round trip",
-            ])
+            throw CocoaError(
+                .fileReadCorruptFile,
+                userInfo: [
+                    NSFilePathErrorKey: actualURL.appendingPathComponent(filename).path,
+                    NSLocalizedDescriptionKey: "Icon representation does not survive its ICNS round trip",
+                ])
         }
     }
 } catch {

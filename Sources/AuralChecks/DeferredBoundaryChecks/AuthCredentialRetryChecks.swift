@@ -327,7 +327,8 @@ func runAuthCredentialRetryChecks(_ check: CheckRunner) async {
             check.check("bearer revoke stays grantRevoked, got \(error)", false)
         }
         check.check("a revoked bearer still surfaces grantRevoked", revoked)
-        check.equal("the named client token is dropped before the bearer throw", await invalidatedClient.values, ["client-a"])
+        check.equal(
+            "the named client token is dropped before the bearer throw", await invalidatedClient.values, ["client-a"])
         check.equal("a terminal bearer throw does not retry the request", transport.callCount, 1)
         check.equal("access is fetched only for the first attempt", tokens.callCount, 1)
     }
@@ -360,8 +361,10 @@ func runAuthCredentialRetryChecks(_ check: CheckRunner) async {
             check.check("second 401 stays PartnerAPIError, got \(error)", false)
         }
         check.equal("a second 401 is returned rather than retried again", status, 401)
-        check.equal("credentials are invalidated only after the first 401", await invalidatedAccess.values, ["access-a"])
-        check.equal("client token is invalidated only after the first 401", await invalidatedClient.values, ["client-a"])
+        check.equal(
+            "credentials are invalidated only after the first 401", await invalidatedAccess.values, ["access-a"])
+        check.equal(
+            "client token is invalidated only after the first 401", await invalidatedClient.values, ["client-a"])
         check.equal("the transport stops after the retry", transport.callCount, 2)
         check.equal("a third credential is never fetched", tokens.callCount, 2)
     }
@@ -659,7 +662,9 @@ private final class ScriptedTransport: @unchecked Sendable {
         let response = responses[index]
         index += 1
         let url = request.url ?? URL(string: "https://example.invalid/")!
-        return (response.1, HTTPURLResponse(url: url, statusCode: response.0, httpVersion: "HTTP/1.1", headerFields: nil)!)
+        return (
+            response.1, HTTPURLResponse(url: url, statusCode: response.0, httpVersion: "HTTP/1.1", headerFields: nil)!
+        )
     }
 }
 

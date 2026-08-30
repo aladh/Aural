@@ -6,7 +6,6 @@
 import Foundation
 @testable import AuralCore
 
-
 @MainActor
 func runTrackAttributeChecks(_ check: CheckRunner) {
     // Payload builders mirroring the wire shapes Spotify answers with.
@@ -65,14 +64,15 @@ func runTrackAttributeChecks(_ check: CheckRunner) {
 
     check.suite("Track attributes") {
         let uri = "spotify:track:6rqhFgbbKwnb9MLmUQDhG6"
-        let combined = TrackAttributesAPI.decodeResponse(response([
-            array(kind: TrackAttributesAPI.trackKind, uri: uri, payload: trackPayload(popularity: 87)),
-            array(
-                kind: TrackAttributesAPI.audioAttributesKind,
-                uri: uri,
-                payload: audioPayload(bpm: 123.456, keyName: "C#", mode: 0, camelot: "8B")
-            ),
-        ]))[uri]
+        let combined = TrackAttributesAPI.decodeResponse(
+            response([
+                array(kind: TrackAttributesAPI.trackKind, uri: uri, payload: trackPayload(popularity: 87)),
+                array(
+                    kind: TrackAttributesAPI.audioAttributesKind,
+                    uri: uri,
+                    payload: audioPayload(bpm: 123.456, keyName: "C#", mode: 0, camelot: "8B")
+                ),
+            ]))[uri]
 
         check.notNil("combined attributes decoded", combined)
         if let attributes = combined {
@@ -85,34 +85,40 @@ func runTrackAttributeChecks(_ check: CheckRunner) {
             )
         }
 
-        let major = TrackAttributesAPI.decodeResponse(response([
-            array(
-                kind: TrackAttributesAPI.audioAttributesKind,
-                uri: "spotify:track:fallback",
-                payload: audioPayload(keyName: "F#", mode: 1)
-            ),
-        ]))["spotify:track:fallback"]
+        let major = TrackAttributesAPI.decodeResponse(
+            response([
+                array(
+                    kind: TrackAttributesAPI.audioAttributesKind,
+                    uri: "spotify:track:fallback",
+                    payload: audioPayload(keyName: "F#", mode: 1)
+                )
+            ]))["spotify:track:fallback"]
         check.equal("key falls back to name + major mode", major?.key, "F# Major")
 
-        let minor = TrackAttributesAPI.decodeResponse(response([
-            array(
-                kind: TrackAttributesAPI.audioAttributesKind,
-                uri: "spotify:track:fallback",
-                payload: audioPayload(keyName: "A", mode: 0)
-            ),
-        ]))["spotify:track:fallback"]
+        let minor = TrackAttributesAPI.decodeResponse(
+            response([
+                array(
+                    kind: TrackAttributesAPI.audioAttributesKind,
+                    uri: "spotify:track:fallback",
+                    payload: audioPayload(keyName: "A", mode: 0)
+                )
+            ]))["spotify:track:fallback"]
         check.equal("key falls back to name + minor mode", minor?.key, "A Minor")
 
-        let negative = TrackAttributesAPI.decodeResponse(response([
-            array(kind: TrackAttributesAPI.trackKind, uri: "spotify:track:neg", payload: trackPayload(popularity: -7)),
-        ]))["spotify:track:neg"]
+        let negative = TrackAttributesAPI.decodeResponse(
+            response([
+                array(
+                    kind: TrackAttributesAPI.trackKind, uri: "spotify:track:neg", payload: trackPayload(popularity: -7))
+            ]))["spotify:track:neg"]
         check.equal("zigzag decodes negative popularity", negative?.popularity, -7)
 
-        let partial = TrackAttributesAPI.decodeResponse(response([
-            array(kind: TrackAttributesAPI.trackKind, uri: "spotify:track:p", payload: trackPayload(popularity: 42)),
-            // An unrecognized kind contributes nothing; the entry keeps its popularity.
-            array(kind: 999, uri: "spotify:track:p", payload: Data([0x01])),
-        ]))["spotify:track:p"]
+        let partial = TrackAttributesAPI.decodeResponse(
+            response([
+                array(
+                    kind: TrackAttributesAPI.trackKind, uri: "spotify:track:p", payload: trackPayload(popularity: 42)),
+                // An unrecognized kind contributes nothing; the entry keeps its popularity.
+                array(kind: 999, uri: "spotify:track:p", payload: Data([0x01])),
+            ]))["spotify:track:p"]
         check.equal("partial entries keep what arrived", partial?.popularity, 42)
         check.nil_("missing bpm stays absent", partial?.bpm)
 
@@ -122,14 +128,17 @@ func runTrackAttributeChecks(_ check: CheckRunner) {
             TrackAttributesAPI.decodeResponse(Data([0x12, 0x05])).isEmpty
         )
         let truncated = response([
-            array(kind: TrackAttributesAPI.audioAttributesKind, uri: "spotify:track:x", payload: Data([0x11])),
+            array(kind: TrackAttributesAPI.audioAttributesKind, uri: "spotify:track:x", payload: Data([0x11]))
         ])
         check.check("truncated attribute payload tolerated", TrackAttributesAPI.decodeResponse(truncated).isEmpty)
 
         // A zero tempo is no tempo: the columns stay blank rather than reading 0 BPM.
-        let zeroBPM = TrackAttributesAPI.decodeResponse(response([
-            array(kind: TrackAttributesAPI.audioAttributesKind, uri: "spotify:track:zb", payload: audioPayload(bpm: 0)),
-        ]))
+        let zeroBPM = TrackAttributesAPI.decodeResponse(
+            response([
+                array(
+                    kind: TrackAttributesAPI.audioAttributesKind, uri: "spotify:track:zb", payload: audioPayload(bpm: 0)
+                )
+            ]))
         check.nil_("zero bpm contributes no attributes", zeroBPM["spotify:track:zb"])
 
         // An entry without its uri cannot be attributed to anything.
@@ -143,9 +152,10 @@ func runTrackAttributeChecks(_ check: CheckRunner) {
         )
 
         // Zero is a real popularity and sits exactly on the zigzag sign boundary.
-        let zero = TrackAttributesAPI.decodeResponse(response([
-            array(kind: TrackAttributesAPI.trackKind, uri: "spotify:track:z", payload: trackPayload(popularity: 0)),
-        ]))
+        let zero = TrackAttributesAPI.decodeResponse(
+            response([
+                array(kind: TrackAttributesAPI.trackKind, uri: "spotify:track:z", payload: trackPayload(popularity: 0))
+            ]))
         check.equal("zigzag keeps a zero popularity", zero["spotify:track:z"]?.popularity ?? -1, 0)
     }
 
@@ -190,7 +200,8 @@ func runTrackAttributeChecks(_ check: CheckRunner) {
             )
         }
 
-        let tracks = (0..<1_100).map { track("spotify:track:\($0)") }
+        let tracks =
+            (0..<1_100).map { track("spotify:track:\($0)") }
             + [track("spotify:track:4"), track("spotify:episode:not-a-track")]
         let capped = CatalogMetadataRepository.attributeURIsToRequest(
             from: tracks,

@@ -74,10 +74,10 @@ final class MediaDetailRequestLifetime {
         let claimID = nextClaimID
         let joined = joinState.withLock { state -> WaiterClaim? in
             guard var flight = state.flight,
-                  flight.uri == uri,
-                  flight.session == currentSession,
-                  !flight.task.isCancelled,
-                  !flight.liveClaims.isEmpty
+                flight.uri == uri,
+                flight.session == currentSession,
+                !flight.task.isCancelled,
+                !flight.liveClaims.isEmpty
             else {
                 return nil
             }
@@ -141,13 +141,14 @@ final class MediaDetailRequestLifetime {
     }
 
     func isCurrent(_ handle: Handle, selectedURI: String?) -> Bool {
-        selectedURI == handle.uri && handle.identity.isCurrent(
-            requestID: requestID,
-            accountEpoch: session.accountEpoch,
-            sessionRevision: session.snapshot.revision,
-            isAvailable: session.isAvailable,
-            isCancelled: Task.isCancelled
-        )
+        selectedURI == handle.uri
+            && handle.identity.isCurrent(
+                requestID: requestID,
+                accountEpoch: session.accountEpoch,
+                sessionRevision: session.snapshot.revision,
+                isAvailable: session.isAvailable,
+                isCancelled: Task.isCancelled
+            )
     }
 
     func owns(_ handle: Handle) -> Bool {

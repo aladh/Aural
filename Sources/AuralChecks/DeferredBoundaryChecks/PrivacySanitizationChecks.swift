@@ -83,8 +83,8 @@ func runPrivacySanitizationChecks(_ check: CheckRunner) async {
                 _ = try await partnerAPI(
                     status: 200,
                     body: """
-                    {"errors":[{"message":"\(privacySentinel)","extensions":{"code":"INTERNAL"}}]}
-                    """
+                        {"errors":[{"message":"\(privacySentinel)","extensions":{"code":"INTERNAL"}}]}
+                        """
                 ).profile()
             }
         )
@@ -98,8 +98,8 @@ func runPrivacySanitizationChecks(_ check: CheckRunner) async {
                 _ = try await partnerAPI(
                     status: 200,
                     body: """
-                    {"errors":[{"message":"\(privacySentinel) persistedQueryNotFound","extensions":{"code":"PERSISTED_QUERY_NOT_FOUND"}}]}
-                    """
+                        {"errors":[{"message":"\(privacySentinel) persistedQueryNotFound","extensions":{"code":"PERSISTED_QUERY_NOT_FOUND"}}]}
+                        """
                 ).profile()
             }
         )
@@ -113,8 +113,8 @@ func runPrivacySanitizationChecks(_ check: CheckRunner) async {
                 try await partnerAPI(
                     status: 200,
                     body: """
-                    {"data":{"addLibraryItems":{"__typename":"NotFound","message":"\(privacySentinel)"}}}
-                    """
+                        {"data":{"addLibraryItems":{"__typename":"NotFound","message":"\(privacySentinel)"}}}
+                        """
                 ).addToLibrary(uris: ["spotify:track:fixture"])
             }
         )
@@ -211,7 +211,8 @@ func runPrivacySanitizationChecks(_ check: CheckRunner) async {
         )
         check.equal("failed session phases log a stable category", sessionPhaseLogLabel(failedPhase), "failed")
         omitSentinel(check, "session phase public log label", sessionPhaseLogLabel(failedPhase))
-        let publicLog = "Session phase changed: \(sessionPhaseLogLabel(.ready)) -> \(sessionPhaseLogLabel(failedPhase)); epoch=8"
+        let publicLog =
+            "Session phase changed: \(sessionPhaseLogLabel(.ready)) -> \(sessionPhaseLogLabel(failedPhase)); epoch=8"
         omitSentinel(check, "public session phase log", publicLog)
         check.check("session phase logs keep epoch", publicLog.contains("epoch=8"))
     }

@@ -3,11 +3,11 @@ import Foundation
 func runPlaybackProjectionContractChecks(_ check: CheckRunner) {
     check.suite("PlaybackStore projection contract") {
         let writable = """
-        var phase: Phase {
-            get { state.session }
-            set { state.session = newValue }
-        }
-        """
+            var phase: Phase {
+                get { state.session }
+                set { state.session = newValue }
+            }
+            """
         check.equal(
             "an explicit setter on a projection is reported",
             PlaybackStoreProjectionContract.explicitSetterLines(in: writable)
@@ -22,12 +22,12 @@ func runPlaybackProjectionContractChecks(_ check: CheckRunner) {
         )
 
         let projectionsFile = """
-        extension PlaybackStore {
-            var phase: Phase { state.session }
-            var trackURI: String { state.currentTrack?.uri ?? "" }
-            func displayedPosition(at date: Date) -> TimeInterval { position }
-        }
-        """
+            extension PlaybackStore {
+                var phase: Phase { state.session }
+                var trackURI: String { state.currentTrack?.uri ?? "" }
+                func displayedPosition(at date: Date) -> TimeInterval { position }
+            }
+            """
         check.equal(
             "read-only projection files have no setter lines",
             PlaybackStoreProjectionContract.explicitSetterLines(in: projectionsFile),

@@ -191,7 +191,8 @@ private func expectRun(
     catalog: [String],
     expected: [String]
 ) {
-    let label = arguments.isEmpty ? "no arguments run the full catalog" : "selection \(arguments.joined(separator: ", "))"
+    let label =
+        arguments.isEmpty ? "no arguments run the full catalog" : "selection \(arguments.joined(separator: ", "))"
     expectCommand(check, label, arguments: arguments, catalog: catalog, expected: .runSuites(expected))
 }
 

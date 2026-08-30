@@ -252,10 +252,11 @@ struct RootView: View {
             get: { selection },
             set: {
                 let next = $0 ?? .destination(.home)
-                let nextMediaURI: String? = switch next {
-                case .destination: nil
-                case let .playlist(uri), let .album(uri), let .artist(uri): uri
-                }
+                let nextMediaURI: String? =
+                    switch next {
+                    case .destination: nil
+                    case let .playlist(uri), let .album(uri), let .artist(uri): uri
+                    }
                 if nextMediaURI == nil || selectedMedia?.uri != nextMediaURI {
                     selectedMedia = nil
                     clearRestoredMedia()

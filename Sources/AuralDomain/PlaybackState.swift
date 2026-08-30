@@ -47,7 +47,8 @@ public func connectionPlaybackOwner(
     lastRemoteDeviceID: String?
 ) -> PlaybackOwner {
     if isLocalActive {
-        let local = devices.first { $0.id == localDeviceID }
+        let local =
+            devices.first { $0.id == localDeviceID }
             ?? PlaybackDevice(
                 id: localDeviceID ?? "",
                 name: localDeviceName,
@@ -61,15 +62,16 @@ public func connectionPlaybackOwner(
     }
     guard currentTrackURI?.isEmpty == false else { return .none }
 
-    let candidate: PlaybackDevice? = switch previousOwner {
-    case let .remote(device), let .uncertain(.some(device)):
-        devices.first { $0.id == device.id } ?? device
-    default:
-        lastRemoteDeviceID.flatMap { id in
-            guard id != localDeviceID else { return nil }
-            return devices.first { $0.id == id }
+    let candidate: PlaybackDevice? =
+        switch previousOwner {
+        case let .remote(device), let .uncertain(.some(device)):
+            devices.first { $0.id == device.id } ?? device
+        default:
+            lastRemoteDeviceID.flatMap { id in
+                guard id != localDeviceID else { return nil }
+                return devices.first { $0.id == id }
+            }
         }
-    }
     return .uncertain(candidate)
 }
 
@@ -81,7 +83,8 @@ public func queueBootstrapMetadataURI(
     currentTrackURI: String?
 ) -> String? {
     guard let snapshotTrackURI, !snapshotTrackURI.isEmpty,
-          snapshotTrackURI == currentTrackURI else { return nil }
+        snapshotTrackURI == currentTrackURI
+    else { return nil }
     return snapshotTrackURI
 }
 
@@ -569,13 +572,15 @@ public enum PlaybackReducer {
         // Reduce into a candidate so a rejected event is genuinely inert. In particular, an
         // unknown command acknowledgement must not consume its source revision and prevent the
         // matching acknowledgement from arriving later.
-        guard var candidate = adopting(
-            state,
-            accountEpoch: envelope.accountEpoch,
-            engineEpoch: envelope.engineEpoch,
-            source: envelope.source,
-            revision: envelope.revision
-        ) else { return false }
+        guard
+            var candidate = adopting(
+                state,
+                accountEpoch: envelope.accountEpoch,
+                engineEpoch: envelope.engineEpoch,
+                source: envelope.source,
+                revision: envelope.revision
+            )
+        else { return false }
 
         switch envelope.event {
         case let .reset(session):
@@ -657,7 +662,7 @@ public enum PlaybackReducer {
             supersedeOptimisticPlayTargetIfNeeded(incomingURI: incomingURI, in: &candidate)
             let previousURI = candidate.currentTrack?.uri
             if candidate.pendingCommands[.seek] != nil,
-               incomingURI == nil || playbackTrackURI(candidate.currentTrack?.uri) != incomingURI
+                incomingURI == nil || playbackTrackURI(candidate.currentTrack?.uri) != incomingURI
             {
                 candidate.pendingCommands[.seek] = nil
             }
@@ -708,33 +713,28 @@ public enum PlaybackReducer {
                 id: command.id,
                 kind: command.kind,
                 expectedTransport: command.expectedTransport,
-                rollbackTransport: command.rollbackTransport ?? (
-                    command.expectedTransport == nil && command.expectedTrack == nil ? nil : candidate.transport
-                ),
+                rollbackTransport: command.rollbackTransport
+                    ?? (command.expectedTransport == nil && command.expectedTrack == nil ? nil : candidate.transport),
                 expectedTiming: command.expectedTiming,
-                rollbackTiming: command.rollbackTiming ?? (
-                    command.expectedTiming == nil && command.expectedTrack == nil ? nil : candidate.timing
-                ),
+                rollbackTiming: command.rollbackTiming
+                    ?? (command.expectedTiming == nil && command.expectedTrack == nil ? nil : candidate.timing),
                 expectedTrack: command.expectedTrack,
-                rollbackPresentation: command.rollbackPresentation ?? (
-                    command.expectedTrack == nil ? nil : PlaybackPresentationSnapshot(
-                        currentTrack: candidate.currentTrack,
-                        transport: candidate.transport,
-                        timing: candidate.timing
-                    )
-                ),
+                rollbackPresentation: command.rollbackPresentation
+                    ?? (command.expectedTrack == nil
+                        ? nil
+                        : PlaybackPresentationSnapshot(
+                            currentTrack: candidate.currentTrack,
+                            transport: candidate.transport,
+                            timing: candidate.timing
+                        )),
                 expectedShuffle: command.expectedShuffle,
-                rollbackShuffle: command.rollbackShuffle ?? (
-                    command.expectedShuffle == nil ? nil : candidate.options.shuffle
-                ),
+                rollbackShuffle: command.rollbackShuffle
+                    ?? (command.expectedShuffle == nil ? nil : candidate.options.shuffle),
                 expectedRepeatFlags: command.expectedRepeatFlags,
-                rollbackRepeatFlags: command.rollbackRepeatFlags ?? (
-                    command.expectedRepeatFlags == nil ? nil : candidate.options.repeatFlags
-                ),
+                rollbackRepeatFlags: command.rollbackRepeatFlags
+                    ?? (command.expectedRepeatFlags == nil ? nil : candidate.options.repeatFlags),
                 expectedOwner: command.expectedOwner,
-                rollbackOwner: command.rollbackOwner ?? (
-                    command.expectedOwner == nil ? nil : candidate.owner
-                ),
+                rollbackOwner: command.rollbackOwner ?? (command.expectedOwner == nil ? nil : candidate.owner),
                 startedAt: command.startedAt
             )
             candidate.pendingCommands[command.kind] = prepared
@@ -861,7 +861,7 @@ public enum PlaybackReducer {
         in state: inout PlaybackState
     ) {
         if let pending = state.pendingCommands[.transport],
-           let targetURI = playbackTrackURI(pending.expectedTrack?.uri)
+            let targetURI = playbackTrackURI(pending.expectedTrack?.uri)
         {
             let incoming = playbackTrackURI(incomingTrackURI)
             if incoming != targetURI {
@@ -880,8 +880,8 @@ public enum PlaybackReducer {
             return
         }
         if let pending = state.pendingCommands[.transport],
-           let expected = pending.expectedTransport,
-           transport != expected
+            let expected = pending.expectedTransport,
+            transport != expected
         {
             state.transport = expected
         } else {
@@ -898,7 +898,7 @@ public enum PlaybackReducer {
         in state: PlaybackState
     ) -> Bool {
         guard let pending = state.pendingCommands[.transport],
-              let targetURI = playbackTrackURI(pending.expectedTrack?.uri)
+            let targetURI = playbackTrackURI(pending.expectedTrack?.uri)
         else { return false }
         let incoming = playbackTrackURI(incomingURI)
         let rollbackURI = playbackTrackURI(pending.rollbackPresentation?.currentTrack?.uri)
@@ -910,7 +910,7 @@ public enum PlaybackReducer {
         in state: inout PlaybackState
     ) {
         guard let pending = state.pendingCommands[.transport],
-              let targetURI = playbackTrackURI(pending.expectedTrack?.uri)
+            let targetURI = playbackTrackURI(pending.expectedTrack?.uri)
         else { return }
         let incoming = playbackTrackURI(incomingURI)
         let rollbackURI = playbackTrackURI(pending.rollbackPresentation?.currentTrack?.uri)
@@ -926,10 +926,12 @@ public enum PlaybackReducer {
     ) {
         reconcileShuffle(snapshot.shuffle, source: .enginePlayback, in: &candidate)
         if snapshot.repeatMode != nil || snapshot.repeatFlags != nil {
-            let flags = snapshot.repeatFlags
+            let flags =
+                snapshot.repeatFlags
                 ?? snapshot.repeatMode?.flags
                 ?? candidate.options.repeatFlags
-            let mode = snapshot.repeatMode
+            let mode =
+                snapshot.repeatMode
                 ?? RepeatMode(context: flags.context, track: flags.track)
             reconcileRepeat(flags: flags, mode: mode, source: .enginePlayback, in: &candidate)
         }
@@ -948,7 +950,7 @@ public enum PlaybackReducer {
     ) {
         guard let incoming else { return }
         guard let pending = state.pendingCommands[.options],
-              let expected = pending.expectedShuffle
+            let expected = pending.expectedShuffle
         else {
             state.options.shuffle = incoming
             return
@@ -976,7 +978,7 @@ public enum PlaybackReducer {
         in state: inout PlaybackState
     ) {
         guard let pending = state.pendingCommands[.options],
-              let expected = pending.expectedRepeatFlags
+            let expected = pending.expectedRepeatFlags
         else {
             state.options.repeatFlags = flags
             state.options.repeatMode = mode
@@ -994,7 +996,7 @@ public enum PlaybackReducer {
             return
         }
         if let previous = pending.rollbackRepeatFlags,
-           isRepeatTransitionIntermediate(previous: previous, target: expected, incoming: flags)
+            isRepeatTransitionIntermediate(previous: previous, target: expected, incoming: flags)
         {
             state.options.repeatFlags = flags
             state.options.repeatMode = mode
@@ -1036,7 +1038,7 @@ public enum PlaybackReducer {
         in state: inout PlaybackState
     ) {
         guard let pending = state.pendingCommands[.transfer],
-              let expected = pending.expectedOwner
+            let expected = pending.expectedOwner
         else {
             state.owner = incoming
             return
@@ -1047,7 +1049,7 @@ public enum PlaybackReducer {
         if let expectedID, incomingID == expectedID {
             state.owner = incoming
             if isIdentifiedPlaybackOwner(incoming),
-               source == .engineConnection || source == .engineDevices
+                source == .engineConnection || source == .engineDevices
             {
                 state.pendingCommands[.transfer] = nil
                 state.transportCommandResolutions[pending.id] = .confirmed
@@ -1092,22 +1094,22 @@ public enum PlaybackReducer {
     ) {
         let incomingURI = playbackTrackURI(incomingTrackURI)
         if state.pendingCommands[.seek] != nil,
-           incomingURI == nil || playbackTrackURI(state.currentTrack?.uri) != incomingURI
+            incomingURI == nil || playbackTrackURI(state.currentTrack?.uri) != incomingURI
         {
             state.pendingCommands[.seek] = nil
             state.timing = timing
             return
         }
         if let pending = state.pendingCommands[.seek],
-           let expected = pending.expectedTiming,
-           !matchesExpectedSeekPosition(timing, expected)
+            let expected = pending.expectedTiming,
+            !matchesExpectedSeekPosition(timing, expected)
         {
             state.timing = expected
         } else {
             state.timing = timing
             if let pending = state.pendingCommands[.seek],
-               let expected = pending.expectedTiming,
-               matchesExpectedSeekPosition(timing, expected)
+                let expected = pending.expectedTiming,
+                matchesExpectedSeekPosition(timing, expected)
             {
                 state.pendingCommands[.seek] = nil
             }

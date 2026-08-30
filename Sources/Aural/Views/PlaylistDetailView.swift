@@ -26,11 +26,13 @@ struct PlaylistDetailView: View {
 
             playlistContent
         }
-        .task(id: PlaylistLoadIdentity(
-            uri: item.uri,
-            accountEpoch: playback.accountEpoch,
-            isConnected: playback.isConnected
-        )) {
+        .task(
+            id: PlaylistLoadIdentity(
+                uri: item.uri,
+                accountEpoch: playback.accountEpoch,
+                isConnected: playback.isConnected
+            )
+        ) {
             guard playback.isConnected else { return }
             await store.load(item)
         }

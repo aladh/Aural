@@ -66,7 +66,7 @@ private nonisolated func preservedQueueOccurrenceUID(
 ) -> String {
     if !incoming.uid.isEmpty { return incoming.uid }
     guard current.entries.indices.contains(index),
-          current.entries[index].uri == incoming.uri
+        current.entries[index].uri == incoming.uri
     else {
         return ""
     }
@@ -287,13 +287,15 @@ actor QueueService {
             cachedTracks.lazy.filter { wantedSet.contains($0.uri) }.map { ($0.uri, $0) },
             uniquingKeysWith: { _, newer in newer }
         )
-        guard let initial = updateFallbackSnapshot(
-            entries: fallbackEntries,
-            tracks: Array(hydrated.values),
-            wantedCount: wantedURIs.count,
-            requestedEpoch: requestedEpoch,
-            requestedContext: requestedContext
-        ) else { return nil }
+        guard
+            let initial = updateFallbackSnapshot(
+                entries: fallbackEntries,
+                tracks: Array(hydrated.values),
+                wantedCount: wantedURIs.count,
+                requestedEpoch: requestedEpoch,
+                requestedContext: requestedContext
+            )
+        else { return nil }
         AuralLog.queue.info(
             "Queue fallback started; entries=\(fallbackEntries.count, privacy: .public); cached=\(hydrated.count, privacy: .public); epoch=\(requestedEpoch, privacy: .public)"
         )
@@ -306,15 +308,15 @@ actor QueueService {
         let maximumConcurrentRequests = 8
         await withTaskGroup(of: SpotifyConnectTrackMetadata?.self) { group in
             var iterator = missing.makeIterator()
-            for _ in 0 ..< min(maximumConcurrentRequests, missing.count) {
+            for _ in 0..<min(maximumConcurrentRequests, missing.count) {
                 guard let uri = iterator.next() else { break }
                 group.addTask { [metadata] in try? await metadata.metadata(for: uri) }
             }
 
             while let value = await group.next() {
                 guard !Task.isCancelled,
-                      requestedEpoch == accountEpoch,
-                      requestedContext == contextURI
+                    requestedEpoch == accountEpoch,
+                    requestedContext == contextURI
                 else {
                     group.cancelAll()
                     return

@@ -76,11 +76,15 @@ extension PlaybackStore {
         case .connecting: "Starting Aural Connect…"
         case .recovering: "Restoring Spotify Connect…"
         case .ready:
-            if let transientCommandError { transientCommandError }
-            else if let remote = activeRemoteDevice {
+            if let transientCommandError {
+                transientCommandError
+            } else if let remote = activeRemoteDevice {
                 isPlaying ? "Playing on \(remote.name)" : "Paused on \(remote.name)"
-            } else if showsPauseControl { "Playing on this Mac" }
-            else { "Aural Connect is ready" }
+            } else if showsPauseControl {
+                "Playing on this Mac"
+            } else {
+                "Aural Connect is ready"
+            }
         case let .failed(message): message
         }
     }
