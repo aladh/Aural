@@ -503,6 +503,7 @@ func runPlaylistMutationChecks(_ runner: CheckRunner) async {
             let searchStore = try auralSourceFile("Aural/Spotify/SearchStore.swift")
             let albumStore = try auralSourceFile("Aural/Spotify/MediaDetailStores.swift")
             let homeLibrary = try auralSourceFile("Aural/Spotify/HomeLibraryStore.swift")
+            let collectionType = try auralSourceFile("AuralDomain/CatalogTrackCollection.swift")
             let playlistDetail = try auralSourceFile("Aural/Views/PlaylistDetailView.swift")
             let mediaDetail = try auralSourceFile("Aural/Views/MediaDetailViews.swift")
             let libraryViews = try auralSourceFile("Aural/Views/LibraryViews.swift")
@@ -561,6 +562,12 @@ func runPlaylistMutationChecks(_ runner: CheckRunner) async {
                 !containsToken(playlistStore, "sortedTracks")
                     && !containsToken(playlistStore, "dateSort")
                     && !containsToken(playlistStore, "resortTracks")
+            )
+            runner.check(
+                "CatalogTrackCollection does not accept injected identity or revision",
+                containsToken(collectionType, "public init(tracks: [CatalogTrack] = [])")
+                    && !containsToken(collectionType, "init(id:")
+                    && !containsToken(collectionType, "revision: UInt64 =")
             )
             runner.check(
                 "Remove from Playlist and Delete pass only occurrence UIDs",

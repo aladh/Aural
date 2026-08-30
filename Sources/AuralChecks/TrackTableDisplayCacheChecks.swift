@@ -24,15 +24,21 @@ func runTrackTableDisplayCacheChecks(_ check: CheckRunner) {
     check.suite("Catalog track collection revision") {
         var collection = CatalogTrackCollection()
         let ownerID = collection.id
+        check.equal("a fresh owner starts at revision zero", collection.revision, 0)
+
         collection.replace([track(id: "a", title: "A"), track(id: "b", title: "B")])
-        check.equal("first assignment bumps the revision", collection.revision, 1)
+        check.equal("first replace bumps the revision", collection.revision, 1)
         check.equal("replace keeps the owner identity", collection.id, ownerID)
-        check.equal("assignment publishes the new rows", collection.tracks.map(\.id), ["a", "b"])
+        check.equal("replace publishes the new rows", collection.tracks.map(\.id), ["a", "b"])
 
         let equalReplacement = collection.tracks
         collection.replace(equalReplacement)
         check.equal("equal content still bumps so owners cannot skip a replacement", collection.revision, 2)
         check.equal("later replace still keeps the owner identity", collection.id, ownerID)
+
+        let seeded = CatalogTrackCollection(tracks: [track(id: "seed", title: "Seed")])
+        check.equal("seeded construction still starts at revision zero", seeded.revision, 0)
+        check.check("seeded construction still creates a new owner", seeded.id != collection.id)
     }
 
     check.suite("Track table display cache") {
@@ -40,63 +46,73 @@ func runTrackTableDisplayCacheChecks(_ check: CheckRunner) {
         let beta = track(id: "beta", title: "Beta", artist: "A", album: "Y")
         let gamma = track(id: "gamma", title: "Gamma", artist: "A", album: "X")
         let source = [gamma, alpha, beta]
-        let owner = UUID()
-        let original = CatalogTrackCollection(id: owner, tracks: source, revision: 1)
 
-        var cache = TrackTableDisplayCache(original)
+        var collection = CatalogTrackCollection()
+        collection.replace(source)
+        var cache = TrackTableDisplayCache(collection)
         check.equal("empty sort keeps source order", cache.rows.map(\.id), ["gamma", "alpha", "beta"])
 
-        let spoofed = CatalogTrackCollection(
-            id: owner,
-            tracks: [gamma, track(id: "middle", title: "Replaced"), beta],
-            revision: 1
-        )
-        check.check("same owner revision and sort is a cache hit", !cache.update(spoofed, sortOrder: []))
+        let snapshot = collection
+        collection.replace([gamma, track(id: "middle", title: "Replaced"), beta])
+        check.check("a copy of the previous generation is a cache hit", !cache.update(snapshot, sortOrder: []))
         check.equal(
-            "unrelated invalidation does not adopt a same-count middle replacement",
+            "unrelated invalidation does not adopt a later same-count replacement",
             cache.rows.map(\.id),
             ["gamma", "alpha", "beta"]
         )
+        check.check(
+            "copy plus replace recomputes when the revision advances",
+            cache.update(collection, sortOrder: [])
+        )
+        check.equal(
+            "rows follow the replaced generation",
+            cache.rows.map(\.id),
+            ["gamma", "middle", "beta"]
+        )
 
+        collection.replace(source)
+        _ = cache.update(collection, sortOrder: [])
         let titleAscending: [KeyPathComparator<CatalogTrack>] = [KeyPathComparator(\.title)]
-        check.check("sort-field change recomputes", cache.update(original, sortOrder: titleAscending))
+        check.check("sort-field change recomputes", cache.update(collection, sortOrder: titleAscending))
         check.equal("title ascending uses the native comparator", cache.rows.map(\.id), ["alpha", "beta", "gamma"])
 
         let titleDescending: [KeyPathComparator<CatalogTrack>] = [
             KeyPathComparator(\.title, order: .reverse),
         ]
-        check.check("descending recomputes", cache.update(original, sortOrder: titleDescending))
+        check.check("descending recomputes", cache.update(collection, sortOrder: titleDescending))
         check.equal("title descending reverses the column", cache.rows.map(\.id), ["gamma", "beta", "alpha"])
 
         let artistThenReverseTitle: [KeyPathComparator<CatalogTrack>] = [
             KeyPathComparator(\.artist),
             KeyPathComparator(\.title, order: .reverse),
         ]
-        check.check("multi-comparator recomputes", cache.update(original, sortOrder: artistThenReverseTitle))
+        check.check("multi-comparator recomputes", cache.update(collection, sortOrder: artistThenReverseTitle))
         check.equal(
             "artist then reverse title keeps comparator order",
             cache.rows.map(\.id),
             ["gamma", "beta", "alpha"]
         )
 
-        let foreign = CatalogTrackCollection(id: UUID(), tracks: [beta], revision: original.revision)
-        check.equal("distinct owners can share a numeric revision", foreign.revision, original.revision)
+        var other = CatalogTrackCollection()
+        other.replace([beta])
+        var peer = CatalogTrackCollection()
+        peer.replace([alpha])
+        check.equal("independently created owners can share a numeric revision", other.revision, peer.revision)
+        check.check("independently created owners have distinct identities", other.id != peer.id)
         check.check(
             "a different collection at the same revision recomputes",
-            cache.update(foreign, sortOrder: [])
+            cache.update(other, sortOrder: [])
         )
         check.equal("rows follow the new collection", cache.rows.map(\.id), ["beta"])
 
         let older = Date(timeIntervalSince1970: 1_000)
         let newer = Date(timeIntervalSince1970: 2_000)
-        let dated = CatalogTrackCollection(
-            tracks: [
-                track(id: "undated", title: "Undated", addedAt: nil),
-                track(id: "old", title: "Old", addedAt: older),
-                track(id: "new", title: "New", addedAt: newer),
-            ],
-            revision: 4
-        )
+        var dated = CatalogTrackCollection()
+        dated.replace([
+            track(id: "undated", title: "Undated", addedAt: nil),
+            track(id: "old", title: "Old", addedAt: older),
+            track(id: "new", title: "New", addedAt: newer),
+        ])
         var dateCache = TrackTableDisplayCache(dated)
         check.check(
             "date-added sort recomputes",
@@ -119,7 +135,8 @@ func runTrackTableDisplayCacheChecks(_ check: CheckRunner) {
             artworkURL: nil,
             addedAt: nil
         )
-        let duplicates = CatalogTrackCollection(tracks: [first, second], revision: 7)
+        var duplicates = CatalogTrackCollection()
+        duplicates.replace([first, second])
         var duplicateCache = TrackTableDisplayCache(duplicates)
         _ = duplicateCache.update(duplicates, sortOrder: titleAscending)
         check.equal(
@@ -128,16 +145,13 @@ func runTrackTableDisplayCacheChecks(_ check: CheckRunner) {
             ["uid-b", "uid-a"]
         )
 
-        let originalMiddle = CatalogTrackCollection(id: owner, tracks: [alpha, beta, gamma], revision: 8)
-        let replacedMiddle = CatalogTrackCollection(
-            id: owner,
-            tracks: [alpha, track(id: "beta-2", title: "Omega"), gamma],
-            revision: 9
-        )
-        var replacementCache = TrackTableDisplayCache(originalMiddle)
+        var replacement = CatalogTrackCollection()
+        replacement.replace([alpha, beta, gamma])
+        var replacementCache = TrackTableDisplayCache(replacement)
+        replacement.replace([alpha, track(id: "beta-2", title: "Omega"), gamma])
         check.check(
             "same-count middle replacement recomputes when the revision bumps",
-            replacementCache.update(replacedMiddle, sortOrder: titleAscending)
+            replacementCache.update(replacement, sortOrder: titleAscending)
         )
         check.equal(
             "middle replacement participates in the new sort",
@@ -148,12 +162,12 @@ func runTrackTableDisplayCacheChecks(_ check: CheckRunner) {
         let selection: Set<String> = ["alpha", "gone", "gamma"]
         check.equal(
             "selection pruning drops identities that left the authoritative collection",
-            TrackTableDisplayCache.prunedSelection(selection, from: replacedMiddle.tracks),
+            TrackTableDisplayCache.prunedSelection(selection, from: replacement.tracks),
             ["alpha", "gamma"]
         )
         check.equal(
             "empty selection stays empty",
-            TrackTableDisplayCache.prunedSelection([], from: replacedMiddle.tracks),
+            TrackTableDisplayCache.prunedSelection([], from: replacement.tracks),
             []
         )
     }

@@ -5,28 +5,6 @@
 
 import Foundation
 
-/// Authoritative catalog rows plus the revision that identifies that assignment.
-///
-/// `id` is stable for one owner. `revision` is unique only within that owner, so
-/// `TrackTable` caches display order on `id` and `revision` plus SwiftUI `sortOrder`.
-/// Equatable still compares the rows, so do not use this value as an `onChange` trigger.
-public struct CatalogTrackCollection: Equatable, Sendable {
-    public let id: UUID
-    public private(set) var tracks: [CatalogTrack]
-    public private(set) var revision: UInt64
-
-    public init(id: UUID = UUID(), tracks: [CatalogTrack] = [], revision: UInt64 = 0) {
-        self.id = id
-        self.tracks = tracks
-        self.revision = revision
-    }
-
-    public mutating func replace(_ tracks: [CatalogTrack]) {
-        self.tracks = tracks
-        revision &+= 1
-    }
-}
-
 /// Cached projection of catalog rows for a native `Table` sort order.
 ///
 /// Recompute when the owner identity, revision, or SwiftUI comparators change.
