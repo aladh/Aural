@@ -41,12 +41,20 @@ func runCatalogPlaybackAccessSourceContractChecks(_ check: CheckRunner) {
         check.equal(
             "stored action closures are reported",
             CatalogPlaybackAccessSourceContract.storedActionClosureLines(
-                in: "    let connect: @MainActor () -> Void\n    let playURI: () -> Void\n    let addToQueue = { uris in }"
+                in: """
+                    let connect: @MainActor () -> Void
+                    let playURI: () -> Void
+                    let addToQueue = { uris in }
+                    private let skip: @MainActor () -> Void
+                    @MainActor var enqueue = { uris in }
+                """
             ),
             [
                 "let connect: @MainActor () -> Void",
                 "let playURI: () -> Void",
                 "let addToQueue = { uris in }",
+                "private let skip: @MainActor () -> Void",
+                "@MainActor var enqueue = { uris in }",
             ]
         )
         check.equal(
@@ -61,6 +69,18 @@ func runCatalogPlaybackAccessSourceContractChecks(_ check: CheckRunner) {
             "player identity equality is recognized",
             CatalogPlaybackAccessSourceContract.equatesByPlayerIdentity(
                 "    nonisolated static func == (lhs: CatalogPlaybackAccess, rhs: CatalogPlaybackAccess) -> Bool {\n        lhs.playerIdentity == rhs.playerIdentity\n    }"
+            )
+        )
+        check.check(
+            "reversed operand equality is not canonical player identity",
+            !CatalogPlaybackAccessSourceContract.equatesByPlayerIdentity(
+                "    nonisolated static func == (lhs: CatalogPlaybackAccess, rhs: CatalogPlaybackAccess) -> Bool {\n        rhs.playerIdentity == lhs.playerIdentity\n    }"
+            )
+        )
+        check.check(
+            "expanded equality is not canonical player identity",
+            !CatalogPlaybackAccessSourceContract.equatesByPlayerIdentity(
+                "    nonisolated static func == (lhs: CatalogPlaybackAccess, rhs: CatalogPlaybackAccess) -> Bool {\n        lhs.playerIdentity == rhs.playerIdentity\n        return true\n    }"
             )
         )
         check.check(
