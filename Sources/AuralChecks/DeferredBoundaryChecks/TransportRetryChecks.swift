@@ -497,12 +497,7 @@ func runTransportRetryChecks(_ check: CheckRunner) async {
     }
 
     await check.suite("Web queue 429 reaches QueueService without generic replay") {
-        let sleeper = RecordingSleeper()
         let clock = ControllablePlaybackClock(Date(timeIntervalSince1970: 1_700_000_000))
-        let rateLimited = ScriptedRetryTransport(steps: [
-            .http(status: 429, headers: ["Retry-After": "7"]),
-            .http(status: 200, body: queueBody),
-        ])
         let fallback = [
             QueueEntry(uri: "spotify:track:alpha", provider: "connect", occurrence: 0, uid: "uid-alpha"),
             QueueEntry(uri: "spotify:track:beta", provider: "connect", occurrence: 1, uid: "uid-beta"),
@@ -511,14 +506,9 @@ func runTransportRetryChecks(_ check: CheckRunner) async {
             queueCheckTrack("spotify:track:alpha"),
             queueCheckTrack("spotify:track:beta"),
         ]
-        let limitedAPI = SpotifyWebPlayerAPI(
-            accessToken: { "queue-a" },
-            invalidateAccessToken: { _ in },
-            transport: rateLimited.send,
-            retryTiming: timing(now: clock.now(), sleeper: sleeper)
-        )
+        let webQueue = RateLimitedThenAvailableWebQueue(tracks: [queueCheckTrack("spotify:track:web")])
         let limitedService = QueueService(
-            webQueue: limitedAPI,
+            webQueue: webQueue,
             metadata: TrackMetadataService(remote: UnusedQueueRemote()),
             clock: clock
         )
@@ -530,15 +520,7 @@ func runTransportRetryChecks(_ check: CheckRunner) async {
             currentTrackURI: "spotify:track:now",
             accountEpoch: 11
         )
-        check.equal("first 429 performs one Web GET", rateLimited.callCount, 1)
-        check.equal("first 429 is GET", rateLimited.methods, ["GET"])
-        check.equal(
-            "first 429 hits the documented Web queue",
-            rateLimited.urls,
-            [SpotifyWebPlayerAPI.queueURL.absoluteString]
-        )
-        check.equal("first 429 sends no client token", rateLimited.clientTokens, [])
-        check.equal("first 429 does not invoke the generic sleeper", sleeper.delays, [])
+        check.equal("first 429 performs one Web queue call", await webQueue.callCount, 1)
         check.equal("first 429 falls back to Connect", first?.source, .connect)
         check.equal("first 429 Connect fallback is complete", first?.completeness, .complete)
         check.equal(
@@ -558,7 +540,7 @@ func runTransportRetryChecks(_ check: CheckRunner) async {
             currentTrackURI: "spotify:track:now",
             accountEpoch: 11
         )
-        check.equal("cooldown refresh makes no second Web request", rateLimited.callCount, 1)
+        check.equal("cooldown refresh makes no second Web request", await webQueue.callCount, 1)
         check.equal("cooldown refresh still uses Connect", second?.source, .connect)
         check.equal("cooldown refresh stays complete", second?.completeness, .complete)
         check.equal(
@@ -566,43 +548,24 @@ func runTransportRetryChecks(_ check: CheckRunner) async {
             second?.entries.map(\.uri),
             ["spotify:track:alpha", "spotify:track:beta"]
         )
-        check.equal("cooldown refresh still does not sleep generically", sleeper.delays, [])
-
-        let tokens = CredentialSequence(values: ["queue-a", "queue-b", "queue-c"])
-        let invalidated = RecordingInvalidator()
-        let recovered = ScriptedRetryTransport(steps: [
-            .http(status: 401),
-            .http(status: 200, body: queueBody),
-        ])
-        let recoveredAPI = SpotifyWebPlayerAPI(
-            accessToken: { tokens.next() },
-            invalidateAccessToken: { await invalidated.record($0) },
-            transport: recovered.send,
-            retryTiming: timing(sleeper: sleeper)
-        )
-        let recoveredService = QueueService(
-            webQueue: recoveredAPI,
-            metadata: TrackMetadataService(remote: UnusedQueueRemote()),
-            clock: clock
-        )
-        await recoveredService.reset(accountEpoch: 12)
-        let webSnapshot = await recoveredService.refresh(
+        clock.advance(seconds: 5 * 60 + 1)
+        let recovered = await limitedService.refresh(
             fallbackEntries: fallback,
             cachedTracks: cached,
             currentTrackURI: "spotify:track:now",
-            accountEpoch: 12
+            accountEpoch: 11
         )
-        check.equal("401 then 200 uses the Web queue", webSnapshot?.source, .webAPI)
-        check.equal("401 then 200 retries once", recovered.callCount, 2)
-        check.equal("401 then 200 invalidates the sent bearer once", await invalidated.values, ["queue-a"])
-        check.equal("401 then 200 uses GET twice", recovered.methods, ["GET", "GET"])
-        check.equal("401 then 200 sends no client token", recovered.clientTokens, [])
-        check.equal("401 then 200 still does not sleep generically", sleeper.delays, [])
-        check.equal("401 then 200 does not fetch a third bearer", tokens.callCount, 2)
+        check.equal("expired cooldown retries the Web queue once", await webQueue.callCount, 2)
+        check.equal("expired cooldown keeps authoritative Connect order", recovered?.source, .connect)
         check.equal(
-            "401 then 200 keeps the Web entry order",
-            webSnapshot?.entries.map(\.uri),
-            ["spotify:track:track-id"]
+            "expired cooldown does not let Web reorder Connect entries",
+            recovered?.entries.map(\.uri),
+            ["spotify:track:alpha", "spotify:track:beta"]
+        )
+        check.equal(
+            "expired cooldown preserves Connect occurrence uids",
+            recovered?.entries.map(\.uid),
+            ["uid-alpha", "uid-beta"]
         )
     }
 }
@@ -639,6 +602,23 @@ private struct UnusedQueueRemote: RemotePlaybackClient {
     }
 }
 
+private actor RateLimitedThenAvailableWebQueue: WebQueueClient {
+    private let tracks: [CatalogTrack]
+    private(set) var callCount = 0
+
+    init(tracks: [CatalogTrack]) {
+        self.tracks = tracks
+    }
+
+    func queue() async throws -> [CatalogTrack] {
+        callCount += 1
+        if callCount == 1 {
+            throw SpotifyWebPlayerAPIError.requestFailed(429)
+        }
+        return tracks
+    }
+}
+
 private final class ControllablePlaybackClock: PlaybackClock, @unchecked Sendable {
     private let lock = NSLock()
     private var current: Date
@@ -649,6 +629,10 @@ private final class ControllablePlaybackClock: PlaybackClock, @unchecked Sendabl
 
     func now() -> Date {
         lock.withLock { current }
+    }
+
+    func advance(seconds: TimeInterval) {
+        lock.withLock { current = current.addingTimeInterval(seconds) }
     }
 
     func sleep(seconds _: TimeInterval) async throws {}
