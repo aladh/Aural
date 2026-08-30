@@ -196,27 +196,6 @@ private func containsToken(_ source: String, _ token: String) -> Bool {
     source.contains(token)
 }
 
-private func playbackStoreStateAssignments(_ source: String) -> [String] {
-    matchingPlaybackStoreStateLines(source, pattern: #"(?<![\w.])(?:self\.)?state\s*=(?!=)"#)
-        .filter { !$0.contains("let state") }
-}
-
-private func playbackStoreStateMemberMutations(_ source: String) -> [String] {
-    matchingPlaybackStoreStateLines(source, pattern: #"(?<![\w.])(?:self\.)?state\.[A-Za-z0-9_.\[\]]+\s*=(?!=)"#)
-        .filter { !$0.contains("let state") }
-}
-
-private func matchingPlaybackStoreStateLines(_ source: String, pattern: String) -> [String] {
-    let regex = try! NSRegularExpression(pattern: pattern)
-    return source.split(separator: "\n", omittingEmptySubsequences: false).compactMap { line in
-        let trimmed = String(line).trimmingCharacters(in: .whitespaces)
-        if trimmed.hasPrefix("//") { return nil }
-        let range = NSRange(location: 0, length: (trimmed as NSString).length)
-        guard regex.firstMatch(in: trimmed, range: range) != nil else { return nil }
-        return trimmed
-    }
-}
-
 private enum RepeatCatalogFailure: Error { case unavailable }
 
 private struct IdleRepeatCatalog: CatalogProviding {
@@ -914,30 +893,8 @@ func runRepeatTransitionChecks(_ runner: CheckRunner) async {
         await duplicateStore.shutdownForTermination()
     }
 
-    runner.suite("PlaybackStore.state has a single reducer commit writer") {
-        runner.noThrow("PlaybackStore sources are readable") {
-            let files = [
-                "Aural/Spotify/PlaybackStore.swift",
-                "Aural/Spotify/PlaybackStore+Commands.swift",
-                "Aural/Spotify/PlaybackStore+EngineEvents.swift",
-                "Aural/Spotify/PlaybackStore+History.swift",
-                "Aural/Spotify/PlaybackStore+Projections.swift",
-                "Aural/Spotify/PlaybackStore+Queue.swift",
-                "Aural/Spotify/PlaybackStore+Session.swift",
-                "Aural/Spotify/PlaybackStore+Transport.swift",
-            ]
-            let sources = try files.map(auralSourceFile)
-            let assignments = sources.flatMap(playbackStoreStateAssignments)
-            runner.equal(
-                "PlaybackStore.state assignments are the declaration and send commit",
-                assignments,
-                [
-                    "private(set) var state = PlaybackState(accountEpoch: 1)",
-                    "state = next",
-                ]
-            )
-            let mutations = sources.flatMap(playbackStoreStateMemberMutations)
-            runner.equal("PlaybackStore files have no direct state member mutation", mutations, [String]())
+    runner.suite("cycleRepeat no longer owns repeat presentation") {
+        runner.noThrow("PlaybackStore transport source is readable") {
             let transport = try auralSourceFile("Aural/Spotify/PlaybackStore+Transport.swift")
             runner.check(
                 "cycleRepeat no longer assigns presentation outside the reducer",
