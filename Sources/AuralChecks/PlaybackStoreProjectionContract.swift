@@ -87,14 +87,43 @@ enum CurrentTrackRowAccessibilityContract {
     }
 
     static func containsQuotedAccessibilityLabel(_ source: String, _ quoted: String) -> Bool {
-        compact(source).contains(compact(".accessibilityLabel(\"\(quoted)\")"))
+        normalizeFormattingOutsideStrings(source).contains(
+            normalizeFormattingOutsideStrings(".accessibilityLabel(\"\(quoted)\")")
+        )
     }
 
     static func collapsed(_ source: String) -> String {
         source.split { $0.isWhitespace }.joined(separator: " ")
     }
 
-    static func compact(_ source: String) -> String {
-        source.filter { !$0.isWhitespace }
+    /// Removes Swift formatting whitespace outside quoted literals so wrapped
+    /// `.accessibilityLabel(` calls match, while spaces inside the spoken string stay significant.
+    static func normalizeFormattingOutsideStrings(_ source: String) -> String {
+        var result = ""
+        var inString = false
+        var escaped = false
+        for character in source {
+            if inString {
+                result.append(character)
+                if escaped {
+                    escaped = false
+                } else if character == "\\" {
+                    escaped = true
+                } else if character == "\"" {
+                    inString = false
+                }
+                continue
+            }
+
+            if character.isWhitespace {
+                continue
+            }
+
+            if character == "\"" {
+                inString = true
+            }
+            result.append(character)
+        }
+        return result
     }
 }

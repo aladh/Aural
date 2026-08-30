@@ -229,5 +229,19 @@ func runPlaybackProjectionContractChecks(_ check: CheckRunner) {
                 "Now playing \\(entry.title) by \\(entry.artist)"
             )
         )
+        check.check(
+            "a missing word separator in the spoken label is reported",
+            !CurrentTrackRowAccessibilityContract.containsQuotedAccessibilityLabel(
+                ".accessibilityLabel(\"Now playing \\(player.displayedTrackTitle)by \\(player.displayedArtistName)\")",
+                "Now playing \\(player.displayedTrackTitle) by \\(player.displayedArtistName)"
+            )
+        )
+        check.equal(
+            "formatting whitespace outside quotes is collapsed",
+            CurrentTrackRowAccessibilityContract.normalizeFormattingOutsideStrings(
+                ".accessibilityLabel(\n    \"Play \\(entry.title) by \\(entry.artist)\"\n)"
+            ),
+            ".accessibilityLabel(\"Play \\(entry.title) by \\(entry.artist)\")"
+        )
     }
 }
