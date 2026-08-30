@@ -870,7 +870,7 @@ func runPlaybackEventOutcomeChecks(_ runner: CheckRunner) async {
         await teardown.shutdownForTermination()
     }
 
-    runner.suite("Orchestration clock stamps send, timing, and history") {
+    await runner.suite("Orchestration clock stamps send, timing, and history") {
         let clockNow = Date(timeIntervalSince1970: 1_800_000_000)
         let receipt = Date(timeIntervalSince1970: 1_800_000_050)
         let player = playbackStore(outcomeEnvironment(remote: ImmediateMetadataRemote()))
