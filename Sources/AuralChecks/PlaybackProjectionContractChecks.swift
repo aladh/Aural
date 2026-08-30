@@ -78,6 +78,20 @@ func runPlaybackProjectionContractChecks(_ check: CheckRunner) {
             PlaybackStoreProjectionContract.containsUncommented("        \(expectedLabel)\n", expectedLabel)
         )
         check.check(
+            "a quoted block-comment marker does not hide an active expected label",
+            PlaybackStoreProjectionContract.containsUncommented(
+                "let marker = \"/*\"\n        \(expectedLabel)\n",
+                expectedLabel
+            )
+        )
+        check.check(
+            "a quoted URL does not hide an active expected label",
+            PlaybackStoreProjectionContract.containsUncommented(
+                "let artwork = \"https://example.invalid/track\"\n        \(expectedLabel)\n",
+                expectedLabel
+            )
+        )
+        check.check(
             "a line-commented displayedTrackTitle does not satisfy the check",
             !PlaybackStoreProjectionContract.containsUncommented(
                 "var displayedTrackTitle: String { trackTitle } // \(expectedTitle)",
