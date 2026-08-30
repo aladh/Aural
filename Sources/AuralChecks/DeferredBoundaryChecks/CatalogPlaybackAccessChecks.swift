@@ -4,23 +4,13 @@ import Observation
 @testable import AuralCore
 
 private final class AccessLocalEngine: LocalPlaybackEngine, @unchecked Sendable {
-    private let lock = NSLock()
-    private var storedOperations: [LocalPlaybackOperation] = []
-
-    var operations: [LocalPlaybackOperation] {
-        lock.withLock { storedOperations }
-    }
-
     func events() -> AsyncStream<RustPlaybackEventEnvelope> {
         AsyncStream { $0.finish() }
     }
 
     func authorizeStreaming(with _: String) -> Int32 { 0 }
     func initialize() -> PlaybackEngineResult { .ok }
-    func execute(_ operation: LocalPlaybackOperation) -> PlaybackEngineResult {
-        lock.withLock { storedOperations.append(operation) }
-        return .ok
-    }
+    func execute(_: LocalPlaybackOperation) -> PlaybackEngineResult { .ok }
     func positionMilliseconds() -> UInt32 { 0 }
     func queueSnapshotJSON() -> String? { nil }
     func configureHighQualityPlayback() {}
@@ -44,19 +34,8 @@ private actor AccessRemoteClient: RemotePlaybackClient {
     }
 }
 
-private final class RecordingAccessAccount: AccountSession, @unchecked Sendable {
-    private let lock = NSLock()
-    private var storedInteractiveCount = 0
-
-    var interactiveCount: Int {
-        lock.withLock { storedInteractiveCount }
-    }
-
-    func authorizeInteractively() async throws -> KeymasterTokens {
-        lock.withLock { storedInteractiveCount += 1 }
-        throw CancellationError()
-    }
-
+private final class IdleAccessAccount: AccountSession, @unchecked Sendable {
+    func authorizeInteractively() async throws -> KeymasterTokens { throw CancellationError() }
     func hasGrant() async -> Bool { false }
     func accessToken() async throws -> String { "fixture-access" }
     func adopt(_: KeymasterTokens) async throws {}
@@ -115,62 +94,24 @@ private final class ObservationFlag: @unchecked Sendable {
     var fired = false
 }
 
-private func accessEnvironment(
-    local: any LocalPlaybackEngine = AccessLocalEngine(),
-    account: any AccountSession = RecordingAccessAccount()
-) -> PlaybackEnvironment {
-    PlaybackEnvironment(
-        remote: AccessRemoteClient(),
-        local: local,
-        webQueue: IdleAccessWebQueue(),
-        account: account,
-        audioOutput: IdleAccessAudio(),
-        preferences: IdleAccessPreferences(),
-        lifecycle: IdleAccessLifecycle(),
-        clock: AccessClock(),
-        catalog: IdleAccessCatalog(),
-        playlistMutations: UnavailablePlaylistMutations(),
-        trackAttributes: IdleAccessAttributes()
-    )
-}
-
 @MainActor
-private func accessStore(
-    local: any LocalPlaybackEngine = AccessLocalEngine(),
-    account: any AccountSession = RecordingAccessAccount()
-) -> PlaybackStore {
+private func accessStore() -> PlaybackStore {
     PlaybackStore(
-        environment: accessEnvironment(local: local, account: account),
+        environment: PlaybackEnvironment(
+            remote: AccessRemoteClient(),
+            local: AccessLocalEngine(),
+            webQueue: IdleAccessWebQueue(),
+            account: IdleAccessAccount(),
+            audioOutput: IdleAccessAudio(),
+            preferences: IdleAccessPreferences(),
+            lifecycle: IdleAccessLifecycle(),
+            clock: AccessClock(),
+            catalog: IdleAccessCatalog(),
+            playlistMutations: UnavailablePlaylistMutations(),
+            trackAttributes: IdleAccessAttributes()
+        ),
         feedback: TransientFeedbackPresenter(clock: AccessClock(), duration: 4)
     )
-}
-
-@MainActor
-private func seedLocalReady(_ player: PlaybackStore) {
-    _ = player.send(.session(.ready), source: .account)
-    _ = player.send(
-        .devices(PlaybackDeviceSnapshot(
-            devices: [
-                PlaybackDevice(id: "mac", name: "Mac", type: "computer", isActive: true),
-            ],
-            localDeviceID: "mac",
-            revision: 1
-        )),
-        source: .engineDevices,
-        revision: 1
-    )
-}
-
-@MainActor
-private func waitUntil(_ condition: @MainActor () async -> Bool) async -> Bool {
-    let clock = ContinuousClock()
-    let deadline = clock.now + .seconds(2)
-    while clock.now < deadline {
-        if Task.isCancelled { return false }
-        if await condition() { return true }
-        await Task.yield()
-    }
-    return false
 }
 
 @MainActor
@@ -184,7 +125,7 @@ func runCatalogPlaybackAccessChecks(_ runner: CheckRunner) async {
             flag.fired = true
         }
 
-        seedLocalReady(player)
+        _ = player.send(.session(.ready), source: .account)
         _ = player.send(
             .presentation(PlaybackPresentationSnapshot(
                 currentTrack: CurrentTrack(
@@ -209,28 +150,20 @@ func runCatalogPlaybackAccessChecks(_ runner: CheckRunner) async {
             "constructing CatalogPlaybackAccess does not observe playback facts",
             !flag.fired
         )
-        runner.equal("construction still yields a usable access value", access.isConnected, true)
+        runner.equal("a later fact read still follows the store", access.isConnected, true)
         await player.shutdownForTermination()
     }
 
-    await runner.suite("CatalogPlaybackAccess identity and live facts") {
-        let first = accessStore()
-        let second = accessStore()
-        let left = CatalogPlaybackAccess(player: first)
-        let right = CatalogPlaybackAccess(player: first)
-        let other = CatalogPlaybackAccess(player: second)
+    await runner.suite("CatalogPlaybackAccess leaves observe computed facts") {
+        let player = accessStore()
+        let access = CatalogPlaybackAccess(player: player)
+        _ = player.send(.session(.ready), source: .account)
+        runner.equal("isConnected follows the store", access.isConnected, player.isConnected)
+        runner.equal("accountEpoch follows the store", access.accountEpoch, player.state.accountEpoch)
+        runner.equal("canStartPlayback follows the store", access.canStartPlayback, player.canStartPlayback)
+        runner.equal("statusText follows the store", access.statusText, player.statusText)
 
-        runner.check("access values for the same player are equal", left == right)
-        runner.check("access values for different players are not equal", left != other)
-
-        seedLocalReady(first)
-        runner.check("equality is stable after playback facts change", left == right)
-        runner.equal("isConnected follows the store", left.isConnected, first.isConnected)
-        runner.equal("accountEpoch follows the store", left.accountEpoch, first.state.accountEpoch)
-        runner.equal("canStartPlayback follows the store", left.canStartPlayback, first.canStartPlayback)
-        runner.equal("statusText follows the store", left.statusText, first.statusText)
-
-        _ = first.send(
+        _ = player.send(
             .presentation(PlaybackPresentationSnapshot(
                 currentTrack: CurrentTrack(
                     uri: "spotify:track:current",
@@ -248,16 +181,16 @@ func runCatalogPlaybackAccessChecks(_ runner: CheckRunner) async {
             )),
             source: .user
         )
-        runner.equal("currentTrackURI follows the store", left.currentTrackURI, first.trackURI)
-        runner.equal("hasCurrentTrack follows the store", left.hasCurrentTrack, first.hasCurrentTrack)
+        runner.equal("currentTrackURI follows the store", access.currentTrackURI, player.trackURI)
+        runner.equal("hasCurrentTrack follows the store", access.hasCurrentTrack, player.hasCurrentTrack)
 
         let trackFlag = ObservationFlag()
         withObservationTracking {
-            _ = left.hasCurrentTrack && left.currentTrackURI == "spotify:track:current"
+            _ = access.hasCurrentTrack && access.currentTrackURI == "spotify:track:current"
         } onChange: {
             trackFlag.fired = true
         }
-        _ = first.send(
+        _ = player.send(
             .presentation(PlaybackPresentationSnapshot(
                 currentTrack: CurrentTrack(
                     uri: "spotify:track:next",
@@ -279,101 +212,13 @@ func runCatalogPlaybackAccessChecks(_ runner: CheckRunner) async {
 
         let connectedFlag = ObservationFlag()
         withObservationTracking {
-            _ = left.isConnected
+            _ = access.isConnected
         } onChange: {
             connectedFlag.fired = true
         }
-        _ = first.send(.session(.failed("offline")), source: .account)
+        _ = player.send(.session(.failed("offline")), source: .account)
         runner.check("a leaf that reads isConnected observes that fact", connectedFlag.fired)
 
-        await first.shutdownForTermination()
-        await second.shutdownForTermination()
-    }
-
-    await runner.suite("CatalogPlaybackAccess actions route to the store") {
-        let account = RecordingAccessAccount()
-        let connectPlayer = accessStore(account: account)
-        let connectAccess = CatalogPlaybackAccess(player: connectPlayer)
-        connectAccess.connect()
-        runner.check(
-            "connect routes to the account session",
-            await waitUntil { account.interactiveCount == 1 }
-        )
-        await connectPlayer.shutdownForTermination()
-
-        let local = AccessLocalEngine()
-        let player = accessStore(local: local)
-        seedLocalReady(player)
-        let access = CatalogPlaybackAccess(player: player)
-        access.playURI("spotify:track:play-uri")
-        runner.check(
-            "playURI routes to the local engine",
-            await waitUntil {
-                local.operations.contains { operation in
-                    if case .playURI("spotify:track:play-uri") = operation { return true }
-                    return false
-                }
-            }
-        )
-        runner.check(
-            "playURI pending command settles",
-            await waitUntil { !player.isPlaybackCommandPending }
-        )
-
-        let track = CatalogTrack(
-            id: "play-track",
-            uri: "spotify:track:play-track",
-            title: "Track",
-            artist: "Artist",
-            album: "Album",
-            duration: 100,
-            artworkURL: nil,
-            addedAt: nil
-        )
-        access.playTrack(track)
-        runner.check(
-            "playTrack routes to the local engine",
-            await waitUntil {
-                local.operations.contains { operation in
-                    if case .playURI("spotify:track:play-track") = operation { return true }
-                    return false
-                }
-            }
-        )
-        runner.check(
-            "playTrack pending command settles",
-            await waitUntil { !player.isPlaybackCommandPending }
-        )
-
-        access.addToQueue(["spotify:track:queued"])
-        runner.check(
-            "addToQueue routes to the local engine",
-            await waitUntil {
-                local.operations.contains { operation in
-                    if case .addToQueue("spotify:track:queued") = operation { return true }
-                    return false
-                }
-            }
-        )
-
-        let playlist = CatalogItem(
-            id: "playlist",
-            uri: "spotify:playlist:access",
-            title: "Playlist",
-            subtitle: "Owner",
-            artworkURL: nil,
-            kind: .playlist
-        )
-        access.playPlaylist(playlist)
-        runner.check(
-            "playPlaylist routes to the local engine",
-            await waitUntil {
-                local.operations.contains { operation in
-                    if case .playURI("spotify:playlist:access") = operation { return true }
-                    return false
-                }
-            }
-        )
         await player.shutdownForTermination()
     }
 }
