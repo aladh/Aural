@@ -199,6 +199,11 @@ final class PlaybackStore {
     @ObservationIgnored var terminationGate = PlaybackTerminationGate()
     @ObservationIgnored var lastEngineEventSequence: UInt64 = 0
     @ObservationIgnored var engineGeneration: UInt64 = 0
+    /// One immutable capture for playback-scoped work. This projects the two existing
+    /// lifecycle owners and must never become a third writable counter.
+    var playbackLifetime: PlaybackLifetime {
+        PlaybackLifetime(accountEpoch: accountEpoch, engineGeneration: engineGeneration)
+    }
     /// MainActor watermark for Connect *callback* identity. Distinct from
     /// `state.sourceRevisions[.engineQueue]`, which tracks provenance snapshots after merge.
     @ObservationIgnored var connectQueueCallback = ConnectQueueCallbackWatermark()

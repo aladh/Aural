@@ -2,6 +2,39 @@ import AuralDomain
 import Foundation
 
 func runSessionLifetimeChecks(_ check: CheckRunner) {
+    check.suite("Playback lifetime identity") {
+        let captured = PlaybackLifetime(accountEpoch: 3, engineGeneration: 7)
+
+        check.check(
+            "matching account and engine are current",
+            captured.isCurrent(
+                PlaybackLifetime(accountEpoch: 3, engineGeneration: 7),
+                isTearingDown: false
+            )
+        )
+        check.check(
+            "account replacement is stale independently",
+            !captured.isCurrent(
+                PlaybackLifetime(accountEpoch: 4, engineGeneration: 7),
+                isTearingDown: false
+            )
+        )
+        check.check(
+            "engine replacement is stale independently",
+            !captured.isCurrent(
+                PlaybackLifetime(accountEpoch: 3, engineGeneration: 8),
+                isTearingDown: false
+            )
+        )
+        check.check(
+            "teardown invalidates a matching value",
+            !captured.isCurrent(
+                PlaybackLifetime(accountEpoch: 3, engineGeneration: 7),
+                isTearingDown: true
+            )
+        )
+    }
+
     check.suite("Session teardown coalescing") {
         let revoked = SessionTeardownIntent(
             clearGrant: false,
@@ -222,10 +255,14 @@ func runSessionLifetimeChecks(_ check: CheckRunner) {
                 commandKind: kind,
                 pendingCommandID: pending,
                 finishedCommandResolution: resolution,
-                capturedAccountEpoch: account,
-                capturedEngineEpoch: engine,
-                currentAccountEpoch: currentAccount,
-                currentEngineEpoch: currentEngine,
+                capturedLifetime: PlaybackLifetime(
+                    accountEpoch: account,
+                    engineGeneration: engine
+                ),
+                currentLifetime: PlaybackLifetime(
+                    accountEpoch: currentAccount,
+                    engineGeneration: currentEngine
+                ),
                 isTearingDown: tearingDown
             )
         }
@@ -449,10 +486,14 @@ func runSessionLifetimeChecks(_ check: CheckRunner) {
             playbackCommandShouldSettleOrdinaryCancellation(
                 pendingCommandID: pending,
                 cancelledCommandID: cancelled,
-                capturedAccountEpoch: account,
-                capturedEngineEpoch: engine,
-                currentAccountEpoch: currentAccount,
-                currentEngineEpoch: currentEngine,
+                capturedLifetime: PlaybackLifetime(
+                    accountEpoch: account,
+                    engineGeneration: engine
+                ),
+                currentLifetime: PlaybackLifetime(
+                    accountEpoch: currentAccount,
+                    engineGeneration: currentEngine
+                ),
                 isTearingDown: tearingDown
             )
         }

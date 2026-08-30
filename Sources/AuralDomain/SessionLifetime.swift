@@ -80,6 +80,25 @@ public struct AccountScopedRequestIdentity: Equatable, Sendable {
     }
 }
 
+/// Immutable identity of one playback-scoped async lifetime.
+///
+/// Account epoch and engine generation intentionally remain distinct values, but travel
+/// together so suspended playback work cannot accidentally capture or compare only one half.
+/// This is an option value, not a writable lifecycle owner, counter, revision, or watermark.
+public struct PlaybackLifetime: Equatable, Sendable {
+    public let accountEpoch: UInt64
+    public let engineGeneration: UInt64
+
+    public init(accountEpoch: UInt64, engineGeneration: UInt64) {
+        self.accountEpoch = accountEpoch
+        self.engineGeneration = engineGeneration
+    }
+
+    public func isCurrent(_ current: Self, isTearingDown: Bool) -> Bool {
+        !isTearingDown && self == current
+    }
+}
+
 /// Account-scoped request cancellation is inert: it must not publish results or user-facing errors.
 public func isCancellation(_ error: Error) -> Bool {
     if error is CancellationError { return true }
@@ -182,17 +201,13 @@ public func playbackCommandFollowUp(
     commandKind: PlaybackCommandKind,
     pendingCommandID: UUID?,
     finishedCommandResolution: PlaybackTransportCommandResolution? = nil,
-    capturedAccountEpoch: UInt64,
-    capturedEngineEpoch: UInt64,
-    currentAccountEpoch: UInt64,
-    currentEngineEpoch: UInt64,
+    capturedLifetime: PlaybackLifetime,
+    currentLifetime: PlaybackLifetime,
     isTearingDown: Bool
 ) -> PlaybackCommandFollowUp {
-    let sameLifetime =
-        !isTearingDown
-        && capturedAccountEpoch == currentAccountEpoch
-        && capturedEngineEpoch == currentEngineEpoch
-    guard sameLifetime else { return .inert }
+    guard capturedLifetime.isCurrent(currentLifetime, isTearingDown: isTearingDown) else {
+        return .inert
+    }
     switch finishedCommandResolution {
     case .confirmed:
         return .reportSuccess
@@ -219,14 +234,10 @@ public func playbackCommandFollowUp(
 public func playbackCommandShouldSettleOrdinaryCancellation(
     pendingCommandID: UUID?,
     cancelledCommandID: UUID,
-    capturedAccountEpoch: UInt64,
-    capturedEngineEpoch: UInt64,
-    currentAccountEpoch: UInt64,
-    currentEngineEpoch: UInt64,
+    capturedLifetime: PlaybackLifetime,
+    currentLifetime: PlaybackLifetime,
     isTearingDown: Bool
 ) -> Bool {
-    !isTearingDown
-        && capturedAccountEpoch == currentAccountEpoch
-        && capturedEngineEpoch == currentEngineEpoch
+    capturedLifetime.isCurrent(currentLifetime, isTearingDown: isTearingDown)
         && pendingCommandID == cancelledCommandID
 }
