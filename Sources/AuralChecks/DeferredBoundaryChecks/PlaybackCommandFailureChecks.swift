@@ -1998,5 +1998,31 @@ func runPlaybackCommandFailureChecks(_ runner: CheckRunner) async {
             "Could not move playback to this Mac"
         )
         await localMacStore.shutdownForTermination()
+
+        let acceptedLocalMacEngine = ScriptedLocalEngine(result: .ok)
+        let acceptedLocalMacStore = playbackStore(
+            commandEnvironment(
+                local: acceptedLocalMacEngine,
+                remote: ScriptedRemoteClient(.succeed)
+            )
+        )
+        seedRemoteOwner(acceptedLocalMacStore)
+        acceptedLocalMacStore.transferPlayback(to: thisMac)
+        _ = await waitUntil { acceptedLocalMacStore.state.pendingCommands[.transfer] == nil }
+        runner.equal(
+            "accepted transfer-to-this-Mac announces success through mutation feedback",
+            acceptedLocalMacStore.feedback.message,
+            TransientFeedbackMessage(id: 1, kind: .success, text: "Playing on This Mac")
+        )
+        runner.nil_(
+            "accepted transfer-to-this-Mac does not use the command-error notice",
+            acceptedLocalMacStore.transientCommandError
+        )
+        runner.equal(
+            "accepted transfer-to-this-Mac sends one local operation",
+            acceptedLocalMacEngine.operations,
+            [.transferToLocal]
+        )
+        await acceptedLocalMacStore.shutdownForTermination()
     }
 }
