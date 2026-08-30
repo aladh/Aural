@@ -138,16 +138,20 @@ nonisolated enum PathfinderHomeContent: Decodable, Sendable {
         // no `data` — Spotify's `NotFound` tombstone — falls through to `.unsupported`.
         switch typename {
         case "AlbumResponseWrapper":
-            self = try container.decodeIfPresent(PathfinderAlbum.self, forKey: .data)
+            self =
+                try container.decodeIfPresent(PathfinderAlbum.self, forKey: .data)
                 .map(Self.album) ?? .unsupported
         case "ArtistResponseWrapper":
-            self = try container.decodeIfPresent(PathfinderArtist.self, forKey: .data)
+            self =
+                try container.decodeIfPresent(PathfinderArtist.self, forKey: .data)
                 .map(Self.artist) ?? .unsupported
         case "PlaylistResponseWrapper":
-            self = try container.decodeIfPresent(PathfinderPlaylist.self, forKey: .data)
+            self =
+                try container.decodeIfPresent(PathfinderPlaylist.self, forKey: .data)
                 .map(Self.playlist) ?? .unsupported
         case "ListResponseWrapper":
-            self = try container.decodeIfPresent(PathfinderHomeList.self, forKey: .data)
+            self =
+                try container.decodeIfPresent(PathfinderHomeList.self, forKey: .data)
                 .map(Self.list) ?? .unsupported
         default:
             self = .unsupported

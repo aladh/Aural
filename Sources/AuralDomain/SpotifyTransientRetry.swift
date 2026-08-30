@@ -43,7 +43,7 @@ public enum SpotifyTransientRetry {
                 guard seconds > 0 else { return }
                 try await Task.sleep(for: .seconds(seconds))
             },
-            unitJitter: { Double.random(in: 0 ... 1) }
+            unitJitter: { Double.random(in: 0...1) }
         )
 
         /// Completes backoff without waiting. Injected by deterministic checks.
@@ -115,7 +115,7 @@ public enum SpotifyTransientRetry {
     }
 
     static func parseDeltaSeconds(_ value: String) -> Int? {
-        guard !value.isEmpty, value.unicodeScalars.allSatisfy({ (48 ... 57).contains($0.value) }) else {
+        guard !value.isEmpty, value.unicodeScalars.allSatisfy({ (48...57).contains($0.value) }) else {
             return nil
         }
         return Int(value)

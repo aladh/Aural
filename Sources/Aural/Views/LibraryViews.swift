@@ -76,7 +76,8 @@ struct SearchView: View {
                         }
                         if !store.playlists.isEmpty {
                             MediaShelf(
-                                section: CatalogSection(id: "search-playlists", title: "Playlists", items: store.playlists),
+                                section: CatalogSection(
+                                    id: "search-playlists", title: "Playlists", items: store.playlists),
                                 onSelect: onSelect
                             )
                         }
@@ -89,7 +90,7 @@ struct SearchView: View {
                                     playback: playback,
                                     playlistActions: playlistActions
                                 )
-                                    .frame(minHeight: 280)
+                                .frame(minHeight: 280)
                             }
                         }
                     }
@@ -99,11 +100,13 @@ struct SearchView: View {
         }
         .searchable(text: $searchText, placement: .toolbar, prompt: "Artists, albums, playlists, and tracks")
         .navigationTitle("Search")
-        .task(id: SearchLoadIdentity(
-            query: searchText.trimmingCharacters(in: .whitespacesAndNewlines),
-            accountEpoch: playback.accountEpoch,
-            isConnected: playback.isConnected
-        )) {
+        .task(
+            id: SearchLoadIdentity(
+                query: searchText.trimmingCharacters(in: .whitespacesAndNewlines),
+                accountEpoch: playback.accountEpoch,
+                isConnected: playback.isConnected
+            )
+        ) {
             guard playback.isConnected else { return }
             await store.scheduleSearch(searchText)
         }

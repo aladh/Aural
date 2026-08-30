@@ -133,11 +133,13 @@ nonisolated enum KeymasterAuth {
         let verifier = PKCE.codeVerifier()
         let state = PKCE.randomState()
 
-        guard let url = authorizationURL(
-            port: port,
-            challenge: PKCE.codeChallenge(for: verifier),
-            state: state,
-        ) else {
+        guard
+            let url = authorizationURL(
+                port: port,
+                challenge: PKCE.codeChallenge(for: verifier),
+                state: state,
+            )
+        else {
             await server.stop()
             throw KeymasterAuthError.authorizationURLFailed
         }
@@ -202,7 +204,7 @@ nonisolated enum KeymasterAuth {
         }
 
         if let decoded = try? JSONDecoder().decode(TokenErrorResponse.self, from: body),
-           decoded.error == "invalid_grant"
+            decoded.error == "invalid_grant"
         {
             return .grantRevoked
         }
@@ -261,7 +263,7 @@ nonisolated enum KeymasterAuth {
         now: Date = Date(),
     ) throws -> KeymasterTokens {
         guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-              let accessToken = json["access_token"] as? String
+            let accessToken = json["access_token"] as? String
         else {
             throw KeymasterAuthError.malformedTokenResponse
         }
@@ -288,7 +290,8 @@ nonisolated enum KeymasterAuth {
         var allowed = CharacterSet.alphanumerics
         allowed.insert(charactersIn: "-._~")
 
-        let encoded = parameters
+        let encoded =
+            parameters
             .map { key, value in
                 let escaped = value.addingPercentEncoding(withAllowedCharacters: allowed) ?? value
                 return "\(key)=\(escaped)"

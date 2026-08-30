@@ -233,7 +233,9 @@ private struct IdleAttributes: TrackAttributesProviding {
 private enum CommandCheckFailure: Error { case unavailable }
 
 private struct IdleCatalog: CatalogProviding {
-    func searchTracks(_: String, limit _: Int) async throws -> [PathfinderTrack] { throw CommandCheckFailure.unavailable }
+    func searchTracks(_: String, limit _: Int) async throws -> [PathfinderTrack] {
+        throw CommandCheckFailure.unavailable
+    }
     func home() async throws -> PathfinderHome { throw CommandCheckFailure.unavailable }
     func libraryPlaylists() async throws -> [PathfinderPlaylist] { throw CommandCheckFailure.unavailable }
     func libraryAlbums() async throws -> [PathfinderAlbum] { throw CommandCheckFailure.unavailable }
@@ -471,14 +473,15 @@ func runPlaybackCommandFailureChecks(_ runner: CheckRunner) async {
                 )
             )
             _ = player.send(
-                .devices(PlaybackDeviceSnapshot(
-                    devices: [
-                        PlaybackDevice(id: "mac", name: "Mac", type: "computer", isActive: false),
-                        PlaybackDevice(id: "speaker", name: "Speaker", type: "speaker", isActive: true)
-                    ],
-                    localDeviceID: "mac",
-                    revision: 1
-                )),
+                .devices(
+                    PlaybackDeviceSnapshot(
+                        devices: [
+                            PlaybackDevice(id: "mac", name: "Mac", type: "computer", isActive: false),
+                            PlaybackDevice(id: "speaker", name: "Speaker", type: "speaker", isActive: true),
+                        ],
+                        localDeviceID: "mac",
+                        revision: 1
+                    )),
                 source: .engineDevices,
                 revision: 1
             )
@@ -515,7 +518,9 @@ func runPlaybackCommandFailureChecks(_ runner: CheckRunner) async {
         if let commandID = cancelStore.state.pendingCommands[.transport]?.id {
             cancelStore.effects.cancel(.command(commandID))
         }
-        let cancelSettled = await waitUntil { cancelStore.state.pendingCommands[.transport] == nil && !cancelCompletions.isEmpty }
+        let cancelSettled = await waitUntil {
+            cancelStore.state.pendingCommands[.transport] == nil && !cancelCompletions.isEmpty
+        }
         runner.check("cancelled remote command settles", cancelSettled)
         runner.equal("cancelled remote command reports failure once", cancelCompletions, [false])
         runner.nil_("cancelled remote command has no notice", cancelStore.transientCommandError)
@@ -548,29 +553,31 @@ func runPlaybackCommandFailureChecks(_ runner: CheckRunner) async {
         ) {
             _ = player.send(.session(.ready), source: .account)
             _ = player.send(
-                .devices(PlaybackDeviceSnapshot(
-                    devices: [
-                        PlaybackDevice(id: "mac", name: "Mac", type: "computer", isActive: false),
-                        PlaybackDevice(id: "speaker", name: "Speaker", type: "speaker", isActive: true)
-                    ],
-                    localDeviceID: "mac",
-                    revision: 1
-                )),
+                .devices(
+                    PlaybackDeviceSnapshot(
+                        devices: [
+                            PlaybackDevice(id: "mac", name: "Mac", type: "computer", isActive: false),
+                            PlaybackDevice(id: "speaker", name: "Speaker", type: "speaker", isActive: true),
+                        ],
+                        localDeviceID: "mac",
+                        revision: 1
+                    )),
                 source: .engineDevices,
                 revision: 1
             )
             _ = player.send(
-                .presentation(PlaybackPresentationSnapshot(
-                    currentTrack: CurrentTrack(
-                        uri: "spotify:track:fixture",
-                        title: "Now",
-                        artist: "Artist",
-                        duration: 200,
-                        metadataSource: .catalog
-                    ),
-                    transport: transport,
-                    timing: timing
-                )),
+                .presentation(
+                    PlaybackPresentationSnapshot(
+                        currentTrack: CurrentTrack(
+                            uri: "spotify:track:fixture",
+                            title: "Now",
+                            artist: "Artist",
+                            duration: 200,
+                            metadataSource: .catalog
+                        ),
+                        transport: transport,
+                        timing: timing
+                    )),
                 source: .user
             )
         }
@@ -582,11 +589,14 @@ func runPlaybackCommandFailureChecks(_ runner: CheckRunner) async {
         runner.check("remote pause can toggle before the command", pauseFailStore.canTogglePlayback)
         pauseFailStore.togglePlayback()
         runner.equal("remote pause applies paused transport before completion", pauseFailStore.state.transport, .paused)
-        runner.equal("remote pause freezes displayed timing before completion", pauseFailStore.state.timing, frozenPauseTiming)
+        runner.equal(
+            "remote pause freezes displayed timing before completion", pauseFailStore.state.timing, frozenPauseTiming)
         _ = await waitUntil { pauseFailStore.state.pendingCommands[.transport] == nil }
         runner.equal("remote pause rejection restores playing", pauseFailStore.state.transport, .playing)
-        runner.equal("remote pause rejection restores exact prior timing", pauseFailStore.state.timing, priorPlayingTiming)
-        runner.equal("remote pause rejection uses the action notice", pauseFailStore.transientCommandError, "Pause was rejected")
+        runner.equal(
+            "remote pause rejection restores exact prior timing", pauseFailStore.state.timing, priorPlayingTiming)
+        runner.equal(
+            "remote pause rejection uses the action notice", pauseFailStore.transientCommandError, "Pause was rejected")
         await pauseFailStore.shutdownForTermination()
 
         let resumeFailStore = playbackStore(
@@ -639,26 +649,28 @@ func runPlaybackCommandFailureChecks(_ runner: CheckRunner) async {
         )
         _ = localSeekFail.send(.session(.ready), source: .account)
         _ = localSeekFail.send(
-            .devices(PlaybackDeviceSnapshot(
-                devices: [PlaybackDevice(id: "mac", name: "Mac", type: "computer", isActive: true)],
-                localDeviceID: "mac",
-                revision: 1
-            )),
+            .devices(
+                PlaybackDeviceSnapshot(
+                    devices: [PlaybackDevice(id: "mac", name: "Mac", type: "computer", isActive: true)],
+                    localDeviceID: "mac",
+                    revision: 1
+                )),
             source: .engineDevices,
             revision: 1
         )
         _ = localSeekFail.send(
-            .presentation(PlaybackPresentationSnapshot(
-                currentTrack: CurrentTrack(
-                    uri: "spotify:track:fixture",
-                    title: "Now",
-                    artist: "Artist",
-                    duration: 200,
-                    metadataSource: .catalog
-                ),
-                transport: .playing,
-                timing: priorPlayingTiming
-            )),
+            .presentation(
+                PlaybackPresentationSnapshot(
+                    currentTrack: CurrentTrack(
+                        uri: "spotify:track:fixture",
+                        title: "Now",
+                        artist: "Artist",
+                        duration: 200,
+                        metadataSource: .catalog
+                    ),
+                    transport: .playing,
+                    timing: priorPlayingTiming
+                )),
             source: .user
         )
         localSeekFail.seek(to: 0.4)
@@ -673,17 +685,18 @@ func runPlaybackCommandFailureChecks(_ runner: CheckRunner) async {
         _ = joining.send(.session(.ready), source: .account)
         _ = joining.send(.owner(.uncertain(nil)), source: .command)
         _ = joining.send(
-            .presentation(PlaybackPresentationSnapshot(
-                currentTrack: CurrentTrack(
-                    uri: "spotify:track:fixture",
-                    title: "Now",
-                    artist: "Artist",
-                    duration: 200,
-                    metadataSource: .catalog
-                ),
-                transport: .playing,
-                timing: priorPlayingTiming
-            )),
+            .presentation(
+                PlaybackPresentationSnapshot(
+                    currentTrack: CurrentTrack(
+                        uri: "spotify:track:fixture",
+                        title: "Now",
+                        artist: "Artist",
+                        duration: 200,
+                        metadataSource: .catalog
+                    ),
+                    transport: .playing,
+                    timing: priorPlayingTiming
+                )),
             source: .user
         )
         let joiningBefore = joining.state
@@ -709,9 +722,11 @@ func runPlaybackCommandFailureChecks(_ runner: CheckRunner) async {
         runner.check("the first seek is pending before a duplicate toggle", seekPending)
         let afterSeek = duplicateStore.state
         duplicateStore.togglePlayback()
-        runner.equal("a duplicate toggle does not change transport", duplicateStore.state.transport, afterSeek.transport)
+        runner.equal(
+            "a duplicate toggle does not change transport", duplicateStore.state.transport, afterSeek.transport)
         runner.equal("a duplicate toggle does not change timing", duplicateStore.state.timing, afterSeek.timing)
-        runner.nil_("a duplicate toggle does not start a transport command", duplicateStore.state.pendingCommands[.transport])
+        runner.nil_(
+            "a duplicate toggle does not start a transport command", duplicateStore.state.pendingCommands[.transport])
         if let commandID = duplicateStore.state.pendingCommands[.seek]?.id {
             duplicateStore.effects.cancel(.command(commandID))
         }
@@ -739,7 +754,8 @@ func runPlaybackCommandFailureChecks(_ runner: CheckRunner) async {
         await cancelStore.shutdownForTermination()
 
         let staleStore = playbackStore(
-            commandEnvironment(local: ScriptedLocalEngine(result: .ok), remote: ScriptedRemoteClient(.sleepUntilCancelled))
+            commandEnvironment(
+                local: ScriptedLocalEngine(result: .ok), remote: ScriptedRemoteClient(.sleepUntilCancelled))
         )
         seedRemotePlayback(staleStore, transport: .playing, timing: priorPlayingTiming)
         staleStore.seek(to: 0.4)
@@ -753,7 +769,8 @@ func runPlaybackCommandFailureChecks(_ runner: CheckRunner) async {
             engineEpoch: staleStore.engineGeneration + 1
         )
         runner.nil_("an engine-epoch bump drops the pending seek", staleStore.state.pendingCommands[.seek])
-        runner.equal("an engine-epoch bump does not roll back seek timing", staleStore.state.timing, optimisticSeekTiming)
+        runner.equal(
+            "an engine-epoch bump does not roll back seek timing", staleStore.state.timing, optimisticSeekTiming)
         await staleStore.shutdownForTermination()
 
         let trackSwitchRemote = GatedFailingRemoteClient()
@@ -768,27 +785,33 @@ func runPlaybackCommandFailureChecks(_ runner: CheckRunner) async {
         runner.check("the seek has reached the remote client before the track switch", sendStarted)
         let trackBTiming = PlaybackTiming(position: 0, duration: 180, anchoredAt: clockNow)
         _ = trackSwitchStore.send(
-            .enginePlayback(EnginePlaybackSnapshot(
-                transport: .playing,
-                trackURI: "spotify:track:other",
-                timing: trackBTiming
-            )),
+            .enginePlayback(
+                EnginePlaybackSnapshot(
+                    transport: .playing,
+                    trackURI: "spotify:track:other",
+                    timing: trackBTiming
+                )),
             source: .enginePlayback,
             revision: 1
         )
-        runner.equal("a track switch adopts the new track URI", trackSwitchStore.state.currentTrack?.uri, "spotify:track:other")
+        runner.equal(
+            "a track switch adopts the new track URI", trackSwitchStore.state.currentTrack?.uri, "spotify:track:other")
         runner.equal("a track switch adopts the incoming timing", trackSwitchStore.state.timing, trackBTiming)
         runner.nil_("a track switch clears the old pending seek", trackSwitchStore.state.pendingCommands[.seek])
         let afterTrackSwitch = trackSwitchStore.state
         await trackSwitchRemote.fail()
         for _ in 0..<50 { await Task.yield() }
-        runner.equal("a rejected finish after a track switch leaves timing unchanged", trackSwitchStore.state.timing, afterTrackSwitch.timing)
+        runner.equal(
+            "a rejected finish after a track switch leaves timing unchanged", trackSwitchStore.state.timing,
+            afterTrackSwitch.timing)
         runner.equal(
             "a rejected finish after a track switch leaves the new track",
             trackSwitchStore.state.currentTrack?.uri,
             "spotify:track:other"
         )
-        runner.nil_("a rejected finish after a track switch does not surface a seek notice", trackSwitchStore.transientCommandError)
+        runner.nil_(
+            "a rejected finish after a track switch does not surface a seek notice",
+            trackSwitchStore.transientCommandError)
         await trackSwitchStore.shutdownForTermination()
     }
 
@@ -823,40 +846,43 @@ func runPlaybackCommandFailureChecks(_ runner: CheckRunner) async {
             _ = player.send(.session(.ready), source: .account)
             if local {
                 _ = player.send(
-                    .devices(PlaybackDeviceSnapshot(
-                        devices: [PlaybackDevice(id: "mac", name: "Mac", type: "computer", isActive: true)],
-                        localDeviceID: "mac",
-                        revision: 1
-                    )),
+                    .devices(
+                        PlaybackDeviceSnapshot(
+                            devices: [PlaybackDevice(id: "mac", name: "Mac", type: "computer", isActive: true)],
+                            localDeviceID: "mac",
+                            revision: 1
+                        )),
                     source: .engineDevices,
                     revision: 1
                 )
             } else {
                 _ = player.send(
-                    .devices(PlaybackDeviceSnapshot(
-                        devices: [
-                            PlaybackDevice(id: "mac", name: "Mac", type: "computer", isActive: false),
-                            PlaybackDevice(id: "speaker", name: "Speaker", type: "speaker", isActive: true)
-                        ],
-                        localDeviceID: "mac",
-                        revision: 1
-                    )),
+                    .devices(
+                        PlaybackDeviceSnapshot(
+                            devices: [
+                                PlaybackDevice(id: "mac", name: "Mac", type: "computer", isActive: false),
+                                PlaybackDevice(id: "speaker", name: "Speaker", type: "speaker", isActive: true),
+                            ],
+                            localDeviceID: "mac",
+                            revision: 1
+                        )),
                     source: .engineDevices,
                     revision: 1
                 )
             }
             _ = player.send(
-                .presentation(PlaybackPresentationSnapshot(
-                    currentTrack: CurrentTrack(
-                        uri: trackA.uri,
-                        title: trackA.title,
-                        artist: trackA.artist,
-                        duration: trackA.duration,
-                        metadataSource: .catalog
-                    ),
-                    transport: .playing,
-                    timing: priorPlayingTiming
-                )),
+                .presentation(
+                    PlaybackPresentationSnapshot(
+                        currentTrack: CurrentTrack(
+                            uri: trackA.uri,
+                            title: trackA.title,
+                            artist: trackA.artist,
+                            duration: trackA.duration,
+                            metadataSource: .catalog
+                        ),
+                        transport: .playing,
+                        timing: priorPlayingTiming
+                    )),
                 source: .user
             )
         }
@@ -870,11 +896,12 @@ func runPlaybackCommandFailureChecks(_ runner: CheckRunner) async {
             revision: UInt64
         ) {
             _ = player.send(
-                .enginePlayback(EnginePlaybackSnapshot(
-                    transport: transport,
-                    trackURI: uri,
-                    timing: timing
-                )),
+                .enginePlayback(
+                    EnginePlaybackSnapshot(
+                        transport: transport,
+                        trackURI: uri,
+                        timing: timing
+                    )),
                 source: .enginePlayback,
                 revision: revision
             )
@@ -891,8 +918,11 @@ func runPlaybackCommandFailureChecks(_ runner: CheckRunner) async {
         _ = await waitUntil { localRejected.state.pendingCommands[.transport] == nil }
         runner.equal("local play rejection restores A", localRejected.state.currentTrack?.uri, trackA.uri)
         runner.equal("local play rejection restores exact prior timing", localRejected.state.timing, priorPlayingTiming)
-        runner.check("local play rejection does not record B", !localRejected.history.entries.contains { $0.uri == trackB.uri })
-        runner.equal("local play rejection uses the action notice", localRejected.transientCommandError, "Could not play that Spotify URI")
+        runner.check(
+            "local play rejection does not record B", !localRejected.history.entries.contains { $0.uri == trackB.uri })
+        runner.equal(
+            "local play rejection uses the action notice", localRejected.transientCommandError,
+            "Could not play that Spotify URI")
         await localRejected.shutdownForTermination()
 
         let localAccepted = playbackStore(
@@ -914,8 +944,11 @@ func runPlaybackCommandFailureChecks(_ runner: CheckRunner) async {
         runner.equal("remote play presents B before completion", remoteRejected.state.currentTrack?.uri, trackB.uri)
         _ = await waitUntil { remoteRejected.state.pendingCommands[.transport] == nil }
         runner.equal("remote play rejection restores A", remoteRejected.state.currentTrack?.uri, trackA.uri)
-        runner.equal("remote play rejection restores exact prior timing", remoteRejected.state.timing, priorPlayingTiming)
-        runner.check("remote play rejection does not record B", !remoteRejected.history.entries.contains { $0.uri == trackB.uri })
+        runner.equal(
+            "remote play rejection restores exact prior timing", remoteRejected.state.timing, priorPlayingTiming)
+        runner.check(
+            "remote play rejection does not record B", !remoteRejected.history.entries.contains { $0.uri == trackB.uri }
+        )
         await remoteRejected.shutdownForTermination()
 
         let remoteAccepted = playbackStore(
@@ -951,7 +984,9 @@ func runPlaybackCommandFailureChecks(_ runner: CheckRunner) async {
         _ = await waitUntil { laggingStore.state.pendingCommands[.transport] == nil }
         runner.equal("lagging A then rejection restores A", laggingStore.state.currentTrack?.uri, trackA.uri)
         runner.equal("lagging A then rejection restores exact timing", laggingStore.state.timing, priorPlayingTiming)
-        runner.check("lagging A then rejection does not record B", !laggingStore.history.entries.contains { $0.uri == trackB.uri })
+        runner.check(
+            "lagging A then rejection does not record B",
+            !laggingStore.history.entries.contains { $0.uri == trackB.uri })
         await laggingStore.shutdownForTermination()
 
         let confirmRemote = GatedFailingRemoteClient()
@@ -980,8 +1015,11 @@ func runPlaybackCommandFailureChecks(_ runner: CheckRunner) async {
         _ = await waitUntil { confirmStore.history.entries.contains { $0.uri == trackB.uri } }
         runner.equal("confirmed B then failure keeps B", confirmStore.state.currentTrack?.uri, trackB.uri)
         runner.nil_("confirmed B then failure has no command notice", confirmStore.transientCommandError)
-        runner.check("confirmed B then failure still records B", confirmStore.history.entries.contains { $0.uri == trackB.uri })
-        runner.check("confirmed B then failure consumes the resolution entry", confirmStore.state.transportCommandResolutions.isEmpty)
+        runner.check(
+            "confirmed B then failure still records B", confirmStore.history.entries.contains { $0.uri == trackB.uri })
+        runner.check(
+            "confirmed B then failure consumes the resolution entry",
+            confirmStore.state.transportCommandResolutions.isEmpty)
         await confirmStore.shutdownForTermination()
 
         let supersedeRemote = GatedFailingRemoteClient()
@@ -1006,9 +1044,13 @@ func runPlaybackCommandFailureChecks(_ runner: CheckRunner) async {
         for _ in 0..<50 { await Task.yield() }
         runner.equal("C supersession then failure leaves C", supersedeStore.state.currentTrack?.uri, "spotify:track:c")
         runner.equal("C supersession then failure keeps C timing", supersedeStore.state.timing, trackCTiming)
-        runner.check("C supersession then failure does not record B", !supersedeStore.history.entries.contains { $0.uri == trackB.uri })
+        runner.check(
+            "C supersession then failure does not record B",
+            !supersedeStore.history.entries.contains { $0.uri == trackB.uri })
         runner.nil_("C supersession then failure has no play notice", supersedeStore.transientCommandError)
-        runner.check("C supersession then failure consumes the resolution entry", supersedeStore.state.transportCommandResolutions.isEmpty)
+        runner.check(
+            "C supersession then failure consumes the resolution entry",
+            supersedeStore.state.transportCommandResolutions.isEmpty)
         await supersedeStore.shutdownForTermination()
 
         let nilRemote = GatedFailingRemoteClient()
@@ -1030,7 +1072,9 @@ func runPlaybackCommandFailureChecks(_ runner: CheckRunner) async {
         await nilRemote.fail()
         for _ in 0..<50 { await Task.yield() }
         runner.nil_("nil supersession then failure stays cleared", nilStore.state.currentTrack)
-        runner.check("nil supersession then failure does not record B", !nilStore.history.entries.contains { $0.uri == trackB.uri })
+        runner.check(
+            "nil supersession then failure does not record B",
+            !nilStore.history.entries.contains { $0.uri == trackB.uri })
         await nilStore.shutdownForTermination()
 
         let joining = playbackStore(
@@ -1039,22 +1083,24 @@ func runPlaybackCommandFailureChecks(_ runner: CheckRunner) async {
         _ = joining.send(.session(.ready), source: .account)
         _ = joining.send(.owner(.uncertain(nil)), source: .command)
         _ = joining.send(
-            .presentation(PlaybackPresentationSnapshot(
-                currentTrack: CurrentTrack(
-                    uri: trackA.uri,
-                    title: trackA.title,
-                    artist: trackA.artist,
-                    duration: trackA.duration,
-                    metadataSource: .catalog
-                ),
-                transport: .playing,
-                timing: priorPlayingTiming
-            )),
+            .presentation(
+                PlaybackPresentationSnapshot(
+                    currentTrack: CurrentTrack(
+                        uri: trackA.uri,
+                        title: trackA.title,
+                        artist: trackA.artist,
+                        duration: trackA.duration,
+                        metadataSource: .catalog
+                    ),
+                    transport: .playing,
+                    timing: priorPlayingTiming
+                )),
             source: .user
         )
         let joiningBefore = joining.state
         joining.play(track: trackB)
-        runner.equal("route refusal leaves the current track unchanged", joining.state.currentTrack, joiningBefore.currentTrack)
+        runner.equal(
+            "route refusal leaves the current track unchanged", joining.state.currentTrack, joiningBefore.currentTrack)
         runner.equal("route refusal leaves timing unchanged", joining.state.timing, joiningBefore.timing)
         runner.check("route refusal does not start a pending play", joining.state.pendingCommands.isEmpty)
         runner.check("route refusal does not record B", joining.history.entries.isEmpty)
@@ -1070,8 +1116,12 @@ func runPlaybackCommandFailureChecks(_ runner: CheckRunner) async {
         runner.check("the first play is pending before a duplicate", playPending)
         let afterFirstPlay = duplicateStore.state
         duplicateStore.play(track: trackB)
-        runner.equal("a duplicate play does not change presentation", duplicateStore.state.currentTrack, afterFirstPlay.currentTrack)
-        runner.equal("a duplicate play keeps the original command", duplicateStore.state.pendingCommands[.transport]?.id, afterFirstPlay.pendingCommands[.transport]?.id)
+        runner.equal(
+            "a duplicate play does not change presentation", duplicateStore.state.currentTrack,
+            afterFirstPlay.currentTrack)
+        runner.equal(
+            "a duplicate play keeps the original command", duplicateStore.state.pendingCommands[.transport]?.id,
+            afterFirstPlay.pendingCommands[.transport]?.id)
         if let commandID = duplicateStore.state.pendingCommands[.transport]?.id {
             duplicateStore.effects.cancel(.command(commandID))
         }
@@ -1098,7 +1148,8 @@ func runPlaybackCommandFailureChecks(_ runner: CheckRunner) async {
         await cancelStore.shutdownForTermination()
 
         let staleStore = playbackStore(
-            commandEnvironment(local: ScriptedLocalEngine(result: .ok), remote: ScriptedRemoteClient(.sleepUntilCancelled))
+            commandEnvironment(
+                local: ScriptedLocalEngine(result: .ok), remote: ScriptedRemoteClient(.sleepUntilCancelled))
         )
         seedPlayingA(staleStore, local: false)
         staleStore.play(track: trackB)
@@ -1112,8 +1163,11 @@ func runPlaybackCommandFailureChecks(_ runner: CheckRunner) async {
             engineEpoch: staleStore.engineGeneration + 1
         )
         runner.nil_("an engine-epoch bump drops the pending play", staleStore.state.pendingCommands[.transport])
-        runner.equal("an engine-epoch bump does not roll back B", staleStore.state.currentTrack?.uri, optimisticPlay.currentTrack?.uri)
-        runner.check("an engine-epoch bump clears play confirmation state", staleStore.state.transportCommandResolutions.isEmpty)
+        runner.equal(
+            "an engine-epoch bump does not roll back B", staleStore.state.currentTrack?.uri,
+            optimisticPlay.currentTrack?.uri)
+        runner.check(
+            "an engine-epoch bump clears play confirmation state", staleStore.state.transportCommandResolutions.isEmpty)
         await staleStore.shutdownForTermination()
 
         let playlistStore = playbackStore(
@@ -1130,10 +1184,13 @@ func runPlaybackCommandFailureChecks(_ runner: CheckRunner) async {
         )
         playlistStore.catalog.playlistStore.replaceLoadedPlaylist(uri: playlist.uri, tracks: [trackB])
         playlistStore.playPlaylist(playlist)
-        runner.equal("a loaded playlist presents the known first track", playlistStore.state.currentTrack?.uri, trackB.uri)
+        runner.equal(
+            "a loaded playlist presents the known first track", playlistStore.state.currentTrack?.uri, trackB.uri)
         _ = await waitUntil { playlistStore.state.pendingCommands[.transport] == nil }
         runner.equal("a rejected loaded playlist restores A", playlistStore.state.currentTrack?.uri, trackA.uri)
-        runner.check("a rejected loaded playlist does not record B", !playlistStore.history.entries.contains { $0.uri == trackB.uri })
+        runner.check(
+            "a rejected loaded playlist does not record B",
+            !playlistStore.history.entries.contains { $0.uri == trackB.uri })
         await playlistStore.shutdownForTermination()
 
         let unknownPlaylist = playbackStore(
@@ -1149,9 +1206,12 @@ func runPlaybackCommandFailureChecks(_ runner: CheckRunner) async {
             kind: .playlist
         )
         unknownPlaylist.playPlaylist(unknown)
-        runner.equal("an unknown playlist does not invent a first track", unknownPlaylist.state.currentTrack?.uri, trackA.uri)
+        runner.equal(
+            "an unknown playlist does not invent a first track", unknownPlaylist.state.currentTrack?.uri, trackA.uri)
         _ = await waitUntil { unknownPlaylist.state.pendingCommands[.transport] == nil }
-        runner.equal("an accepted unknown playlist keeps A until the engine speaks", unknownPlaylist.state.currentTrack?.uri, trackA.uri)
+        runner.equal(
+            "an accepted unknown playlist keeps A until the engine speaks", unknownPlaylist.state.currentTrack?.uri,
+            trackA.uri)
         runner.check("an unknown playlist does not record a first track", unknownPlaylist.history.entries.isEmpty)
         await unknownPlaylist.shutdownForTermination()
 
@@ -1162,8 +1222,10 @@ func runPlaybackCommandFailureChecks(_ runner: CheckRunner) async {
         rawURI.play(uri: trackB.uri)
         runner.equal("raw play(uri:) does not invent track metadata", rawURI.state.currentTrack?.uri, trackA.uri)
         _ = await waitUntil { rawURI.state.pendingCommands[.transport] == nil }
-        runner.equal("accepted raw play(uri:) still keeps A until the engine speaks", rawURI.state.currentTrack?.uri, trackA.uri)
-        runner.check("accepted raw play(uri:) records the URI", rawURI.history.entries.contains { $0.uri == trackB.uri })
+        runner.equal(
+            "accepted raw play(uri:) still keeps A until the engine speaks", rawURI.state.currentTrack?.uri, trackA.uri)
+        runner.check(
+            "accepted raw play(uri:) records the URI", rawURI.history.entries.contains { $0.uri == trackB.uri })
         await rawURI.shutdownForTermination()
 
         let localGate = GatedLocalEngine()
@@ -1185,13 +1247,16 @@ func runPlaybackCommandFailureChecks(_ runner: CheckRunner) async {
         localGate.finish(with: .error)
         _ = await waitUntil { localRace.state.pendingCommands[.transport] == nil }
         runner.equal("local lagging A then rejection restores A", localRace.state.currentTrack?.uri, trackA.uri)
-        runner.check("local lagging A then rejection does not record B", !localRace.history.entries.contains { $0.uri == trackB.uri })
+        runner.check(
+            "local lagging A then rejection does not record B",
+            !localRace.history.entries.contains { $0.uri == trackB.uri })
         await localRace.shutdownForTermination()
     }
 
     await runner.suite("Shuffle command admission is reducer-owned") {
         let clockNow = Date(timeIntervalSince1970: 1_800_000_000)
-        let priorPlayingTiming = PlaybackTiming(position: 40, duration: 200, anchoredAt: clockNow.addingTimeInterval(-10))
+        let priorPlayingTiming = PlaybackTiming(
+            position: 40, duration: 200, anchoredAt: clockNow.addingTimeInterval(-10))
         let current = CurrentTrack(
             uri: "spotify:track:a",
             title: "A",
@@ -1205,34 +1270,37 @@ func runPlaybackCommandFailureChecks(_ runner: CheckRunner) async {
             _ = player.send(.session(.ready), source: .account)
             if local {
                 _ = player.send(
-                    .devices(PlaybackDeviceSnapshot(
-                        devices: [PlaybackDevice(id: "mac", name: "Mac", type: "computer", isActive: true)],
-                        localDeviceID: "mac",
-                        revision: 1
-                    )),
+                    .devices(
+                        PlaybackDeviceSnapshot(
+                            devices: [PlaybackDevice(id: "mac", name: "Mac", type: "computer", isActive: true)],
+                            localDeviceID: "mac",
+                            revision: 1
+                        )),
                     source: .engineDevices,
                     revision: 1
                 )
             } else {
                 _ = player.send(
-                    .devices(PlaybackDeviceSnapshot(
-                        devices: [
-                            PlaybackDevice(id: "mac", name: "Mac", type: "computer", isActive: false),
-                            PlaybackDevice(id: "speaker", name: "Speaker", type: "speaker", isActive: true)
-                        ],
-                        localDeviceID: "mac",
-                        revision: 1
-                    )),
+                    .devices(
+                        PlaybackDeviceSnapshot(
+                            devices: [
+                                PlaybackDevice(id: "mac", name: "Mac", type: "computer", isActive: false),
+                                PlaybackDevice(id: "speaker", name: "Speaker", type: "speaker", isActive: true),
+                            ],
+                            localDeviceID: "mac",
+                            revision: 1
+                        )),
                     source: .engineDevices,
                     revision: 1
                 )
             }
             _ = player.send(
-                .presentation(PlaybackPresentationSnapshot(
-                    currentTrack: current,
-                    transport: .playing,
-                    timing: priorPlayingTiming
-                )),
+                .presentation(
+                    PlaybackPresentationSnapshot(
+                        currentTrack: current,
+                        transport: .playing,
+                        timing: priorPlayingTiming
+                    )),
                 source: .user
             )
             _ = player.send(.options(PlaybackOptions(shuffle: shuffle)), source: .user)
@@ -1241,12 +1309,13 @@ func runPlaybackCommandFailureChecks(_ runner: CheckRunner) async {
         @MainActor
         func sendEngineShuffle(_ player: PlaybackStore, shuffle: Bool, revision: UInt64) {
             _ = player.send(
-                .enginePlayback(EnginePlaybackSnapshot(
-                    transport: .playing,
-                    trackURI: current.uri,
-                    timing: priorPlayingTiming,
-                    shuffle: shuffle
-                )),
+                .enginePlayback(
+                    EnginePlaybackSnapshot(
+                        transport: .playing,
+                        trackURI: current.uri,
+                        timing: priorPlayingTiming,
+                        shuffle: shuffle
+                    )),
                 source: .enginePlayback,
                 revision: revision
             )
@@ -1277,7 +1346,9 @@ func runPlaybackCommandFailureChecks(_ runner: CheckRunner) async {
         runner.notNil("local shuffle is pending before completion", localRejected.state.pendingCommands[.options])
         _ = await waitUntil { localRejected.state.pendingCommands[.options] == nil }
         runner.equal("local shuffle rejection restores on", localRejected.state.options.shuffle, true)
-        runner.equal("local shuffle rejection uses the action notice", localRejected.transientCommandError, "Could not update shuffle")
+        runner.equal(
+            "local shuffle rejection uses the action notice", localRejected.transientCommandError,
+            "Could not update shuffle")
         runner.check("local shuffle rejection does not persist off", await localRejectedPrefs.shuffleWrites.isEmpty)
         await localRejected.shutdownForTermination()
 
@@ -1298,7 +1369,8 @@ func runPlaybackCommandFailureChecks(_ runner: CheckRunner) async {
         _ = await waitUntil { localAccepted.state.pendingCommands[.options] == nil }
         runner.equal("an accepted later local shuffle keeps on", localAccepted.state.options.shuffle, true)
         _ = await waitUntil { await localAcceptedPrefs.shuffleWrites == [false, true] }
-        runner.equal("an accepted later local shuffle persists on", await localAcceptedPrefs.shuffleWrites, [false, true])
+        runner.equal(
+            "an accepted later local shuffle persists on", await localAcceptedPrefs.shuffleWrites, [false, true])
         await localAccepted.shutdownForTermination()
 
         let remoteRejectedPrefs = RecordingPreferences(shuffle: true)
@@ -1374,7 +1446,9 @@ func runPlaybackCommandFailureChecks(_ runner: CheckRunner) async {
         runner.equal("confirmed off then failure keeps off", confirmStore.state.options.shuffle, false)
         runner.nil_("confirmed off then failure has no command notice", confirmStore.transientCommandError)
         runner.equal("confirmed off then failure persists off", await confirmPrefs.shuffleWrites, [false])
-        runner.check("confirmed off then failure consumes the resolution entry", confirmStore.state.transportCommandResolutions.isEmpty)
+        runner.check(
+            "confirmed off then failure consumes the resolution entry",
+            confirmStore.state.transportCommandResolutions.isEmpty)
         await confirmStore.shutdownForTermination()
 
         let localGate = GatedLocalEngine()
@@ -1408,17 +1482,19 @@ func runPlaybackCommandFailureChecks(_ runner: CheckRunner) async {
             source: .command
         )
         _ = joining.send(
-            .presentation(PlaybackPresentationSnapshot(
-                currentTrack: current,
-                transport: .playing,
-                timing: priorPlayingTiming
-            )),
+            .presentation(
+                PlaybackPresentationSnapshot(
+                    currentTrack: current,
+                    transport: .playing,
+                    timing: priorPlayingTiming
+                )),
             source: .user
         )
         _ = joining.send(.options(PlaybackOptions(shuffle: true)), source: .user)
         let joiningBefore = joining.state
         joining.toggleShuffle()
-        runner.equal("route refusal leaves shuffle unchanged", joining.state.options.shuffle, joiningBefore.options.shuffle)
+        runner.equal(
+            "route refusal leaves shuffle unchanged", joining.state.options.shuffle, joiningBefore.options.shuffle)
         runner.check("route refusal does not start a pending shuffle", joining.state.pendingCommands.isEmpty)
         runner.check("route refusal does not persist shuffle", await joiningPrefs.shuffleWrites.isEmpty)
         await joining.shutdownForTermination()
@@ -1436,8 +1512,11 @@ func runPlaybackCommandFailureChecks(_ runner: CheckRunner) async {
         runner.check("the first shuffle is pending before a duplicate", shufflePending)
         let afterFirstShuffle = duplicateStore.state
         duplicateStore.toggleShuffle()
-        runner.equal("a duplicate shuffle does not change options", duplicateStore.state.options, afterFirstShuffle.options)
-        runner.equal("a duplicate shuffle keeps the original command", duplicateStore.state.pendingCommands[.options]?.id, afterFirstShuffle.pendingCommands[.options]?.id)
+        runner.equal(
+            "a duplicate shuffle does not change options", duplicateStore.state.options, afterFirstShuffle.options)
+        runner.equal(
+            "a duplicate shuffle keeps the original command", duplicateStore.state.pendingCommands[.options]?.id,
+            afterFirstShuffle.pendingCommands[.options]?.id)
         runner.check("a duplicate shuffle does not persist", await duplicatePrefs.shuffleWrites.isEmpty)
         if let commandID = duplicateStore.state.pendingCommands[.options]?.id {
             duplicateStore.effects.cancel(.command(commandID))
@@ -1485,8 +1564,12 @@ func runPlaybackCommandFailureChecks(_ runner: CheckRunner) async {
             engineEpoch: staleStore.engineGeneration + 1
         )
         runner.nil_("an engine-epoch bump drops the pending shuffle", staleStore.state.pendingCommands[.options])
-        runner.equal("an engine-epoch bump does not roll back off", staleStore.state.options.shuffle, optimisticShuffle.options.shuffle)
-        runner.check("an engine-epoch bump clears shuffle confirmation state", staleStore.state.transportCommandResolutions.isEmpty)
+        runner.equal(
+            "an engine-epoch bump does not roll back off", staleStore.state.options.shuffle,
+            optimisticShuffle.options.shuffle)
+        runner.check(
+            "an engine-epoch bump clears shuffle confirmation state",
+            staleStore.state.transportCommandResolutions.isEmpty)
         runner.check("an engine-epoch bump does not persist shuffle", await stalePrefs.shuffleWrites.isEmpty)
         await staleStore.shutdownForTermination()
 
@@ -1504,7 +1587,8 @@ func runPlaybackCommandFailureChecks(_ runner: CheckRunner) async {
         _ = await waitUntil { await restoreRemote.sendCount == 1 }
         _ = restoreStore.send(.options(PlaybackOptions(shuffle: true)), source: .user)
         runner.equal("a restoring options event keeps optimistic off", restoreStore.state.options.shuffle, false)
-        runner.notNil("a restoring options event keeps rollback ownership", restoreStore.state.pendingCommands[.options])
+        runner.notNil(
+            "a restoring options event keeps rollback ownership", restoreStore.state.pendingCommands[.options])
         await restoreRemote.fail()
         _ = await waitUntil { restoreStore.state.pendingCommands[.options] == nil }
         runner.equal("restore then rejection restores on", restoreStore.state.options.shuffle, true)
@@ -1525,16 +1609,22 @@ func runPlaybackCommandFailureChecks(_ runner: CheckRunner) async {
         _ = await waitUntil { await matchingRemote.sendCount == 1 }
         _ = matchingStore.send(.options(PlaybackOptions(shuffle: false, repeatMode: .track)), source: .user)
         runner.equal("a matching user options event keeps optimistic off", matchingStore.state.options.shuffle, false)
-        runner.equal("a matching user options event still adopts repeat", matchingStore.state.options.repeatMode, .track)
-        runner.notNil("a matching user options event keeps the pending shuffle command", matchingStore.state.pendingCommands[.options])
+        runner.equal(
+            "a matching user options event still adopts repeat", matchingStore.state.options.repeatMode, .track)
+        runner.notNil(
+            "a matching user options event keeps the pending shuffle command",
+            matchingStore.state.pendingCommands[.options])
         runner.check(
             "a matching user options event does not record confirmation",
             matchingStore.state.transportCommandResolutions.isEmpty
         )
         await matchingRemote.fail()
         _ = await waitUntil { matchingStore.state.pendingCommands[.options] == nil }
-        runner.equal("rejection after only a matching user options event restores on", matchingStore.state.options.shuffle, true)
-        runner.check("rejection after only a matching user options event does not persist off", await matchingPrefs.shuffleWrites.isEmpty)
+        runner.equal(
+            "rejection after only a matching user options event restores on", matchingStore.state.options.shuffle, true)
+        runner.check(
+            "rejection after only a matching user options event does not persist off",
+            await matchingPrefs.shuffleWrites.isEmpty)
         await matchingStore.shutdownForTermination()
 
         let persistGate = GatedLocalEngine()
@@ -1553,9 +1643,11 @@ func runPlaybackCommandFailureChecks(_ runner: CheckRunner) async {
         persistStore.toggleShuffle()
         let secondPending = await waitUntil { persistStore.state.pendingCommands[.options] != nil }
         runner.check("a later shuffle is pending before the first persist lands", secondPending)
-        runner.equal("a later shuffle presents on before the first persist lands", persistStore.state.options.shuffle, true)
+        runner.equal(
+            "a later shuffle presents on before the first persist lands", persistStore.state.options.shuffle, true)
         _ = await waitUntil { await persistPrefs.shuffleWrites == [false] }
-        runner.equal("accepted shuffle persists the admitted off, not the later on", await persistPrefs.shuffleWrites, [false])
+        runner.equal(
+            "accepted shuffle persists the admitted off, not the later on", await persistPrefs.shuffleWrites, [false])
         persistGate.finish(with: .error)
         _ = await waitUntil { persistStore.state.pendingCommands[.options] == nil }
         runner.equal("rejected later shuffle restores the admitted off", persistStore.state.options.shuffle, false)
@@ -1580,7 +1672,8 @@ func runPlaybackCommandFailureChecks(_ runner: CheckRunner) async {
 
     await runner.suite("Remote transfer owner admission is reducer-owned") {
         let clockNow = Date(timeIntervalSince1970: 1_800_000_000)
-        let priorPlayingTiming = PlaybackTiming(position: 40, duration: 200, anchoredAt: clockNow.addingTimeInterval(-10))
+        let priorPlayingTiming = PlaybackTiming(
+            position: 40, duration: 200, anchoredAt: clockNow.addingTimeInterval(-10))
         let current = CurrentTrack(
             uri: "spotify:track:a",
             title: "A",
@@ -1608,27 +1701,29 @@ func runPlaybackCommandFailureChecks(_ runner: CheckRunner) async {
         func seedRemoteOwner(_ player: PlaybackStore, owner: PlaybackOwner = ownerA) {
             _ = player.send(.session(.ready), source: .account)
             _ = player.send(
-                .devices(PlaybackDeviceSnapshot(
-                    devices: [
-                        PlaybackDevice(id: "mac", name: "Mac", type: "computer"),
-                        PlaybackDevice(id: "speaker-a", name: "Speaker A", type: "speaker", isActive: true),
-                        PlaybackDevice(id: "speaker-b", name: "Speaker B", type: "speaker"),
-                        PlaybackDevice(id: "speaker-d", name: "Speaker D", type: "speaker"),
-                        PlaybackDevice(id: "phone", name: "Phone", type: "smartphone")
-                    ],
-                    localDeviceID: "mac",
-                    revision: 1
-                )),
+                .devices(
+                    PlaybackDeviceSnapshot(
+                        devices: [
+                            PlaybackDevice(id: "mac", name: "Mac", type: "computer"),
+                            PlaybackDevice(id: "speaker-a", name: "Speaker A", type: "speaker", isActive: true),
+                            PlaybackDevice(id: "speaker-b", name: "Speaker B", type: "speaker"),
+                            PlaybackDevice(id: "speaker-d", name: "Speaker D", type: "speaker"),
+                            PlaybackDevice(id: "phone", name: "Phone", type: "smartphone"),
+                        ],
+                        localDeviceID: "mac",
+                        revision: 1
+                    )),
                 source: .engineDevices,
                 revision: 1
             )
             _ = player.send(.owner(owner), source: .command)
             _ = player.send(
-                .presentation(PlaybackPresentationSnapshot(
-                    currentTrack: current,
-                    transport: .playing,
-                    timing: priorPlayingTiming
-                )),
+                .presentation(
+                    PlaybackPresentationSnapshot(
+                        currentTrack: current,
+                        transport: .playing,
+                        timing: priorPlayingTiming
+                    )),
                 source: .user
             )
         }
@@ -1636,11 +1731,12 @@ func runPlaybackCommandFailureChecks(_ runner: CheckRunner) async {
         @MainActor
         func sendConnectionOwner(_ player: PlaybackStore, owner: PlaybackOwner, revision: UInt64) {
             _ = player.send(
-                .engineConnection(EngineConnectionSnapshot(
-                    session: .ready,
-                    owner: owner,
-                    localDeviceID: "mac"
-                )),
+                .engineConnection(
+                    EngineConnectionSnapshot(
+                        session: .ready,
+                        owner: owner,
+                        localDeviceID: "mac"
+                    )),
                 source: .engineConnection,
                 revision: revision
             )
@@ -1656,7 +1752,9 @@ func runPlaybackCommandFailureChecks(_ runner: CheckRunner) async {
         localRejected.transferPlayback(to: speakerB)
         runner.equal("local transfer presents uncertain B before completion", localRejected.state.owner, expectedB)
         runner.notNil("local transfer is pending before completion", localRejected.state.pendingCommands[.transfer])
-        runner.equal("local transfer captures owner A", localRejected.state.pendingCommands[.transfer]?.rollbackOwner, Optional(ownerA))
+        runner.equal(
+            "local transfer captures owner A", localRejected.state.pendingCommands[.transfer]?.rollbackOwner,
+            Optional(ownerA))
         _ = await waitUntil { localRejected.state.pendingCommands[.transfer] == nil }
         runner.equal("local transfer rejection restores A", localRejected.state.owner, ownerA)
         runner.equal(
@@ -1677,7 +1775,8 @@ func runPlaybackCommandFailureChecks(_ runner: CheckRunner) async {
         localAccepted.transferPlayback(to: speakerB)
         _ = await waitUntil { localAccepted.state.pendingCommands[.transfer] == nil }
         runner.equal("accepted local transfer keeps admitted B", localAccepted.state.owner, expectedB)
-        runner.equal("accepted local transfer announces success", localAccepted.transientCommandError, "Playing on Speaker B")
+        runner.equal(
+            "accepted local transfer announces success", localAccepted.transientCommandError, "Playing on Speaker B")
         let transferredDevice: String?
         switch localAcceptedEngine.operations.first {
         case let .transferToDevice(id):
@@ -1738,10 +1837,17 @@ func runPlaybackCommandFailureChecks(_ runner: CheckRunner) async {
             Optional(PlaybackTransportCommandResolution.confirmed)
         )
         confirmGate.finish(with: .error)
-        _ = await waitUntil { confirmStore.state.transportCommandResolutions.isEmpty && confirmStore.transientCommandError == "Playing on Speaker B" }
+        _ = await waitUntil {
+            confirmStore.state.transportCommandResolutions.isEmpty
+                && confirmStore.transientCommandError == "Playing on Speaker B"
+        }
         runner.equal("confirmed B then failure keeps B", confirmStore.state.owner, remoteB)
-        runner.equal("confirmed B then failure announces success once", confirmStore.transientCommandError, "Playing on Speaker B")
-        runner.check("confirmed B then failure consumes the resolution entry", confirmStore.state.transportCommandResolutions.isEmpty)
+        runner.equal(
+            "confirmed B then failure announces success once", confirmStore.transientCommandError,
+            "Playing on Speaker B")
+        runner.check(
+            "confirmed B then failure consumes the resolution entry",
+            confirmStore.state.transportCommandResolutions.isEmpty)
         await confirmStore.shutdownForTermination()
 
         let supersedeGate = GatedLocalEngine()
@@ -1847,7 +1953,9 @@ func runPlaybackCommandFailureChecks(_ runner: CheckRunner) async {
         )
         runner.nil_("an engine-epoch bump drops the pending transfer", staleStore.state.pendingCommands[.transfer])
         runner.check("an engine-epoch bump does not restore A through rollback", staleStore.state.owner != ownerA)
-        runner.check("an engine-epoch bump clears transfer confirmation state", staleStore.state.transportCommandResolutions.isEmpty)
+        runner.check(
+            "an engine-epoch bump clears transfer confirmation state",
+            staleStore.state.transportCommandResolutions.isEmpty)
         runner.equal("an engine-epoch bump applies the new connection owner", staleStore.state.owner, .none)
         await staleStore.shutdownForTermination()
 
@@ -1859,9 +1967,12 @@ func runPlaybackCommandFailureChecks(_ runner: CheckRunner) async {
         )
         seedRemoteOwner(localMacStore)
         localMacStore.transferPlayback(to: thisMac)
-        runner.equal("transfer-to-this-Mac does not present uncertain local ownership", localMacStore.state.owner, ownerA)
+        runner.equal(
+            "transfer-to-this-Mac does not present uncertain local ownership", localMacStore.state.owner, ownerA)
         runner.notNil("transfer-to-this-Mac is still admitted", localMacStore.state.pendingCommands[.transfer])
-        runner.nil_("transfer-to-this-Mac does not capture owner rollback", localMacStore.state.pendingCommands[.transfer]?.rollbackOwner)
+        runner.nil_(
+            "transfer-to-this-Mac does not capture owner rollback",
+            localMacStore.state.pendingCommands[.transfer]?.rollbackOwner)
         _ = await waitUntil { localMacStore.state.pendingCommands[.transfer] == nil }
         runner.equal("a rejected transfer-to-this-Mac leaves owner A", localMacStore.state.owner, ownerA)
         runner.equal(

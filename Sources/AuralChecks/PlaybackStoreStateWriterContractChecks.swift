@@ -3,20 +3,20 @@ import Foundation
 func runPlaybackStoreStateWriterContractChecks(_ check: CheckRunner) {
     check.suite("PlaybackStore.state writer contract") {
         let declaration = """
-        @MainActor
-        final class PlaybackStore {
-            private(set) var state = PlaybackState(accountEpoch: 1)
+            @MainActor
+            final class PlaybackStore {
+                private(set) var state = PlaybackState(accountEpoch: 1)
 
-            func send() -> Bool {
-                var next = state
-                if accepted {
-                    state = next
-                    return true
+                func send() -> Bool {
+                    var next = state
+                    if accepted {
+                        state = next
+                        return true
+                    }
+                    return false
                 }
-                return false
             }
-        }
-        """
+            """
         check.equal(
             "declaration and send commit are the only store-state assignments",
             PlaybackStoreStateWriterContract.assignmentLines(in: declaration),
@@ -32,15 +32,15 @@ func runPlaybackStoreStateWriterContractChecks(_ check: CheckRunner) {
         )
 
         let illegal = """
-        func apply() {
-            state = PlaybackState()
-            state.options.repeatMode = .track
-            self.state = next
-            self.state.options.repeatMode = .track
-            let state = PlaybackState()
-            state.transport = .playing
-        }
-        """
+            func apply() {
+                state = PlaybackState()
+                state.options.repeatMode = .track
+                self.state = next
+                self.state.options.repeatMode = .track
+                let state = PlaybackState()
+                state.transport = .playing
+            }
+            """
         check.equal(
             "an extra store-state assignment is reported",
             PlaybackStoreStateWriterContract.assignmentLines(in: illegal),
@@ -64,7 +64,8 @@ func runPlaybackStoreStateWriterContractChecks(_ check: CheckRunner) {
         )
         check.check(
             "qualified reads are not member mutations",
-            PlaybackStoreStateWriterContract.memberMutationLines(in: "let flags = self.state.options.repeatFlags").isEmpty
+            PlaybackStoreStateWriterContract.memberMutationLines(in: "let flags = self.state.options.repeatFlags")
+                .isEmpty
         )
         check.check(
             "underscore-prefixed identifiers are not store-state assignments",
@@ -72,7 +73,8 @@ func runPlaybackStoreStateWriterContractChecks(_ check: CheckRunner) {
         )
         check.check(
             "underscore-prefixed identifiers are not store-state member mutations",
-            PlaybackStoreStateWriterContract.memberMutationLines(in: "playback_state.options.repeatMode = .track").isEmpty
+            PlaybackStoreStateWriterContract.memberMutationLines(in: "playback_state.options.repeatMode = .track")
+                .isEmpty
         )
 
         check.check(

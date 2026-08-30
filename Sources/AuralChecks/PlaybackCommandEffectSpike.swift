@@ -128,22 +128,25 @@ private final class RegistryRuntime {
 
     @discardableResult
     func requestPause() -> Bool {
-        guard playbackCommandShouldAdmit(
-            isTearingDown: session.isTearingDown,
-            allowsCommands: true,
-            hasPendingCommandForKind: session.state.pendingCommands[.transport] != nil
-        ) else {
+        guard
+            playbackCommandShouldAdmit(
+                isTearingDown: session.isTearingDown,
+                allowsCommands: true,
+                hasPendingCommandForKind: session.state.pendingCommands[.transport] != nil
+            )
+        else {
             session.completions.append(false)
             return false
         }
         let commandID = UUID()
         let started = session.send(
-            .commandStarted(PendingPlaybackCommand(
-                id: commandID,
-                kind: .transport,
-                expectedTransport: .paused,
-                startedAt: spikeDate
-            ))
+            .commandStarted(
+                PendingPlaybackCommand(
+                    id: commandID,
+                    kind: .transport,
+                    expectedTransport: .paused,
+                    startedAt: spikeDate
+                ))
         )
         guard started else {
             session.completions.append(false)
@@ -173,15 +176,17 @@ private final class RegistryRuntime {
     func cancelInFlight() {
         guard let command = inflight else { return }
         inflight?.cancelled = true
-        guard playbackCommandShouldSettleOrdinaryCancellation(
-            pendingCommandID: session.state.pendingCommands[.transport]?.id,
-            cancelledCommandID: command.id,
-            capturedAccountEpoch: command.accountEpoch,
-            capturedEngineEpoch: command.engineEpoch,
-            currentAccountEpoch: session.accountEpoch,
-            currentEngineEpoch: session.engineGeneration,
-            isTearingDown: session.isTearingDown
-        ) else { return }
+        guard
+            playbackCommandShouldSettleOrdinaryCancellation(
+                pendingCommandID: session.state.pendingCommands[.transport]?.id,
+                cancelledCommandID: command.id,
+                capturedAccountEpoch: command.accountEpoch,
+                capturedEngineEpoch: command.engineEpoch,
+                currentAccountEpoch: session.accountEpoch,
+                currentEngineEpoch: session.engineGeneration,
+                isTearingDown: session.isTearingDown
+            )
+        else { return }
         let finished = session.send(
             .commandFinished(id: command.id, accepted: false, notice: nil),
             engineEpoch: command.engineEpoch,
@@ -311,12 +316,13 @@ func runPlaybackCommandEffectSpikeChecks(_ check: CheckRunner) {
         check.notNil("the original pause is pending", originalID)
         let replacementID = UUID(uuidString: "00000000-0000-0000-0000-000000000022")!
         _ = superseded.session.send(
-            .commandStarted(PendingPlaybackCommand(
-                id: replacementID,
-                kind: .transport,
-                expectedTransport: .playing,
-                startedAt: spikeDate
-            ))
+            .commandStarted(
+                PendingPlaybackCommand(
+                    id: replacementID,
+                    kind: .transport,
+                    expectedTransport: .playing,
+                    startedAt: spikeDate
+                ))
         )
         check.equal("the reducer replacement owns the pending slot", superseded.pending?.id, replacementID)
         check.equal("the replacement updates optimistic transport", superseded.transport, .playing)

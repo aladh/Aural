@@ -10,7 +10,8 @@ enum PlaylistDescription {
     nonisolated static func plainText(from source: String) -> String {
         guard !source.isEmpty else { return "" }
 
-        var result = source
+        var result =
+            source
             .replacingOccurrences(
                 of: #"<br\s*/?>|</p\s*>|</div\s*>"#,
                 with: "\n",
@@ -35,7 +36,8 @@ enum PlaylistDescription {
             result = result.replacingOccurrences(of: entity, with: replacement)
         }
 
-        return result
+        return
+            result
             .split(whereSeparator: \.isNewline)
             .map { $0.split(whereSeparator: \.isWhitespace).joined(separator: " ") }
             .filter { !$0.isEmpty }

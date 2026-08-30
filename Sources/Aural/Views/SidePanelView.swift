@@ -142,11 +142,13 @@ struct SidePanelView: View {
                     selectedIDs: upcomingSelection,
                     in: player.queueNextEntries
                 ).count
-                guard QueueMutationSelection.keyboardCommand(
-                    deleteOrBackspace: true,
-                    selectedUpcomingCount: selectedCount,
-                    isRemovalAllowed: player.canRemoveUpcomingQueue(selectedIDs: upcomingSelection)
-                ) == .removeUpcomingOccurrences else {
+                guard
+                    QueueMutationSelection.keyboardCommand(
+                        deleteOrBackspace: true,
+                        selectedUpcomingCount: selectedCount,
+                        isRemovalAllowed: player.canRemoveUpcomingQueue(selectedIDs: upcomingSelection)
+                    ) == .removeUpcomingOccurrences
+                else {
                     return
                 }
                 player.removeUpcomingQueueOccurrences(selectedIDs: upcomingSelection)
@@ -255,7 +257,9 @@ private struct HistoryRow: View {
         // A row scrolled away under a resting cursor keeps no highlight.
         .onDisappear { isHovering = false }
         .help("Play \(entry.title)")
-        .accessibilityLabel("Play \(entry.title) by \(entry.artist), played \(entry.playedAt.formatted(.relative(presentation: .named)))")
+        .accessibilityLabel(
+            "Play \(entry.title) by \(entry.artist), played \(entry.playedAt.formatted(.relative(presentation: .named)))"
+        )
     }
 }
 

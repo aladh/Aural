@@ -48,6 +48,8 @@ jobs:
             uname -m
           } | tee "$RUNNER_TEMP/swift-toolchain.txt"
           rustc --version
+          xcrun --find swift-format
+          xcrun swift-format --version
           echo "SWIFT_TOOLCHAIN_KEY=$(shasum -a 256 "$RUNNER_TEMP/swift-toolchain.txt" | awk '{print $1}')" >> "$GITHUB_ENV"
 
       - name: Cache SwiftPM build directory

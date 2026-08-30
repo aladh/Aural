@@ -23,9 +23,10 @@ extension SidebarSelection: RawRepresentable {
         } else if rawValue.hasPrefix("artist:") {
             self = .artist(String(rawValue.dropFirst("artist:".count)))
         } else if rawValue.hasPrefix("destination:"),
-                  let destination = SidebarDestination(
-                    rawValue: String(rawValue.dropFirst("destination:".count))
-                  ) {
+            let destination = SidebarDestination(
+                rawValue: String(rawValue.dropFirst("destination:".count))
+            )
+        {
             self = .destination(destination)
         } else {
             return nil

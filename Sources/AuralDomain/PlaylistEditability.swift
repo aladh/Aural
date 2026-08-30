@@ -26,7 +26,7 @@ public enum PlaylistEditability: Sendable {
 
     public static func canJustifyEdit(playlistOwnerURI: String?, profileURI: String?) -> Bool {
         guard let owner = playlistOwnerURI.flatMap(normalizeUserURI),
-              let profile = profileURI.flatMap(normalizeUserURI)
+            let profile = profileURI.flatMap(normalizeUserURI)
         else {
             return false
         }

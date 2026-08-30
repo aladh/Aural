@@ -230,7 +230,8 @@ func runSessionLifetimeChecks(_ check: CheckRunner) {
             )
         }
 
-        check.equal("an accepted success reports success", followUp(finishAccepted: true, succeeded: true), .reportSuccess)
+        check.equal(
+            "an accepted success reports success", followUp(finishAccepted: true, succeeded: true), .reportSuccess)
         check.equal(
             "an accepted reconnect-required failure reports reconnect",
             followUp(finishAccepted: true, succeeded: false, reconnect: true),

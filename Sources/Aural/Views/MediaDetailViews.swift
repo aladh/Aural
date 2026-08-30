@@ -40,11 +40,13 @@ struct AlbumDetailView: View {
             }
         }
         .navigationTitle(item.title)
-        .task(id: MediaDetailLoadIdentity(
-            uri: item.uri,
-            accountEpoch: playback.accountEpoch,
-            isConnected: playback.isConnected
-        )) {
+        .task(
+            id: MediaDetailLoadIdentity(
+                uri: item.uri,
+                accountEpoch: playback.accountEpoch,
+                isConnected: playback.isConnected
+            )
+        ) {
             guard playback.isConnected else { return }
             await store.load(item)
         }
@@ -72,7 +74,9 @@ struct ArtistDetailView: View {
                     actionSystemImage: "arrow.clockwise"
                 ) { Task { await store.load(item) } }
             } else if store.releases.isEmpty {
-                EmptyState(icon: "person.wave.2", title: "No releases", message: "Spotify returned no releases for this artist.")
+                EmptyState(
+                    icon: "person.wave.2", title: "No releases",
+                    message: "Spotify returned no releases for this artist.")
             } else {
                 ScrollView {
                     LazyVGrid(
@@ -88,11 +92,13 @@ struct ArtistDetailView: View {
             }
         }
         .navigationTitle(item.title)
-        .task(id: MediaDetailLoadIdentity(
-            uri: item.uri,
-            accountEpoch: playback.accountEpoch,
-            isConnected: playback.isConnected
-        )) {
+        .task(
+            id: MediaDetailLoadIdentity(
+                uri: item.uri,
+                accountEpoch: playback.accountEpoch,
+                isConnected: playback.isConnected
+            )
+        ) {
             guard playback.isConnected else { return }
             await store.load(item)
         }

@@ -103,20 +103,20 @@ private func decodePlaylistUnion(_ json: String) throws -> PathfinderPlaylistUni
 }
 
 private let ownedLibraryJSON = """
-{"uri":"spotify:playlist:owned","name":"Owned Mix","ownerV2":{"data":{"name":"Me","username":"me","uri":"spotify:user:me"}}}
-"""
+    {"uri":"spotify:playlist:owned","name":"Owned Mix","ownerV2":{"data":{"name":"Me","username":"me","uri":"spotify:user:me"}}}
+    """
 private let foreignLibraryJSON = """
-{"uri":"spotify:playlist:foreign","name":"Foreign Mix","ownerV2":{"data":{"name":"Them","username":"them","uri":"spotify:user:them"}}}
-"""
+    {"uri":"spotify:playlist:foreign","name":"Foreign Mix","ownerV2":{"data":{"name":"Them","username":"them","uri":"spotify:user:them"}}}
+    """
 private let ownedContentsJSON = """
-{"uri":"spotify:playlist:owned","name":"Owned Mix","description":null,"ownerV2":{"data":{"username":"me","name":"Me","uri":"spotify:user:me"}},"content":{"totalCount":2,"items":[{"uid":"uid-a","itemV2":{"data":{"uri":"spotify:track:dup","name":"Dup","trackDuration":{"totalMilliseconds":1000}}}},{"uid":"uid-b","itemV2":{"data":{"uri":"spotify:track:dup","name":"Dup","trackDuration":{"totalMilliseconds":1000}}}}]}}
-"""
+    {"uri":"spotify:playlist:owned","name":"Owned Mix","description":null,"ownerV2":{"data":{"username":"me","name":"Me","uri":"spotify:user:me"}},"content":{"totalCount":2,"items":[{"uid":"uid-a","itemV2":{"data":{"uri":"spotify:track:dup","name":"Dup","trackDuration":{"totalMilliseconds":1000}}}},{"uid":"uid-b","itemV2":{"data":{"uri":"spotify:track:dup","name":"Dup","trackDuration":{"totalMilliseconds":1000}}}}]}}
+    """
 private let ownedAfterRemovalJSON = """
-{"uri":"spotify:playlist:owned","name":"Owned Mix","description":null,"ownerV2":{"data":{"username":"me","name":"Me","uri":"spotify:user:me"}},"content":{"totalCount":1,"items":[{"uid":"uid-b","itemV2":{"data":{"uri":"spotify:track:dup","name":"Dup","trackDuration":{"totalMilliseconds":1000}}}}]}}
-"""
+    {"uri":"spotify:playlist:owned","name":"Owned Mix","description":null,"ownerV2":{"data":{"username":"me","name":"Me","uri":"spotify:user:me"}},"content":{"totalCount":1,"items":[{"uid":"uid-b","itemV2":{"data":{"uri":"spotify:track:dup","name":"Dup","trackDuration":{"totalMilliseconds":1000}}}}]}}
+    """
 private let ownedAfterAddJSON = """
-{"uri":"spotify:playlist:owned","name":"Owned Mix","description":null,"ownerV2":{"data":{"username":"me","name":"Me","uri":"spotify:user:me"}},"content":{"totalCount":3,"items":[{"uid":"uid-a","itemV2":{"data":{"uri":"spotify:track:dup","name":"Dup","trackDuration":{"totalMilliseconds":1000}}}},{"uid":"uid-b","itemV2":{"data":{"uri":"spotify:track:dup","name":"Dup","trackDuration":{"totalMilliseconds":1000}}}},{"uid":"uid-c","itemV2":{"data":{"uri":"spotify:track:new","name":"New","trackDuration":{"totalMilliseconds":1000}}}}]}}
-"""
+    {"uri":"spotify:playlist:owned","name":"Owned Mix","description":null,"ownerV2":{"data":{"username":"me","name":"Me","uri":"spotify:user:me"}},"content":{"totalCount":3,"items":[{"uid":"uid-a","itemV2":{"data":{"uri":"spotify:track:dup","name":"Dup","trackDuration":{"totalMilliseconds":1000}}}},{"uid":"uid-b","itemV2":{"data":{"uri":"spotify:track:dup","name":"Dup","trackDuration":{"totalMilliseconds":1000}}}},{"uid":"uid-c","itemV2":{"data":{"uri":"spotify:track:new","name":"New","trackDuration":{"totalMilliseconds":1000}}}}]}}
+    """
 
 @MainActor
 private func makeCatalog(
@@ -265,7 +265,8 @@ func runPlaylistMutationChecks(_ runner: CheckRunner) async {
         )
         runner.equal("successful add reports through the shared presenter", feedback.message?.kind, .success)
         runner.equal("successful add names the playlist", feedback.message?.text, "Added 2 songs to Owned Mix")
-        runner.equal("reconcile reloads only the open playlist", await services.playlistLoadCount, playlistLoadsBeforeAdd + 1)
+        runner.equal(
+            "reconcile reloads only the open playlist", await services.playlistLoadCount, playlistLoadsBeforeAdd + 1)
         runner.equal("library list is not reloaded after add", await services.libraryLoadCount, 1)
         feedback.dismiss()
     }
@@ -286,7 +287,9 @@ func runPlaylistMutationChecks(_ runner: CheckRunner) async {
         await catalog.homeLibrary.loadPlaylists()
         let owned = catalog.homeLibrary.playlists[0]
         await catalog.playlistStore.load(owned)
-        runner.equal("open playlist loads both duplicate occurrences", catalog.playlistStore.tracks.map(\.id), ["uid-a", "uid-b"])
+        runner.equal(
+            "open playlist loads both duplicate occurrences", catalog.playlistStore.tracks.map(\.id),
+            ["uid-a", "uid-b"])
         runner.check(
             "owned open playlist is editable after load",
             catalog.playlistMutations.isOpenPlaylistEditable(owned)
@@ -313,7 +316,8 @@ func runPlaylistMutationChecks(_ runner: CheckRunner) async {
         let removal = await services.removeCalls.first
         runner.equal("removal is one batched request", await services.removeCalls.count, 1)
         runner.equal("removal uses the selected Pathfinder UID", removal?.uids, ["uid-a"])
-        runner.check("removal does not send the duplicated track URI", removal?.uids.contains("spotify:track:dup") == false)
+        runner.check(
+            "removal does not send the duplicated track URI", removal?.uids.contains("spotify:track:dup") == false)
 
         do {
             try await services.setPlaylist(decodePlaylistUnion(ownedAfterRemovalJSON))
@@ -327,7 +331,8 @@ func runPlaylistMutationChecks(_ runner: CheckRunner) async {
         }
         runner.equal("success refreshes only the open playlist", catalog.playlistStore.tracks.map(\.id), ["uid-b"])
         runner.equal("selection-stable remaining occurrence is uid-b", catalog.playlistStore.tracks.first?.id, "uid-b")
-        runner.equal("successful remove reports through the presenter", feedback.message?.text, "Removed from Owned Mix")
+        runner.equal(
+            "successful remove reports through the presenter", feedback.message?.text, "Removed from Owned Mix")
         runner.equal("library is not fully reloaded after remove", await services.libraryLoadCount, 1)
         feedback.dismiss()
     }
@@ -359,7 +364,8 @@ func runPlaylistMutationChecks(_ runner: CheckRunner) async {
             "Spotify couldn’t change that playlist."
         )
         runner.equal("rejection leaves the open playlist untouched", catalog.playlistStore.tracks.map(\.id), loadedIDs)
-        runner.check("rejection text does not include Spotify identifiers", feedback.message?.text.contains("spotify:") == false)
+        runner.check(
+            "rejection text does not include Spotify identifiers", feedback.message?.text.contains("spotify:") == false)
 
         await services.setAddError(nil)
         catalog.playlistMutations.addTracks([fixtureTrack(id: "row", uri: "spotify:track:new")], to: owned)
@@ -367,7 +373,8 @@ func runPlaylistMutationChecks(_ runner: CheckRunner) async {
         catalog.playlistMutations.reset()
         await services.failPark()
         await yieldPasses()
-        runner.equal("cancelled mutation does not replace the rejection message with success", feedback.message?.kind, .failure)
+        runner.equal(
+            "cancelled mutation does not replace the rejection message with success", feedback.message?.kind, .failure)
         runner.equal("cancelled mutation leaves tracks unchanged", catalog.playlistStore.tracks.map(\.id), loadedIDs)
 
         catalog.playlistMutations.addTracks([fixtureTrack(id: "row", uri: "spotify:track:stale")], to: owned)
@@ -376,7 +383,8 @@ func runPlaylistMutationChecks(_ runner: CheckRunner) async {
         await services.completePark()
         await yieldPasses()
         runner.equal("stale-account success does not present mutation feedback", feedback.message?.kind, .failure)
-        runner.equal("stale-account success does not apply playlist rows", catalog.playlistStore.tracks.map(\.id), loadedIDs)
+        runner.equal(
+            "stale-account success does not apply playlist rows", catalog.playlistStore.tracks.map(\.id), loadedIDs)
 
         session.update(accountEpoch: 2, isAvailable: false)
         catalog.playlistMutations.addTracks([fixtureTrack(id: "row", uri: "spotify:track:offline")], to: owned)

@@ -60,11 +60,11 @@ private func decodeTrack(_ json: String) throws -> PathfinderTrack {
 }
 
 private let firstTrackJSON = """
-{"uri":"spotify:track:first","name":"First Track","albumOfTrack":{"name":"First Album"},"artists":{"items":[{"profile":{"name":"First Artist"}}]},"duration":{"totalMilliseconds":1000}}
-"""
+    {"uri":"spotify:track:first","name":"First Track","albumOfTrack":{"name":"First Album"},"artists":{"items":[{"profile":{"name":"First Artist"}}]},"duration":{"totalMilliseconds":1000}}
+    """
 private let secondTrackJSON = """
-{"uri":"spotify:track:second","name":"Second Track","albumOfTrack":{"name":"Second Album"},"artists":{"items":[{"profile":{"name":"Second Artist"}}]},"duration":{"totalMilliseconds":2000}}
-"""
+    {"uri":"spotify:track:second","name":"Second Track","albumOfTrack":{"name":"Second Album"},"artists":{"items":[{"profile":{"name":"Second Artist"}}]},"duration":{"totalMilliseconds":2000}}
+    """
 
 @MainActor
 private func makeStore(
@@ -115,9 +115,11 @@ func runSearchStoreChecks(_ runner: CheckRunner) async {
             "seeded results commit immediately",
             await commitImmediateSearch(store, provider: provider, query: "alpha", tracks: [first])
         )
-        runner.equal("committed tracks stay visible before a later query is admitted", store.tracks.map(\.uri), [
-            "spotify:track:first",
-        ])
+        runner.equal(
+            "committed tracks stay visible before a later query is admitted", store.tracks.map(\.uri),
+            [
+                "spotify:track:first"
+            ])
         runner.check("seeded search is not left searching", !store.isSearching)
 
         let pending = Task { await store.scheduleSearch("beta") }
@@ -172,9 +174,11 @@ func runSearchStoreChecks(_ runner: CheckRunner) async {
         runner.check("admitted search publishes isSearching", store.isSearching)
         await provider.completeNext(.tracks([second]))
         await pending.value
-        runner.equal("admitted search publishes the current query", store.tracks.map(\.uri), [
-            "spotify:track:second",
-        ])
+        runner.equal(
+            "admitted search publishes the current query", store.tracks.map(\.uri),
+            [
+                "spotify:track:second"
+            ])
         runner.check("admitted search clears isSearching", !store.isSearching)
         runner.equal("admitted search leaves no clock waiter", clock.waiterCount, 0)
     }
@@ -205,9 +209,11 @@ func runSearchStoreChecks(_ runner: CheckRunner) async {
         )
         await provider.completeNext(.tracks([second]))
         await secondQuery.value
-        runner.equal("supersession publishes the latest query", store.tracks.map(\.uri), [
-            "spotify:track:second",
-        ])
+        runner.equal(
+            "supersession publishes the latest query", store.tracks.map(\.uri),
+            [
+                "spotify:track:second"
+            ])
         runner.equal("supersession fetches once", await provider.requestCount, 1)
     }
 
@@ -275,9 +281,11 @@ func runSearchStoreChecks(_ runner: CheckRunner) async {
             "Try Again fetches without waiting for the clock",
             await waitUntil { await provider.trackQueries == ["retry"] }
         )
-        runner.equal("immediate retry uses one sleep from the cancelled timer", clock.requestedSleeps, [
-            SearchStore.queryAdmissionDelay,
-        ])
+        runner.equal(
+            "immediate retry uses one sleep from the cancelled timer", clock.requestedSleeps,
+            [
+                SearchStore.queryAdmissionDelay
+            ])
         await provider.completeNext(.tracks([first]))
         await retry.value
         runner.equal("immediate retry publishes", store.tracks.map(\.uri), ["spotify:track:first"])
@@ -285,9 +293,11 @@ func runSearchStoreChecks(_ runner: CheckRunner) async {
         clock.releaseAll()
         await scheduled.value
         runner.equal("a later timer does not fetch after Try Again", await provider.requestCount, 1)
-        runner.equal("a later timer does not replace retry results", store.tracks.map(\.uri), [
-            "spotify:track:first",
-        ])
+        runner.equal(
+            "a later timer does not replace retry results", store.tracks.map(\.uri),
+            [
+                "spotify:track:first"
+            ])
     }
 
     await runner.suite("Search debounce empty query") {

@@ -31,14 +31,14 @@ public enum ShufflePolicy {
         now: TimeInterval,
         generator: inout some RandomNumberGenerator,
     ) -> [Int] {
-        guard count > 1 else { return Array(0 ..< count) }
+        guard count > 1 else { return Array(0..<count) }
 
-        var best = Array(0 ..< count)
+        var best = Array(0..<count)
         best.shuffle(using: &generator)
         var bestScore = score(best, uri: uri, history: history, now: now)
 
-        for _ in 1 ..< candidateCount {
-            var candidate = Array(0 ..< count)
+        for _ in 1..<candidateCount {
+            var candidate = Array(0..<count)
             candidate.shuffle(using: &generator)
             let candidateScore = score(candidate, uri: uri, history: history, now: now)
             if candidateScore > bestScore {
@@ -58,9 +58,10 @@ public enum ShufflePolicy {
         now: TimeInterval,
     ) -> Double {
         indices.enumerated().reduce(0) { result, entry in
-            let freshness = history[uri(entry.element)].map { playedAt in
-                min(max((now - playedAt) / freshnessWindow, 0), 1)
-            } ?? 1
+            let freshness =
+                history[uri(entry.element)].map { playedAt in
+                    min(max((now - playedAt) / freshnessWindow, 0), 1)
+                } ?? 1
             return result + freshness * Double(indices.count - entry.offset)
         }
     }

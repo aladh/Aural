@@ -18,7 +18,8 @@ func runFormattingChecks(_ check: CheckRunner) {
         check.equal(
             "playlist descriptions discard Spotify markup",
             PlaylistDescription.plainText(
-                from: #"A collection by <a href="https://open.spotify.com/artist/1">Bonobo</a> &amp; friends.<br>New music."#
+                from:
+                    #"A collection by <a href="https://open.spotify.com/artist/1">Bonobo</a> &amp; friends.<br>New music."#
             ),
             "A collection by Bonobo & friends.\nNew music."
         )
