@@ -49,6 +49,49 @@ func runPlaybackProjectionContractChecks(_ check: CheckRunner) {
                 "    var phase: Phase { get { state.session } set { state.session = newValue } }"
             )
         )
+        check.equal(
+            "comment and string near-misses do not produce setter lines",
+            PlaybackStoreProjectionContract.explicitSetterLines(
+                in: #"""
+                    // set { state.session = newValue }
+                    var phase: Phase { state.session } // set { }
+                    let sample = "set { }"
+                    /* set { state.session = newValue } */
+                    /*
+                    set { state.session = newValue }
+                    */
+                    let documented = """
+                    set { state.session = newValue }
+                    """
+                    """#
+            ),
+            []
+        )
+        check.equal(
+            "an accessor after a multiline string is still reported",
+            PlaybackStoreProjectionContract.explicitSetterLines(
+                in: #"""
+                    let documented = """
+                    set { ignored }
+                    """
+                        set { state.session = newValue }
+                    """#
+            ).map { $0.trimmingCharacters(in: .whitespaces) },
+            ["set { state.session = newValue }"]
+        )
+
+        check.noThrow("production PlaybackStore projections are readable") {
+            let projectionsURL = URL(fileURLWithPath: #filePath)
+                .deletingLastPathComponent()
+                .deletingLastPathComponent()
+                .appending(path: "Aural/Spotify/PlaybackStore+Projections.swift")
+            let source = try String(contentsOf: projectionsURL, encoding: .utf8)
+            check.equal(
+                "production PlaybackStore projections have no explicit setters",
+                PlaybackStoreProjectionContract.explicitSetterLines(in: source),
+                []
+            )
+        }
     }
 
     check.suite("CurrentTrackRow accessibility contract") {
