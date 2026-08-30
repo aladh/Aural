@@ -13,8 +13,8 @@ wire codecs, catalog resolution, formatting, privacy-safe API failure
 surfaces, Partner API pagination call sites, injected coordinator/queue invalidation workflows, typed playback-command failures,
 local/remote command-lifecycle parity,
 `PlaybackEffectRegistry` task cancellation, transient mutation feedback, native playlist
-add/remove, native queue add/remove, PCM writer wake/bypass, and serialized engine event
-fan-out ordering. Do not move check code back into `Sources/Aural`: test code must not ship
+add/remove, native queue add/remove, PCM writer wake/bypass, serialized engine event
+fan-out ordering, and Rust-produced engine JSON contract fixtures under `Fixtures/engine`. Do not move check code back into `Sources/Aural`: test code must not ship
 in the application executable.
 
 These checks intentionally use the custom runner rather than XCTest/Swift Testing so the complete

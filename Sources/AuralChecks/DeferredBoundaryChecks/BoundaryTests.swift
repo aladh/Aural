@@ -22,6 +22,7 @@ enum BoundaryChecksMain {
         runPlaylistSortingChecks(runner)
         runTrackAttributeChecks(runner)
         runFixtureContractChecks(runner)
+        runEnginePayloadContractChecks(runner)
         runPCMWriteSpaceChecks(runner)
         runEngineEventFanoutChecks(runner)
         await runPrivacySanitizationChecks(runner)
