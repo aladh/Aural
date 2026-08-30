@@ -5,6 +5,8 @@ func runCatalogPlaybackAccessSourceContractChecks(_ check: CheckRunner) {
         let snapshottingInit = """
         struct CatalogPlaybackAccess {
             init(player: PlaybackStore) {
+                isConnected = player.isConnected
+                accountEpoch = player.state.accountEpoch
                 canStartPlayback = player.canStartPlayback
                 currentTrackURI = player.trackURI
                 statusText = player.statusText
@@ -17,7 +19,7 @@ func runCatalogPlaybackAccessSourceContractChecks(_ check: CheckRunner) {
             CatalogPlaybackAccessSourceContract.factTokensRead(
                 in: CatalogPlaybackAccessSourceContract.initializerBody(in: snapshottingInit)
             ),
-            ["canStartPlayback", "trackURI", "statusText"]
+            ["isConnected", "accountEpoch", "canStartPlayback", "trackURI", "statusText"]
         )
 
         let lazyInit = """
@@ -41,11 +43,11 @@ func runCatalogPlaybackAccessSourceContractChecks(_ check: CheckRunner) {
         check.equal(
             "stored action closures are reported",
             CatalogPlaybackAccessSourceContract.storedActionClosureLines(
-                in: "    let connect: @MainActor () -> Void\n    let playURI: @MainActor (String) -> Void"
+                in: "    let connect: @MainActor () -> Void\n    let playURI: () -> Void"
             ),
             [
                 "let connect: @MainActor () -> Void",
-                "let playURI: @MainActor (String) -> Void",
+                "let playURI: () -> Void",
             ]
         )
         check.equal(
@@ -59,7 +61,7 @@ func runCatalogPlaybackAccessSourceContractChecks(_ check: CheckRunner) {
         check.check(
             "player identity equality is recognized",
             CatalogPlaybackAccessSourceContract.equatesByPlayerIdentity(
-                "    static func == (lhs: CatalogPlaybackAccess, rhs: CatalogPlaybackAccess) -> Bool {\n        lhs.player === rhs.player\n    }"
+                "    nonisolated static func == (lhs: CatalogPlaybackAccess, rhs: CatalogPlaybackAccess) -> Bool {\n        lhs.playerIdentity == rhs.playerIdentity\n    }"
             )
         )
         check.check(

@@ -7,6 +7,8 @@ import Foundation
 /// value are the accepted shape.
 enum CatalogPlaybackAccessSourceContract {
     static let playbackFactTokens = [
+        "isConnected",
+        "accountEpoch",
         "canStartPlayback",
         "hasCurrentTrack",
         "trackURI",
@@ -37,13 +39,21 @@ enum CatalogPlaybackAccessSourceContract {
             .map { $0.trimmingCharacters(in: .whitespaces) }
             .filter { line in
                 guard !line.hasPrefix("//") else { return false }
-                return line.contains(": @MainActor (") || line.contains(": @MainActor(")
+                if line.hasPrefix("func ") || line.hasPrefix("static func ") { return false }
+                return line.contains("-> Void")
+                    || line.contains(": @MainActor (")
+                    || line.contains(": @MainActor(")
             }
     }
 
     static func equatesByPlayerIdentity(_ source: String) -> Bool {
-        source.contains("lhs.player === rhs.player")
-            || source.contains("rhs.player === lhs.player")
+        source.contains("nonisolated static func ==")
+            && (
+                source.contains("lhs.player === rhs.player")
+                    || source.contains("rhs.player === lhs.player")
+                    || source.contains("lhs.playerIdentity == rhs.playerIdentity")
+                    || source.contains("rhs.playerIdentity == lhs.playerIdentity")
+            )
     }
 
     static func catalogPlaybackAccessorBody(in rootViewSource: String) -> String {

@@ -192,6 +192,21 @@ private func containsToken(_ source: String, _ token: String) -> Bool {
     source.contains(token)
 }
 
+/// Boundary copy of the domain stored-closure detector. `AuralChecks` types are not
+/// visible to this executable.
+private func storedActionClosureLines(in source: String) -> [String] {
+    source
+        .split(separator: "\n", omittingEmptySubsequences: false)
+        .map { $0.trimmingCharacters(in: .whitespaces) }
+        .filter { line in
+            guard !line.hasPrefix("//") else { return false }
+            if line.hasPrefix("func ") || line.hasPrefix("static func ") { return false }
+            return line.contains("-> Void")
+                || line.contains(": @MainActor (")
+                || line.contains(": @MainActor(")
+        }
+}
+
 @MainActor
 func runCatalogPlaybackAccessChecks(_ runner: CheckRunner) async {
     await runner.suite("CatalogPlaybackAccess construction is fact-lazy") {
@@ -455,8 +470,7 @@ func runCatalogPlaybackAccessChecks(_ runner: CheckRunner) async {
                     && containsToken(access, "player.play(track: track)")
                     && containsToken(access, "player.playPlaylist(item)")
                     && containsToken(access, "player.addToQueue(uris: uris)")
-                    && !containsToken(access, ": @MainActor (")
-                    && !containsToken(access, ": @MainActor(")
+                    && storedActionClosureLines(in: access).isEmpty
             )
         }
     }
