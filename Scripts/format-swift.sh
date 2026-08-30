@@ -261,10 +261,12 @@ EOF
             print -u2 "write mode did not format tracked Swift sources"
             exit 1
         fi
-        if ! grep -q UNFORMATTED "$tmp/untracked.swift" "$tmp/.build/generated/Generated.swift"; then
-            print -u2 "write mode mutated an untracked or generated Swift file"
-            exit 1
-        fi
+        for protected in "$tmp/untracked.swift" "$tmp/.build/generated/Generated.swift"; do
+            if ! grep -q UNFORMATTED "$protected"; then
+                print -u2 "write mode mutated an untracked or generated Swift file: $protected"
+                exit 1
+            fi
+        done
         "$script" --check >/dev/null
 
         if ! grep -F -q 'Package.swift' "$log"; then

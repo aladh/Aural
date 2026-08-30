@@ -146,7 +146,7 @@ func runCommandEffectRegistryChecks(_ runner: CheckRunner) async {
         runner.check("completing the superseded task did not drop the replacement", replacementCancelled.isSet)
     }
 
-    await runner.suite("PlaybackEffectRegistry replace runs the previous onCancel") {
+    runner.suite("PlaybackEffectRegistry replace runs the previous onCancel") {
         let effects = PlaybackEffectRegistry()
         let commandID = UUID()
         let previousCancelled = CancellationFlag()
