@@ -74,6 +74,9 @@ the same Git-tracked `*.swift` set, including `Package.swift`, `Sources/`, and c
 ./Scripts/format-swift.sh --write
 ```
 
+`check.sh` runs `Scripts/format-swift-self-test.sh` then `--check` so wrapper discovery and failure
+behavior cannot drift from the documented commands.
+
 GitHub's macos-15 debug quality gate caches the repository `.build` tree, including the module cache
 `check.sh` already redirects there. The primary cache key includes runner OS, architecture, the Swift
 toolchain, `Package.swift`, `Package.resolved` when that lockfile exists, and the commit SHA so each

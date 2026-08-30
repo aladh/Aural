@@ -14,7 +14,8 @@ case "$build_configuration" in
 esac
 
 # Fail fast on Swift format drift before Rust or Swift compilation.
-"$project_root/Scripts/format-swift.sh" --self-test
+# The sibling self-test covers wrapper discovery/failure contracts without a Swift toolchain.
+"$project_root/Scripts/format-swift-self-test.sh"
 "$project_root/Scripts/format-swift.sh" --check
 
 # The Rust suite owns lifecycle, generation, queue conversion, JSON envelopes,
