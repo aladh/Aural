@@ -1674,7 +1674,7 @@ func runPlaybackCommandPresentationChecks(_ check: CheckRunner) {
             accountEpoch: 1,
             engineEpoch: 1,
             session: .ready,
-            options: PlaybackOptions(repeatMode: .off, shuffle: true)
+            options: PlaybackOptions(shuffle: true, repeatMode: .off)
         )
         startRepeat(&userOptions, id: userID, expected: RepeatMode.context.flags)
         _ = PlaybackReducer.reduce(
