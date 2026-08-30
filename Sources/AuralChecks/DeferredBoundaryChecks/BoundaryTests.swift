@@ -38,7 +38,6 @@ enum BoundaryChecksMain {
         await runPlaylistMutationChecks(runner)
         await runQueueManagementChecks(runner)
         await runTransientFeedbackChecks(runner)
-        await runCatalogPlaybackAccessChecks(runner)
 
         if !runner.succeeded {
             print(runner.failures.joined(separator: "\n"))
