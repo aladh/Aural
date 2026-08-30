@@ -7,33 +7,52 @@ import Foundation
 
 /// Cached projection of catalog rows for a native `Table` sort order.
 ///
-/// Recompute when the collection version or SwiftUI comparators change.
+/// Recompute when the collection version, SwiftUI comparators, or attributes used by the active
+/// sort change.
 public struct TrackTableDisplayCache: Sendable {
-    public private(set) var rows: [CatalogTrack]
+    public private(set) var rows: [TrackTableRow]
     private var version: UUID
-    private var sortOrder: [KeyPathComparator<CatalogTrack>]
+    private var sortValuesRevision: UInt64
+    private var sortOrder: [KeyPathComparator<TrackTableRow>]
 
     public init(
         _ collection: CatalogTrackCollection = CatalogTrackCollection(),
-        sortOrder: [KeyPathComparator<CatalogTrack>] = []
+        sortValues: [String: TrackTableSortValues] = [:],
+        sortValuesRevision: UInt64 = 0,
+        sortOrder: [KeyPathComparator<TrackTableRow>] = []
     ) {
         version = collection.version
+        self.sortValuesRevision = sortValuesRevision
         self.sortOrder = sortOrder
-        rows = Self.projected(tracks: collection.tracks, sortOrder: sortOrder)
+        rows = Self.projected(
+            tracks: collection.tracks,
+            sortValues: sortValues,
+            sortOrder: sortOrder
+        )
     }
 
     /// Returns whether `rows` were rebuilt from `collection` and `sortOrder`.
     @discardableResult
     public mutating func update(
         _ collection: CatalogTrackCollection,
-        sortOrder: [KeyPathComparator<CatalogTrack>]
+        sortValues: [String: TrackTableSortValues] = [:],
+        sortValuesRevision: UInt64 = 0,
+        sortOrder: [KeyPathComparator<TrackTableRow>]
     ) -> Bool {
-        guard version != collection.version || self.sortOrder != sortOrder else {
+        let attributesChanged =
+            sortOrder.usesTrackAttributes
+            && self.sortValuesRevision != sortValuesRevision
+        guard version != collection.version || self.sortOrder != sortOrder || attributesChanged else {
             return false
         }
         version = collection.version
+        self.sortValuesRevision = sortValuesRevision
         self.sortOrder = sortOrder
-        rows = Self.projected(tracks: collection.tracks, sortOrder: sortOrder)
+        rows = Self.projected(
+            tracks: collection.tracks,
+            sortValues: sortValues,
+            sortOrder: sortOrder
+        )
         return true
     }
 
@@ -46,8 +65,106 @@ public struct TrackTableDisplayCache: Sendable {
 
     private static func projected(
         tracks: [CatalogTrack],
-        sortOrder: [KeyPathComparator<CatalogTrack>]
-    ) -> [CatalogTrack] {
-        sortOrder.isEmpty ? tracks : tracks.sorted(using: sortOrder)
+        sortValues: [String: TrackTableSortValues],
+        sortOrder: [KeyPathComparator<TrackTableRow>]
+    ) -> [TrackTableRow] {
+        let rows = tracks.enumerated().map { index, track in
+            TrackTableRow(track: track, sortValues: sortValues[track.uri], sourceIndex: index)
+        }
+        guard !sortOrder.isEmpty else { return rows }
+        // The standard library does not promise a stable sort. Source offset is the final
+        // tie-breaker so duplicate occurrences and equal or missing values retain playlist order.
+        return rows.sorted { lhs, rhs in
+            for comparator in sortOrder {
+                switch compare(lhs, rhs, using: comparator) {
+                case .orderedAscending: return true
+                case .orderedDescending: return false
+                case .orderedSame: continue
+                }
+            }
+            return lhs.sourceIndex < rhs.sourceIndex
+        }
+    }
+
+    private static func compare(
+        _ lhs: TrackTableRow,
+        _ rhs: TrackTableRow,
+        using comparator: KeyPathComparator<TrackTableRow>
+    ) -> ComparisonResult {
+        if comparator.isPopularity {
+            return compareOptional(
+                lhs.popularitySortValue,
+                isPresent: lhs.hasPopularity,
+                rhs.popularitySortValue,
+                isPresent: rhs.hasPopularity,
+                order: comparator.order
+            )
+        }
+        if comparator.isBPM {
+            return compareOptional(
+                lhs.bpmSortValue,
+                isPresent: lhs.hasBPM,
+                rhs.bpmSortValue,
+                isPresent: rhs.hasBPM,
+                order: comparator.order
+            )
+        }
+        if comparator.isKey {
+            return compareOptional(
+                lhs.keySortValue,
+                isPresent: lhs.hasKey,
+                rhs.keySortValue,
+                isPresent: rhs.hasKey,
+                order: comparator.order
+            )
+        }
+        if comparator.isDateAdded {
+            return compareOptional(lhs.track.addedAt, rhs.track.addedAt, order: comparator.order)
+        }
+        return comparator.compare(lhs, rhs)
+    }
+
+    private static func compareOptional<Value: Comparable>(
+        _ lhs: Value?,
+        _ rhs: Value?,
+        order: SortOrder
+    ) -> ComparisonResult {
+        switch (lhs, rhs) {
+        case let (.some(lhs), .some(rhs)):
+            if lhs == rhs { return .orderedSame }
+            let ascending: ComparisonResult = lhs < rhs ? .orderedAscending : .orderedDescending
+            return order == .forward ? ascending : ascending.reversed
+        case (.some, .none): return .orderedAscending
+        case (.none, .some): return .orderedDescending
+        case (.none, .none): return .orderedSame
+        }
+    }
+
+    private static func compareOptional<Value: Comparable>(
+        _ lhs: Value,
+        isPresent lhsIsPresent: Bool,
+        _ rhs: Value,
+        isPresent rhsIsPresent: Bool,
+        order: SortOrder
+    ) -> ComparisonResult {
+        switch (lhsIsPresent, rhsIsPresent) {
+        case (true, true):
+            if lhs == rhs { return .orderedSame }
+            let ascending: ComparisonResult = lhs < rhs ? .orderedAscending : .orderedDescending
+            return order == .forward ? ascending : ascending.reversed
+        case (true, false): return .orderedAscending
+        case (false, true): return .orderedDescending
+        case (false, false): return .orderedSame
+        }
+    }
+}
+
+private extension ComparisonResult {
+    var reversed: ComparisonResult {
+        switch self {
+        case .orderedAscending: .orderedDescending
+        case .orderedDescending: .orderedAscending
+        case .orderedSame: .orderedSame
+        }
     }
 }

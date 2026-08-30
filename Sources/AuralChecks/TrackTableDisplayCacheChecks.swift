@@ -74,25 +74,82 @@ func runTrackTableDisplayCacheChecks(_ check: CheckRunner) {
 
         collection.replace(source)
         _ = cache.update(collection, sortOrder: [])
-        let titleAscending: [KeyPathComparator<CatalogTrack>] = [KeyPathComparator(\.title)]
+        let titleAscending = [KeyPathComparator(\TrackTableRow.title)]
         check.check("sort-field change recomputes", cache.update(collection, sortOrder: titleAscending))
         check.equal("title ascending uses the native comparator", cache.rows.map(\.id), ["alpha", "beta", "gamma"])
 
-        let titleDescending: [KeyPathComparator<CatalogTrack>] = [
-            KeyPathComparator(\.title, order: .reverse)
+        let titleDescending = [
+            KeyPathComparator(\TrackTableRow.title, order: .reverse)
         ]
         check.check("descending recomputes", cache.update(collection, sortOrder: titleDescending))
         check.equal("title descending reverses the column", cache.rows.map(\.id), ["gamma", "beta", "alpha"])
 
-        let artistThenReverseTitle: [KeyPathComparator<CatalogTrack>] = [
-            KeyPathComparator(\.artist),
-            KeyPathComparator(\.title, order: .reverse),
+        let artistThenReverseTitle = [
+            KeyPathComparator(\TrackTableRow.artist),
+            KeyPathComparator(\TrackTableRow.title, order: .reverse),
         ]
         check.check("multi-comparator recomputes", cache.update(collection, sortOrder: artistThenReverseTitle))
         check.equal(
             "artist then reverse title keeps comparator order",
             cache.rows.map(\.id),
             ["gamma", "beta", "alpha"]
+        )
+
+        check.check(
+            "attribute revision is ignored for a title sort",
+            !cache.update(
+                collection,
+                sortValuesRevision: 1,
+                sortOrder: artistThenReverseTitle
+            )
+        )
+
+        let popularityAscending = [KeyPathComparator(\TrackTableRow.popularitySortValue)]
+        let initialPopularity = [
+            alpha.uri: TrackTableSortValues(popularity: 80, bpm: nil, key: nil),
+            beta.uri: TrackTableSortValues(popularity: 20, bpm: nil, key: nil),
+        ]
+        check.check(
+            "attribute-backed sort recomputes",
+            cache.update(
+                collection,
+                sortValues: initialPopularity,
+                sortValuesRevision: 1,
+                sortOrder: popularityAscending
+            )
+        )
+        check.equal(
+            "missing popularity follows present values",
+            cache.rows.map(\.id),
+            ["beta", "alpha", "gamma"]
+        )
+        let refreshedPopularity = [
+            alpha.uri: TrackTableSortValues(popularity: 10, bpm: nil, key: nil),
+            beta.uri: TrackTableSortValues(popularity: 90, bpm: nil, key: nil),
+            gamma.uri: TrackTableSortValues(popularity: 50, bpm: nil, key: nil),
+        ]
+        check.check(
+            "new attribute revision re-sorts an active attribute column",
+            cache.update(
+                collection,
+                sortValues: refreshedPopularity,
+                sortValuesRevision: 2,
+                sortOrder: popularityAscending
+            )
+        )
+        check.equal(
+            "attribute arrival updates the active order",
+            cache.rows.map(\.id),
+            ["alpha", "gamma", "beta"]
+        )
+        check.check(
+            "unchanged attribute revision is a cache hit",
+            !cache.update(
+                collection,
+                sortValues: initialPopularity,
+                sortValuesRevision: 2,
+                sortOrder: popularityAscending
+            )
         )
 
         var other = CatalogTrackCollection()
@@ -114,12 +171,12 @@ func runTrackTableDisplayCacheChecks(_ check: CheckRunner) {
         var dateCache = TrackTableDisplayCache(dated)
         check.check(
             "date-added sort recomputes",
-            dateCache.update(dated, sortOrder: [KeyPathComparator(\CatalogTrack.dateAddedSortValue)])
+            dateCache.update(dated, sortOrder: [KeyPathComparator(\TrackTableRow.dateAddedSortValue)])
         )
         check.equal(
-            "nil dates sort as distantPast for the table column",
+            "nil dates sink below present dates for the table column",
             dateCache.rows.map(\.id),
-            ["undated", "old", "new"]
+            ["old", "new", "undated"]
         )
 
         let first = track(id: "uid-a", title: "Zebra")
@@ -141,6 +198,24 @@ func runTrackTableDisplayCacheChecks(_ check: CheckRunner) {
             "duplicate occurrences keep distinct identities after sort",
             duplicateCache.rows.map(\.id),
             ["uid-b", "uid-a"]
+        )
+
+        let tiedSecond = CatalogTrack(
+            id: "uid-c",
+            uri: first.uri,
+            title: first.title,
+            artist: first.artist,
+            album: first.album,
+            duration: first.duration,
+            artworkURL: nil,
+            addedAt: nil
+        )
+        duplicates.replace([first, tiedSecond])
+        _ = duplicateCache.update(duplicates, sortOrder: titleAscending)
+        check.equal(
+            "equal duplicate occurrences keep source order",
+            duplicateCache.rows.map(\.id),
+            ["uid-a", "uid-c"]
         )
 
         var replacement = CatalogTrackCollection()

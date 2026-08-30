@@ -26,6 +26,7 @@ final class CatalogMetadataRepository {
     }
 
     private(set) var trackAttributes: [String: TrackAttributes] = [:]
+    private(set) var trackAttributesRevision: UInt64 = 0
     private(set) var contentRevision: UInt64 = 0
 
     @ObservationIgnored private let attributesProvider: any TrackAttributesProviding
@@ -57,6 +58,7 @@ final class CatalogMetadataRepository {
         retainedTrackURIsBySource.removeAll(keepingCapacity: false)
         itemsBySource.removeAll(keepingCapacity: false)
         trackAttributes.removeAll(keepingCapacity: false)
+        trackAttributesRevision &+= 1
         contentEpoch = session.accountEpoch
         contentRevision &+= 1
     }
@@ -229,8 +231,12 @@ final class CatalogMetadataRepository {
         do {
             let fetched = try await attributesProvider.attributes(for: uris)
             guard isCurrent(scope, sessionSnapshot: sessionSnapshot) else { return }
+            let addedAttributes = fetched.keys.contains { trackAttributes[$0] == nil }
             trackAttributes.merge(fetched) { current, _ in current }
             trimAttributeCache(preserving: Set(fetched.keys))
+            if addedAttributes {
+                trackAttributesRevision &+= 1
+            }
         } catch {
             guard !isCancellation(error), isCurrent(scope, sessionSnapshot: sessionSnapshot) else { return }
             debugLog(
@@ -255,6 +261,7 @@ final class CatalogMetadataRepository {
             retainedTrackURIsBySource.removeAll(keepingCapacity: false)
             itemsBySource.removeAll(keepingCapacity: false)
             trackAttributes.removeAll(keepingCapacity: false)
+            trackAttributesRevision &+= 1
             contentEpoch = snapshot.accountEpoch
         }
         return true

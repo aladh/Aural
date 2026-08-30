@@ -20,7 +20,7 @@ struct TrackTable: View {
     var showsDateAdded = false
     var playlistActions: TrackPlaylistActions?
     @State private var selection: Set<CatalogTrack.ID> = []
-    @State private var sortOrder: [KeyPathComparator<CatalogTrack>] = []
+    @State private var sortOrder: [KeyPathComparator<TrackTableRow>] = []
     @State private var displayCache: TrackTableDisplayCache
 
     init(
@@ -35,66 +35,62 @@ struct TrackTable: View {
         self.playback = playback
         self.showsDateAdded = showsDateAdded
         self.playlistActions = playlistActions
-        _displayCache = State(initialValue: TrackTableDisplayCache(tracks))
+        _displayCache = State(
+            initialValue: TrackTableDisplayCache(
+                tracks,
+                sortValues: metadata.trackTableSortValues,
+                sortValuesRevision: metadata.trackAttributesRevision
+            )
+        )
     }
 
     var body: some View {
         Table(displayCache.rows, selection: $selection, sortOrder: $sortOrder) {
-            TableColumn("Title", value: \CatalogTrack.title) { track in
-                HStack(spacing: 6) {
-                    if isCurrent(track) {
-                        Image(systemName: "speaker.wave.2.fill")
-                            .foregroundStyle(Color.accentColor)
-                            .accessibilityLabel("Current track")
-                    }
-                    Text(track.title)
-                        .fontWeight(.medium)
-                        .foregroundStyle(isCurrent(track) ? Color.accentColor : .primary)
-                        .lineLimit(1)
-                }
+            TableColumn("Title", value: \.title) { row in
+                titleCell(row.track)
             }
             .width(min: 160, ideal: 240, max: 280)
 
-            TableColumn("Artist", value: \CatalogTrack.artist) { track in
-                Text(track.artist).foregroundStyle(.secondary).lineLimit(1)
+            TableColumn("Artist", value: \.artist) { row in
+                Text(row.track.artist).foregroundStyle(.secondary).lineLimit(1)
             }
             .width(min: 100, ideal: 130, max: 170)
 
-            TableColumn("Album", value: \CatalogTrack.album) { track in
-                Text(track.album).foregroundStyle(.secondary).lineLimit(1)
+            TableColumn("Album", value: \.album) { row in
+                Text(row.track.album).foregroundStyle(.secondary).lineLimit(1)
             }
             .width(min: 100, ideal: 140, max: 180)
 
-            TableColumn("Popularity") { track in
-                Text(attributeText(metadata.trackAttributes[track.uri]?.popularity.map(String.init)))
+            TableColumn("Popularity", value: \.popularitySortValue) { row in
+                Text(attributeText(metadata.trackAttributes[row.track.uri]?.popularity.map(String.init)))
                     .foregroundStyle(.tertiary)
             }
             .width(68)
 
-            TableColumn("BPM") { track in
-                Text(attributeText(metadata.trackAttributes[track.uri]?.bpm.map(String.init)))
+            TableColumn("BPM", value: \.bpmSortValue) { row in
+                Text(attributeText(metadata.trackAttributes[row.track.uri]?.bpm.map(String.init)))
                     .monospacedDigit()
                     .foregroundStyle(.tertiary)
                     .accessibilityLabel("Tempo in beats per minute")
             }
             .width(46)
 
-            TableColumn("Key") { track in
-                Text(attributeText(metadata.trackAttributes[track.uri]?.key))
+            TableColumn("Key", value: \.keySortValue) { row in
+                Text(attributeText(metadata.trackAttributes[row.track.uri]?.key))
                     .foregroundStyle(.tertiary)
             }
             .width(40)
 
             if showsDateAdded {
-                TableColumn("Date Added", value: \CatalogTrack.dateAddedSortValue) { track in
-                    Text(formatDateAdded(track.addedAt))
+                TableColumn("Date Added", value: \.dateAddedSortValue) { row in
+                    Text(formatDateAdded(row.track.addedAt))
                         .foregroundStyle(.secondary)
                 }
                 .width(96)
             }
 
-            TableColumn("Time") { track in
-                Text(formatDuration(track.duration))
+            TableColumn("Time", value: \.duration) { row in
+                Text(formatDuration(row.track.duration))
                     .monospacedDigit()
                     .foregroundStyle(.tertiary)
             }
@@ -103,7 +99,7 @@ struct TrackTable: View {
         .contextMenu(forSelectionType: CatalogTrack.ID.self) { selectedIDs in
             let selectedTracks = PlaylistMutationSelection.orderedTracks(
                 selectedIDs: selectedIDs,
-                in: displayCache.rows
+                in: displayCache.rows.map(\.track)
             )
             if selectedTracks.count == 1, let track = selectedTracks.first {
                 Button("Play", systemImage: "play.fill") {
@@ -149,7 +145,7 @@ struct TrackTable: View {
         } primaryAction: { selectedIDs in
             let selectedTracks = PlaylistMutationSelection.orderedTracks(
                 selectedIDs: selectedIDs,
-                in: displayCache.rows
+                in: displayCache.rows.map(\.track)
             )
             guard selectedTracks.count == 1, let track = selectedTracks.first else { return }
             play(track)
@@ -159,7 +155,12 @@ struct TrackTable: View {
         }
         .accessibilityLabel("Tracks")
         .onChange(of: displayInputs, initial: true) { oldInputs, newInputs in
-            _ = displayCache.update(tracks, sortOrder: newInputs.sortOrder)
+            _ = displayCache.update(
+                tracks,
+                sortValues: metadata.trackTableSortValues,
+                sortValuesRevision: metadata.trackAttributesRevision,
+                sortOrder: newInputs.sortOrder
+            )
             if oldInputs.version != newInputs.version {
                 selection = TrackTableDisplayCache.prunedSelection(selection, from: tracks.tracks)
             }
@@ -167,11 +168,29 @@ struct TrackTable: View {
     }
 
     private var displayInputs: TrackTableDisplayInputs {
-        TrackTableDisplayInputs(version: tracks.version, sortOrder: sortOrder)
+        TrackTableDisplayInputs(
+            version: tracks.version,
+            sortValuesRevision: sortOrder.usesTrackAttributes ? metadata.trackAttributesRevision : 0,
+            sortOrder: sortOrder
+        )
     }
 
     private func isCurrent(_ track: CatalogTrack) -> Bool {
         playback.hasCurrentTrack && playback.currentTrackURI == track.uri
+    }
+
+    private func titleCell(_ track: CatalogTrack) -> some View {
+        HStack(spacing: 6) {
+            if isCurrent(track) {
+                Image(systemName: "speaker.wave.2.fill")
+                    .foregroundStyle(Color.accentColor)
+                    .accessibilityLabel("Current track")
+            }
+            Text(track.title)
+                .fontWeight(.medium)
+                .foregroundStyle(isCurrent(track) ? Color.accentColor : .primary)
+                .lineLimit(1)
+        }
     }
 
     private func play(_ track: CatalogTrack) {
@@ -183,17 +202,19 @@ struct TrackTable: View {
         guard playlistActions?.canRemoveOccurrences == true else { return }
         let selectedTracks = PlaylistMutationSelection.orderedTracks(
             selectedIDs: selection,
-            in: displayCache.rows
+            in: displayCache.rows.map(\.track)
         )
         let uids = PlaylistMutationSelection.occurrenceIDsForRemoval(from: selectedTracks)
         guard !uids.isEmpty else { return }
         playlistActions?.removeOccurrences(uids)
     }
+
 }
 
 private struct TrackTableDisplayInputs: Equatable {
     var version: UUID
-    var sortOrder: [KeyPathComparator<CatalogTrack>]
+    var sortValuesRevision: UInt64
+    var sortOrder: [KeyPathComparator<TrackTableRow>]
 }
 
 private extension View {
