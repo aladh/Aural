@@ -40,6 +40,7 @@ enum BoundaryChecksMain {
             RegisteredCheckSuite(name: "pagination-walk") { await runPaginationWalkChecks($0) },
             RegisteredCheckSuite(name: "workflow") { await runWorkflowChecks($0) },
             RegisteredCheckSuite(name: "home-library-store") { await runHomeLibraryStoreChecks($0) },
+            RegisteredCheckSuite(name: "media-detail-store") { await runMediaDetailStoreChecks($0) },
             RegisteredCheckSuite(name: "account-epoch-ownership") { await runAccountEpochOwnershipChecks($0) },
             RegisteredCheckSuite(name: "command-effect-registry") { await runCommandEffectRegistryChecks($0) },
             RegisteredCheckSuite(name: "playback-command-failure") { await runPlaybackCommandFailureChecks($0) },

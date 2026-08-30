@@ -119,6 +119,54 @@ func runCheckSuiteSelectionChecks(_ check: CheckRunner, catalog: [String]) {
             "help names the executable",
             CheckSuiteSelection.helpText(executableName: "AuralChecks").contains("AuralChecks --list")
         )
+
+        check.equal(
+            "runProtobufChecks maps to protobuf",
+            CheckSuiteRegistration.suiteName(fromRunFunction: "runProtobufChecks"),
+            Optional("protobuf")
+        )
+        check.equal(
+            "runURIChecks maps to uri",
+            CheckSuiteRegistration.suiteName(fromRunFunction: "runURIChecks"),
+            Optional("uri")
+        )
+        check.equal(
+            "runPCMWriteSpaceChecks maps to pcm-write-space",
+            CheckSuiteRegistration.suiteName(fromRunFunction: "runPCMWriteSpaceChecks"),
+            Optional("pcm-write-space")
+        )
+        check.equal(
+            "runMediaDetailStoreChecks maps to media-detail-store",
+            CheckSuiteRegistration.suiteName(fromRunFunction: "runMediaDetailStoreChecks"),
+            Optional("media-detail-store")
+        )
+        check.equal(
+            "an omitted run*Checks function is reported",
+            CheckSuiteRegistration.namesMissingFromCatalog(
+                catalog: ["alpha"],
+                defined: ["alpha", "media-detail-store"]
+            ),
+            ["media-detail-store"]
+        )
+
+        check.noThrow("every compiled run*Checks function is registered") {
+            let sources = try CheckSuiteRegistration.swiftSources(
+                in: URL(fileURLWithPath: #filePath).deletingLastPathComponent(),
+                excludingDirectoryNames: ["DeferredBoundaryChecks"],
+                excludingFileNames: ["LegacyLogicChecks.swift"]
+            )
+            let defined = CheckSuiteRegistration.expectedSuiteNames(fromSources: sources)
+            check.equal(
+                "defined run*Checks missing from the AuralChecks registry",
+                CheckSuiteRegistration.namesMissingFromCatalog(catalog: catalog, defined: defined),
+                []
+            )
+            check.equal(
+                "AuralChecks registry names without a run*Checks function",
+                CheckSuiteRegistration.namesMissingFromSources(catalog: catalog, defined: defined),
+                []
+            )
+        }
     }
 }
 

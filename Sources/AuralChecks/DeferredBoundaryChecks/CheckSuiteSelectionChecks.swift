@@ -43,5 +43,22 @@ func runCheckSuiteSelectionChecks(_ check: CheckRunner, catalog: [String]) {
             CheckSuiteSelection.listText(catalog: catalog).split(separator: "\n").map(String.init),
             catalog
         )
+
+        check.noThrow("every compiled run*Checks function is registered") {
+            let sources = try CheckSuiteRegistration.swiftSources(
+                in: URL(fileURLWithPath: #filePath).deletingLastPathComponent()
+            )
+            let defined = CheckSuiteRegistration.expectedSuiteNames(fromSources: sources)
+            check.equal(
+                "defined run*Checks missing from the AuralBoundaryChecks registry",
+                CheckSuiteRegistration.namesMissingFromCatalog(catalog: catalog, defined: defined),
+                []
+            )
+            check.equal(
+                "AuralBoundaryChecks registry names without a run*Checks function",
+                CheckSuiteRegistration.namesMissingFromSources(catalog: catalog, defined: defined),
+                []
+            )
+        }
     }
 }
