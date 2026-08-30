@@ -154,9 +154,11 @@ func runTransportRetryChecks(_ check: CheckRunner) async {
         check.equal("Web queue 429 is one GET", queueTransport.callCount, 1)
         check.equal("Web queue 429 does not sleep in the generic retry layer", queueSleep.delays, [])
         check.equal("Web queue 429 is GET", queueTransport.methods, ["GET"])
-        check.equal("Web queue 429 hits the documented endpoint", queueTransport.urls, [
-            SpotifyWebPlayerAPI.queueURL.absoluteString
-        ])
+        check.equal(
+            "Web queue 429 hits the documented endpoint",
+            queueTransport.urls,
+            [SpotifyWebPlayerAPI.queueURL.absoluteString]
+        )
     }
 
     await check.suite("One 401 interacts with the shared budget and cancellation") {
