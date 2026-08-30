@@ -260,15 +260,18 @@ Generated archives, packages, diagnostics, signing material, private payloads, a
 not belong in Git. In particular, never commit `.build/`, `.swiftpm/`, `Aural.app/`, `dist/`,
 `diagnostics/`, `AuralArtwork/`, Rust `target/`, static `.a` archives, signing keychains or
 certificates, `.DS_Store`, tokens, OAuth callbacks, raw responses, or private screenshots. Inspect
-the staged diff. Prefer fresh-clone recovery and never run destructive cleanup over user work. See
-[development setup](docs/development-setup.md), [CONTRIBUTING.md](CONTRIBUTING.md),
-[PRIVACY.md](PRIVACY.md), and [SECURITY.md](SECURITY.md) for the owning procedures.
+the staged diff. Never install project development identities in the login keychain or weaken
+signing to suppress prompts. Prefer fresh-clone recovery and never run destructive cleanup over
+user work. See [development setup](docs/development-setup.md),
+[CONTRIBUTING.md](CONTRIBUTING.md), [PRIVACY.md](PRIVACY.md), and
+[SECURITY.md](SECURITY.md) for the owning procedures.
 
 Preserve `LICENSE`, `NOTICE`, and `THIRD_PARTY_NOTICES.md`; review the full transitive license set
-before distributing binaries. GitHub Actions stay SHA-pinned, Renovate owns dependency updates, and
-librespot updates are protocol changes rather than routine bumps. `Packaging/Info.plist` and the
-tagged-release section of `CONTRIBUTING.md` own version and release steps. Tags, releases, remotes,
-and repository settings require explicit authorization; never mutate them as ordinary verification.
+before distributing binaries. GitHub Actions stay SHA-pinned with readable version comments,
+Renovate owns dependency updates, and librespot updates are protocol changes rather than routine
+bumps. `Packaging/Info.plist` and the tagged-release section of `CONTRIBUTING.md` own version and
+release steps. Tags, releases, remotes, and repository settings require explicit authorization;
+never mutate them as ordinary verification.
 
 ## Definition of done and handoff
 
