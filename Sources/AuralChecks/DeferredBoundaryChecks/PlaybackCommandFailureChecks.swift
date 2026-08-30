@@ -43,9 +43,16 @@ private final class GatedLocalEngine: LocalPlaybackEngine, @unchecked Sendable {
     private let condition = NSCondition()
     private var allowed = false
     private var result: PlaybackEngineResult
+    private var storedEnteredCount = 0
 
     init(result: PlaybackEngineResult = .error) {
         self.result = result
+    }
+
+    var enteredCount: Int {
+        condition.lock()
+        defer { condition.unlock() }
+        return storedEnteredCount
     }
 
     func events() -> AsyncStream<RustPlaybackEventEnvelope> {
@@ -56,6 +63,7 @@ private final class GatedLocalEngine: LocalPlaybackEngine, @unchecked Sendable {
     func initialize() -> PlaybackEngineResult { .ok }
     func execute(_: LocalPlaybackOperation) -> PlaybackEngineResult {
         condition.lock()
+        storedEnteredCount += 1
         while !allowed {
             condition.wait()
         }
@@ -1813,16 +1821,16 @@ func runPlaybackCommandFailureChecks(_ runner: CheckRunner) async {
         runner.equal("duplicate then rejection restores A", duplicateStore.state.owner, ownerA)
         await duplicateStore.shutdownForTermination()
 
-        let cancelRemote = ScriptedRemoteClient(.sleepUntilCancelled)
+        let cancelGate = GatedLocalEngine()
         let cancelStore = playbackStore(
-            commandEnvironment(local: ScriptedLocalEngine(result: .ok), remote: cancelRemote)
+            commandEnvironment(local: cancelGate, remote: ScriptedRemoteClient(.succeed))
         )
         seedRemoteOwner(cancelStore)
         cancelStore.transferPlayback(to: speakerB)
         let cancelPending = await waitUntil { cancelStore.state.pendingCommands[.transfer] != nil }
         runner.check("remote transfer is pending before cancellation", cancelPending)
-        let transferReached = await waitUntil { await cancelRemote.sendCount == 1 }
-        runner.check("cancelled remote transfer still reaches the fixture", transferReached)
+        let transferReached = await waitUntil { cancelGate.enteredCount == 1 }
+        runner.check("cancelled transfer still reaches the local fixture", transferReached)
         if let commandID = cancelStore.state.pendingCommands[.transfer]?.id {
             cancelStore.effects.cancel(.command(commandID))
         }
@@ -1830,6 +1838,7 @@ func runPlaybackCommandFailureChecks(_ runner: CheckRunner) async {
         runner.check("cancellation settles the pending transfer", cancelSettled)
         runner.equal("cancellation restores the captured owner", cancelStore.state.owner, ownerA)
         runner.nil_("cancellation clears the pending transfer", cancelStore.state.pendingCommands[.transfer])
+        cancelGate.finish(with: .error)
         await cancelStore.shutdownForTermination()
 
         let staleStore = playbackStore(
