@@ -51,6 +51,7 @@ final class HomeLibraryStore {
     @ObservationIgnored private var initialLoadToken: UUID?
     @ObservationIgnored private var sectionTasks: [Section: Task<Void, Never>] = [:]
     @ObservationIgnored private var sectionSessionSnapshots: [Section: CatalogSessionSnapshot] = [:]
+    @ObservationIgnored private var loadedSessionSnapshots: [Section: CatalogSessionSnapshot] = [:]
     @ObservationIgnored private var loadSessionSnapshot: CatalogSessionSnapshot?
 
     init(
@@ -71,6 +72,7 @@ final class HomeLibraryStore {
         initialLoadToken = nil
         sectionTasks.removeAll(keepingCapacity: false)
         sectionSessionSnapshots.removeAll(keepingCapacity: false)
+        loadedSessionSnapshots.removeAll(keepingCapacity: false)
         requestIDs.removeAll(keepingCapacity: false)
         loadSessionSnapshot = nil
         greeting = "Home"
@@ -190,7 +192,12 @@ final class HomeLibraryStore {
             await task.value
             return
         }
-        if !force, loadedSections.contains(section) { return }
+        if !force,
+           loadedSections.contains(section),
+           loadedSessionSnapshots[section] == currentSession
+        {
+            return
+        }
 
         nextRequestID &+= 1
         let requestID = nextRequestID
@@ -245,6 +252,7 @@ final class HomeLibraryStore {
     private func succeed(_ section: Section) {
         AuralLog.catalog.info("Catalog section finished: \(section.rawValue, privacy: .public)")
         loadedSections.insert(section)
+        loadedSessionSnapshots[section] = session.snapshot
         errors[section] = nil
     }
 

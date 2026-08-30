@@ -117,14 +117,20 @@ func runHomeLibraryStoreChecks(_ runner: CheckRunner) async {
             "the first playlist request parks",
             await waitUntil { await provider.requestCount == 1 }
         )
-        let follower = Task { await store.loadPlaylists() }
+        var followerFinished = false
+        let follower = Task {
+            await store.loadPlaylists()
+            followerFinished = true
+        }
         await Task.yield()
         runner.equal("a duplicate current-section request joins the in-flight work", await provider.requestCount, 1)
         runner.check("the joined section stays loading", store.isLoading(.playlists))
+        runner.check("the duplicate caller is still waiting on the in-flight request", !followerFinished)
 
         await provider.completeNext(.playlists([first]))
         await firstLoad.value
         await follower.value
+        runner.check("the duplicate caller finishes after the in-flight request", followerFinished)
 
         runner.equal("joined consumers publish one result", store.playlists.map(\.uri), ["spotify:playlist:first"])
         runner.check("the joined section is loaded once", store.loadedSections.contains(.playlists))
@@ -158,17 +164,23 @@ func runHomeLibraryStoreChecks(_ runner: CheckRunner) async {
         runner.equal("a stale success does not publish", store.playlists.map(\.uri), [])
         runner.nil_("a stale success does not surface an error", store.error(for: .playlists))
 
-        let joiner = Task { await store.loadPlaylists() }
+        var joinerFinished = false
+        let joiner = Task {
+            await store.loadPlaylists()
+            joinerFinished = true
+        }
         for _ in 0..<32 { await Task.yield() }
         runner.equal(
             "the old request cannot clear the new request's in-flight task",
             await provider.requestCount,
             2
         )
+        runner.check("a later non-forced caller is still waiting on the newest flight", !joinerFinished)
 
         await provider.completeNext(.playlists([second]))
         await forced.value
         await joiner.value
+        runner.check("the later non-forced caller finishes with the newest flight", joinerFinished)
 
         runner.equal(
             "only the current forced request publishes",
@@ -198,7 +210,11 @@ func runHomeLibraryStoreChecks(_ runner: CheckRunner) async {
             "force refreshes an already-loaded section",
             await waitUntil { await provider.requestCount == 2 }
         )
-        let follower = Task { await store.loadPlaylists() }
+        var followerFinished = false
+        let follower = Task {
+            await store.loadPlaylists()
+            followerFinished = true
+        }
         for _ in 0..<32 { await Task.yield() }
         runner.equal(
             "a non-forced caller joins the in-flight forced refresh",
@@ -206,10 +222,12 @@ func runHomeLibraryStoreChecks(_ runner: CheckRunner) async {
             2
         )
         runner.check("the forced refresh keeps loading while the follower waits", store.isLoading(.playlists))
+        runner.check("the non-forced caller is still waiting on the forced refresh", !followerFinished)
 
         await provider.completeNext(.playlists([second]))
         await forced.value
         await follower.value
+        runner.check("the non-forced caller finishes after the forced refresh", followerFinished)
         runner.equal(
             "joined callers observe the forced refresh",
             store.playlists.map(\.uri),
@@ -287,6 +305,35 @@ func runHomeLibraryStoreChecks(_ runner: CheckRunner) async {
             ["spotify:playlist:second"]
         )
         runner.check("the current session marks the section loaded", store.loadedSections.contains(.playlists))
+
+        session.update(accountEpoch: 3, isAvailable: true)
+        let afterEpoch = Task { await store.loadPlaylists() }
+        runner.check(
+            "a later account epoch reloads a previously loaded section",
+            await waitUntil { await provider.requestCount == 4 }
+        )
+        await provider.completeNext(.playlists([first]))
+        await afterEpoch.value
+        runner.equal(
+            "the later account epoch publishes",
+            store.playlists.map(\.uri),
+            ["spotify:playlist:first"]
+        )
+
+        session.update(accountEpoch: 3, isAvailable: false)
+        session.update(accountEpoch: 3, isAvailable: true)
+        let afterRevision = Task { await store.loadPlaylists() }
+        runner.check(
+            "a new session revision reloads a previously loaded section",
+            await waitUntil { await provider.requestCount == 5 }
+        )
+        await provider.completeNext(.playlists([second]))
+        await afterRevision.value
+        runner.equal(
+            "the new session revision publishes",
+            store.playlists.map(\.uri),
+            ["spotify:playlist:second"]
+        )
     }
 
     await runner.suite("Home library reset and teardown") {
