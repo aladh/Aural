@@ -32,7 +32,7 @@ struct AlbumDetailView: View {
                 EmptyState(icon: "square.stack", title: "No tracks", message: "Spotify returned an empty album.")
             } else {
                 TrackTable(
-                    tracks: store.tracks,
+                    tracks: store.trackCollection,
                     metadata: metadata,
                     playback: playback,
                     playlistActions: playlistActions

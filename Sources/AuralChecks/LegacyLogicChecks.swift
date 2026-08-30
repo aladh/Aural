@@ -29,7 +29,6 @@ enum LogicChecks {
         runLoopbackParsingChecks(runner)
         runURIChecks(runner)
         runFormattingChecks(runner)
-        runPlaylistSortingChecks(runner)
 
         runner.report()
         return runner.succeeded

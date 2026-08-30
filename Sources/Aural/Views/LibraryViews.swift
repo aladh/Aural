@@ -84,7 +84,7 @@ struct SearchView: View {
                             VStack(alignment: .leading, spacing: 12) {
                                 Text("Tracks").font(.title2.bold())
                                 TrackTable(
-                                    tracks: store.tracks,
+                                    tracks: store.trackCollection,
                                     metadata: metadata,
                                     playback: playback,
                                     playlistActions: playlistActions
@@ -202,7 +202,7 @@ struct LibraryView: View {
 struct TrackCollectionView: View {
     let title: String
     let subtitle: String
-    let tracks: [CatalogTrack]
+    let tracks: CatalogTrackCollection
     let metadata: CatalogMetadataRepository
     let playback: CatalogPlaybackAccess
     var reloadError: String? = nil
@@ -227,9 +227,9 @@ struct TrackCollectionView: View {
 
             Divider()
 
-            if isLoading && tracks.isEmpty {
+            if isLoading && tracks.tracks.isEmpty {
                 LoadingState(label: "Loading \(title.lowercased())")
-            } else if tracks.isEmpty {
+            } else if tracks.tracks.isEmpty {
                 if !playback.isConnected {
                     EmptyState(
                         icon: "person.crop.circle.badge.plus",

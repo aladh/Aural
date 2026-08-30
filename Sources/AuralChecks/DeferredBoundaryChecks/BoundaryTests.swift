@@ -20,7 +20,6 @@ enum BoundaryChecksMain {
         await runConnectMetadataTransportChecks(runner)
         runURIChecks(runner)
         runFormattingChecks(runner)
-        runPlaylistSortingChecks(runner)
         runTrackAttributeChecks(runner)
         runFixtureContractChecks(runner)
         runEnginePayloadContractChecks(runner)

@@ -2,7 +2,7 @@
 //  PlaylistStore.swift
 //  Aural
 //
-//  Selected-playlist detail and sorting state.
+//  Selected-playlist detail state.
 //
 
 import AuralDomain
@@ -11,14 +11,8 @@ import Foundation
 @MainActor
 @Observable
 final class PlaylistStore {
-    var tracks: [CatalogTrack] = []
-    var dateSort: PlaylistDateSort = .playlistOrder {
-        didSet {
-            guard oldValue != dateSort else { return }
-            resortTracks()
-        }
-    }
-    private(set) var sortedTracks: [CatalogTrack] = []
+    private(set) var trackCollection = CatalogTrackCollection()
+    var tracks: [CatalogTrack] { trackCollection.tracks }
     var description = ""
     private(set) var loadedURI: String?
     private(set) var ownerURI: String?
@@ -47,9 +41,7 @@ final class PlaylistStore {
         loadTask?.cancel()
         loadTask = nil
         loadSessionSnapshot = nil
-        tracks = []
-        sortedTracks = []
-        dateSort = .playlistOrder
+        replaceTracks([])
         description = ""
         loadedURI = nil
         ownerURI = nil
@@ -61,8 +53,7 @@ final class PlaylistStore {
     /// Keeps `loadedURI` and `tracks` paired. Production loading still goes through `load(_:)`.
     func replaceLoadedPlaylist(uri: String, tracks: [CatalogTrack]) {
         loadedURI = uri
-        self.tracks = tracks
-        resortTracks()
+        replaceTracks(tracks)
     }
 
     func load(_ item: CatalogItem, force: Bool = false) async {
@@ -86,8 +77,7 @@ final class PlaylistStore {
         let isNewPlaylist = loadedURI != item.uri
         loadedURI = item.uri
         if isNewPlaylist {
-            tracks = []
-            sortedTracks = []
+            replaceTracks([])
             description = ""
             ownerURI = item.ownerURI
             metadata.replaceTracks([], from: .playlist)
@@ -136,12 +126,8 @@ final class PlaylistStore {
             guard isCurrent(identity, uri: item.uri) else { return }
             description = PlaylistDescription.plainText(from: playlist.description ?? "")
             ownerURI = CatalogMapping.ownerURI(from: playlist) ?? item.ownerURI
-            if isNewPlaylist {
-                dateSort = .playlistOrder
-            }
             let entries = playlist.content.flatMap(\.items) ?? []
-            tracks = entries.compactMap(CatalogMapping.playlistTrack(from:))
-            resortTracks()
+            replaceTracks(entries.compactMap(CatalogMapping.playlistTrack(from:)))
             metadata.replaceTracks(tracks, from: .playlist)
             metadata.loadTrackAttributes(for: tracks)
         } catch is CancellationError {
@@ -152,6 +138,10 @@ final class PlaylistStore {
             guard isCurrent(identity, uri: item.uri) else { return }
             self.error = error.localizedDescription
         }
+    }
+
+    private func replaceTracks(_ newTracks: [CatalogTrack]) {
+        trackCollection.replace(newTracks)
     }
 
     private func isCurrent(
@@ -165,16 +155,5 @@ final class PlaylistStore {
             isAvailable: session.isAvailable,
             isCancelled: Task.isCancelled
         )
-    }
-
-    private func resortTracks() {
-        sortedTracks = switch dateSort {
-        case .playlistOrder:
-            tracks
-        case .newestFirst:
-            sortedByDateAdded(tracks, newestFirst: true)
-        case .oldestFirst:
-            sortedByDateAdded(tracks, newestFirst: false)
-        }
     }
 }

@@ -7,7 +7,7 @@ enum AuralChecksMain {
 
         runProtobufChecks(runner)
         runShufflePolicyChecks(runner)
-        runPlaylistSortingChecks(runner)
+        runTrackTableDisplayCacheChecks(runner)
         runPlaybackSupportChecks(runner)
         runParsingChecks(runner)
         await runPaginationCollectChecks(runner)

@@ -35,6 +35,9 @@ public struct CatalogTrack: Identifiable, Equatable, Sendable {
         self.artworkURL = artworkURL
         self.addedAt = addedAt
     }
+
+    /// A nonoptional key gives SwiftUI's native Table header a sortable date column.
+    public var dateAddedSortValue: Date { addedAt ?? .distantPast }
 }
 
 /// One card in the home shelves or a library grid.

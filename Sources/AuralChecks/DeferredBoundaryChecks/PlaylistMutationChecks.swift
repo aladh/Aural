@@ -466,12 +466,47 @@ func runPlaylistMutationChecks(_ runner: CheckRunner) async {
         feedback.dismiss()
     }
 
+    runner.suite("Playlist track collection version") {
+        let services = ScriptedPlaylistServices()
+        let session = CatalogSessionAvailability(accountEpoch: 1, isAvailable: true)
+        let feedback = TransientFeedbackPresenter(clock: HoldingClock())
+        let catalog = makeCatalog(services: services, session: session, feedback: feedback)
+        let first = fixtureTrack(id: "uid-a", uri: "spotify:track:a")
+        let second = fixtureTrack(id: "uid-b", uri: "spotify:track:b")
+        catalog.playlistStore.replaceLoadedPlaylist(uri: "spotify:playlist:owned", tracks: [first, second])
+        let loadedVersion = catalog.playlistStore.trackCollection.version
+        catalog.playlistStore.replaceLoadedPlaylist(
+            uri: "spotify:playlist:owned",
+            tracks: [first, fixtureTrack(id: "uid-mid", uri: "spotify:track:mid")]
+        )
+        runner.equal("replacement keeps the same row count", catalog.playlistStore.tracks.count, 2)
+        runner.check(
+            "same-count middle replacement mints a new version",
+            catalog.playlistStore.trackCollection.version != loadedVersion
+        )
+        runner.equal(
+            "authoritative rows follow the replacement identity",
+            catalog.playlistStore.tracks.map(\.id),
+            ["uid-a", "uid-mid"]
+        )
+    }
+
     runner.suite("Playlist mutation UI contract and drag prototype") {
         runner.noThrow("playlist mutation sources are readable") {
             let table = try auralSourceFile("Aural/Views/SharedComponents.swift")
             let providing = try auralSourceFile("Aural/Spotify/CatalogProviding.swift")
             let mutating = try auralSourceFile("Aural/Spotify/PlaylistMutating.swift")
             let controller = try auralSourceFile("Aural/Spotify/PlaylistMutationController.swift")
+            let playlistStore = try auralSourceFile("Aural/Spotify/PlaylistStore.swift")
+            let searchStore = try auralSourceFile("Aural/Spotify/SearchStore.swift")
+            let albumStore = try auralSourceFile("Aural/Spotify/MediaDetailStores.swift")
+            let homeLibrary = try auralSourceFile("Aural/Spotify/HomeLibraryStore.swift")
+            let collectionType = try auralSourceFile("AuralDomain/CatalogTrackCollection.swift")
+            let displayCache = try auralSourceFile("AuralDomain/TrackTableDisplayCache.swift")
+            let playlistDetail = try auralSourceFile("Aural/Views/PlaylistDetailView.swift")
+            let mediaDetail = try auralSourceFile("Aural/Views/MediaDetailViews.swift")
+            let libraryViews = try auralSourceFile("Aural/Views/LibraryViews.swift")
+            let root = try auralSourceFile("Aural/RootView.swift")
             let contractURL = URL(fileURLWithPath: #filePath)
                 .deletingLastPathComponent()
                 .deletingLastPathComponent()
@@ -492,6 +527,52 @@ func runPlaylistMutationChecks(_ runner: CheckRunner) async {
                     && containsToken(table, "Menu(\"Add to Playlist\")")
                     && containsToken(table, "onDeleteCommand")
                     && containsToken(table, "Remove from Playlist")
+            )
+            runner.check(
+                "TrackTable projects rows from a collection version instead of comparing tracks",
+                containsToken(table, "TrackTableDisplayCache")
+                    && containsToken(table, "CatalogTrackCollection")
+                    && containsToken(table, "onChange(of: displayInputs")
+                    && containsToken(table, "tracks.version")
+                    && !containsToken(table, "onChange(of: tracks")
+                    && !containsToken(table, "displayedTracks")
+                    && !containsToken(table, "updateDisplayedTracks")
+            )
+            runner.check(
+                "every TrackTable owner passes a CatalogTrackCollection",
+                containsToken(playlistDetail, "tracks: store.trackCollection")
+                    && containsToken(mediaDetail, "tracks: store.trackCollection")
+                    && containsToken(libraryViews, "tracks: store.trackCollection")
+                    && containsToken(root, "tracks: catalog.homeLibrary.likedTrackCollection")
+            )
+            runner.check(
+                "catalog track lists replace through CatalogTrackCollection",
+                containsToken(playlistStore, "trackCollection.replace")
+                    && containsToken(searchStore, "trackCollection.replace")
+                    && containsToken(albumStore, "trackCollection.replace")
+                    && containsToken(homeLibrary, "likedTrackCollection.replace")
+                    && !containsToken(playlistStore, "replaceCatalogTracks")
+                    && !containsToken(searchStore, "replaceCatalogTracks")
+                    && !containsToken(albumStore, "replaceCatalogTracks")
+                    && !containsToken(homeLibrary, "replaceCatalogTracks")
+            )
+            runner.check(
+                "PlaylistStore does not keep a second sorted copy",
+                !containsToken(playlistStore, "sortedTracks")
+                    && !containsToken(playlistStore, "dateSort")
+                    && !containsToken(playlistStore, "resortTracks")
+            )
+            runner.check(
+                "CatalogTrackCollection versions assignments instead of injected identity",
+                containsToken(collectionType, "public init(tracks: [CatalogTrack] = [])")
+                    && containsToken(collectionType, "version = UUID()")
+                    && !containsToken(collectionType, "init(id:")
+                    && !containsToken(collectionType, "revision")
+                    && !containsToken(collectionType, ": Equatable")
+            )
+            runner.check(
+                "TrackTableDisplayCache does not Equatable-compare cached rows",
+                !containsToken(displayCache, ": Equatable")
             )
             runner.check(
                 "Remove from Playlist and Delete pass only occurrence UIDs",

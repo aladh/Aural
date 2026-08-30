@@ -14,17 +14,17 @@ struct TrackPlaylistActions {
 /// Single-click selects; command-click extends a simple multi-selection; double-click
 /// or Return plays the primary row, matching desktop table behavior.
 struct TrackTable: View {
-    let tracks: [CatalogTrack]
+    let tracks: CatalogTrackCollection
     let metadata: CatalogMetadataRepository
     let playback: CatalogPlaybackAccess
     var showsDateAdded = false
     var playlistActions: TrackPlaylistActions?
     @State private var selection: Set<CatalogTrack.ID> = []
     @State private var sortOrder: [KeyPathComparator<CatalogTrack>] = []
-    @State private var displayedTracks: [CatalogTrack]
+    @State private var displayCache: TrackTableDisplayCache
 
     init(
-        tracks: [CatalogTrack],
+        tracks: CatalogTrackCollection,
         metadata: CatalogMetadataRepository,
         playback: CatalogPlaybackAccess,
         showsDateAdded: Bool = false,
@@ -35,11 +35,11 @@ struct TrackTable: View {
         self.playback = playback
         self.showsDateAdded = showsDateAdded
         self.playlistActions = playlistActions
-        _displayedTracks = State(initialValue: tracks)
+        _displayCache = State(initialValue: TrackTableDisplayCache(tracks))
     }
 
     var body: some View {
-        Table(displayedTracks, selection: $selection, sortOrder: $sortOrder) {
+        Table(displayCache.rows, selection: $selection, sortOrder: $sortOrder) {
             TableColumn("Title", value: \CatalogTrack.title) { track in
                 HStack(spacing: 6) {
                     if isCurrent(track) {
@@ -103,7 +103,7 @@ struct TrackTable: View {
         .contextMenu(forSelectionType: CatalogTrack.ID.self) { selectedIDs in
             let selectedTracks = PlaylistMutationSelection.orderedTracks(
                 selectedIDs: selectedIDs,
-                in: displayedTracks
+                in: displayCache.rows
             )
             if selectedTracks.count == 1, let track = selectedTracks.first {
                 Button("Play", systemImage: "play.fill") {
@@ -149,7 +149,7 @@ struct TrackTable: View {
         } primaryAction: { selectedIDs in
             let selectedTracks = PlaylistMutationSelection.orderedTracks(
                 selectedIDs: selectedIDs,
-                in: displayedTracks
+                in: displayCache.rows
             )
             guard selectedTracks.count == 1, let track = selectedTracks.first else { return }
             play(track)
@@ -158,14 +158,16 @@ struct TrackTable: View {
             removeSelectedOccurrences()
         }
         .accessibilityLabel("Tracks")
-        .onChange(of: tracks, initial: true) { _, newTracks in
-            let validIDs = Set(newTracks.map(\.id))
-            selection.formIntersection(validIDs)
-            updateDisplayedTracks()
+        .onChange(of: displayInputs, initial: true) { oldInputs, newInputs in
+            _ = displayCache.update(tracks, sortOrder: newInputs.sortOrder)
+            if oldInputs.version != newInputs.version {
+                selection = TrackTableDisplayCache.prunedSelection(selection, from: tracks.tracks)
+            }
         }
-        .onChange(of: sortOrder) { _, _ in
-            updateDisplayedTracks()
-        }
+    }
+
+    private var displayInputs: TrackTableDisplayInputs {
+        TrackTableDisplayInputs(version: tracks.version, sortOrder: sortOrder)
     }
 
     private func isCurrent(_ track: CatalogTrack) -> Bool {
@@ -181,16 +183,17 @@ struct TrackTable: View {
         guard playlistActions?.canRemoveOccurrences == true else { return }
         let selectedTracks = PlaylistMutationSelection.orderedTracks(
             selectedIDs: selection,
-            in: displayedTracks
+            in: displayCache.rows
         )
         let uids = PlaylistMutationSelection.occurrenceIDsForRemoval(from: selectedTracks)
         guard !uids.isEmpty else { return }
         playlistActions?.removeOccurrences(uids)
     }
+}
 
-    private func updateDisplayedTracks() {
-        displayedTracks = sortOrder.isEmpty ? tracks : tracks.sorted(using: sortOrder)
-    }
+private struct TrackTableDisplayInputs: Equatable {
+    var version: UUID
+    var sortOrder: [KeyPathComparator<CatalogTrack>]
 }
 
 private extension View {
@@ -202,11 +205,6 @@ private extension View {
             self
         }
     }
-}
-
-private extension CatalogTrack {
-    /// A nonoptional key gives SwiftUI's native Table header a sortable date column.
-    var dateAddedSortValue: Date { addedAt ?? .distantPast }
 }
 
 /// Column placeholder for track details that have not loaded.

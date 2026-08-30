@@ -15,7 +15,8 @@ final class SearchStore {
         case tracks, albums, artists, playlists
     }
 
-    private(set) var tracks: [CatalogTrack] = []
+    private(set) var trackCollection = CatalogTrackCollection()
+    var tracks: [CatalogTrack] { trackCollection.tracks }
     private(set) var albums: [CatalogItem] = []
     private(set) var artists: [CatalogItem] = []
     private(set) var playlists: [CatalogItem] = []
@@ -87,7 +88,7 @@ final class SearchStore {
         await load(.tracks, identity: identity) {
             let values = try await provider.searchTracks(query, limit: 50).compactMap(CatalogMapping.searchTrack(from:))
             guard isCurrent(identity) else { return }
-            tracks = values
+            trackCollection.replace(values)
             metadata.replaceTracks(values, from: .search)
             metadata.loadTrackAttributes(for: values)
         }
@@ -136,7 +137,7 @@ final class SearchStore {
     }
 
     private func clearResults() {
-        tracks = []
+        trackCollection.replace([])
         albums = []
         artists = []
         playlists = []

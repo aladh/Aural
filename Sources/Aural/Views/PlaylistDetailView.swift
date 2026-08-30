@@ -9,7 +9,7 @@ private struct PlaylistLoadIdentity: Equatable {
 
 struct PlaylistDetailView: View {
     let item: CatalogItem
-    @Bindable var store: PlaylistStore
+    let store: PlaylistStore
     let metadata: CatalogMetadataRepository
     let playback: CatalogPlaybackAccess
     let playlistActions: TrackPlaylistActions
@@ -118,7 +118,7 @@ struct PlaylistDetailView: View {
             )
         } else {
             TrackTable(
-                tracks: store.tracks,
+                tracks: store.trackCollection,
                 metadata: metadata,
                 playback: playback,
                 showsDateAdded: true,
