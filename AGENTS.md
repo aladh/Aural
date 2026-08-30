@@ -301,6 +301,10 @@ All commands run from the repository root.
 # Normal non-playback quality gate
 ./Scripts/check.sh
 
+# Swift format from the selected Swift 6.1+ toolchain
+./Scripts/format-swift.sh --check
+./Scripts/format-swift.sh --write
+
 # Slow clean Debug + Release gate
 ./Scripts/check-clean.sh
 
@@ -315,9 +319,10 @@ All commands run from the repository root.
 ./Scripts/export-diagnostics.sh
 ```
 
-`check.sh` runs Rust fmt/Clippy/tests, rebuilds a stale generated archive, validates C exports,
-builds Swift, runs both check executables, enforces architecture rules, and validates packaging. It
-does not sign in or play music.
+`check.sh` runs Swift `swift-format` check, Rust fmt/Clippy `--all-targets -- -D warnings`/tests,
+rebuilds a stale generated archive, validates C exports, builds Aural-owned Swift with
+`-warnings-as-errors`, runs both check executables, enforces architecture rules, and validates
+packaging. It does not sign in or play music.
 
 Minimum verification by change:
 

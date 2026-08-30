@@ -1,0 +1,347 @@
+#!/bin/zsh
+set -euo pipefail
+
+# Git-tracked Swift formatting using swift-format from the selected Xcode/Swift toolchain.
+# Public modes: --check and --write. --self-test covers wrapper contracts in a temp Git repo.
+
+project_root="${0:A:h:h}"
+config_path="$project_root/.swift-format"
+this_script="${0:A}"
+
+usage() {
+    print -u2 "Usage: Scripts/format-swift.sh --check|--write"
+    exit 2
+}
+
+collect_tracked_swift() {
+    swift_files=()
+    while IFS= read -r -d '' file; do
+        swift_files+=("$file")
+    done < <(git -C "$project_root" ls-files -z -- '*.swift')
+    if (( ${#swift_files} == 0 )); then
+        print -u2 "No Git-tracked Swift sources were found."
+        exit 1
+    fi
+}
+
+resolve_formatter() {
+    if ! command -v xcrun >/dev/null 2>&1; then
+        print -u2 "xcrun was not found. Select a Swift 6.1+ Xcode toolchain so bundled swift-format is available."
+        exit 1
+    fi
+
+    swift_path="$(xcrun --find swift 2>/dev/null || true)"
+    formatter_path="$(xcrun --find swift-format 2>/dev/null || true)"
+    if [[ -z "$formatter_path" || ! -x "$formatter_path" ]]; then
+        print -u2 "swift-format was not found in the selected Swift/Xcode toolchain."
+        print -u2 "Use the same selected toolchain as Swift builds; do not install a second formatter."
+        exit 1
+    fi
+    if [[ -z "$swift_path" || ! -x "$swift_path" ]]; then
+        print -u2 "swift was not found in the selected toolchain."
+        exit 1
+    fi
+    if [[ "${swift_path:h}" != "${formatter_path:h}" ]]; then
+        print -u2 "swift-format is not from the same selected toolchain as swift:"
+        print -u2 "swift: $swift_path"
+        print -u2 "swift-format: $formatter_path"
+        exit 1
+    fi
+
+    print "Swift: $("$swift_path" --version | head -n 1)"
+    print "swift-format: $("$formatter_path" --version)"
+    print "swift-format path: $formatter_path"
+}
+
+run_formatter() {
+    local mode="$1"
+    if [[ ! -f "$config_path" ]]; then
+        print -u2 "Missing Swift format configuration: $config_path"
+        exit 1
+    fi
+    case "$mode" in
+        check)
+            (cd "$project_root" && "$formatter_path" lint --strict --parallel --configuration "$config_path" -- "${swift_files[@]}")
+            ;;
+        write)
+            (cd "$project_root" && "$formatter_path" format --in-place --parallel --configuration "$config_path" -- "${swift_files[@]}")
+            ;;
+        *)
+            usage
+            ;;
+    esac
+}
+
+aural_format_swift_self_test() {
+    local tmp fake_bin script config log empty
+    tmp="$(mktemp -d "${TMPDIR:-/tmp}/aural-format-swift.XXXXXX")"
+    {
+        fake_bin="$tmp/fake-bin"
+        mkdir -p "$tmp/Scripts" "$tmp/Sources" "$fake_bin"
+        script="$tmp/Scripts/format-swift.sh"
+        config="$tmp/.swift-format"
+        cp "$this_script" "$script"
+        chmod +x "$script"
+        cp "$config_path" "$config"
+        log="$tmp/formatter.log"
+        : > "$log"
+
+        write_xcrun() {
+            local find_swift="$1"
+            local find_format="$2"
+            cat > "$fake_bin/xcrun" <<EOF
+#!/bin/zsh
+set -euo pipefail
+if [[ "\${1:-}" == --find && "\${2:-}" == swift ]]; then
+    if [[ "$find_swift" == 1 ]]; then
+        print -r -- "$fake_bin/swift"
+        exit 0
+    fi
+    exit 1
+fi
+if [[ "\${1:-}" == --find && "\${2:-}" == swift-format ]]; then
+    if [[ "$find_format" == 1 ]]; then
+        print -r -- "$fake_bin/swift-format"
+        exit 0
+    fi
+    exit 1
+fi
+exit 1
+EOF
+            chmod +x "$fake_bin/xcrun"
+        }
+
+        cat > "$fake_bin/swift" <<'EOF'
+#!/bin/zsh
+set -euo pipefail
+if [[ "${1:-}" == --version ]]; then
+    print "Apple Swift version 6.1.2 (self-test)"
+    exit 0
+fi
+exit 1
+EOF
+        chmod +x "$fake_bin/swift"
+
+        cat > "$fake_bin/swift-format" <<'EOF'
+#!/bin/zsh
+set -euo pipefail
+log="${AURAL_FAKE_FORMAT_LOG:?}"
+print -r -- "$*" >> "$log"
+if [[ "${1:-}" == --version ]]; then
+    print "0.0.0-self-test"
+    exit 0
+fi
+
+files=()
+subcommand=""
+in_place=0
+while (( $# > 0 )); do
+    case "$1" in
+        --)
+            shift
+            files+=("$@")
+            break
+            ;;
+        lint|format)
+            subcommand="$1"
+            shift
+            ;;
+        --in-place|-i)
+            in_place=1
+            shift
+            ;;
+        --strict|-s|--parallel|-p)
+            shift
+            ;;
+        --configuration)
+            shift 2
+            ;;
+        *)
+            if [[ "$1" == -* ]]; then
+                shift
+            else
+                files+=("$1")
+                shift
+            fi
+            ;;
+    esac
+done
+
+if (( ${#files} == 0 )); then
+    print -u2 "fake swift-format received no files"
+    exit 1
+fi
+
+for file in "${files[@]}"; do
+    case "$file" in
+        *.swift) ;;
+        *)
+            print -u2 "fake swift-format received a non-Swift path: $file"
+            exit 1
+            ;;
+    esac
+    if [[ "$file" == *untracked* || "$file" == *.rs || "$file" == *.md || "$file" == *.sh || "$file" == *.json || "$file" == *.h ]]; then
+        print -u2 "fake swift-format received an excluded path: $file"
+        exit 1
+    fi
+done
+
+if [[ "$subcommand" == lint ]]; then
+    for file in "${files[@]}"; do
+        if grep -q UNFORMATTED -- "$file"; then
+            print -u2 "$file: unformatted"
+            exit 1
+        fi
+    done
+    exit 0
+fi
+
+if [[ "$subcommand" == format && "$in_place" == 1 ]]; then
+    for file in "${files[@]}"; do
+        if grep -q UNFORMATTED -- "$file"; then
+            perl -pi -e 's/UNFORMATTED/FORMATTED/g' "$file"
+        fi
+    done
+    exit 0
+fi
+
+print -u2 "fake swift-format unsupported invocation"
+exit 1
+EOF
+        chmod +x "$fake_bin/swift-format"
+
+        git -C "$tmp" init -q
+        git -C "$tmp" config user.email "format-swift-self-test@aural.invalid"
+        git -C "$tmp" config user.name "Aural format-swift self-test"
+
+        print 'let value = UNFORMATTED' > "$tmp/Package.swift"
+        print 'let source = UNFORMATTED' > "$tmp/Sources/App.swift"
+        print 'let script = UNFORMATTED' > "$tmp/Scripts/tool.swift"
+        print 'let spaced = UNFORMATTED' > "$tmp/file with spaces.swift"
+        print 'fn unused() {}' > "$tmp/ignored.rs"
+        print '{"k":1}' > "$tmp/ignored.json"
+        print '# ignored' > "$tmp/ignored.md"
+        print 'echo ignored' > "$tmp/ignored.sh"
+        print 'int ignored;' > "$tmp/ignored.h"
+        print 'let skipped = UNFORMATTED' > "$tmp/untracked.swift"
+        mkdir -p "$tmp/.build/generated"
+        print 'let generated = UNFORMATTED' > "$tmp/.build/generated/Generated.swift"
+
+        git -C "$tmp" add \
+            Package.swift \
+            Sources/App.swift \
+            Scripts/tool.swift \
+            "file with spaces.swift" \
+            ignored.rs ignored.json ignored.md ignored.sh ignored.h \
+            .swift-format \
+            Scripts/format-swift.sh
+
+        export AURAL_FAKE_FORMAT_LOG="$log"
+        export PATH="$fake_bin:$PATH"
+
+        write_xcrun 1 0
+        if "$script" --check >/dev/null 2> "$tmp/missing-format.err"; then
+            print -u2 "expected --check to fail when swift-format is missing"
+            exit 1
+        fi
+        if ! grep -q 'swift-format was not found' "$tmp/missing-format.err"; then
+            print -u2 "missing formatter did not fail clearly:"
+            cat "$tmp/missing-format.err" >&2
+            exit 1
+        fi
+
+        write_xcrun 1 1
+        if "$script" --check >/dev/null 2> "$tmp/unformatted.err"; then
+            print -u2 "expected --check to fail on an unformatted tracked Swift file"
+            exit 1
+        fi
+
+        "$script" --write >/dev/null
+        if grep -q UNFORMATTED "$tmp/Package.swift" "$tmp/Sources/App.swift" "$tmp/Scripts/tool.swift" "$tmp/file with spaces.swift"; then
+            print -u2 "write mode did not format tracked Swift sources"
+            exit 1
+        fi
+        if ! grep -q UNFORMATTED "$tmp/untracked.swift" "$tmp/.build/generated/Generated.swift"; then
+            print -u2 "write mode mutated an untracked or generated Swift file"
+            exit 1
+        fi
+        "$script" --check >/dev/null
+
+        if ! grep -F -q 'Package.swift' "$log"; then
+            print -u2 "tracked Package.swift was not passed to the formatter"
+            exit 1
+        fi
+        if ! grep -F -q 'Sources/App.swift' "$log"; then
+            print -u2 "tracked Sources/*.swift was not passed to the formatter"
+            exit 1
+        fi
+        if ! grep -F -q 'Scripts/tool.swift' "$log"; then
+            print -u2 "tracked Scripts/*.swift was not passed to the formatter"
+            exit 1
+        fi
+        if ! grep -F -q 'file with spaces.swift' "$log"; then
+            print -u2 "tracked Swift path with spaces was not passed to the formatter"
+            exit 1
+        fi
+        if grep -E -q 'untracked\.swift|\.build/|ignored\.(rs|json|md|sh|h)' "$log"; then
+            print -u2 "formatter received an excluded path:"
+            cat "$log" >&2
+            exit 1
+        fi
+
+        empty="$tmp/empty"
+        mkdir -p "$empty/Scripts"
+        cp "$script" "$empty/Scripts/format-swift.sh"
+        cp "$config" "$empty/.swift-format"
+        git -C "$empty" init -q
+        git -C "$empty" add .swift-format Scripts/format-swift.sh
+        if PATH="$fake_bin:$PATH" AURAL_FAKE_FORMAT_LOG="$log" "$empty/Scripts/format-swift.sh" --check \
+            >/dev/null 2> "$tmp/empty.err"; then
+            print -u2 "expected --check to fail when no tracked Swift files exist"
+            exit 1
+        fi
+        if ! grep -q 'No Git-tracked Swift sources were found' "$tmp/empty.err"; then
+            print -u2 "empty tracked set did not fail clearly:"
+            cat "$tmp/empty.err" >&2
+            exit 1
+        fi
+
+        print "format-swift.sh self-test passed"
+    } always {
+        rm -rf "$tmp"
+    }
+}
+
+typeset -a swift_files
+formatter_path=""
+swift_path=""
+
+if [[ $# -ne 1 ]]; then
+    usage
+fi
+
+case "$1" in
+    --self-test)
+        aural_format_swift_self_test
+        exit 0
+        ;;
+    --check|--write)
+        ;;
+    *)
+        usage
+        ;;
+esac
+
+if ! git -C "$project_root" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+    print -u2 "Swift formatting requires a Git checkout so the tracked source set is exact."
+    exit 1
+fi
+
+resolve_formatter
+collect_tracked_swift
+
+if [[ "$1" == --check ]]; then
+    run_formatter check
+else
+    run_formatter write
+fi

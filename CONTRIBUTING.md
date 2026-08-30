@@ -56,13 +56,23 @@ Run the normal gate before opening a pull request:
 ./Scripts/check.sh
 ```
 
-`check.sh` verifies Rust formatting, warning-clean Clippy, the locked Rust unit suite, the generated
-C ABI, Swift builds, architecture constraints, and packaging metadata. It rebuilds a missing or
-stale playback archive, compares the checked-in C header with the archive's exported symbols, and
-runs both non-shipping Swift check products:
+`check.sh` verifies Git-tracked Swift formatting, Rust formatting, warning-clean Clippy, the locked
+Rust unit suite, the generated C ABI, Swift builds with Aural-owned compiler warnings as errors,
+architecture constraints, and packaging metadata. It rebuilds a missing or stale playback archive,
+compares the checked-in C header with the archive's exported symbols, and runs both non-shipping
+Swift check products:
 
 - `AuralChecks` exercises pure domain state, policies, parsing, and deterministic playback traces.
 - `AuralBoundaryChecks` exercises concrete codecs, fixtures, and injected coordinator/queue flows.
+
+Swift formatting uses the selected Swift 6.1+ toolchain's bundled `swift-format`. Check or rewrite
+the same Git-tracked `*.swift` set, including `Package.swift`, `Sources/`, and checked-in
+`Scripts/*.swift`:
+
+```bash
+./Scripts/format-swift.sh --check
+./Scripts/format-swift.sh --write
+```
 
 GitHub's macos-15 debug quality gate caches the repository `.build` tree, including the module cache
 `check.sh` already redirects there. The primary cache key includes runner OS, architecture, the Swift
