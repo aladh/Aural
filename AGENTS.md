@@ -122,9 +122,9 @@ lifetime, or foreign-boundary failures:
   compatibility/action surface, `PlaybackCoordinator` serializes side effects, and
   `PlaybackEffectRegistry` owns store-level task lifetimes. Reducer acceptance normally gates
   follow-ups. A rejected transport finish may report success only after a same-lifetime
-  authoritative snapshot reconciles the expected transport; stale, superseded, teardown, and
-  epoch-invalidated results stay inert. Do not add TCA, a generic `Effect`, or partial store-side
-  presentation writes. See
+  authoritative snapshot reconciles the expected transport; rejected non-transport, stale,
+  superseded, teardown, and epoch-invalidated results stay inert. Do not add TCA, a generic
+  `Effect`, or in-place partial playback presentation updates. See
   [ADR 002](docs/ADR-002-playback-state-and-dependencies.md) and
   [ADR 003](docs/ADR-003-playback-command-effects.md).
 - Production dependencies are assembled once in `PlaybackEnvironment.live`. Views and feature
@@ -139,8 +139,9 @@ lifetime, or foreign-boundary failures:
 - Rust lifecycle operations that write `SESSION`, `SPIRC`, `PLAYER`, `MIXER`, or
   `PLAYER_EVENT_TX` serialize through one async lifecycle mutex. Do not hold a per-global guard
   across `await` or re-enter the lifecycle lock from an inner helper. Reconnect captures
-  `SESSION_GENERATION` at trigger time and revalidates after acquiring the lock; exported init
-  re-checks its already-initialized no-op inside the lock.
+  `SESSION_GENERATION` at trigger time, revalidates after acquiring the lock, and must not clean up
+  or rebuild a newer generation. Exported init re-checks its already-initialized no-op inside the
+  lock.
 - `QueueService` owns queue precedence and context identity. Metadata may enrich labels but must not
   reorder or erase newer authoritative state. Playlist writes use `PlaylistMutating` and
   `PlaylistMutationController`; keep read-only catalog access separate and mutation DTOs out of
@@ -156,10 +157,10 @@ lifetime, or foreign-boundary failures:
   hold Rust locks while invoking Swift, or assume the barrier makes invalid foreign pointers safe.
 - PCM travels directly from the engine adapter to `AudioRenderer`, never through observable UI
   state. Keep callbacks bounded and do not block the Rust callback thread.
-- Prefer Swift structured concurrency, `AsyncStream`, Observation, immutable `Sendable` values,
-  and explicit actor isolation. Combine belongs only at a publisher-native system boundary where
-  it is materially simpler. Avoid `nonisolated(unsafe)`, mutable global state, broad singletons, and
-  unowned task lifetimes.
+- Swift 6.1 concurrency diagnostics are correctness. Prefer structured concurrency, `AsyncStream`,
+  Observation, immutable `Sendable` values, and explicit actor isolation. Combine belongs only at a
+  publisher-native system boundary where it is materially simpler. Avoid `nonisolated(unsafe)`,
+  mutable global state, broad singletons, and unstructured `Task` lifetimes.
 
 For every new callback, account request, queue provider, or optimistic command, define its owner,
 lifetime, cancellation, generation/epoch, ordering/revision, stale-result behavior, error policy,

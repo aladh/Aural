@@ -154,7 +154,7 @@ candidates.
 | DOC-TASTE-001 | Taste principles, taste pass (glance/delete/native/truth/stability/edges/cost/coherence), and “prefer fewer concepts.” | `AGENTS.md`; product contract | Human review before UI/architecture changes | `AGENTS.md`; product contract | manually reviewed | Overlaps product UX; product document wins on conflict. | retain as judgment |
 | DOC-AGENT-001 | First-five-minutes workflow; never reset unrelated work; follow the more specific canonical doc and update `AGENTS.md` in the same change. | `AGENTS.md` | Review | `AGENTS.md` | manually reviewed | | retain as judgment |
 | DOC-MAP-001 | Repository map responsibilities (thin `AuralApp`, domain/portable checks never ship, scripts vs packaging). | `AGENTS.md`; ADR 002 | `CMP-*` + review | map table | manually reviewed + `CMP-CHK-001` | | retain as judgment; graph owns shipping |
-| DOC-IMPL-001 | Declarative UI; existing store split (including media-detail stores); protocols only at real boundaries; typed state and exhaustive switches; comments for invariants, not narration. | `AGENTS.md` | Review | `AGENTS.md` | manually reviewed | Store-split is not a filename linter. Swift 6.1 diagnostics are `DOC-CONC-001`. Formatting is `FMT-*`. Logging/caches/fixtures are `DOC-LOG-001` / `DOC-CACHE-001` / `CMP-LIVE-001`. | retain as judgment |
+| DOC-IMPL-001 | Declarative UI; existing store split (including media-detail stores); protocols only at real boundaries; typed state and exhaustive switches; comments for invariants, not narration. | ADR 002; production store files; `AGENTS.md` summary | Review | Store types under `Sources/Aural/Spotify/`; `AGENTS.md` implementation conventions | manually reviewed | Store-split is not a filename linter. Swift 6.1 diagnostics are `DOC-CONC-001`. Formatting is `FMT-*`. Logging/caches/fixtures are `DOC-LOG-001` / `DOC-CACHE-001` / `CMP-LIVE-001`. | retain as judgment |
 | DOC-CONC-001 | Swift 6.1 concurrency diagnostics are part of correctness. Prefer actor isolation and immutable `Sendable` values over suppression. | `AGENTS.md` implementation conventions | Swift 6.1 compiler; remaining warnings fail via `FMT-SWIFT-002` | `swift build` in `Scripts/check.sh` / `compile-release-aural.sh` | mechanically enforced (diagnostics/warnings) + manually reviewed (suppression) | Isolation errors are compiler errors; this is not a ban on every `@preconcurrency` import. | keep |
 | DOC-ESCAPE-001 | Avoid unstructured `Task` lifetimes, mutable global state, broad singletons, and in-place partial playback presentation updates. | `AGENTS.md` hard architecture | Review; in-place presentation also `TST-STATE-001` | Domain/store checks + review | manually reviewed + behavior-tested (presentation writes) | Not a regex. `SRC-ISO-001` owns only `nonisolated(unsafe)`. | retain as judgment |
 | DOC-LOG-001 | User-facing failure must be actionable and privacy-safe. Never log tokens, OAuth redirects, raw API payloads, or private library/account identifiers. | `AGENTS.md` implementation conventions; `PRIVACY.md`; `SECURITY.md` | Review owns actionable user-facing copy. Privacy sanitization suite owns log/payload hygiene. | `PrivacySanitizationChecks.swift`; Unified Logging; review of notices/alerts | behavior-tested (sanitizers) + manually reviewed (actionable copy) | Cannot prove every `Logger` call or every alert string. `TST-FBK-001` owns transient-feedback *architecture*, not actionability. | keep tests; retain residual as judgment |
@@ -230,19 +230,19 @@ The pre-compression audit established **27,042 bytes**, **414 lines**, **122 sur
 the callback-ownership paragraph, then split packed hard-architecture bullets into distinct
 invariants. That baseline proved every normative rule had a disposition before prose was removed.
 
-The link-and-compress slice is **18,406 bytes** and **289 lines**. It does not delete product,
+The link-and-compress slice is **18,542 bytes** and **290 lines**. It does not delete product,
 release, generated-state, or mechanical contracts: it links their canonical documents and retains
 only the operating summary. Human judgment remains here; compiler/test/ABI/source enforcement
 remains with the owner listed above.
 
 | Current `AGENTS.md` section | Inventory ownership (none omitted) |
 | --- | --- |
-| Mission and priorities | DOC-PRI-001, DOC-PROD-001, CMP-PLT-001, CMP-LIVE-001, CMP-TCA-001 / ADR 001, SRC-HYG-003 |
+| Mission and priorities | DOC-PRI-001, DOC-PROD-001, CMP-PLT-001, CMP-LIVE-001, SRC-HYG-003 |
 | Working judgment | DOC-ENG-001 |
 | Native-Mac taste | DOC-TASTE-001, DOC-UI-001, DOC-CACHE-001 |
 | First five minutes | DOC-AGENT-001 |
 | Repository and ownership map | DOC-MAP-001, CMP-DEP-001, CMP-CHK-001, SRC-DOM-001 |
-| High-consequence architecture | TST-STATE-001, TST-CMD-001, TST-DEP-001, TST-FBK-001, TST-EPC-001, TST-ENV-001, TST-LIF-001, TST-QUE-001, TST-PLM-001, TST-PCM-001, TST-FFI-001, ABI-SYM-001, SRC-FFI-001, SRC-FFI-002, SRC-ISO-001, DOC-COMBINE-001, DOC-ESCAPE-001, DOC-ARCH-001 |
+| High-consequence architecture | TST-STATE-001, TST-CMD-001, TST-DEP-001, TST-FBK-001, TST-EPC-001, TST-ENV-001, TST-LIF-001, TST-QUE-001, TST-PLM-001, TST-PCM-001, TST-FFI-001, ABI-SYM-001, SRC-FFI-001, SRC-FFI-002, SRC-ISO-001, CMP-TCA-001 / ADR 003, DOC-CONC-001, DOC-COMBINE-001, DOC-ESCAPE-001, DOC-ARCH-001 |
 | Implementation conventions | DOC-CONC-001, DOC-IMPL-001, DOC-LOG-001, DOC-CACHE-001, CMP-LIVE-001, TST-FIX-001, FMT-RUST-001, FMT-SWIFT-001 |
 | Live Spotify safety | DOC-SAFE-001 |
 | Commands and proportional verification | DOC-VER-001, TST-GATE-001, FMT-*, ABI-*, CMP-*, SRC-*, DOC-PR-001 |
