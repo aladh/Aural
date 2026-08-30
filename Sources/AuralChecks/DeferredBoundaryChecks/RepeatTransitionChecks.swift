@@ -723,9 +723,9 @@ func runRepeatTransitionChecks(_ runner: CheckRunner) async {
         if let commandID = cancelStore.state.pendingCommands[.options]?.id {
             cancelStore.effects.cancel(.command(commandID))
         }
-        let cancellationSettled = await waitUntil { await sleeping.completedSends == 1 }
-        runner.check("cancelled repeat transport exits", cancellationSettled)
-        runner.equal("cancelled repeat keeps the optimistic mode", cancelStore.repeatMode, RepeatMode.context)
+        let cancellationSettled = await waitUntil { cancelStore.state.pendingCommands[.options] == nil }
+        runner.check("cancelled repeat settles", cancellationSettled)
+        runner.equal("cancelled repeat restores the captured mode", cancelStore.repeatMode, RepeatMode.off)
         runner.nil_("cancelled repeat has no notice", cancelStore.transientCommandError)
         await cancelStore.shutdownForTermination()
 

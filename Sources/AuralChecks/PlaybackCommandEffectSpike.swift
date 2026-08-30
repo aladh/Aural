@@ -171,7 +171,25 @@ private final class RegistryRuntime {
     }
 
     func cancelInFlight() {
+        guard let command = inflight else { return }
         inflight?.cancelled = true
+        guard playbackCommandShouldSettleOrdinaryCancellation(
+            pendingCommandID: session.state.pendingCommands[.transport]?.id,
+            cancelledCommandID: command.id,
+            capturedAccountEpoch: command.accountEpoch,
+            capturedEngineEpoch: command.engineEpoch,
+            currentAccountEpoch: session.accountEpoch,
+            currentEngineEpoch: session.engineGeneration,
+            isTearingDown: session.isTearingDown
+        ) else { return }
+        let finished = session.send(
+            .commandFinished(id: command.id, accepted: false, notice: nil),
+            engineEpoch: command.engineEpoch,
+            accountEpoch: command.accountEpoch
+        )
+        if finished {
+            session.completions.append(false)
+        }
     }
 
     func invalidateAccount() {
@@ -238,15 +256,38 @@ func runPlaybackCommandEffectSpikeChecks(_ check: CheckRunner) {
         check.nil_("a late coordinator failure does not surface an error notice", lateFailure.session.state.notice)
     }
 
-    check.suite("Cancel in flight preserves optimistic pause") {
+    check.suite("Cancel in flight restores captured pause") {
         let runtime = RegistryRuntime()
         _ = runtime.requestPause()
         runtime.cancelInFlight()
         runtime.deliver(.succeeded)
-        check.equal("cancellation preserves the optimistic pause", runtime.transport, .paused)
-        check.notNil("pending command remains until a valid finish or epoch reset", runtime.pending)
-        check.check("cancelled work reports no completion", runtime.session.completions.isEmpty)
+        check.equal("cancellation restores the captured transport", runtime.transport, .playing)
+        check.nil_("cancellation clears the pending command", runtime.pending)
+        check.equal("cancelled work reports failure once", runtime.session.completions, [false])
         check.equal("cancelled work does not reconnect", runtime.session.reconnectCount, 0)
+        check.check("a later pause of the same kind is admitted", runtime.requestPause())
+        check.equal("the later pause applies optimistic paused transport", runtime.transport, .paused)
+
+        let confirmed = RegistryRuntime()
+        _ = confirmed.requestPause()
+        let commandID = confirmed.pending?.id
+        check.notNil("pause is pending before the snapshot", commandID)
+        _ = confirmed.session.send(
+            .transport(.paused),
+            source: .enginePlayback,
+            revision: 1
+        )
+        check.nil_("the snapshot reconciles the pending command", confirmed.pending)
+        confirmed.cancelInFlight()
+        check.equal("confirmed cancellation keeps the paused transport", confirmed.transport, .paused)
+        check.check("confirmed cancellation reports no completion", confirmed.session.completions.isEmpty)
+
+        let stale = RegistryRuntime()
+        _ = stale.requestPause()
+        stale.session.restartEngine()
+        stale.cancelInFlight()
+        check.check("stale cancellation reports no completion", stale.session.completions.isEmpty)
+        check.nil_("engine-epoch invalidation already dropped the pending command", stale.pending)
     }
 
     check.suite("Stale finishes stay inert") {

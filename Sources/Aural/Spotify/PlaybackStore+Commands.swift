@@ -166,25 +166,85 @@ extension PlaybackStore {
             return
         }
         let effectID = PlaybackEffectID.command(commandID)
-        effects.replace(effectID, with: Task { [weak self] in
-            defer { self?.effects.complete(effectID) }
-            guard let self else { return }
-            do {
-                let outcome = try await operation()
-                guard !Task.isCancelled, self.accountEpoch == epoch, !self.isTearingDown else { return }
-                self.applyCommandOutcome(
+        effects.replace(
+            effectID,
+            with: Task { [weak self] in
+                defer { self?.effects.complete(effectID) }
+                guard let self else { return }
+                do {
+                    let outcome = try await operation()
+                    if Task.isCancelled {
+                        self.settleCancelledPlaybackCommand(
+                            commandID: commandID,
+                            kind: kind,
+                            capturedAccountEpoch: epoch,
+                            capturedEngineEpoch: engineEpoch,
+                            completion: completion
+                        )
+                        return
+                    }
+                    guard self.accountEpoch == epoch, !self.isTearingDown else { return }
+                    self.applyCommandOutcome(
+                        commandID: commandID,
+                        kind: kind,
+                        capturedAccountEpoch: epoch,
+                        capturedEngineEpoch: engineEpoch,
+                        outcome: outcome,
+                        action: action,
+                        completion: completion
+                    )
+                } catch is CancellationError {
+                    self.settleCancelledPlaybackCommand(
+                        commandID: commandID,
+                        kind: kind,
+                        capturedAccountEpoch: epoch,
+                        capturedEngineEpoch: engineEpoch,
+                        completion: completion
+                    )
+                } catch {
+                    return
+                }
+            },
+            onCancel: { [weak self] in
+                self?.settleCancelledPlaybackCommand(
                     commandID: commandID,
                     kind: kind,
                     capturedAccountEpoch: epoch,
                     capturedEngineEpoch: engineEpoch,
-                    outcome: outcome,
-                    action: action,
                     completion: completion
                 )
-            } catch {
-                return
             }
-        })
+        )
+    }
+
+    /// Ordinary same-lifetime `PlaybackEffectID.command` cancellation. Matching pending
+    /// identity is the once-gate: restore reducer-owned rollback, clear that command,
+    /// and report `completion(false)` without a notice or reconnect. Confirmed,
+    /// superseded, stale, and teardown paths stay inert.
+    private func settleCancelledPlaybackCommand(
+        commandID: UUID,
+        kind: PlaybackCommandKind,
+        capturedAccountEpoch: UInt64,
+        capturedEngineEpoch: UInt64,
+        completion: @escaping @MainActor (Bool) -> Void
+    ) {
+        guard playbackCommandShouldSettleOrdinaryCancellation(
+            pendingCommandID: state.pendingCommands[kind]?.id,
+            cancelledCommandID: commandID,
+            capturedAccountEpoch: capturedAccountEpoch,
+            capturedEngineEpoch: capturedEngineEpoch,
+            currentAccountEpoch: accountEpoch,
+            currentEngineEpoch: engineGeneration,
+            isTearingDown: isTearingDown
+        ) else { return }
+        let finished = send(
+            .commandFinished(id: commandID, accepted: false, notice: nil),
+            source: .command,
+            engineEpoch: capturedEngineEpoch,
+            accountEpoch: capturedAccountEpoch
+        )
+        guard finished else { return }
+        completion(false)
     }
 
     /// Local and remote command finishes share this policy so a matching engine snapshot cannot

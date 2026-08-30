@@ -96,4 +96,33 @@ func runCommandEffectRegistryChecks(_ runner: CheckRunner) async {
         runner.check("explicit lifecycle cancellation is bounded", await awaitBounded(lifecycle))
         runner.check("an explicit lifecycle cancel still stops the listener", lifecycleCancelled.isSet)
     }
+
+    await runner.suite("PlaybackEffectRegistry complete does not drop a newer token") {
+        let effects = PlaybackEffectRegistry()
+        let commandID = UUID()
+        let replacementCancelled = CancellationFlag()
+
+        let superseded: Task<Void, Never> = Task {
+            do {
+                try await Task.sleep(nanoseconds: cancellationWorkNanoseconds)
+            } catch {}
+            effects.complete(.command(commandID))
+        }
+        effects.replace(.command(commandID), with: superseded)
+
+        let replacement: Task<Void, Never> = Task {
+            await withTaskCancellationHandler {
+                do {
+                    try await Task.sleep(nanoseconds: cancellationWorkNanoseconds)
+                } catch {}
+            } onCancel: {
+                replacementCancelled.mark()
+            }
+        }
+        effects.replace(.command(commandID), with: replacement)
+        runner.check("the superseded task ends without waiting out a long sleep", await awaitBounded(superseded))
+        effects.cancel(.command(commandID))
+        runner.check("the replacement token is still cancellable", await awaitBounded(replacement))
+        runner.check("completing the superseded task did not drop the replacement", replacementCancelled.isSet)
+    }
 }

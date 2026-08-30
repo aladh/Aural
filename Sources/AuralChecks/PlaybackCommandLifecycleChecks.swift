@@ -95,4 +95,81 @@ func runPlaybackCommandLifecycleChecks(_ check: CheckRunner) {
         check.equal("transfer records expected owner", state.pendingCommands[.transfer]?.expectedOwner, Optional(owner))
         check.equal("typed expected fields stay on their command kinds", state.pendingCommands.count, 3)
     }
+
+    check.suite("Ordinary cancellation rolls back only the matching command") {
+        let pauseID = UUID(uuidString: "00000000-0000-0000-0000-0000000000B1")!
+        let otherID = UUID(uuidString: "00000000-0000-0000-0000-0000000000B2")!
+        let priorTiming = PlaybackTiming(position: 40, duration: 200, anchoredAt: lifecycleDate)
+        let notice = PlaybackNotice(
+            id: UUID(uuidString: "00000000-0000-0000-0000-0000000000B3")!,
+            message: "Unrelated notice"
+        )
+        var state = PlaybackState(
+            accountEpoch: 1,
+            engineEpoch: 1,
+            session: .ready,
+            transport: .playing,
+            currentTrack: CurrentTrack(
+                uri: "spotify:track:a",
+                title: "A",
+                artist: "Artist",
+                duration: 200,
+                metadataSource: .catalog
+            ),
+            timing: priorTiming,
+            notice: notice
+        )
+
+        _ = PlaybackReducer.reduce(
+            &state,
+            envelope: lifecycleEnvelope(
+                event: .commandStarted(PendingPlaybackCommand(
+                    id: pauseID,
+                    kind: .transport,
+                    expectedTransport: .paused,
+                    startedAt: lifecycleDate
+                ))
+            )
+        )
+        check.equal("pause applies optimistic paused transport", state.transport, .paused)
+
+        let unknown = PlaybackReducer.reduce(
+            &state,
+            envelope: lifecycleEnvelope(
+                event: .commandFinished(id: otherID, accepted: false, notice: nil)
+            )
+        )
+        check.check("a mismatched cancel id is rejected", !unknown)
+        check.equal("a mismatched cancel leaves optimistic pause", state.transport, .paused)
+        check.equal("a mismatched cancel leaves the pending command", state.pendingCommands[.transport]?.id, pauseID)
+
+        _ = PlaybackReducer.reduce(
+            &state,
+            envelope: lifecycleEnvelope(
+                event: .commandFinished(id: pauseID, accepted: false, notice: nil)
+            )
+        )
+        check.equal("ordinary cancellation restores the captured transport", state.transport, .playing)
+        check.equal("ordinary cancellation restores the captured timing", state.timing, priorTiming)
+        check.nil_("ordinary cancellation clears the pending command", state.pendingCommands[.transport])
+        check.equal("ordinary cancellation does not replace an unrelated notice", state.notice, notice)
+
+        let confirmedID = UUID(uuidString: "00000000-0000-0000-0000-0000000000B4")!
+        var confirmed = PlaybackState(
+            accountEpoch: 1,
+            engineEpoch: 1,
+            session: .ready,
+            transport: .paused,
+            transportCommandResolutions: [confirmedID: .confirmed]
+        )
+        let consumeOnly = PlaybackReducer.reduce(
+            &confirmed,
+            envelope: lifecycleEnvelope(
+                event: .commandFinished(id: confirmedID, accepted: false, notice: nil)
+            )
+        )
+        check.check("a confirmed cancel consumes the resolution", consumeOnly)
+        check.equal("a confirmed cancel does not restore transport", confirmed.transport, .paused)
+        check.check("a confirmed cancel does not leave a resolution", confirmed.transportCommandResolutions.isEmpty)
+    }
 }

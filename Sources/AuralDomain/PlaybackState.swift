@@ -786,7 +786,11 @@ public enum PlaybackReducer {
                     if let rollbackOwner = pair.value.rollbackOwner {
                         candidate.owner = rollbackOwner
                     }
-                    candidate.notice = notice
+                    // A nil notice is ordinary cancellation: restore rollback without
+                    // replacing an unrelated existing notice.
+                    if let notice {
+                        candidate.notice = notice
+                    }
                 } else {
                     if let expectedShuffle = pair.value.expectedShuffle {
                         candidate.options.shuffle = expectedShuffle

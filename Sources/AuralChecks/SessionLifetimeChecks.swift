@@ -421,4 +421,36 @@ func runSessionLifetimeChecks(_ check: CheckRunner) {
             .inert
         )
     }
+
+    check.suite("Playback command ordinary cancellation") {
+        let commandID = UUID(uuidString: "00000000-0000-0000-0000-000000000099")!
+        let other = UUID(uuidString: "00000000-0000-0000-0000-00000000009A")!
+        func shouldSettle(
+            pending: UUID? = commandID,
+            cancelled: UUID = commandID,
+            account: UInt64 = 1,
+            engine: UInt64 = 1,
+            currentAccount: UInt64 = 1,
+            currentEngine: UInt64 = 1,
+            tearingDown: Bool = false
+        ) -> Bool {
+            playbackCommandShouldSettleOrdinaryCancellation(
+                pendingCommandID: pending,
+                cancelledCommandID: cancelled,
+                capturedAccountEpoch: account,
+                capturedEngineEpoch: engine,
+                currentAccountEpoch: currentAccount,
+                currentEngineEpoch: currentEngine,
+                isTearingDown: tearingDown
+            )
+        }
+
+        check.check("a matching same-lifetime cancel settles", shouldSettle())
+        check.check("a missing pending command stays inert", !shouldSettle(pending: nil))
+        check.check("a newer pending command stays inert", !shouldSettle(pending: other))
+        check.check("a different cancelled id stays inert", !shouldSettle(cancelled: other))
+        check.check("engine-epoch invalidation stays inert", !shouldSettle(currentEngine: 2))
+        check.check("account-epoch invalidation stays inert", !shouldSettle(currentAccount: 2))
+        check.check("teardown stays inert", !shouldSettle(tearingDown: true))
+    }
 }

@@ -203,3 +203,24 @@ public func playbackCommandFollowUp(
     }
     return .inert
 }
+
+/// Ordinary same-lifetime cancellation of one in-flight command token.
+///
+/// Teardown, account-epoch changes, engine-generation changes, and a missing or
+/// different pending id stay inert: confirmation, supersession, a newer command, and
+/// lifetime ownership already cleared the slot. Matching pending identity is the
+/// once-gate; a second cancel cannot restore or complete again.
+public func playbackCommandShouldSettleOrdinaryCancellation(
+    pendingCommandID: UUID?,
+    cancelledCommandID: UUID,
+    capturedAccountEpoch: UInt64,
+    capturedEngineEpoch: UInt64,
+    currentAccountEpoch: UInt64,
+    currentEngineEpoch: UInt64,
+    isTearingDown: Bool
+) -> Bool {
+    !isTearingDown
+        && capturedAccountEpoch == currentAccountEpoch
+        && capturedEngineEpoch == currentEngineEpoch
+        && pendingCommandID == cancelledCommandID
+}
