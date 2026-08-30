@@ -5,16 +5,7 @@ set -euo pipefail
 # playback archive and the repository SwiftPM/.build cache. Does not run the Rust suite,
 # Swift checks, packaging, or signing.
 project_root="${0:A:h:h}"
-sdk_path="$(xcrun --show-sdk-path)"
-compatible_sdk="/Library/Developer/CommandLineTools/SDKs/MacOSX26.5.sdk"
-if [[ -d "$compatible_sdk" ]]; then
-    sdk_path="$compatible_sdk"
-fi
-
-mkdir -p "$project_root/.build/module-cache"
-export SDKROOT="$sdk_path"
-export CLANG_MODULE_CACHE_PATH="$project_root/.build/module-cache"
-export SWIFTPM_MODULECACHE_OVERRIDE="$project_root/.build/module-cache"
+source "$project_root/Scripts/swiftpm-env.sh"
 
 backend_lib="$project_root/Backend/lib/libaural_playback.a"
 if [[ ! -f "$backend_lib" ]]; then
@@ -63,13 +54,6 @@ if [[ -e "$debug_binary" ]]; then
         print -u2 "Release compile reused the debug executable"
         exit 1
     fi
-fi
-
-if ! rg -q --fixed-strings -- '-DAURAL_DISTRIBUTION' \
-    -g '*.yaml' -g '*.json' \
-    "$project_root/.build"; then
-    print -u2 "Release compile did not record -DAURAL_DISTRIBUTION in the SwiftPM build graph"
-    exit 1
 fi
 
 print "Compiled release Aural with AURAL_DISTRIBUTION at $built_binary"

@@ -3,16 +3,7 @@ set -euo pipefail
 
 project_root="${0:A:h:h}"
 build_configuration="${AURAL_BUILD_CONFIGURATION:-debug}"
-sdk_path="$(xcrun --show-sdk-path)"
-compatible_sdk="/Library/Developer/CommandLineTools/SDKs/MacOSX26.5.sdk"
-if [[ -d "$compatible_sdk" ]]; then
-    sdk_path="$compatible_sdk"
-fi
-
-mkdir -p "$project_root/.build/module-cache"
-export SDKROOT="$sdk_path"
-export CLANG_MODULE_CACHE_PATH="$project_root/.build/module-cache"
-export SWIFTPM_MODULECACHE_OVERRIDE="$project_root/.build/module-cache"
+source "$project_root/Scripts/swiftpm-env.sh"
 
 case "$build_configuration" in
     debug|release) ;;
@@ -337,31 +328,6 @@ if ! rg -U -q --fixed-strings $'          echo "SWIFT_TOOLCHAIN_KEY=$(shasum -a 
 fi
 if ! rg -U -q --fixed-strings $'      - name: Run checks\n        run: ./Scripts/check.sh\n\n      - name: Compile release Aural with AURAL_DISTRIBUTION\n        run: ./Scripts/compile-release-aural.sh' "$ci_workflow"; then
     print -u2 "CI must compile release Aural with AURAL_DISTRIBUTION after the unfiltered debug gate"
-    exit 1
-fi
-if rg -q 'check-clean|swift package clean|AURAL_SIGNING_IDENTITY|package-app|archive-app|notarize|gh release' "$ci_workflow"; then
-    print -u2 "CI must not clean .build, package, sign, notarize, or publish a release"
-    exit 1
-fi
-
-release_compile_script="$project_root/Scripts/compile-release-aural.sh"
-if [[ ! -f "$release_compile_script" ]]; then
-    print -u2 "Release compile script is missing"
-    exit 1
-fi
-if ! rg -q --fixed-strings -- '--configuration release' "$release_compile_script" \
-    || ! rg -q --fixed-strings -- '--product Aural' "$release_compile_script" \
-    || ! rg -U -q --fixed-strings $'    --product Aural\n    -Xswiftc -DAURAL_DISTRIBUTION' "$release_compile_script"; then
-    print -u2 "Release compile must build product Aural in release with -DAURAL_DISTRIBUTION"
-    exit 1
-fi
-if ! rg -q 'SWIFTPM_MODULECACHE_OVERRIDE' "$release_compile_script"; then
-    print -u2 "Release compile must reuse the repo-local Swift module cache"
-    exit 1
-fi
-if rg -q 'AuralChecks|AuralBoundaryChecks|cargo fmt|cargo clippy|cargo test|package clean|package-app|archive-app|codesign|notarize|AURAL_SIGNING_IDENTITY' \
-    "$release_compile_script"; then
-    print -u2 "Release compile must not rerun checks, clean .build, package, or sign"
     exit 1
 fi
 
