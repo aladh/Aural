@@ -75,6 +75,9 @@ func runPlaybackProjectionContractChecks(_ check: CheckRunner) {
                     var phase: Phase { state.session } // set { }
                     let sample = "set { }"
                     /* set { state.session = newValue } */
+                    /*
+                    set { state.session = newValue }
+                    */
                     """
             ),
             []

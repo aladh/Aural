@@ -6,18 +6,28 @@ import Foundation
 /// accessor there would recreate partial-presentation state. `func set…` methods and
 /// setters in other files are out of scope for this file-bounded guard.
 ///
-/// Comment and string handling uses `uncommentedSource`. Setter detection then drops
-/// remaining quoted string contents so a documented example is not an accessor.
+/// Comment and string handling uses `uncommentedSource` on the whole buffer. Nested
+/// `/* */` state carries across lines because block-comment newlines are kept. Setter
+/// detection then drops remaining quoted string contents so a documented example is
+/// not an accessor.
 enum PlaybackStoreProjectionContract {
     static func explicitSetterLines(in source: String) -> [String] {
-        source
-            .split(separator: "\n", omittingEmptySubsequences: false)
-            .map(String.init)
-            .filter(isExplicitSetterLine(_:))
+        let originalLines = source.split(separator: "\n", omittingEmptySubsequences: false).map(String.init)
+        let uncommentedLines = uncommentedSource(source).split(
+            separator: "\n",
+            omittingEmptySubsequences: false
+        ).map(String.init)
+        return zip(originalLines, uncommentedLines).compactMap { original, uncommented in
+            isExplicitSetterPayload(uncommented) ? original : nil
+        }
     }
 
     static func isExplicitSetterLine(_ line: String) -> Bool {
-        let payload = uncommentedSource(line)
+        isExplicitSetterPayload(uncommentedSource(line))
+    }
+
+    private static func isExplicitSetterPayload(_ uncommentedLine: String) -> Bool {
+        let payload = uncommentedLine
             .replacingOccurrences(of: #"\"([^"\\]|\\.)*\""#, with: "", options: .regularExpression)
             .trimmingCharacters(in: .whitespaces)
         return payload.range(
@@ -56,6 +66,9 @@ enum PlaybackStoreProjectionContract {
                     blockDepth -= 1
                     index = source.index(after: next)
                 } else {
+                    if character == "\n" {
+                        result.append("\n")
+                    }
                     index = next
                 }
                 continue
