@@ -20,4 +20,76 @@ enum PlaybackStoreProjectionContract {
             options: .regularExpression
         ) != nil
     }
+
+    static func uncommentedSource(_ source: String) -> String {
+        var result = ""
+        var index = source.startIndex
+        var blockDepth = 0
+        var inLineComment = false
+        var inString = false
+        var escaped = false
+        while index < source.endIndex {
+            let next = source.index(after: index)
+            let startsPair = next < source.endIndex
+            let pair = startsPair ? String(source[index...next]) : ""
+            let character = source[index]
+
+            if inLineComment {
+                if character == "\n" {
+                    inLineComment = false
+                    result.append("\n")
+                }
+                index = next
+                continue
+            }
+
+            if blockDepth > 0 {
+                if pair == "/*" {
+                    blockDepth += 1
+                    index = source.index(after: next)
+                } else if pair == "*/" {
+                    blockDepth -= 1
+                    index = source.index(after: next)
+                } else {
+                    index = next
+                }
+                continue
+            }
+
+            if inString {
+                result.append(character)
+                if escaped {
+                    escaped = false
+                } else if character == "\\" {
+                    escaped = true
+                } else if character == "\"" {
+                    inString = false
+                }
+                index = next
+                continue
+            }
+
+            if pair == "/*" {
+                blockDepth = 1
+                index = source.index(after: next)
+                continue
+            }
+            if pair == "//" {
+                inLineComment = true
+                index = source.index(after: next)
+                continue
+            }
+
+            if character == "\"" {
+                inString = true
+            }
+            result.append(character)
+            index = next
+        }
+        return result
+    }
+
+    static func containsUncommented(_ source: String, _ token: String) -> Bool {
+        uncommentedSource(source).contains(token)
+    }
 }

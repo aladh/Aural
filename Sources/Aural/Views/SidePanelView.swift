@@ -289,6 +289,6 @@ private struct CurrentTrackRow: View {
         .padding(6)
         .background(Color.accentColor.opacity(0.07), in: RoundedRectangle(cornerRadius: 7, style: .continuous))
         .accessibilityElement(children: .combine)
-        .accessibilityLabel("Now playing \(player.trackTitle) by \(player.artistName)")
+        .accessibilityLabel("Now playing \(player.displayedTrackTitle) by \(player.displayedArtistName)")
     }
 }
