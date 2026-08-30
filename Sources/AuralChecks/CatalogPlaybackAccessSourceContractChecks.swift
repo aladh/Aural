@@ -7,37 +7,35 @@ func runCatalogPlaybackAccessSourceContractChecks(_ check: CheckRunner) {
             init(player: PlaybackStore) {
                 isConnected = player.isConnected
                 accountEpoch = player.state.accountEpoch
-                canStartPlayback = player.canStartPlayback
-                currentTrackURI = player.trackURI
-                statusText = player.statusText
                 self.player = player
             }
         }
         """
         check.equal(
             "a snapshotting initializer is reported",
-            CatalogPlaybackAccessSourceContract.factTokensRead(
+            CatalogPlaybackAccessSourceContract.significantLines(
                 in: CatalogPlaybackAccessSourceContract.initializerBody(in: snapshottingInit)
             ),
-            ["isConnected", "accountEpoch", "canStartPlayback", "trackURI", "statusText"]
+            [
+                "isConnected = player.isConnected",
+                "accountEpoch = player.state.accountEpoch",
+                "self.player = player",
+            ]
         )
 
-        let lazyInit = """
-        struct CatalogPlaybackAccess {
-            init(player: PlaybackStore) {
-                self.player = player
-            }
-
-            var canStartPlayback: Bool { player.canStartPlayback }
-            var statusText: String { player.statusText }
-        }
-        """
         check.equal(
-            "computed facts outside init are not initializer reads",
-            CatalogPlaybackAccessSourceContract.factTokensRead(
-                in: CatalogPlaybackAccessSourceContract.initializerBody(in: lazyInit)
+            "a store-only initializer matches the allowed assignments",
+            CatalogPlaybackAccessSourceContract.significantLines(
+                in: CatalogPlaybackAccessSourceContract.initializerBody(
+                    in: """
+                    init(player: PlaybackStore) {
+                        self.player = player
+                        self.playerIdentity = ObjectIdentifier(player)
+                    }
+                    """
+                )
             ),
-            []
+            CatalogPlaybackAccessSourceContract.allowedInitializerLines
         )
 
         check.equal(
@@ -71,30 +69,31 @@ func runCatalogPlaybackAccessSourceContractChecks(_ check: CheckRunner) {
             )
         )
 
-        let rootAccessor = """
-            private var catalogPlayback: CatalogPlaybackAccess {
-                CatalogPlaybackAccess(player: player)
-            }
-        """
         check.equal(
-            "a store-only RootView accessor is fact-lazy",
-            CatalogPlaybackAccessSourceContract.factTokensRead(
-                in: CatalogPlaybackAccessSourceContract.catalogPlaybackAccessorBody(in: rootAccessor)
-            ),
-            []
-        )
-        check.equal(
-            "a snapshotting RootView accessor is reported",
-            CatalogPlaybackAccessSourceContract.factTokensRead(
+            "a store-only RootView accessor matches the allowed construction",
+            CatalogPlaybackAccessSourceContract.significantLines(
                 in: CatalogPlaybackAccessSourceContract.catalogPlaybackAccessorBody(
                     in: """
                         private var catalogPlayback: CatalogPlaybackAccess {
-                            CatalogPlaybackAccess(player: player, canStartPlayback: player.canStartPlayback)
+                            CatalogPlaybackAccess(player: player)
                         }
                     """
                 )
             ),
-            ["canStartPlayback"]
+            CatalogPlaybackAccessSourceContract.allowedRootAccessorLines
+        )
+        check.notEqual(
+            "a snapshotting RootView accessor is reported",
+            CatalogPlaybackAccessSourceContract.significantLines(
+                in: CatalogPlaybackAccessSourceContract.catalogPlaybackAccessorBody(
+                    in: """
+                        private var catalogPlayback: CatalogPlaybackAccess {
+                            CatalogPlaybackAccess(player: player, isConnected: player.isConnected)
+                        }
+                    """
+                )
+            ),
+            CatalogPlaybackAccessSourceContract.allowedRootAccessorLines
         )
 
         check.noThrow("production catalog playback sources are readable") {
@@ -110,12 +109,33 @@ func runCatalogPlaybackAccessSourceContractChecks(_ check: CheckRunner) {
                 contentsOf: sources.appending(path: "RootView.swift"),
                 encoding: .utf8
             )
+            let table = try String(
+                contentsOf: sources.appending(path: "Views/SharedComponents.swift"),
+                encoding: .utf8
+            )
+            let playlist = try String(
+                contentsOf: sources.appending(path: "Views/PlaylistDetailView.swift"),
+                encoding: .utf8
+            )
+            let media = try String(
+                contentsOf: sources.appending(path: "Views/MediaDetailViews.swift"),
+                encoding: .utf8
+            )
+            let library = try String(
+                contentsOf: sources.appending(path: "Views/LibraryViews.swift"),
+                encoding: .utf8
+            )
+            let home = try String(
+                contentsOf: sources.appending(path: "Views/HomeView.swift"),
+                encoding: .utf8
+            )
+
             check.equal(
-                "production initializer does not snapshot playback facts",
-                CatalogPlaybackAccessSourceContract.factTokensRead(
+                "production initializer only stores the player",
+                CatalogPlaybackAccessSourceContract.significantLines(
                     in: CatalogPlaybackAccessSourceContract.initializerBody(in: access)
                 ),
-                []
+                CatalogPlaybackAccessSourceContract.allowedInitializerLines
             )
             check.equal(
                 "production access stores no per-body action closures",
@@ -127,16 +147,51 @@ func runCatalogPlaybackAccessSourceContractChecks(_ check: CheckRunner) {
                 CatalogPlaybackAccessSourceContract.equatesByPlayerIdentity(access)
             )
             check.equal(
-                "RootView catalogPlayback construction is fact-lazy",
-                CatalogPlaybackAccessSourceContract.factTokensRead(
+                "RootView catalogPlayback only constructs access from the scene player",
+                CatalogPlaybackAccessSourceContract.significantLines(
                     in: CatalogPlaybackAccessSourceContract.catalogPlaybackAccessorBody(in: root)
                 ),
-                []
+                CatalogPlaybackAccessSourceContract.allowedRootAccessorLines
             )
             check.check(
-                "RootView still constructs CatalogPlaybackAccess from the scene player",
-                CatalogPlaybackAccessSourceContract.catalogPlaybackAccessorBody(in: root)
-                    .contains("CatalogPlaybackAccess(player: player)")
+                "TrackTable highlights from hasCurrentTrack and currentTrackURI",
+                table.contains("playback.hasCurrentTrack && playback.currentTrackURI == track.uri")
+            )
+            check.check(
+                "TrackTable play and queue respect canStartPlayback",
+                table.contains(".disabled(!playback.canStartPlayback)")
+                    && table.contains("playback.playTrack(track)")
+                    && table.contains("playback.addToQueue(")
+            )
+            check.check(
+                "playlist detail still keys its load task on account epoch and connection",
+                playlist.contains("accountEpoch: playback.accountEpoch")
+                    && playlist.contains("isConnected: playback.isConnected")
+                    && playlist.contains("guard playback.isConnected else { return }")
+            )
+            check.check(
+                "playlist detail still uses status copy and connect",
+                playlist.contains("Text(playback.statusText)")
+                    && playlist.contains("playback.connect()")
+                    && playlist.contains("playback.playPlaylist(item)")
+            )
+            check.check(
+                "album and artist loads still key on account epoch",
+                media.contains("accountEpoch: playback.accountEpoch")
+                    && media.contains("isConnected: playback.isConnected")
+                    && media.contains("playback.playURI(item.uri)")
+            )
+            check.check(
+                "search and library still observe connection for empty and load states",
+                library.contains("if !playback.isConnected")
+                    && library.contains("playback.connect()")
+                    && library.contains(".task(id: playback.accountEpoch)")
+                    && home.contains("else if !playback.isConnected")
+            )
+            check.check(
+                "liked songs keep account-epoch loading in RootView",
+                root.contains(".task(id: catalogPlayback.accountEpoch)")
+                    && root.contains("guard catalogPlayback.isConnected else { return }")
             )
         }
     }

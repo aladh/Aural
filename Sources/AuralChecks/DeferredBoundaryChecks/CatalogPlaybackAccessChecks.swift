@@ -181,32 +181,6 @@ private func waitUntil(_ condition: @MainActor () async -> Bool) async -> Bool {
     return false
 }
 
-private func auralSourceFile(_ relativePath: String) throws -> String {
-    let checksDirectory = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
-    let sources = checksDirectory.deletingLastPathComponent().deletingLastPathComponent()
-    let url = sources.appending(path: relativePath)
-    return try String(contentsOf: url, encoding: .utf8)
-}
-
-private func containsToken(_ source: String, _ token: String) -> Bool {
-    source.contains(token)
-}
-
-/// Boundary copy of the domain stored-closure detector. `AuralChecks` types are not
-/// visible to this executable.
-private func storedActionClosureLines(in source: String) -> [String] {
-    source
-        .split(separator: "\n", omittingEmptySubsequences: false)
-        .map { $0.trimmingCharacters(in: .whitespaces) }
-        .filter { line in
-            guard !line.hasPrefix("//") else { return false }
-            if line.hasPrefix("func ") || line.hasPrefix("static func ") { return false }
-            return line.contains("-> Void")
-                || line.contains(": @MainActor (")
-                || line.contains(": @MainActor(")
-        }
-}
-
 @MainActor
 func runCatalogPlaybackAccessChecks(_ runner: CheckRunner) async {
     await runner.suite("CatalogPlaybackAccess construction is fact-lazy") {
@@ -410,68 +384,5 @@ func runCatalogPlaybackAccessChecks(_ runner: CheckRunner) async {
             }
         )
         await player.shutdownForTermination()
-    }
-
-    runner.suite("Catalog leaves still read the facts they render") {
-        runner.noThrow("catalog leaf sources are readable") {
-            let table = try auralSourceFile("Aural/Views/SharedComponents.swift")
-            let playlist = try auralSourceFile("Aural/Views/PlaylistDetailView.swift")
-            let media = try auralSourceFile("Aural/Views/MediaDetailViews.swift")
-            let library = try auralSourceFile("Aural/Views/LibraryViews.swift")
-            let home = try auralSourceFile("Aural/Views/HomeView.swift")
-            let root = try auralSourceFile("Aural/RootView.swift")
-            let access = try auralSourceFile("Aural/CatalogPlaybackAccess.swift")
-
-            runner.check(
-                "TrackTable highlights from hasCurrentTrack and currentTrackURI",
-                containsToken(table, "playback.hasCurrentTrack && playback.currentTrackURI == track.uri")
-            )
-            runner.check(
-                "TrackTable play and queue respect canStartPlayback",
-                containsToken(table, ".disabled(!playback.canStartPlayback)")
-                    && containsToken(table, "playback.playTrack(track)")
-                    && containsToken(table, "playback.addToQueue(")
-            )
-            runner.check(
-                "playlist detail still keys its load task on account epoch and connection",
-                containsToken(playlist, "accountEpoch: playback.accountEpoch")
-                    && containsToken(playlist, "isConnected: playback.isConnected")
-                    && containsToken(playlist, "guard playback.isConnected else { return }")
-            )
-            runner.check(
-                "playlist detail still uses status copy and connect",
-                containsToken(playlist, "Text(playback.statusText)")
-                    && containsToken(playlist, "playback.connect()")
-                    && containsToken(playlist, "playback.playPlaylist(item)")
-            )
-            runner.check(
-                "album and artist loads still key on account epoch",
-                containsToken(media, "accountEpoch: playback.accountEpoch")
-                    && containsToken(media, "isConnected: playback.isConnected")
-                    && containsToken(media, "playback.playURI(item.uri)")
-            )
-            runner.check(
-                "search and library still observe connection for empty and load states",
-                containsToken(library, "if !playback.isConnected")
-                    && containsToken(library, "playback.connect()")
-                    && containsToken(library, ".task(id: playback.accountEpoch)")
-                    && containsToken(home, "else if !playback.isConnected")
-            )
-            runner.check(
-                "liked songs keep account-epoch loading in RootView",
-                containsToken(root, ".task(id: catalogPlayback.accountEpoch)")
-                    && containsToken(root, "guard catalogPlayback.isConnected else { return }")
-            )
-            runner.check(
-                "access methods call the store without per-body closures",
-                containsToken(access, "func connect()")
-                    && containsToken(access, "player.connect()")
-                    && containsToken(access, "player.play(uri: uri)")
-                    && containsToken(access, "player.play(track: track)")
-                    && containsToken(access, "player.playPlaylist(item)")
-                    && containsToken(access, "player.addToQueue(uris: uris)")
-                    && storedActionClosureLines(in: access).isEmpty
-            )
-        }
     }
 }

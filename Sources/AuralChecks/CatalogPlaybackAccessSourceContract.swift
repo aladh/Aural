@@ -1,67 +1,53 @@
 import Foundation
 
-/// Line-oriented contract for `CatalogPlaybackAccess.swift` and the RootView accessor.
+/// Line-oriented contract for `CatalogPlaybackAccess` construction and RootView wiring.
 ///
-/// Constructing the access value must not snapshot playback facts. Action closures
-/// rebuilt on every body pass are out of contract; methods on a store-identity
-/// value are the accepted shape.
+/// The initializer may only store the player (and its identity for `Equatable`). Any
+/// copied playback fact or per-body action closure is out of contract.
 enum CatalogPlaybackAccessSourceContract {
-    static let playbackFactTokens = [
-        "isConnected",
-        "accountEpoch",
-        "canStartPlayback",
-        "hasCurrentTrack",
-        "trackURI",
-        "statusText",
-        "pendingCommands",
-        "transientCommandError",
-        "activeRemoteDevice",
+    static let allowedInitializerLines = [
+        "self.player = player",
+        "self.playerIdentity = ObjectIdentifier(player)",
+    ]
+
+    static let allowedRootAccessorLines = [
+        "CatalogPlaybackAccess(player: player)",
     ]
 
     static func initializerBody(in source: String) -> String {
-        guard let start = source.range(of: "init(player: PlaybackStore)") else { return "" }
-        let fromInit = source[start.lowerBound...]
-        guard let open = fromInit.range(of: "{") else { return "" }
-        let rest = fromInit[open.upperBound...]
-        if let end = rest.range(of: "\n    }") {
-            return String(rest[..<end.lowerBound])
-        }
-        return String(rest)
+        braceBody(after: "init(player: PlaybackStore)", in: source)
     }
 
-    static func factTokensRead(in text: String) -> [String] {
-        playbackFactTokens.filter { text.contains($0) }
+    static func catalogPlaybackAccessorBody(in rootViewSource: String) -> String {
+        braceBody(after: "private var catalogPlayback: CatalogPlaybackAccess", in: rootViewSource)
+    }
+
+    static func significantLines(in text: String) -> [String] {
+        text
+            .split(separator: "\n", omittingEmptySubsequences: false)
+            .map { $0.trimmingCharacters(in: .whitespaces) }
+            .filter { !$0.isEmpty && !$0.hasPrefix("//") }
     }
 
     static func storedActionClosureLines(in source: String) -> [String] {
-        source
-            .split(separator: "\n", omittingEmptySubsequences: false)
-            .map { $0.trimmingCharacters(in: .whitespaces) }
-            .filter { line in
-                guard !line.hasPrefix("//") else { return false }
-                if line.hasPrefix("func ") || line.hasPrefix("static func ") { return false }
-                return line.contains("-> Void")
-                    || line.contains(": @MainActor (")
-                    || line.contains(": @MainActor(")
-            }
+        significantLines(in: source).filter { line in
+            if line.hasPrefix("func ") || line.hasPrefix("static func ") { return false }
+            return line.contains("-> Void")
+                || line.contains(": @MainActor (")
+                || line.contains(": @MainActor(")
+        }
     }
 
     static func equatesByPlayerIdentity(_ source: String) -> Bool {
         source.contains("nonisolated static func ==")
-            && (
-                source.contains("lhs.player === rhs.player")
-                    || source.contains("rhs.player === lhs.player")
-                    || source.contains("lhs.playerIdentity == rhs.playerIdentity")
-                    || source.contains("rhs.playerIdentity == lhs.playerIdentity")
-            )
+            && source.contains("lhs.playerIdentity == rhs.playerIdentity")
     }
 
-    static func catalogPlaybackAccessorBody(in rootViewSource: String) -> String {
-        guard let start = rootViewSource.range(of: "private var catalogPlayback: CatalogPlaybackAccess")
-        else { return "" }
-        let fromAccessor = rootViewSource[start.lowerBound...]
-        guard let open = fromAccessor.range(of: "{") else { return "" }
-        let rest = fromAccessor[open.upperBound...]
+    private static func braceBody(after marker: String, in source: String) -> String {
+        guard let start = source.range(of: marker) else { return "" }
+        let fromMarker = source[start.lowerBound...]
+        guard let open = fromMarker.range(of: "{") else { return "" }
+        let rest = fromMarker[open.upperBound...]
         if let end = rest.range(of: "\n    }") {
             return String(rest[..<end.lowerBound])
         }

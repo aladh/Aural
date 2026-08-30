@@ -1,9 +1,9 @@
 import AuralDomain
 
-/// Narrow catalog-facing playback surface. Holds the scene-owned `PlaybackStore` without
-/// snapshotting playback facts or rebuilding action closures, so constructing and passing
-/// this value does not register observation dependencies. Leaves read the facts they render
-/// and call through to the same store methods. Equality is player identity.
+/// Narrow catalog-facing playback surface. Holds the scene-owned `PlaybackStore` so
+/// constructing and passing this value does not snapshot playback facts or rebuild
+/// action closures. Leaves observe by reading the computed facts they render and
+/// call through to the same store methods.
 struct CatalogPlaybackAccess: Equatable {
     private let player: PlaybackStore
     private let playerIdentity: ObjectIdentifier
