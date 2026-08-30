@@ -17,6 +17,7 @@ enum BoundaryChecksMain {
         await runKeymasterSessionPersistenceChecks(runner)
         await runAuthCredentialRetryChecks(runner)
         await runTransportRetryChecks(runner)
+        await runConnectMetadataTransportChecks(runner)
         runURIChecks(runner)
         runFormattingChecks(runner)
         runPlaylistSortingChecks(runner)
