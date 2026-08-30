@@ -21,24 +21,27 @@ func runTrackTableDisplayCacheChecks(_ check: CheckRunner) {
         )
     }
 
-    check.suite("Catalog track collection revision") {
+    check.suite("Catalog track collection version") {
         var collection = CatalogTrackCollection()
-        let ownerID = collection.id
-        check.equal("a fresh owner starts at revision zero", collection.revision, 0)
+        let initialVersion = collection.version
 
         collection.replace([track(id: "a", title: "A"), track(id: "b", title: "B")])
-        check.equal("first replace bumps the revision", collection.revision, 1)
-        check.equal("replace keeps the owner identity", collection.id, ownerID)
+        check.check("first replace mints a new version", collection.version != initialVersion)
         check.equal("replace publishes the new rows", collection.tracks.map(\.id), ["a", "b"])
 
-        let equalReplacement = collection.tracks
-        collection.replace(equalReplacement)
-        check.equal("equal content still bumps so owners cannot skip a replacement", collection.revision, 2)
-        check.equal("later replace still keeps the owner identity", collection.id, ownerID)
+        let afterFirstReplace = collection.version
+        collection.replace(collection.tracks)
+        check.check("equal content still mints a new version", collection.version != afterFirstReplace)
+
+        var copy = collection
+        check.equal("a copy keeps the current version until it replaces", copy.version, collection.version)
+        copy.replace([track(id: "c", title: "C")])
+        check.check("copy-and-replace mints a version the original does not share", copy.version != collection.version)
+        check.equal("the original rows stay on the unreplaced copy", collection.tracks.map(\.id), ["a", "b"])
 
         let seeded = CatalogTrackCollection(tracks: [track(id: "seed", title: "Seed")])
-        check.equal("seeded construction still starts at revision zero", seeded.revision, 0)
-        check.check("seeded construction still creates a new owner", seeded.id != collection.id)
+        check.check("seeded construction mints its own version", seeded.version != collection.version)
+        check.check("two fresh owners mint distinct versions", CatalogTrackCollection().version != CatalogTrackCollection().version)
     }
 
     check.suite("Track table display cache") {
@@ -54,16 +57,13 @@ func runTrackTableDisplayCacheChecks(_ check: CheckRunner) {
 
         let snapshot = collection
         collection.replace([gamma, track(id: "middle", title: "Replaced"), beta])
-        check.check("a copy of the previous generation is a cache hit", !cache.update(snapshot, sortOrder: []))
+        check.check("the unreplaced copy is a cache hit", !cache.update(snapshot, sortOrder: []))
         check.equal(
-            "unrelated invalidation does not adopt a later same-count replacement",
+            "a cache hit keeps the previous rows",
             cache.rows.map(\.id),
             ["gamma", "alpha", "beta"]
         )
-        check.check(
-            "copy plus replace recomputes when the revision advances",
-            cache.update(collection, sortOrder: [])
-        )
+        check.check("replace of the live collection recomputes", cache.update(collection, sortOrder: []))
         check.equal(
             "rows follow the replaced generation",
             cache.rows.map(\.id),
@@ -95,12 +95,8 @@ func runTrackTableDisplayCacheChecks(_ check: CheckRunner) {
 
         var other = CatalogTrackCollection()
         other.replace([beta])
-        var peer = CatalogTrackCollection()
-        peer.replace([alpha])
-        check.equal("independently created owners can share a numeric revision", other.revision, peer.revision)
-        check.check("independently created owners have distinct identities", other.id != peer.id)
         check.check(
-            "a different collection at the same revision recomputes",
+            "a different collection recomputes",
             cache.update(other, sortOrder: [])
         )
         check.equal("rows follow the new collection", cache.rows.map(\.id), ["beta"])
@@ -148,26 +144,31 @@ func runTrackTableDisplayCacheChecks(_ check: CheckRunner) {
         var replacement = CatalogTrackCollection()
         replacement.replace([alpha, beta, gamma])
         var replacementCache = TrackTableDisplayCache(replacement)
-        replacement.replace([alpha, track(id: "beta-2", title: "Omega"), gamma])
+        var forked = replacement
+        forked.replace([alpha, track(id: "beta-2", title: "Omega"), gamma])
         check.check(
-            "same-count middle replacement recomputes when the revision bumps",
-            replacementCache.update(replacement, sortOrder: titleAscending)
+            "copy-and-replace of a same-count middle row recomputes",
+            replacementCache.update(forked, sortOrder: titleAscending)
         )
         check.equal(
             "middle replacement participates in the new sort",
             replacementCache.rows.map(\.id),
             ["alpha", "gamma", "beta-2"]
         )
+        check.check(
+            "the unreplaced original is still a distinct version",
+            forked.version != replacement.version
+        )
 
         let selection: Set<String> = ["alpha", "gone", "gamma"]
         check.equal(
             "selection pruning drops identities that left the authoritative collection",
-            TrackTableDisplayCache.prunedSelection(selection, from: replacement.tracks),
+            TrackTableDisplayCache.prunedSelection(selection, from: forked.tracks),
             ["alpha", "gamma"]
         )
         check.equal(
             "empty selection stays empty",
-            TrackTableDisplayCache.prunedSelection([], from: replacement.tracks),
+            TrackTableDisplayCache.prunedSelection([], from: forked.tracks),
             []
         )
     }

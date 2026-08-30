@@ -5,25 +5,22 @@
 
 import Foundation
 
-/// Authoritative catalog rows plus the revision that identifies that assignment.
+/// Authoritative catalog rows plus one opaque version per assignment.
 ///
-/// `id` is created with the collection and never changes. `revision` starts at 0 and
-/// advances only through `replace(_:)`. `TrackTable` caches display order on those two
-/// values plus SwiftUI `sortOrder`. Equatable still compares the rows, so do not use
-/// this value as an `onChange` trigger for that cache.
-public struct CatalogTrackCollection: Equatable, Sendable {
-    public let id: UUID
+/// `init` and `replace(_:)` each mint a new `version`. Copies share a version until
+/// one of them replaces. `TrackTable` caches display order on `version` plus SwiftUI
+/// `sortOrder`, not on row equality.
+public struct CatalogTrackCollection: Sendable {
     public private(set) var tracks: [CatalogTrack]
-    public private(set) var revision: UInt64
+    public private(set) var version: UUID
 
     public init(tracks: [CatalogTrack] = []) {
-        id = UUID()
         self.tracks = tracks
-        revision = 0
+        version = UUID()
     }
 
     public mutating func replace(_ tracks: [CatalogTrack]) {
         self.tracks = tracks
-        revision &+= 1
+        version = UUID()
     }
 }

@@ -7,19 +7,17 @@ import Foundation
 
 /// Cached projection of catalog rows for a native `Table` sort order.
 ///
-/// Recompute when the owner identity, revision, or SwiftUI comparators change.
-public struct TrackTableDisplayCache: Equatable, Sendable {
+/// Recompute when the collection version or SwiftUI comparators change.
+public struct TrackTableDisplayCache: Sendable {
     public private(set) var rows: [CatalogTrack]
-    private var sourceID: UUID
-    private var revision: UInt64
+    private var version: UUID
     private var sortOrder: [KeyPathComparator<CatalogTrack>]
 
     public init(
         _ collection: CatalogTrackCollection = CatalogTrackCollection(),
         sortOrder: [KeyPathComparator<CatalogTrack>] = []
     ) {
-        sourceID = collection.id
-        revision = collection.revision
+        version = collection.version
         self.sortOrder = sortOrder
         rows = Self.projected(tracks: collection.tracks, sortOrder: sortOrder)
     }
@@ -30,11 +28,10 @@ public struct TrackTableDisplayCache: Equatable, Sendable {
         _ collection: CatalogTrackCollection,
         sortOrder: [KeyPathComparator<CatalogTrack>]
     ) -> Bool {
-        guard sourceID != collection.id || revision != collection.revision || self.sortOrder != sortOrder else {
+        guard version != collection.version || self.sortOrder != sortOrder else {
             return false
         }
-        sourceID = collection.id
-        revision = collection.revision
+        version = collection.version
         self.sortOrder = sortOrder
         rows = Self.projected(tracks: collection.tracks, sortOrder: sortOrder)
         return true

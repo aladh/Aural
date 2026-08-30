@@ -466,7 +466,7 @@ func runPlaylistMutationChecks(_ runner: CheckRunner) async {
         feedback.dismiss()
     }
 
-    runner.suite("Playlist track collection revision") {
+    runner.suite("Playlist track collection version") {
         let services = ScriptedPlaylistServices()
         let session = CatalogSessionAvailability(accountEpoch: 1, isAvailable: true)
         let feedback = TransientFeedbackPresenter(clock: HoldingClock())
@@ -474,17 +474,15 @@ func runPlaylistMutationChecks(_ runner: CheckRunner) async {
         let first = fixtureTrack(id: "uid-a", uri: "spotify:track:a")
         let second = fixtureTrack(id: "uid-b", uri: "spotify:track:b")
         catalog.playlistStore.replaceLoadedPlaylist(uri: "spotify:playlist:owned", tracks: [first, second])
-        let loadedRevision = catalog.playlistStore.trackCollection.revision
-        runner.check("loading tracks bumps the collection revision", loadedRevision > 0)
+        let loadedVersion = catalog.playlistStore.trackCollection.version
         catalog.playlistStore.replaceLoadedPlaylist(
             uri: "spotify:playlist:owned",
             tracks: [first, fixtureTrack(id: "uid-mid", uri: "spotify:track:mid")]
         )
         runner.equal("replacement keeps the same row count", catalog.playlistStore.tracks.count, 2)
-        runner.equal(
-            "same-count middle replacement bumps again",
-            catalog.playlistStore.trackCollection.revision,
-            loadedRevision &+ 1
+        runner.check(
+            "same-count middle replacement mints a new version",
+            catalog.playlistStore.trackCollection.version != loadedVersion
         )
         runner.equal(
             "authoritative rows follow the replacement identity",
@@ -504,6 +502,7 @@ func runPlaylistMutationChecks(_ runner: CheckRunner) async {
             let albumStore = try auralSourceFile("Aural/Spotify/MediaDetailStores.swift")
             let homeLibrary = try auralSourceFile("Aural/Spotify/HomeLibraryStore.swift")
             let collectionType = try auralSourceFile("AuralDomain/CatalogTrackCollection.swift")
+            let displayCache = try auralSourceFile("AuralDomain/TrackTableDisplayCache.swift")
             let playlistDetail = try auralSourceFile("Aural/Views/PlaylistDetailView.swift")
             let mediaDetail = try auralSourceFile("Aural/Views/MediaDetailViews.swift")
             let libraryViews = try auralSourceFile("Aural/Views/LibraryViews.swift")
@@ -530,11 +529,11 @@ func runPlaylistMutationChecks(_ runner: CheckRunner) async {
                     && containsToken(table, "Remove from Playlist")
             )
             runner.check(
-                "TrackTable projects rows from an owner revision instead of comparing tracks",
+                "TrackTable projects rows from a collection version instead of comparing tracks",
                 containsToken(table, "TrackTableDisplayCache")
                     && containsToken(table, "CatalogTrackCollection")
                     && containsToken(table, "onChange(of: displayInputs")
-                    && containsToken(table, "tracks.revision")
+                    && containsToken(table, "tracks.version")
                     && !containsToken(table, "onChange(of: tracks")
                     && !containsToken(table, "displayedTracks")
                     && !containsToken(table, "updateDisplayedTracks")
@@ -564,10 +563,16 @@ func runPlaylistMutationChecks(_ runner: CheckRunner) async {
                     && !containsToken(playlistStore, "resortTracks")
             )
             runner.check(
-                "CatalogTrackCollection does not accept injected identity or revision",
+                "CatalogTrackCollection versions assignments instead of injected identity",
                 containsToken(collectionType, "public init(tracks: [CatalogTrack] = [])")
+                    && containsToken(collectionType, "version = UUID()")
                     && !containsToken(collectionType, "init(id:")
-                    && !containsToken(collectionType, "revision: UInt64 =")
+                    && !containsToken(collectionType, "revision")
+                    && !containsToken(collectionType, ": Equatable")
+            )
+            runner.check(
+                "TrackTableDisplayCache does not Equatable-compare cached rows",
+                !containsToken(displayCache, ": Equatable")
             )
             runner.check(
                 "Remove from Playlist and Delete pass only occurrence UIDs",

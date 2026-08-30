@@ -160,14 +160,14 @@ struct TrackTable: View {
         .accessibilityLabel("Tracks")
         .onChange(of: displayInputs, initial: true) { oldInputs, newInputs in
             _ = displayCache.update(tracks, sortOrder: newInputs.sortOrder)
-            if oldInputs.sourceID != newInputs.sourceID || oldInputs.revision != newInputs.revision {
+            if oldInputs.version != newInputs.version {
                 selection = TrackTableDisplayCache.prunedSelection(selection, from: tracks.tracks)
             }
         }
     }
 
     private var displayInputs: TrackTableDisplayInputs {
-        TrackTableDisplayInputs(sourceID: tracks.id, revision: tracks.revision, sortOrder: sortOrder)
+        TrackTableDisplayInputs(version: tracks.version, sortOrder: sortOrder)
     }
 
     private func isCurrent(_ track: CatalogTrack) -> Bool {
@@ -192,8 +192,7 @@ struct TrackTable: View {
 }
 
 private struct TrackTableDisplayInputs: Equatable {
-    var sourceID: UUID
-    var revision: UInt64
+    var version: UUID
     var sortOrder: [KeyPathComparator<CatalogTrack>]
 }
 
