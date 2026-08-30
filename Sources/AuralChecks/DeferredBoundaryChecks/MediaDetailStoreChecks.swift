@@ -217,17 +217,6 @@ private func makeArtistStore(
 }
 
 @MainActor
-private func waitUntil(_ condition: @MainActor () async -> Bool) async -> Bool {
-    var spins = 0
-    while spins < 10_000 {
-        if await condition() { return true }
-        spins += 1
-        await Task.yield()
-    }
-    return false
-}
-
-@MainActor
 private func waitUntilArtistPair(
     _ provider: GatedArtistCatalog,
     overview: Int,

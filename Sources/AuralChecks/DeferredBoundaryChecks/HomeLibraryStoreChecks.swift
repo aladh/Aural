@@ -84,17 +84,6 @@ private func makeStore(
     return HomeLibraryStore(provider: provider, metadata: metadata, session: session)
 }
 
-@MainActor
-private func waitUntil(_ condition: @MainActor () async -> Bool) async -> Bool {
-    var spins = 0
-    while spins < 10_000 {
-        if await condition() { return true }
-        spins += 1
-        await Task.yield()
-    }
-    return false
-}
-
 /// Test-only: mark entry on MainActor immediately before `loadPlaylists`.
 /// After `waitUntil` observes `entered`, that call has either reached its first
 /// `await` (join) or returned, which would already have set `finished`.
