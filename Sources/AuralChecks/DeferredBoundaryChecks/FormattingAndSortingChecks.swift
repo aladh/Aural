@@ -35,4 +35,93 @@ func runFormattingChecks(_ check: CheckRunner) {
         // Clock skew must not render negative durations.
         check.equal("negative duration clamps to zero", formatDuration(-5), "0:00")
     }
+
+    func track(uri: String, duration: TimeInterval = 1) -> CatalogTrack {
+        CatalogTrack(
+            id: uri,
+            uri: uri,
+            title: uri,
+            artist: "",
+            album: "",
+            duration: duration,
+            artworkURL: nil,
+            addedAt: nil
+        )
+    }
+
+    func attributes(
+        popularity: Int? = nil,
+        bpm: Int? = nil,
+        key: String? = nil
+    ) -> TrackAttributes {
+        TrackAttributes(popularity: popularity, bpm: bpm, key: key)
+    }
+
+    func sortedURIs(
+        _ tracks: [CatalogTrack],
+        using comparator: KeyPathComparator<TrackTableRow>,
+        attributes: [String: TrackAttributes] = [:],
+    ) -> [String] {
+        sortedTrackTableRows(
+            trackTableRows(tracks, attributes: attributes),
+            using: [comparator]
+        ).map(\.track.uri)
+    }
+
+    check.suite("Track table sorting") {
+        let short = track(uri: "short")
+        let long = track(uri: "long", duration: 240)
+        let missing = track(uri: "missing")
+        let values = [
+            "short": attributes(popularity: 10, bpm: 90, key: "2A"),
+            "long": attributes(popularity: 80, bpm: 130, key: "10A"),
+        ]
+
+        check.equal(
+            "popularity sorts ascending from displayed enrichment",
+            sortedURIs(
+                [long, short],
+                using: KeyPathComparator(\.popularitySortValue),
+                attributes: values
+            ),
+            ["short", "long"]
+        )
+        check.equal(
+            "BPM reverses while missing enrichment stays last",
+            sortedURIs(
+                [missing, short, long],
+                using: KeyPathComparator(\.bpmSortValue, order: .reverse),
+                attributes: values
+            ),
+            ["long", "short", "missing"]
+        )
+        check.equal(
+            "Camelot keys use numeric ordering",
+            sortedURIs(
+                [long, short],
+                using: KeyPathComparator(\.keySortValue),
+                attributes: values
+            ),
+            ["short", "long"]
+        )
+        check.equal(
+            "time sorts by numeric duration",
+            sortedURIs([long, short], using: KeyPathComparator(\.duration)),
+            ["short", "long"]
+        )
+
+        let equalAttributes = [
+            "short": attributes(popularity: 50),
+            "long": attributes(popularity: 50),
+        ]
+        check.equal(
+            "missing values sort deterministically and equal values keep source order",
+            sortedURIs(
+                [missing, long, short],
+                using: KeyPathComparator(\.popularitySortValue),
+                attributes: equalAttributes
+            ),
+            ["missing", "long", "short"]
+        )
+    }
 }
