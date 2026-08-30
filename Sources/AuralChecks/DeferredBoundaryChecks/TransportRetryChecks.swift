@@ -198,7 +198,7 @@ func runTransportRetryChecks(_ check: CheckRunner) async {
         }
         check.equal("a second 401 stops even when budget remains", status, 401)
         check.equal("a second 401 does not consume a fourth attempt", second401.callCount, 3)
-        check.equal("401 invalidation still happens once", await accessB.values, ["b"])
+        check.equal("each 401 names its sent bearer", await accessB.values, ["b", "c"])
 
         let sleeper = ParkUntilCancelledSleeper()
         let parked = ScriptedRetryTransport(steps: [
@@ -314,6 +314,169 @@ func runTransportRetryChecks(_ check: CheckRunner) async {
             ).send(.pause, from: "source", to: "target")
         }
         check.equal("a Connect command is one attempt", connect.callCount, 1)
+    }
+
+    await check.suite("A budget-final 401 still invalidates the exact sent pair") {
+        let tokens = CredentialSequence(values: ["access-a", "access-b", "access-c", "access-d"])
+        let clients = CredentialSequence(values: ["client-a", "client-b", "client-c", "client-d"])
+        let invalidatedAccess = RecordingInvalidator()
+        let invalidatedClient = RecordingInvalidator()
+        let fiveThen401 = ScriptedRetryTransport(steps: [
+            .http(status: 503),
+            .http(status: 503),
+            .http(status: 401),
+            .http(status: 200, body: profileBody),
+        ])
+        var fiveStatus = 0
+        do {
+            _ = try await PartnerAPI(
+                accessToken: { tokens.next() },
+                clientToken: { clients.next() },
+                invalidateAccessToken: { await invalidatedAccess.record($0) },
+                invalidateClientToken: { await invalidatedClient.record($0) },
+                transport: fiveThen401.send,
+                retryTiming: .immediate
+            ).profile()
+        } catch let error as PartnerAPIError {
+            if case let .requestFailed(code) = error { fiveStatus = code }
+        } catch {
+            check.check("budget-final 401 stays PartnerAPIError, got \(error)", false)
+        }
+        check.equal("5xx then 401 returns the terminal 401", fiveStatus, 401)
+        check.equal("5xx then 401 is three attempts", fiveThen401.callCount, 3)
+        check.equal("the final 401 bearer is invalidated", await invalidatedAccess.values, ["access-c"])
+        check.equal("the final 401 client token is invalidated", await invalidatedClient.values, ["client-c"])
+        check.equal("no fourth credential fetch after the budget-final 401", tokens.callCount, 3)
+
+        let timeoutTokens = CredentialSequence(values: ["timeout-a", "timeout-b", "timeout-c", "timeout-d"])
+        let timeoutClients = CredentialSequence(values: ["client-timeout-a", "client-timeout-b", "client-timeout-c"])
+        let timeoutAccess = RecordingInvalidator()
+        let timeoutClient = RecordingInvalidator()
+        let timeoutThen401 = ScriptedRetryTransport(steps: [
+            .urlError(.timedOut),
+            .urlError(.timedOut),
+            .http(status: 401),
+            .http(status: 200, body: profileBody),
+        ])
+        var timeoutStatus = 0
+        do {
+            _ = try await PartnerAPI(
+                accessToken: { timeoutTokens.next() },
+                clientToken: { timeoutClients.next() },
+                invalidateAccessToken: { await timeoutAccess.record($0) },
+                invalidateClientToken: { await timeoutClient.record($0) },
+                transport: timeoutThen401.send,
+                retryTiming: .immediate
+            ).profile()
+        } catch let error as PartnerAPIError {
+            if case let .requestFailed(code) = error { timeoutStatus = code }
+        } catch {
+            check.check("timeout then 401 stays PartnerAPIError, got \(error)", false)
+        }
+        check.equal("timeout then 401 returns the terminal 401", timeoutStatus, 401)
+        check.equal("timeout then 401 is three attempts", timeoutThen401.callCount, 3)
+        check.equal("the timeout-final 401 bearer is invalidated", await timeoutAccess.values, ["timeout-c"])
+        check.equal(
+            "the timeout-final 401 client token is invalidated",
+            await timeoutClient.values,
+            ["client-timeout-c"]
+        )
+        check.equal("no fourth credential fetch after the timeout-final 401", timeoutTokens.callCount, 3)
+
+        let queueTokens = CredentialSequence(values: ["queue-a", "queue-b", "queue-c", "queue-d"])
+        let queueAccess = RecordingInvalidator()
+        let queueFinal = ScriptedRetryTransport(steps: [
+            .http(status: 503),
+            .http(status: 503),
+            .http(status: 401),
+            .http(status: 200, body: queueBody),
+        ])
+        var queueStatus = 0
+        do {
+            _ = try await SpotifyWebPlayerAPI(
+                accessToken: { queueTokens.next() },
+                invalidateAccessToken: { await queueAccess.record($0) },
+                transport: queueFinal.send,
+                retryTiming: .immediate
+            ).queue()
+        } catch let error as SpotifyWebPlayerAPIError {
+            if case let .requestFailed(code) = error { queueStatus = code }
+        } catch {
+            check.check("Web budget-final 401 stays SpotifyWebPlayerAPIError, got \(error)", false)
+        }
+        check.equal("Web queue budget-final 401 returns 401", queueStatus, 401)
+        check.equal("Web queue budget-final 401 is three attempts", queueFinal.callCount, 3)
+        check.equal("Web queue invalidates only the final bearer", await queueAccess.values, ["queue-c"])
+        check.equal("Web queue never fetches a fourth bearer", queueTokens.callCount, 3)
+    }
+
+    await check.suite("Terminal 401 invalidation failures and cancellation do not add a request") {
+        let tokens = CredentialSequence(values: ["access-a", "access-b", "access-c", "access-d"])
+        let clients = CredentialSequence(values: ["client-a", "client-b", "client-c", "client-d"])
+        let invalidatedClient = RecordingInvalidator()
+        let thrown = ScriptedRetryTransport(steps: [
+            .http(status: 503),
+            .http(status: 503),
+            .http(status: 401),
+            .http(status: 200, body: profileBody),
+        ])
+        var revoked = false
+        do {
+            _ = try await PartnerAPI(
+                accessToken: { tokens.next() },
+                clientToken: { clients.next() },
+                invalidateAccessToken: { _ in throw KeymasterSessionError.grantRevoked },
+                invalidateClientToken: { await invalidatedClient.record($0) },
+                transport: thrown.send,
+                retryTiming: .immediate
+            ).profile()
+        } catch KeymasterSessionError.grantRevoked {
+            revoked = true
+        } catch {
+            check.check("budget-final bearer throw stays grantRevoked, got \(error)", false)
+        }
+        check.check("a budget-final bearer throw still surfaces grantRevoked", revoked)
+        check.equal(
+            "client token drops before the terminal bearer throw",
+            await invalidatedClient.values,
+            ["client-c"]
+        )
+        check.equal("a terminal bearer throw does not add a request", thrown.callCount, 3)
+        check.equal("a terminal bearer throw does not fetch another credential", tokens.callCount, 3)
+
+        let parkedTokens = CredentialSequence(values: ["park-a", "park-b", "park-c", "park-d"])
+        let parkedClients = CredentialSequence(values: ["park-client-a", "park-client-b", "park-client-c"])
+        let parkedAccess = ParkUntilCancelledInvalidator()
+        let parked = ScriptedRetryTransport(steps: [
+            .http(status: 503),
+            .http(status: 503),
+            .http(status: 401),
+            .http(status: 200, body: profileBody),
+        ])
+        let task = Task {
+            try await PartnerAPI(
+                accessToken: { parkedTokens.next() },
+                clientToken: { parkedClients.next() },
+                invalidateAccessToken: { try await parkedAccess.park($0) },
+                invalidateClientToken: { _ in },
+                transport: parked.send,
+                retryTiming: .immediate
+            ).profile()
+        }
+        await parkedAccess.waitUntilStarted()
+        task.cancel()
+        var cancelledDuringInvalidation = false
+        do {
+            _ = try await task.value
+        } catch is CancellationError {
+            cancelledDuringInvalidation = true
+        } catch {
+            check.check("terminal invalidation cancellation stays CancellationError, got \(error)", false)
+        }
+        check.check("cancellation during terminal invalidation surfaces CancellationError", cancelledDuringInvalidation)
+        check.equal("cancellation during terminal invalidation does not add a request", parked.callCount, 3)
+        check.equal("cancellation still named the final bearer", await parkedAccess.values, ["park-c"])
+        check.equal("cancellation does not fetch another credential", parkedTokens.callCount, 3)
     }
 }
 
@@ -505,6 +668,31 @@ private actor RecordingInvalidator {
 
     func record(_ value: String) {
         values.append(value)
+    }
+}
+
+private actor ParkUntilCancelledInvalidator {
+    private(set) var values: [String] = []
+    private var started: CheckedContinuation<Void, Never>?
+    private var didStart = false
+
+    func park(_ value: String) async throws {
+        values.append(value)
+        let waiter = started
+        started = nil
+        didStart = true
+        waiter?.resume()
+        try await Task.sleep(nanoseconds: 60_000_000_000)
+    }
+
+    func waitUntilStarted() async {
+        await withCheckedContinuation { continuation in
+            if didStart {
+                continuation.resume()
+            } else {
+                started = continuation
+            }
+        }
     }
 }
 
