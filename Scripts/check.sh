@@ -331,20 +331,8 @@ if ! rg -q 'key: macos-rust-\$\{\{ hashFiles\(' "$ci_workflow"; then
     print -u2 "CI must keep the existing Rust cache key"
     exit 1
 fi
-if ! rg -U -q --fixed-strings $'          path: |\n            .build/*\n            !.build/aural-signing' "$ci_workflow"; then
-    print -u2 "CI SwiftPM cache must include repository .build products and exclude signing material"
-    exit 1
-fi
-if ! rg -q --fixed-strings $'          key: macos-swiftpm-${{ runner.os }}-${{ runner.arch }}-${{ env.SWIFT_TOOLCHAIN_KEY }}-${{ hashFiles(\'Package.swift\', \'Package.resolved\') }}-${{ github.sha }}' "$ci_workflow"; then
-    print -u2 "CI SwiftPM cache key must include OS, architecture, Swift toolchain, and package manifests"
-    exit 1
-fi
-if ! rg -q --fixed-strings $'            macos-swiftpm-${{ runner.os }}-${{ runner.arch }}-${{ env.SWIFT_TOOLCHAIN_KEY }}-' "$ci_workflow"; then
-    print -u2 "CI SwiftPM cache must restore compatible prior products"
-    exit 1
-fi
-if ! rg -q --fixed-strings 'SWIFT_TOOLCHAIN_KEY=$(shasum -a 256 "$RUNNER_TEMP/swift-toolchain.txt"' "$ci_workflow"; then
-    print -u2 "CI must hash the Swift toolchain before the SwiftPM cache key"
+if ! rg -U -q --fixed-strings $'          echo "SWIFT_TOOLCHAIN_KEY=$(shasum -a 256 "$RUNNER_TEMP/swift-toolchain.txt" | awk \'{print $1}\')" >> "$GITHUB_ENV"\n\n      - name: Cache SwiftPM build directory\n        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0\n        with:\n          path: |\n            .build/*\n            !.build/aural-signing\n          key: macos-swiftpm-${{ runner.os }}-${{ runner.arch }}-${{ env.SWIFT_TOOLCHAIN_KEY }}-${{ hashFiles(\'Package.swift\', \'Package.resolved\') }}-${{ github.sha }}\n          restore-keys: |\n            macos-swiftpm-${{ runner.os }}-${{ runner.arch }}-${{ env.SWIFT_TOOLCHAIN_KEY }}-' "$ci_workflow"; then
+    print -u2 "CI must hash the Swift toolchain, then cache .build with a per-commit key and compatible restore prefix"
     exit 1
 fi
 
