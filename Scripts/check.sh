@@ -190,6 +190,41 @@ if rg -n '(^|[^[:alnum:]_])set[[:space:]]*(\([^)]*\)[[:space:]]*)?\{' "$projecti
     exit 1
 fi
 
+# PlaybackStore.state may be assigned only at declaration and at the accepted reducer
+# commit in send. Direct member mutation remains confined to PlaybackReducer.
+playback_store_sources=(
+    "$project_root/Sources/Aural/Spotify/PlaybackStore.swift"
+    "$project_root/Sources/Aural/Spotify/PlaybackStore+Commands.swift"
+    "$project_root/Sources/Aural/Spotify/PlaybackStore+EngineEvents.swift"
+    "$project_root/Sources/Aural/Spotify/PlaybackStore+History.swift"
+    "$project_root/Sources/Aural/Spotify/PlaybackStore+Projections.swift"
+    "$project_root/Sources/Aural/Spotify/PlaybackStore+Queue.swift"
+    "$project_root/Sources/Aural/Spotify/PlaybackStore+Session.swift"
+    "$project_root/Sources/Aural/Spotify/PlaybackStore+Transport.swift"
+)
+store_state_assignments="$(
+    rg -N '(^|[^[:alnum:].])state[[:space:]]*=' "${playback_store_sources[@]}" \
+        | rg -v 'let state' \
+        | rg -v 'state[[:space:]]*==' \
+        | rg -v ':[^:]*//' \
+        || true
+)"
+expected_store_state_assignments="$(printf '%s\n' \
+    "$project_root/Sources/Aural/Spotify/PlaybackStore.swift:    private(set) var state = PlaybackState(accountEpoch: 1)" \
+    "$project_root/Sources/Aural/Spotify/PlaybackStore.swift:            state = next")"
+if [[ "$store_state_assignments" != "$expected_store_state_assignments" ]]; then
+    print -u2 "PlaybackStore.state may be assigned only at declaration and the accepted reducer commit in send:"
+    print -u2 "${store_state_assignments:-<none>}"
+    exit 1
+fi
+if rg -N '(^|[^[:alnum:].])state\.[A-Za-z0-9_.\[\]]+[[:space:]]*=' "${playback_store_sources[@]}" \
+    | rg -v 'let state' \
+    | rg -v '==' \
+    | rg -v ':[^:]*//'; then
+    print -u2 "PlaybackStore.state members must not be mutated outside PlaybackReducer"
+    exit 1
+fi
+
 # Passing one PlaybackStore field as inout while the callee touches another field on the same
 # store traps at runtime under Swift's exclusivity enforcement. Keep engine revision gates keyed
 # by source instead of accepting a stored revision through inout.

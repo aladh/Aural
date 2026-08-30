@@ -127,9 +127,11 @@ public struct ConnectQueueCallbackWatermark: Equatable, Sendable {
 /// resolution before `commandFinished`; the reducer consumes that map entry.
 /// Follow-up then evaluates the captured resolution before `finishAccepted`: confirmed
 /// reports success, superseded stays inert, so consume-only acceptance cannot turn a
-/// coordinator failure into `reportFailure`. Shuffle options confirmation uses the same
-/// per-command-id map; a matching engine shuffle sample records `.confirmed` so a late
-/// rejection cannot restore the prior Boolean or rewrite preference.
+/// coordinator failure into `reportFailure`. Shuffle and repeat options confirmation use
+/// the same per-command-id map. A matching engine shuffle sample records `.confirmed` so a
+/// late rejection cannot restore the prior Boolean or rewrite preference. Matching
+/// authoritative repeat flags confirm the same way; unrelated authoritative flags
+/// supersede; lagging prior flags and non-engine option events do not confirm.
 /// `PlaybackReducer.reconcileTransport` may also drop a pending *transport* command when an
 /// engine snapshot already matches `expectedTransport` without recording a resolution. A
 /// later rejected finish on that same lifetime with no pending transport command is then

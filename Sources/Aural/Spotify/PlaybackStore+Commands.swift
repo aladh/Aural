@@ -16,6 +16,7 @@ extension PlaybackStore {
         expectedTiming: PlaybackTiming? = nil,
         expectedTrack: CurrentTrack? = nil,
         expectedShuffle: Bool? = nil,
+        expectedRepeatFlags: RepeatFlags? = nil,
         expectedOwner: PlaybackOwner? = nil,
         operation: LocalPlaybackOperation,
         kind: PlaybackCommandKind = .transport,
@@ -40,6 +41,7 @@ extension PlaybackStore {
                 expectedTiming: expectedTiming,
                 expectedTrack: expectedTrack,
                 expectedShuffle: expectedShuffle,
+                expectedRepeatFlags: expectedRepeatFlags,
                 expectedOwner: expectedOwner,
                 startedAt: environment.clock.now()
             )),
@@ -78,6 +80,7 @@ extension PlaybackStore {
         expectedTiming: PlaybackTiming? = nil,
         expectedTrack: CurrentTrack? = nil,
         expectedShuffle: Bool? = nil,
+        expectedRepeatFlags: RepeatFlags? = nil,
         local: LocalPlaybackOperation,
         remote command: SpotifyConnectCommand,
         completion: @escaping @MainActor (Bool) -> Void = { _ in }
@@ -89,6 +92,7 @@ extension PlaybackStore {
             expectedTiming: expectedTiming,
             expectedTrack: expectedTrack,
             expectedShuffle: expectedShuffle,
+            expectedRepeatFlags: expectedRepeatFlags,
             local: local,
             remote: { api, from, to in try await api.send(command, from: from, to: to) },
             completion: completion
@@ -102,6 +106,7 @@ extension PlaybackStore {
         expectedTiming: PlaybackTiming? = nil,
         expectedTrack: CurrentTrack? = nil,
         expectedShuffle: Bool? = nil,
+        expectedRepeatFlags: RepeatFlags? = nil,
         local: LocalPlaybackOperation,
         remote: @escaping @Sendable (any RemotePlaybackClient, String, String) async throws -> Void,
         completion: @escaping @MainActor (Bool) -> Void = { _ in }
@@ -115,6 +120,7 @@ extension PlaybackStore {
                 expectedTiming: expectedTiming,
                 expectedTrack: expectedTrack,
                 expectedShuffle: expectedShuffle,
+                expectedRepeatFlags: expectedRepeatFlags,
                 operation: local,
                 kind: kind,
                 completion: completion
@@ -134,6 +140,7 @@ extension PlaybackStore {
                 expectedTiming: expectedTiming,
                 expectedTrack: expectedTrack,
                 expectedShuffle: expectedShuffle,
+                expectedRepeatFlags: expectedRepeatFlags,
                 from: from,
                 to: to,
                 operation: remote,
@@ -149,6 +156,7 @@ extension PlaybackStore {
         expectedTiming: PlaybackTiming?,
         expectedTrack: CurrentTrack?,
         expectedShuffle: Bool?,
+        expectedRepeatFlags: RepeatFlags?,
         from sourceID: String,
         to targetID: String,
         operation: @escaping @Sendable (any RemotePlaybackClient, String, String) async throws -> Void,
@@ -173,6 +181,7 @@ extension PlaybackStore {
                 expectedTiming: expectedTiming,
                 expectedTrack: expectedTrack,
                 expectedShuffle: expectedShuffle,
+                expectedRepeatFlags: expectedRepeatFlags,
                 startedAt: environment.clock.now()
             )),
             source: .command
@@ -206,8 +215,8 @@ extension PlaybackStore {
     }
 
     /// Local and remote command finishes share this policy so a matching engine snapshot cannot
-    /// drop `play` / `togglePlayback` / shuffle / remote-transfer completions, including when the
-    /// coordinator later fails. The finished command's resolution is captured before
+    /// drop `play` / `togglePlayback` / shuffle / repeat / remote-transfer completions, including
+    /// when the coordinator later fails. The finished command's resolution is captured before
     /// `commandFinished` so follow-up can treat consume-only reducer acceptance as confirmed
     /// success or superseded inertness.
     /// Epoch, teardown, unknown ids, and options finishes without a captured confirmation stay

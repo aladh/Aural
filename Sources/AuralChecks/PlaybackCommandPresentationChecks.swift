@@ -1463,6 +1463,270 @@ func runPlaybackCommandPresentationChecks(_ check: CheckRunner) {
         check.nil_("rejection after only a matching user .options event has no confirmation", rejectUser.transportCommandResolutions[rejectUserID])
     }
 
+    check.suite("Repeat options optimism is reducer-owned") {
+        let offToContextID = UUID(uuidString: "00000000-0000-0000-0000-000000000070")!
+        let contextToTrackID = UUID(uuidString: "00000000-0000-0000-0000-000000000071")!
+        let trackToOffID = UUID(uuidString: "00000000-0000-0000-0000-000000000072")!
+        let confirmedID = UUID(uuidString: "00000000-0000-0000-0000-000000000073")!
+        let supersededID = UUID(uuidString: "00000000-0000-0000-0000-000000000074")!
+        let lagID = UUID(uuidString: "00000000-0000-0000-0000-000000000075")!
+        let userID = UUID(uuidString: "00000000-0000-0000-0000-000000000076")!
+        let intermediateID = UUID(uuidString: "00000000-0000-0000-0000-000000000077")!
+
+        func startRepeat(_ state: inout PlaybackState, id: UUID, expected: RepeatFlags) {
+            _ = PlaybackReducer.reduce(
+                &state,
+                envelope: presentationEnvelope(
+                    source: .command,
+                    event: .commandStarted(PendingPlaybackCommand(
+                        id: id,
+                        kind: .options,
+                        expectedTransport: nil,
+                        expectedRepeatFlags: expected,
+                        startedAt: presentationDate
+                    ))
+                )
+            )
+        }
+
+        func engineRepeat(
+            _ state: inout PlaybackState,
+            flags: RepeatFlags,
+            revision: UInt64
+        ) {
+            _ = PlaybackReducer.reduce(
+                &state,
+                envelope: presentationEnvelope(
+                    source: .enginePlayback,
+                    revision: revision,
+                    event: .enginePlayback(EnginePlaybackSnapshot(
+                        transport: .paused,
+                        trackURI: nil,
+                        timing: PlaybackTiming(anchoredAt: presentationDate),
+                        shuffle: false,
+                        repeatMode: RepeatMode(context: flags.context, track: flags.track),
+                        repeatFlags: flags
+                    ))
+                )
+            )
+        }
+
+        func assertCycle(
+            from: RepeatMode,
+            id: UUID,
+            label: String
+        ) {
+            var state = PlaybackState(
+                accountEpoch: 1,
+                engineEpoch: 1,
+                session: .ready,
+                options: PlaybackOptions(repeatMode: from)
+            )
+            startRepeat(&state, id: id, expected: from.next.flags)
+            check.equal("\(label) applies the requested flags atomically", state.options.repeatFlags, from.next.flags)
+            check.equal("\(label) displays the next mode", state.options.repeatMode, from.next)
+            check.equal(
+                "\(label) captures the exact pre-command flags",
+                state.pendingCommands[.options]?.rollbackRepeatFlags,
+                from.flags
+            )
+            check.equal("\(label) records the requested target", state.pendingCommands[.options]?.expectedRepeatFlags, from.next.flags)
+            _ = PlaybackReducer.reduce(
+                &state,
+                envelope: presentationEnvelope(
+                    source: .command,
+                    event: .commandFinished(
+                        id: id,
+                        accepted: false,
+                        notice: PlaybackNotice(message: "Could not update repeat")
+                    )
+                )
+            )
+            check.equal("\(label) rejection restores the exact prior flags", state.options.repeatFlags, from.flags)
+            check.equal("\(label) rejection restores the prior mode", state.options.repeatMode, from)
+            check.nil_("\(label) rejection clears its pending command", state.pendingCommands[.options])
+        }
+
+        assertCycle(from: .off, id: offToContextID, label: "off → context")
+        assertCycle(from: .context, id: contextToTrackID, label: "context → track")
+        assertCycle(from: .track, id: trackToOffID, label: "track → off")
+
+        var confirmed = PlaybackState(
+            accountEpoch: 1,
+            engineEpoch: 1,
+            session: .ready,
+            options: PlaybackOptions(repeatMode: .off)
+        )
+        startRepeat(&confirmed, id: confirmedID, expected: RepeatMode.context.flags)
+        engineRepeat(&confirmed, flags: RepeatMode.context.flags, revision: 1)
+        check.equal("an authoritative context snapshot keeps context", confirmed.options.repeatMode, .context)
+        check.nil_("an authoritative context snapshot confirms the command", confirmed.pendingCommands[.options])
+        check.equal(
+            "an authoritative context snapshot records confirmation",
+            confirmed.transportCommandResolutions[confirmedID],
+            .confirmed
+        )
+        let capturedConfirmation = confirmed.transportCommandResolutions[confirmedID]
+        let lateFailure = PlaybackReducer.reduce(
+            &confirmed,
+            envelope: presentationEnvelope(
+                source: .command,
+                event: .commandFinished(
+                    id: confirmedID,
+                    accepted: false,
+                    notice: PlaybackNotice(message: "Could not update repeat")
+                )
+            )
+        )
+        check.check("a late failure after repeat confirmation is accepted to consume the entry", lateFailure)
+        check.nil_("a late failure after repeat confirmation consumes the resolution", confirmed.transportCommandResolutions[confirmedID])
+        check.equal("a late failure after repeat confirmation keeps context", confirmed.options.repeatMode, .context)
+        check.equal(
+            "a captured repeat confirmation still reports success after consume-only acceptance",
+            playbackCommandFollowUp(
+                finishAccepted: lateFailure,
+                operationSucceeded: false,
+                requiresReconnect: false,
+                commandKind: .options,
+                pendingCommandID: confirmed.pendingCommands[.options]?.id,
+                finishedCommandResolution: capturedConfirmation,
+                capturedAccountEpoch: 1,
+                capturedEngineEpoch: 1,
+                currentAccountEpoch: 1,
+                currentEngineEpoch: 1,
+                isTearingDown: false
+            ),
+            .reportSuccess
+        )
+
+        var superseded = PlaybackState(
+            accountEpoch: 1,
+            engineEpoch: 1,
+            session: .ready,
+            options: PlaybackOptions(repeatMode: .off)
+        )
+        startRepeat(&superseded, id: supersededID, expected: RepeatMode.context.flags)
+        engineRepeat(&superseded, flags: RepeatMode.track.flags, revision: 1)
+        check.equal("unrelated authoritative track supersedes context", superseded.options.repeatMode, .track)
+        check.nil_("unrelated authoritative track drops the pending command", superseded.pendingCommands[.options])
+        check.equal(
+            "unrelated authoritative track records supersession",
+            superseded.transportCommandResolutions[supersededID],
+            .superseded
+        )
+        let capturedSupersession = superseded.transportCommandResolutions[supersededID]
+        let lateSuperseded = PlaybackReducer.reduce(
+            &superseded,
+            envelope: presentationEnvelope(
+                source: .command,
+                event: .commandFinished(
+                    id: supersededID,
+                    accepted: false,
+                    notice: PlaybackNotice(message: "Could not update repeat")
+                )
+            )
+        )
+        check.check("a late failure after repeat supersession is accepted to consume the entry", lateSuperseded)
+        check.equal("a late failure after repeat supersession keeps track", superseded.options.repeatMode, .track)
+        check.equal(
+            "a captured repeat supersession stays inert after consume-only acceptance",
+            playbackCommandFollowUp(
+                finishAccepted: lateSuperseded,
+                operationSucceeded: false,
+                requiresReconnect: false,
+                commandKind: .options,
+                pendingCommandID: superseded.pendingCommands[.options]?.id,
+                finishedCommandResolution: capturedSupersession,
+                capturedAccountEpoch: 1,
+                capturedEngineEpoch: 1,
+                currentAccountEpoch: 1,
+                currentEngineEpoch: 1,
+                isTearingDown: false
+            ),
+            .inert
+        )
+
+        var lagging = PlaybackState(
+            accountEpoch: 1,
+            engineEpoch: 1,
+            session: .ready,
+            options: PlaybackOptions(repeatMode: .off)
+        )
+        startRepeat(&lagging, id: lagID, expected: RepeatMode.context.flags)
+        engineRepeat(&lagging, flags: RepeatMode.off.flags, revision: 1)
+        check.equal("a lagging off snapshot keeps optimistic context", lagging.options.repeatMode, .context)
+        check.equal("a lagging off snapshot does not confirm context", lagging.pendingCommands[.options]?.id, lagID)
+        check.nil_("a lagging off snapshot is not a confirmation", lagging.transportCommandResolutions[lagID])
+        _ = PlaybackReducer.reduce(
+            &lagging,
+            envelope: presentationEnvelope(
+                source: .command,
+                event: .commandFinished(
+                    id: lagID,
+                    accepted: false,
+                    notice: PlaybackNotice(message: "Could not update repeat")
+                )
+            )
+        )
+        check.equal("a rejected repeat after a lagging prior sample restores off", lagging.options.repeatMode, .off)
+
+        var userOptions = PlaybackState(
+            accountEpoch: 1,
+            engineEpoch: 1,
+            session: .ready,
+            options: PlaybackOptions(repeatMode: .off, shuffle: true)
+        )
+        startRepeat(&userOptions, id: userID, expected: RepeatMode.context.flags)
+        _ = PlaybackReducer.reduce(
+            &userOptions,
+            envelope: presentationEnvelope(
+                source: .user,
+                event: .options(PlaybackOptions(shuffle: false, repeatMode: .context, repeatFlags: RepeatMode.context.flags))
+            )
+        )
+        check.equal("a matching user .options event keeps optimistic context", userOptions.options.repeatMode, .context)
+        check.equal("a matching user .options event still adopts shuffle", userOptions.options.shuffle, false)
+        check.equal("a matching user .options event does not confirm context", userOptions.pendingCommands[.options]?.id, userID)
+        check.nil_("a matching user .options event is not a confirmation", userOptions.transportCommandResolutions[userID])
+        _ = PlaybackReducer.reduce(
+            &userOptions,
+            envelope: presentationEnvelope(
+                source: .command,
+                event: .commandFinished(
+                    id: userID,
+                    accepted: false,
+                    notice: PlaybackNotice(message: "Could not update repeat")
+                )
+            )
+        )
+        check.equal("rejection after only a matching user .options event restores off", userOptions.options.repeatMode, .off)
+
+        var intermediate = PlaybackState(
+            accountEpoch: 1,
+            engineEpoch: 1,
+            session: .ready,
+            options: PlaybackOptions(repeatMode: .context)
+        )
+        startRepeat(&intermediate, id: intermediateID, expected: RepeatMode.track.flags)
+        engineRepeat(&intermediate, flags: RepeatMode.off.flags, revision: 1)
+        check.equal("context → track intermediate off is visible", intermediate.options.repeatMode, .off)
+        check.equal("context → track intermediate off stays pending", intermediate.pendingCommands[.options]?.id, intermediateID)
+        check.nil_("context → track intermediate off is not confirmation", intermediate.transportCommandResolutions[intermediateID])
+        _ = PlaybackReducer.reduce(
+            &intermediate,
+            envelope: presentationEnvelope(
+                source: .command,
+                event: .commandFinished(
+                    id: intermediateID,
+                    accepted: false,
+                    notice: PlaybackNotice(message: "Could not update repeat")
+                )
+            )
+        )
+        check.equal("context → track intermediate off then rejection restores context", intermediate.options.repeatMode, .context)
+        check.equal("context → track intermediate off then rejection restores context flags", intermediate.options.repeatFlags, RepeatMode.context.flags)
+    }
+
     check.suite("Remote transfer owner optimism is reducer-owned") {
         let transferID = UUID(uuidString: "00000000-0000-0000-0000-000000000060")!
         let confirmedID = UUID(uuidString: "00000000-0000-0000-0000-000000000061")!
