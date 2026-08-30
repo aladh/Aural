@@ -49,24 +49,6 @@ func runPlaybackProjectionContractChecks(_ check: CheckRunner) {
                 "    var phase: Phase { get { state.session } set { state.session = newValue } }"
             )
         )
-        check.check(
-            "a line-comment setter example is not an accessor",
-            !PlaybackStoreProjectionContract.isExplicitSetterLine(
-                "        // set { state.session = newValue }"
-            )
-        )
-        check.check(
-            "a trailing comment setter example is not an accessor",
-            !PlaybackStoreProjectionContract.isExplicitSetterLine(
-                "        var phase: Phase { state.session } // set { state.session = newValue }"
-            )
-        )
-        check.check(
-            "a quoted setter example is not an accessor",
-            !PlaybackStoreProjectionContract.isExplicitSetterLine(
-                #"        let sample = "set { state.session = newValue }""#
-            )
-        )
         check.equal(
             "comment and string near-misses do not produce setter lines",
             PlaybackStoreProjectionContract.explicitSetterLines(

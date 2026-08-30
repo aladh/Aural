@@ -6,10 +6,8 @@ import Foundation
 /// accessor there would recreate partial-presentation state. `func set…` methods and
 /// setters in other files are out of scope for this file-bounded guard.
 ///
-/// Comment and string handling uses `uncommentedSource` on the whole buffer. Nested
-/// `/* */` and `"""` state carry across lines because those interiors keep newlines.
-/// Setter detection then drops remaining quoted string contents so a documented
-/// example is not an accessor.
+/// Whole-buffer `uncommentedSource` keeps newlines inside `/* */` and `"""`.
+/// Setter detection then drops remaining quoted strings.
 enum PlaybackStoreProjectionContract {
     static func explicitSetterLines(in source: String) -> [String] {
         let originalLines = source.split(separator: "\n", omittingEmptySubsequences: false).map(String.init)

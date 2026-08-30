@@ -4,10 +4,11 @@ This file is a **registry**, not a second architecture manual. It maps each hard
 coherent group with a single owner) to a stable ID. Read the cited ADR, product, security, or
 contributor document for the invariant; do not copy those documents here.
 
-`#83` slice 1 (PR `#123`, `beca6c1`) recorded ownership only. This file now also records slice 2:
-the source-contract prune on `beca6c1`. It does not shrink `AGENTS.md`, add
-`Scripts/check-source-contracts.sh`, a temp-tree harness, or a byte-count gate. `#42` remains
-merged as `d1acd598`; formatter/warning gate order is unchanged.
+`#83` slice 1 (PR `#123`, `beca6c1`) recorded ownership. Slice 2 prunes obsolete `check.sh`
+snapshots, keeps durable shell rules, and moves `SRC-PROJ-001` into existing Swift checks.
+Do not add `check-source-contracts.sh`, a temp-tree harness, nested `AGENTS.md`, or a
+byte-count gate. `#42` formatter/warning order is unchanged. Hold the `AGENTS.md` shrink
+for a later ~17–18.5 KiB link-and-compress pass.
 
 ## How to read a row
 
@@ -29,12 +30,7 @@ merged as `d1acd598`; formatter/warning gate order is unchanged.
 4. Update this inventory and the nearest contributor guidance.
 5. Remove superseded prose or checks so one invariant does not keep several partial owners.
 
-Slice 2 (issue comment 5471143087) deleted obsolete/tombstoned `check.sh` snapshots, moved the
-projection-owner invariant into existing Swift checks, and **kept the small durable shell rules
-in `check.sh`**. Do not add `Scripts/check-source-contracts.sh`: the durable rules remain far
-smaller than a temp-tree harness (~200–250 lines), which failed the ROI test. Hold the
-`AGENTS.md` shrink for a later link-and-compress pass targeting about 17–18.5 KiB. Do not force
-16 KiB, nested `AGENTS.md` files, or a byte-count gate.
+Slice 2 completed the net-deletion course in issue comment 5471143087.
 
 ## Language hygiene (`FMT`) — `#42` / `d1acd598`
 
@@ -96,11 +92,8 @@ Do not promote them to `SRC`.
 
 ## Focused source and topology (`SRC`) — current owners after slice 2
 
-Durable lexical/topology rules stay in `Scripts/check.sh`. Slice 2 deleted tombstones and
-duplicate snapshots; it did not extract a second harness. `SRC-PROJ-001` lives in the existing
-`AuralChecks` projection contract (comment-safe). Drag APIs stay in `check.sh` because that `rg`
-covers every `Sources/Aural/Views` file; the playlist-mutation suite only samples table and
-controller sources.
+Durable lexical rules stay in `check.sh`. `SRC-PROJ-001` is the existing Swift contract.
+Drag APIs stay in `check.sh` (full `Views/` tree; the playlist suite only samples two files).
 
 | ID | Invariant | Canonical source | Primary owner today | Current location | Status | Accepted limitation | Disposition |
 | --- | --- | --- | --- | --- | --- | --- | --- |
@@ -289,23 +282,9 @@ hard-architecture and map/FFI/check-shipping units already owned by ADR/compiler
 | PR `#82` (merged) | Header/archive equality and remaining-export consumption | Keep `ABI-SYM-001` / `ABI-USE-001` |
 | PR `#111` (merged on `main`) | PR CI release compile with `AURAL_DISTRIBUTION` | `CI-REL-001` |
 
-## Explicitly out of this slice
+## Out of slice / verification
 
-No `Scripts/check-source-contracts.sh`, temp-tree harness, new fixtures framework, parser/lint
-dependency, byte-count gate, nested `AGENTS.md`, `AGENTS.md` shrink, production playback
-behavior, app launch, sign-in, account access, or Spotify playback. Formatter/warning gate
-order from `#42` is unchanged.
-
-## Verification snapshot (slice 2)
-
-Recorded against `origin/main` `beca6c1` (inventory PR `#123`) plus this prune:
-
-- `AGENTS.md`: 27,042 bytes, 414 lines; 122 surface units; 165 atomic (unchanged).
-- `Scripts/check.sh`: 33 assertion sites (32 failing policies + 1 relink side effect).
-- `Scripts/check-clean.sh`: 1 composite clean-gate policy.
-- This registry: **72** active IDs (5 FMT, 8 CMP, 14 TST, 5 ABI, 12 SRC, 5 CI, 23 DOC) plus
-  **7** pruned IDs retained in the archive table (79 documented). 33 numbered `check.sh` sites
-  and 1 `check-clean.sh` policy.
-- Proportional verification: `git diff --stat` net deletion, `git diff --check`, focused
-  `playback-projection-contract` coverage. GitHub macos-15 synthetic-merge CI is the
-  compile/format authority. No app launch or Spotify access.
+No source-contract harness, byte-count gate, nested `AGENTS.md`, or `AGENTS.md` shrink.
+Against current `main` plus this prune: `AGENTS.md` unchanged (27,042 bytes, 414 lines, 122/165).
+`Scripts/check.sh`: 33 sites (32 failing + 1 relink). Registry: 72 active IDs + 7 pruned.
+Proportional verification is `git diff --stat` / `--check` and macos-15 CI.
