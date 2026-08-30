@@ -478,17 +478,18 @@ func runPlaylistMutationChecks(_ runner: CheckRunner) async {
         runner.check("loading tracks bumps the collection revision", loadedRevision > 0)
         catalog.playlistStore.replaceLoadedPlaylist(
             uri: "spotify:playlist:owned",
-            tracks: [first, fixtureTrack(id: "uid-mid", uri: "spotify:track:mid"), second]
+            tracks: [first, fixtureTrack(id: "uid-mid", uri: "spotify:track:mid")]
         )
+        runner.equal("replacement keeps the same row count", catalog.playlistStore.tracks.count, 2)
         runner.equal(
             "same-count middle replacement bumps again",
             catalog.playlistStore.tracksRevision,
             loadedRevision &+ 1
         )
         runner.equal(
-            "authoritative rows follow the replacement",
+            "authoritative rows follow the replacement identity",
             catalog.playlistStore.tracks.map(\.id),
-            ["uid-a", "uid-mid", "uid-b"]
+            ["uid-a", "uid-mid"]
         )
     }
 
