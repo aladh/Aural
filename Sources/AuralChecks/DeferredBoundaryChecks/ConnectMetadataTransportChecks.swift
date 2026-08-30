@@ -403,9 +403,9 @@ private final class CredentialSequence: @unchecked Sendable {
     func next() -> String {
         lock.lock()
         defer { lock.unlock() }
-        let value = values[index]
         index += 1
-        return value
+        guard index <= values.count else { return "surplus-credential-\(index)" }
+        return values[index - 1]
     }
 }
 
