@@ -86,7 +86,7 @@ fn playback_full() -> PlaybackStateUpdate {
         revision: 12,
         session_generation: 4,
         is_playing: true,
-        is_paused: true,
+        is_paused: false,
         track_uri: "spotify:track:fixtureNow".to_string(),
         position_ms: 1_250,
         duration_ms: 180_000,

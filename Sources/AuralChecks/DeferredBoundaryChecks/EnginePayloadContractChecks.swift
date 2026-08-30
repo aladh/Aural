@@ -25,14 +25,15 @@ func runEnginePayloadContractChecks(_ check: CheckRunner) {
             check.equal("minimal repeat context", state.repeatContext, false)
         }
 
-        check.noThrow("playback-full decodes paused overlay and options") {
+        check.noThrow("playback-full decodes a live playing snapshot and options") {
             let state = try decoder.decode(
                 RustPlaybackState.self,
                 from: enginePayloadFixture(named: "playback-full")
             )
             check.equal("full playback revision", state.revision, 12)
             check.equal("full playback session generation", state.sessionGeneration, 4)
-            check.check("raw playing+paused bits decode together", state.isPlaying && state.isPaused == true)
+            check.equal("full playback is playing", state.isPlaying, true)
+            check.equal("full playback is not paused", state.isPaused, false)
             check.equal("full playback track", state.trackURI, "spotify:track:fixtureNow")
             check.equal("full playback position", state.positionMS, 1_250)
             check.equal("full playback duration", state.durationMS, 180_000)
