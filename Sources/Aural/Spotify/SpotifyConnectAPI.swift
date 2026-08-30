@@ -334,7 +334,8 @@ nonisolated struct SpotifyConnectAPI: Sendable {
         let url = Self.baseURL
             .appending(path: path)
             .appending(queryItems: [URLQueryItem(name: "market", value: "from_token")])
-        try await preflight(url)
+        // URLSession is not a browser CORS client. The signed GET does not depend on an
+        // unsigned OPTIONS preflight, and issuing one per track doubles cold queue traffic.
         let sent = try await credentials.retryingRefusedToken(replay: .safe) {
             try await request(method: "GET", url: url, body: nil)
         }
@@ -376,26 +377,6 @@ nonisolated struct SpotifyConnectAPI: Sendable {
             throw SpotifyConnectAPIError.malformedResponse
         }
         return SpotifyCredentials.Attempt(body: data, http: http, request: request)
-    }
-
-    private func preflight(_ url: URL) async throws {
-        var request = URLRequest(url: url)
-        request.httpMethod = "OPTIONS"
-        request.setValue("*/*", forHTTPHeaderField: "Accept")
-        request.setValue("GET", forHTTPHeaderField: "Access-Control-Request-Method")
-        request.setValue(
-            "app-platform,authorization,client-token,spotify-app-version",
-            forHTTPHeaderField: "Access-Control-Request-Headers"
-        )
-        request.setValue(SpotifyCredentials.origin, forHTTPHeaderField: "Origin")
-        request.setValue(SpotifyCredentials.origin + "/", forHTTPHeaderField: "Referer")
-        let (_, response) = try await credentials.transport(request)
-        guard let http = response as? HTTPURLResponse else {
-            throw SpotifyConnectAPIError.malformedResponse
-        }
-        guard http.statusCode < 400 else {
-            throw SpotifyConnectAPIError.requestFailed(http.statusCode)
-        }
     }
 
     private func validate(_ status: Int) throws {
