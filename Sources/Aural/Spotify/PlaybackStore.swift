@@ -303,12 +303,16 @@ final class PlaybackStore {
                 }
             })
         effects.replace(
+            .queueServiceBootstrap,
+            with: Task { [weak self] in
+                guard let self else { return }
+                await self.queueService.reset(accountEpoch: self.accountEpoch)
+            })
+        effects.replace(
             .preferencesRestore,
             with: Task { [weak self, environment] in
                 guard let self else { return }
                 let epoch = self.accountEpoch
-                await self.queueService.reset(accountEpoch: epoch)
-                guard !Task.isCancelled, self.accountEpoch == epoch else { return }
                 self.setShuffleEnabled(await environment.preferences.shuffleEnabled())
                 guard !Task.isCancelled, self.accountEpoch == epoch else { return }
                 self.lastRemoteDeviceID = await environment.preferences.lastRemoteDeviceID()

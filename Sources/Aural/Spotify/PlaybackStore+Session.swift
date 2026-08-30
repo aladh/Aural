@@ -12,7 +12,9 @@ extension PlaybackStore {
     func restore() async {
         guard terminationGate.allowsCommands else { return }
         startLifetimeEffectsIfNeeded()
+        let queueServiceBootstrap = effects.settlement(of: .queueServiceBootstrap)
         let preferencesRestore = effects.settlement(of: .preferencesRestore)
+        await queueServiceBootstrap?.wait()
         await accountStore.restore()
         await preferencesRestore?.wait()
     }
