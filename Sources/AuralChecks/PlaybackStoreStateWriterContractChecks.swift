@@ -35,6 +35,8 @@ func runPlaybackStoreStateWriterContractChecks(_ check: CheckRunner) {
         func apply() {
             state = PlaybackState()
             state.options.repeatMode = .track
+            self.state = next
+            self.state.options.repeatMode = .track
             let state = PlaybackState()
             state.transport = .playing
         }
@@ -42,15 +44,27 @@ func runPlaybackStoreStateWriterContractChecks(_ check: CheckRunner) {
         check.equal(
             "an extra store-state assignment is reported",
             PlaybackStoreStateWriterContract.assignmentLines(in: illegal),
-            ["state = PlaybackState()"]
+            [
+                "state = PlaybackState()",
+                "self.state = next",
+            ]
         )
         check.equal(
             "direct member mutation is reported and local bindings are ignored",
             PlaybackStoreStateWriterContract.memberMutationLines(in: illegal),
             [
                 "state.options.repeatMode = .track",
+                "self.state.options.repeatMode = .track",
                 "state.transport = .playing",
             ]
+        )
+        check.check(
+            "qualified comparisons are not assignments",
+            PlaybackStoreStateWriterContract.assignmentLines(in: "if self.state == next { }").isEmpty
+        )
+        check.check(
+            "qualified reads are not member mutations",
+            PlaybackStoreStateWriterContract.memberMutationLines(in: "let flags = self.state.options.repeatFlags").isEmpty
         )
 
         check.check(

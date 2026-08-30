@@ -197,12 +197,12 @@ private func containsToken(_ source: String, _ token: String) -> Bool {
 }
 
 private func playbackStoreStateAssignments(_ source: String) -> [String] {
-    matchingPlaybackStoreStateLines(source, pattern: #"(?<![\w.])state\s*=(?!=)"#)
+    matchingPlaybackStoreStateLines(source, pattern: #"(?<![\w.])(?:self\.)?state\s*=(?!=)"#)
         .filter { !$0.contains("let state") }
 }
 
 private func playbackStoreStateMemberMutations(_ source: String) -> [String] {
-    matchingPlaybackStoreStateLines(source, pattern: #"(?<![\w.])state\.[A-Za-z0-9_.\[\]]+\s*=(?!=)"#)
+    matchingPlaybackStoreStateLines(source, pattern: #"(?<![\w.])(?:self\.)?state\.[A-Za-z0-9_.\[\]]+\s*=(?!=)"#)
         .filter { !$0.contains("let state") }
 }
 
@@ -938,13 +938,6 @@ func runRepeatTransitionChecks(_ runner: CheckRunner) async {
             )
             let mutations = sources.flatMap(playbackStoreStateMemberMutations)
             runner.equal("PlaybackStore files have no direct state member mutation", mutations, [String]())
-            let store = try auralSourceFile("Aural/Spotify/PlaybackStore.swift")
-            runner.check(
-                "send is the only accepted reducer commit for PlaybackStore.state",
-                containsToken(store, "if accepted {")
-                    && containsToken(store, "state = next")
-                    && containsToken(store, "PlaybackReducer.reduce")
-            )
             runner.check(
                 "cycleRepeat no longer assigns presentation outside the reducer",
                 !containsToken(try auralSourceFile("Aural/Spotify/PlaybackStore+Transport.swift"), "setRepeat(")

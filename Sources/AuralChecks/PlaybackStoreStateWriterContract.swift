@@ -7,12 +7,12 @@ import Foundation
 /// domain helpers, not in store extensions.
 enum PlaybackStoreStateWriterContract {
     static func assignmentLines(in source: String) -> [String] {
-        matchingLines(in: source, pattern: #"(?<![\w.])state\s*=(?!=)"#)
+        matchingLines(in: source, pattern: #"(?<![\w.])(?:self\.)?state\s*=(?!=)"#)
             .filter { !$0.contains("let state") }
     }
 
     static func memberMutationLines(in source: String) -> [String] {
-        matchingLines(in: source, pattern: #"(?<![\w.])state\.[A-Za-z0-9_.\[\]]+\s*=(?!=)"#)
+        matchingLines(in: source, pattern: #"(?<![\w.])(?:self\.)?state\.[A-Za-z0-9_.\[\]]+\s*=(?!=)"#)
             .filter { !$0.contains("let state") }
     }
 
