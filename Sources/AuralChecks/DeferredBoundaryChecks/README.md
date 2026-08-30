@@ -22,7 +22,9 @@ These checks intentionally use the custom runner rather than XCTest/Swift Testin
 verification path remains available with the supported Command Line Tools installation. Concrete
 suites share one `@MainActor` `waitUntil` helper that polls with `Task.yield` until the condition,
 cancellation, or a two-second `ContinuousClock` deadline. A true predicate is accepted only after
-cancellation and the deadline are rechecked.
+cancellation and the deadline are rechecked. Outcome checks that need a negative assertion after
+in-flight playback work capture `PlaybackEffectRegistry.settlement(of:)` and await that exact task
+instead of a fixed sleep.
 
 Both executables accept optional suite-name arguments after `--`. `--list` prints the registered
 names. `--help` prints usage. No arguments still run every registered suite in the current order.

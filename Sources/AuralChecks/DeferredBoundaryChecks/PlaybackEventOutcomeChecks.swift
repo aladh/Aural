@@ -374,6 +374,16 @@ private func startTrackResolution(_ player: PlaybackStore, uri: String) {
 }
 
 @MainActor
+private func awaitCapturedEffect(
+    _ settlement: PlaybackEffectSettlement?,
+    _ runner: CheckRunner,
+    registered: String
+) async {
+    runner.notNil(registered, settlement)
+    await settlement?.wait()
+}
+
+@MainActor
 func runPlaybackEventOutcomeChecks(_ runner: CheckRunner) async {
     await runner.suite("Track metadata outcomes re-enter through PlaybackEvent") {
         let successRemote = GatedMetadataRemote()
@@ -394,9 +404,14 @@ func runPlaybackEventOutcomeChecks(_ runner: CheckRunner) async {
         let staleEngine = playbackStore(outcomeEnvironment(remote: staleEngineRemote))
         startTrackResolution(staleEngine, uri: "spotify:track:stale-engine")
         runner.check("stale-engine metadata lookup starts", await waitUntil { await staleEngineRemote.requestedURI != nil })
+        let staleEngineMetadata = staleEngine.effects.settlement(of: .trackMetadata)
         bumpEngine(staleEngine)
         await staleEngineRemote.complete(title: "Late engine")
-        try? await Task.sleep(nanoseconds: 20_000_000)
+        await awaitCapturedEffect(
+            staleEngineMetadata,
+            runner,
+            registered: "stale-engine metadata effect is registered before invalidation"
+        )
         runner.nil_("stale-engine metadata does not mutate the current title", staleEngine.state.currentTrack?.title)
         runner.check("stale-engine metadata does not create history", staleEngine.history.entries.isEmpty)
         await staleEngine.shutdownForTermination()
@@ -406,6 +421,7 @@ func runPlaybackEventOutcomeChecks(_ runner: CheckRunner) async {
         startTrackResolution(staleAccount, uri: "spotify:track:stale-account")
         runner.check("stale-account metadata lookup starts", await waitUntil { await staleAccountRemote.requestedURI != nil })
         staleAccount.recordPlayed("spotify:track:stale-account")
+        let staleAccountMetadata = staleAccount.effects.settlement(of: .trackMetadata)
         staleAccount.accountStore.advanceEpoch()
         _ = staleAccount.send(
             .reset(session: .signedOut),
@@ -413,7 +429,11 @@ func runPlaybackEventOutcomeChecks(_ runner: CheckRunner) async {
             accountEpoch: staleAccount.accountEpoch
         )
         await staleAccountRemote.complete(title: "Late account")
-        try? await Task.sleep(nanoseconds: 20_000_000)
+        await awaitCapturedEffect(
+            staleAccountMetadata,
+            runner,
+            registered: "stale-account metadata effect is registered before invalidation"
+        )
         runner.nil_("stale-account metadata cannot revive a reset track", staleAccount.state.currentTrack)
         runner.equal(
             "stale-account metadata does not enrich history after reset",
@@ -427,9 +447,14 @@ func runPlaybackEventOutcomeChecks(_ runner: CheckRunner) async {
         startTrackResolution(cancelled, uri: "spotify:track:cancelled")
         runner.check("cancelled metadata lookup starts", await waitUntil { await cancelRemote.requestedURI != nil })
         cancelled.recordPlayed("spotify:track:cancelled")
+        let cancelledMetadata = cancelled.effects.settlement(of: .trackMetadata)
         cancelled.effects.cancel(.trackMetadata)
         await cancelRemote.complete(title: "Cancelled")
-        try? await Task.sleep(nanoseconds: 20_000_000)
+        await awaitCapturedEffect(
+            cancelledMetadata,
+            runner,
+            registered: "cancelled metadata effect is registered before cancellation"
+        )
         runner.nil_("cancelled metadata is inert", cancelled.state.currentTrack?.title)
         runner.equal("cancelled metadata does not enrich history", cancelled.history.entries.first?.title, "Unknown track")
         await cancelled.shutdownForTermination()
@@ -447,8 +472,13 @@ func runPlaybackEventOutcomeChecks(_ runner: CheckRunner) async {
             )),
             source: .user
         )
+        let rejectedMetadata = rejected.effects.settlement(of: .trackMetadata)
         await rejectedRemote.complete(title: "From original")
-        try? await Task.sleep(nanoseconds: 20_000_000)
+        await awaitCapturedEffect(
+            rejectedMetadata,
+            runner,
+            registered: "reducer-rejection metadata effect is registered before completion"
+        )
         runner.equal("metadata for a previous track is rejected", rejected.state.currentTrack?.uri, "spotify:track:other")
         runner.equal("rejected metadata does not enrich the prior history row", rejected.history.entries.first?.title, "Unknown track")
         await rejected.shutdownForTermination()
@@ -476,6 +506,7 @@ func runPlaybackEventOutcomeChecks(_ runner: CheckRunner) async {
         seedReadyLocalPlayback(staleAccount, uri: "spotify:track:playing")
         staleAccount.refreshPosition()
         runner.check("stale-account position refresh starts", await waitUntil { staleAccountEngine.hasStarted })
+        let staleAccountPosition = staleAccount.effects.settlement(of: .positionRefresh)
         staleAccount.accountStore.advanceEpoch()
         _ = staleAccount.send(
             .reset(session: .signedOut),
@@ -483,7 +514,11 @@ func runPlaybackEventOutcomeChecks(_ runner: CheckRunner) async {
             accountEpoch: staleAccount.accountEpoch
         )
         staleAccountEngine.release()
-        try? await Task.sleep(nanoseconds: 20_000_000)
+        await awaitCapturedEffect(
+            staleAccountPosition,
+            runner,
+            registered: "stale-account position refresh is registered before invalidation"
+        )
         runner.equal("stale-account position refresh cannot stamp signed-out timing", staleAccount.state.timing.position, 0)
         await staleAccount.shutdownForTermination()
 
@@ -494,9 +529,14 @@ func runPlaybackEventOutcomeChecks(_ runner: CheckRunner) async {
         seedReadyLocalPlayback(staleEngine, uri: "spotify:track:playing")
         staleEngine.refreshPosition()
         runner.check("stale-engine position refresh starts", await waitUntil { staleEngineEngine.hasStarted })
+        let staleEnginePosition = staleEngine.effects.settlement(of: .positionRefresh)
         bumpEngine(staleEngine)
         staleEngineEngine.release()
-        try? await Task.sleep(nanoseconds: 20_000_000)
+        await awaitCapturedEffect(
+            staleEnginePosition,
+            runner,
+            registered: "stale-engine position refresh is registered before invalidation"
+        )
         runner.equal("stale-engine position refresh is inert", staleEngine.state.timing.position, 5)
         await staleEngine.shutdownForTermination()
 
@@ -507,9 +547,14 @@ func runPlaybackEventOutcomeChecks(_ runner: CheckRunner) async {
         seedReadyLocalPlayback(cancelled, uri: "spotify:track:playing")
         cancelled.refreshPosition()
         runner.check("cancelled position refresh starts", await waitUntil { cancelEngine.hasStarted })
+        let cancelledPosition = cancelled.effects.settlement(of: .positionRefresh)
         cancelled.effects.cancel(.positionRefresh)
         cancelEngine.release()
-        try? await Task.sleep(nanoseconds: 20_000_000)
+        await awaitCapturedEffect(
+            cancelledPosition,
+            runner,
+            registered: "cancelled position refresh is registered before cancellation"
+        )
         runner.equal("cancelled position refresh is inert", cancelled.state.timing.position, 5)
         await cancelled.shutdownForTermination()
     }
@@ -569,9 +614,14 @@ func runPlaybackEventOutcomeChecks(_ runner: CheckRunner) async {
         cancelled.catalogSession.update(accountEpoch: cancelled.accountEpoch, isAvailable: true)
         cancelled.refreshQueue()
         runner.check("queue refresh starts", await waitUntil { await webQueue.requestCount == 1 })
+        let cancelledQueueRefresh = cancelled.effects.settlement(of: .queueRefresh)
         cancelled.cancelQueueRefresh()
         await webQueue.complete(with: [fixtureTrack("spotify:track:cancelled-queue", title: "Cancelled")])
-        try? await Task.sleep(nanoseconds: 20_000_000)
+        await awaitCapturedEffect(
+            cancelledQueueRefresh,
+            runner,
+            registered: "cancelled queue refresh is registered before cancellation"
+        )
         runner.check("cancelled queue refresh does not adopt ordering", cancelled.state.queue.entries.isEmpty)
         runner.nil_(
             "cancelled queue refresh does not retain catalog metadata",
@@ -591,9 +641,14 @@ func runPlaybackEventOutcomeChecks(_ runner: CheckRunner) async {
         named.recordPlayed(uri)
         named.refreshQueueSnapshot()
         runner.check("named queue snapshot fetch starts", await waitUntil { namedEngine.hasStarted })
+        let namedSnapshot = named.effects.settlement(of: .queueSnapshot)
         bumpEngine(named)
         namedEngine.release(queueSnapshotJSON(uri: uri, name: "Stale snapshot", artist: "Stale artist"))
-        try? await Task.sleep(nanoseconds: 20_000_000)
+        await awaitCapturedEffect(
+            namedSnapshot,
+            runner,
+            registered: "stale named snapshot effect is registered before invalidation"
+        )
         runner.equal("stale named snapshot cannot replace now-playing title", named.state.currentTrack?.title, "Now")
         runner.equal("stale named snapshot cannot replace now-playing artist", named.state.currentTrack?.artist, "Artist")
         runner.equal("stale named snapshot does not enrich history", named.history.entries.first?.title, "Unknown track")
@@ -609,9 +664,14 @@ func runPlaybackEventOutcomeChecks(_ runner: CheckRunner) async {
         missing.recordPlayed(uri)
         missing.refreshQueueSnapshot()
         runner.check("nameless queue snapshot fetch starts", await waitUntil { missingEngine.hasStarted })
+        let missingSnapshot = missing.effects.settlement(of: .queueSnapshot)
         bumpEngine(missing)
         missingEngine.release(queueSnapshotJSON(uri: uri))
-        try? await Task.sleep(nanoseconds: 20_000_000)
+        await awaitCapturedEffect(
+            missingSnapshot,
+            runner,
+            registered: "stale nameless snapshot effect is registered before invalidation"
+        )
         runner.nil_("stale nameless snapshot cannot install a title", missing.state.currentTrack?.title)
         runner.equal("stale nameless snapshot keeps the current URI", missing.state.currentTrack?.uri, uri)
         runner.equal(
@@ -630,9 +690,14 @@ func runPlaybackEventOutcomeChecks(_ runner: CheckRunner) async {
         let before = watermarkStore.connectQueueCallback
         watermarkStore.refreshQueueSnapshot()
         runner.check("watermark snapshot fetch starts", await waitUntil { watermarkEngine.hasStarted })
+        let watermarkSnapshot = watermarkStore.effects.settlement(of: .queueSnapshot)
         bumpEngine(watermarkStore)
         watermarkEngine.release(queueSnapshotJSON(uri: uri, name: "Stale snapshot", revision: 9))
-        try? await Task.sleep(nanoseconds: 20_000_000)
+        await awaitCapturedEffect(
+            watermarkSnapshot,
+            runner,
+            registered: "stale watermark snapshot effect is registered before invalidation"
+        )
         runner.equal(
             "a stale snapshot does not advance the callback generation",
             watermarkStore.connectQueueCallback.generation,
@@ -726,6 +791,7 @@ func runPlaybackEventOutcomeChecks(_ runner: CheckRunner) async {
         let staleBefore = stalePayload.engineGeneration
         stalePayload.refreshQueueSnapshot()
         runner.check("stale-payload snapshot fetch starts", await waitUntil { stalePayloadEngine.hasStarted })
+        let stalePayloadSnapshot = stalePayload.effects.settlement(of: .queueSnapshot)
         bumpEngine(stalePayload)
         stalePayloadEngine.release(
             queueSnapshotJSON(
@@ -736,7 +802,11 @@ func runPlaybackEventOutcomeChecks(_ runner: CheckRunner) async {
                 sessionGeneration: staleBefore
             )
         )
-        try? await Task.sleep(nanoseconds: 20_000_000)
+        await awaitCapturedEffect(
+            stalePayloadSnapshot,
+            runner,
+            registered: "stale payload snapshot effect is registered before invalidation"
+        )
         runner.equal("a stale payload generation cannot replace now-playing title", stalePayload.state.currentTrack?.title, "Now")
         runner.nil_("a stale payload generation does not install mutation", stalePayload.queueMutation)
         await stalePayload.shutdownForTermination()

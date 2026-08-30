@@ -38,14 +38,30 @@ enum PlaybackEffectID: Hashable {
 /// multi-add is not cancelled. Authoritative Connect `set_queue` replacement uses one
 /// `.queueReplacement` lifetime plus a MainActor request token: a second removal is refused while
 /// one is in flight, because cancellation cannot undo a `set_queue` Spotify already accepted.
+/// `settlement(of:)` is observation-only: it copies the currently registered task identity so a
+/// check can await that same task after cancel, complete, or replace removes the dictionary entry.
 /// See `docs/ADR-003-playback-command-effects.md`.
 final class PlaybackEffectRegistration {}
+
+/// Exact identity of one currently registered effect task. Capture it before the registry
+/// invalidates that token; waiting still observes that task after the live entry is gone.
+struct PlaybackEffectSettlement: Sendable {
+    fileprivate let task: Task<Void, Never>
+
+    func wait() async {
+        await task.value
+    }
+}
 
 @MainActor
 final class PlaybackEffectRegistry {
     private var tasks: [PlaybackEffectID: Task<Void, Never>] = [:]
     private var registrations: [PlaybackEffectID: PlaybackEffectRegistration] = [:]
     private var cancellationHandlers: [PlaybackEffectID: @MainActor () -> Void] = [:]
+
+    func settlement(of id: PlaybackEffectID) -> PlaybackEffectSettlement? {
+        tasks[id].map(PlaybackEffectSettlement.init(task:))
+    }
 
     func replace(
         _ id: PlaybackEffectID,
