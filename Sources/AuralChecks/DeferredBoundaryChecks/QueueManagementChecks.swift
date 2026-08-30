@@ -266,6 +266,10 @@ private func seedAuthoritativeQueue(_ player: PlaybackStore, revision: UInt64 = 
     )
 }
 
+private func waitForPreferencesQueueReset(_ hook: QueueServiceTestHook) async -> Bool {
+    await waitUntil { await hook.resetCount >= 1 }
+}
+
 private func waitUntil(
     timeoutNanoseconds: UInt64 = 200_000_000,
     _ condition: @MainActor () async -> Bool
@@ -928,6 +932,7 @@ func runQueueManagementChecks(_ runner: CheckRunner) async {
             feedback: feedback,
             queueServiceHook: hook
         )
+        runner.check("init restore finished before parking accept", await waitForPreferencesQueueReset(hook))
         seedRemoteOwner(player)
         await player.queueService.reset(accountEpoch: player.accountEpoch)
         await hook.parkNextConnectAccept()
@@ -1006,6 +1011,7 @@ func runQueueManagementChecks(_ runner: CheckRunner) async {
             feedback: acceptFeedback,
             queueServiceHook: acceptHook
         )
+        runner.check("inspector-close restore finished before parking accept", await waitForPreferencesQueueReset(acceptHook))
         seedRemoteOwner(accept)
         await accept.queueService.reset(accountEpoch: accept.accountEpoch)
         await acceptHook.parkNextConnectAccept()
@@ -1041,6 +1047,7 @@ func runQueueManagementChecks(_ runner: CheckRunner) async {
             feedback: teardownFeedback,
             queueServiceHook: teardownHook
         )
+        runner.check("teardown restore finished before parking accept", await waitForPreferencesQueueReset(teardownHook))
         seedRemoteOwner(teardown)
         await seedAuthoritativeQueue(teardown)
         teardown.removeUpcomingQueueOccurrences(selectedIDs: [teardown.queueNextEntries[0].id])
@@ -1076,6 +1083,7 @@ func runQueueManagementChecks(_ runner: CheckRunner) async {
             feedback: epochFeedback,
             queueServiceHook: epochHook
         )
+        runner.check("epoch restore finished before parking commit", await waitForPreferencesQueueReset(epochHook))
         seedRemoteOwner(epochPlayer)
         await seedAuthoritativeQueue(epochPlayer)
         await epochHook.parkNextCommittedReplacement()
@@ -1102,6 +1110,7 @@ func runQueueManagementChecks(_ runner: CheckRunner) async {
             feedback: cancelFeedback,
             queueServiceHook: cancelHook
         )
+        runner.check("cancel restore finished before parking commit", await waitForPreferencesQueueReset(cancelHook))
         seedRemoteOwner(cancelPlayer)
         await seedAuthoritativeQueue(cancelPlayer)
         await cancelHook.parkNextCommittedReplacement()

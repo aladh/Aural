@@ -12,6 +12,7 @@ actor QueueServiceTestHook: QueueServiceHook {
     private var committedReplacementGate: CheckedContinuation<Void, Never>?
     private var committedReplacementGateID: UInt64 = 0
 
+    private(set) var resetCount = 0
     private(set) var acceptConnectEnterCount = 0
     private(set) var acceptConnectSuspendCount = 0
     private(set) var acceptConnectResumeCount = 0
@@ -78,6 +79,7 @@ actor QueueServiceTestHook: QueueServiceHook {
     }
 
     func reset() async {
+        resetCount += 1
         pendingConnectAccept = false
         resumeConnectAccept()
         pendingCommittedReplacement = false
