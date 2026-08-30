@@ -52,7 +52,9 @@ final class MediaDetailRequestLifetime {
         if loadedURI == uri, loadedSession == currentSession {
             return .skip
         }
-        if let task, inFlightURI == uri, inFlightSession == currentSession {
+        // A cancelled owner (SwiftUI `.task` teardown) must not be joined: the view can
+        // remount the same URI/session before `complete` runs.
+        if let task, !task.isCancelled, inFlightURI == uri, inFlightSession == currentSession {
             return .join(task)
         }
 

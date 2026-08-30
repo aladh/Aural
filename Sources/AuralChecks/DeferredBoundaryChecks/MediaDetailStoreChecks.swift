@@ -340,6 +340,36 @@ func runMediaDetailStoreChecks(_ runner: CheckRunner) async {
         runner.equal("a completed same-session album is not fetched again", await provider.requestCount, 1)
     }
 
+    await runner.suite("Media detail cancelled owner does not join") {
+        let provider = GatedAlbumCatalog()
+        let session = CatalogSessionAvailability(accountEpoch: 1, isAvailable: true)
+        let (store, _) = makeAlbumStore(provider: provider, session: session)
+
+        let owner = Task { await store.load(firstAlbumItem) }
+        runner.check(
+            "the owner album request parks",
+            await waitUntil { await provider.requestCount == 1 }
+        )
+        owner.cancel()
+        for _ in 0..<16 { await Task.yield() }
+        let reload = Task { await store.load(firstAlbumItem) }
+        runner.check(
+            "reloading the same URI after owner cancellation starts a new provider request",
+            await waitUntil { await provider.requestCount == 2 }
+        )
+        runner.check("the replacement flight owns loading", store.isLoading)
+
+        await provider.completeNext(.cancelled)
+        await owner.value
+        runner.check("the cancelled owner does not publish", store.tracks.isEmpty)
+        runner.nil_("the cancelled owner does not surface an error", store.error)
+
+        await provider.completeNext(.album(firstAlbumValue))
+        await reload.value
+        runner.equal("the replacement flight publishes", store.tracks.map(\.uri), ["spotify:track:first"])
+        runner.check("the replacement flight clears loading", !store.isLoading)
+    }
+
     await runner.suite("Media detail selection supersession and late finish") {
         let provider = GatedAlbumCatalog()
         let session = CatalogSessionAvailability(accountEpoch: 1, isAvailable: true)
