@@ -117,7 +117,9 @@ private struct EpochAttributes: TrackAttributesProviding {
     func attributes(for _: [String]) async throws -> [String: TrackAttributes] { [:] }
 }
 private struct EpochCatalog: CatalogProviding {
-    func searchTracks(_: String, limit _: Int) async throws -> [PathfinderTrack] { throw EpochOwnershipFailure.unavailable }
+    func searchTracks(_: String, limit _: Int) async throws -> [PathfinderTrack] {
+        throw EpochOwnershipFailure.unavailable
+    }
     func home() async throws -> PathfinderHome { throw EpochOwnershipFailure.unavailable }
     func libraryPlaylists() async throws -> [PathfinderPlaylist] { throw EpochOwnershipFailure.unavailable }
     func libraryAlbums() async throws -> [PathfinderAlbum] { throw EpochOwnershipFailure.unavailable }
@@ -256,7 +258,8 @@ func runAccountEpochOwnershipChecks(_ runner: CheckRunner) async {
 
         let upgrade = Task { await player.handleGrantRevocation() }
         for _ in 0..<20 { await Task.yield() }
-        runner.equal("an overlapping revocation does not advance the epoch again", player.accountStore.epoch, duringTeardown)
+        runner.equal(
+            "an overlapping revocation does not advance the epoch again", player.accountStore.epoch, duringTeardown)
         runner.equal("projection is unchanged after the upgrade", player.accountEpoch, duringTeardown)
         runner.equal("reducer epoch is unchanged after the upgrade", player.state.accountEpoch, duringTeardown)
 
@@ -301,11 +304,12 @@ func runAccountEpochOwnershipChecks(_ runner: CheckRunner) async {
         )
         await player.restore()
         _ = player.send(
-            .presentation(PlaybackPresentationSnapshot(
-                currentTrack: CurrentTrack(uri: "spotify:track:prior", title: "Prior"),
-                transport: .paused,
-                timing: PlaybackTiming(anchoredAt: Date(timeIntervalSince1970: 1_800_000_000))
-            )),
+            .presentation(
+                PlaybackPresentationSnapshot(
+                    currentTrack: CurrentTrack(uri: "spotify:track:prior", title: "Prior"),
+                    transport: .paused,
+                    timing: PlaybackTiming(anchoredAt: Date(timeIntervalSince1970: 1_800_000_000))
+                )),
             source: .user
         )
         let prior = player.accountEpoch
@@ -326,7 +330,8 @@ func runAccountEpochOwnershipChecks(_ runner: CheckRunner) async {
         runner.nil_("prior-epoch work cannot revive signed-out presentation", player.state.currentTrack)
         runner.equal("signed-out session is unchanged", player.state.session, PlaybackSessionPhase.signedOut)
         runner.equal("inert work did not roll the epoch back", player.accountEpoch, current)
-        runner.equal("inert work did not drift the projection from AccountStore", player.accountEpoch, player.accountStore.epoch)
+        runner.equal(
+            "inert work did not drift the projection from AccountStore", player.accountEpoch, player.accountStore.epoch)
         runner.equal("inert work did not drift reducer state from AccountStore", player.state.accountEpoch, current)
     }
 

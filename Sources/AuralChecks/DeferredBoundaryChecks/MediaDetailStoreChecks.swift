@@ -160,17 +160,17 @@ private func decodeArtist(_ json: String) throws -> PathfinderArtistUnion {
 }
 
 private let firstAlbumJSON = """
-{"data":{"albumUnion":{"uri":"spotify:album:first","name":"First Album","type":"ALBUM","date":{"isoString":"2024-01-02T00:00:00Z"},"coverArt":{"sources":[]},"artists":{"items":[]},"tracksV2":{"items":[{"track":{"uri":"spotify:track:first","name":"First Track","trackNumber":1,"discNumber":1,"duration":{"totalMilliseconds":120000},"artists":{"items":[]}}}],"totalCount":1}}}}
-"""
+    {"data":{"albumUnion":{"uri":"spotify:album:first","name":"First Album","type":"ALBUM","date":{"isoString":"2024-01-02T00:00:00Z"},"coverArt":{"sources":[]},"artists":{"items":[]},"tracksV2":{"items":[{"track":{"uri":"spotify:track:first","name":"First Track","trackNumber":1,"discNumber":1,"duration":{"totalMilliseconds":120000},"artists":{"items":[]}}}],"totalCount":1}}}}
+    """
 private let secondAlbumJSON = """
-{"data":{"albumUnion":{"uri":"spotify:album:second","name":"Second Album","type":"ALBUM","date":{"isoString":"2025-03-04T00:00:00Z"},"coverArt":{"sources":[]},"artists":{"items":[]},"tracksV2":{"items":[{"track":{"uri":"spotify:track:second","name":"Second Track","trackNumber":1,"discNumber":1,"duration":{"totalMilliseconds":90000},"artists":{"items":[]}}}],"totalCount":1}}}}
-"""
+    {"data":{"albumUnion":{"uri":"spotify:album:second","name":"Second Album","type":"ALBUM","date":{"isoString":"2025-03-04T00:00:00Z"},"coverArt":{"sources":[]},"artists":{"items":[]},"tracksV2":{"items":[{"track":{"uri":"spotify:track:second","name":"Second Track","trackNumber":1,"discNumber":1,"duration":{"totalMilliseconds":90000},"artists":{"items":[]}}}],"totalCount":1}}}}
+    """
 private let firstArtistJSON = """
-{"data":{"artistUnion":{"uri":"spotify:artist:first","id":"first","profile":{"name":"First Artist"},"visuals":{"avatarImage":{"sources":[]}},"discography":{"all":{"items":[{"releases":{"items":[{"uri":"spotify:album:first-release","id":"first-release","name":"First Release","type":"ALBUM","date":{"year":2024},"coverArt":{"sources":[]},"tracks":{"totalCount":1}}]}}],"totalCount":1}}}}}
-"""
+    {"data":{"artistUnion":{"uri":"spotify:artist:first","id":"first","profile":{"name":"First Artist"},"visuals":{"avatarImage":{"sources":[]}},"discography":{"all":{"items":[{"releases":{"items":[{"uri":"spotify:album:first-release","id":"first-release","name":"First Release","type":"ALBUM","date":{"year":2024},"coverArt":{"sources":[]},"tracks":{"totalCount":1}}]}}],"totalCount":1}}}}}
+    """
 private let secondArtistJSON = """
-{"data":{"artistUnion":{"uri":"spotify:artist:second","id":"second","profile":{"name":"Second Artist"},"visuals":{"avatarImage":{"sources":[]}},"discography":{"all":{"items":[{"releases":{"items":[{"uri":"spotify:album:second-release","id":"second-release","name":"Second Release","type":"ALBUM","date":{"year":2025},"coverArt":{"sources":[]},"tracks":{"totalCount":1}}]}}],"totalCount":1}}}}}
-"""
+    {"data":{"artistUnion":{"uri":"spotify:artist:second","id":"second","profile":{"name":"Second Artist"},"visuals":{"avatarImage":{"sources":[]}},"discography":{"all":{"items":[{"releases":{"items":[{"uri":"spotify:album:second-release","id":"second-release","name":"Second Release","type":"ALBUM","date":{"year":2025},"coverArt":{"sources":[]},"tracks":{"totalCount":1}}]}}],"totalCount":1}}}}}
+    """
 private func firstAlbum() throws -> PathfinderAlbumUnion { try decodeAlbum(firstAlbumJSON) }
 private func secondAlbum() throws -> PathfinderAlbumUnion { try decodeAlbum(secondAlbumJSON) }
 private func firstArtist() throws -> PathfinderArtistUnion { try decodeArtist(firstArtistJSON) }
@@ -568,7 +568,8 @@ func runMediaDetailStoreChecks(_ runner: CheckRunner) async {
         runner.equal("an invalid album URI still presents the selection", albumStore.item?.uri, "not-an-album-uri")
 
         await albumStore.load(invalidAlbum)
-        runner.equal("retrying an invalid album URI still does not call the provider", await albumProvider.requestCount, 0)
+        runner.equal(
+            "retrying an invalid album URI still does not call the provider", await albumProvider.requestCount, 0)
 
         await albumStore.load(wrongKind)
         runner.equal("a non-album selection is ignored", await albumProvider.requestCount, 0)
@@ -614,12 +615,15 @@ func runMediaDetailStoreChecks(_ runner: CheckRunner) async {
             metadata.knownTrack(for: "spotify:track:second")?.title,
             "Second Track"
         )
-        runner.nil_("the current album does not keep stale album metadata", metadata.knownTrack(for: "spotify:track:first"))
+        runner.nil_(
+            "the current album does not keep stale album metadata", metadata.knownTrack(for: "spotify:track:first"))
         runner.check(
             "the current album starts attribute enrichment",
             await waitUntil { await attributes.requestCount == 1 }
         )
-        runner.equal("attribute enrichment uses the current album tracks", await attributes.requestedURIs, ["spotify:track:second"])
+        runner.equal(
+            "attribute enrichment uses the current album tracks", await attributes.requestedURIs,
+            ["spotify:track:second"])
     }
 
     await runner.suite("Artist same-selection join and parallel completion") {
@@ -658,12 +662,14 @@ func runMediaDetailStoreChecks(_ runner: CheckRunner) async {
             store.releases.map(\.uri),
             ["spotify:album:first-release"]
         )
-        runner.equal("artist mapping uses the profile as the release subtitle", store.releases.first?.subtitle, "First Artist")
+        runner.equal(
+            "artist mapping uses the profile as the release subtitle", store.releases.first?.subtitle, "First Artist")
         runner.check("parallel artist loading finishes once", !store.isLoading)
 
         await store.load(firstArtistItem)
         runner.equal("a completed same-session artist is not fetched again", await provider.overviewRequestCount, 1)
-        runner.equal("a completed same-session discography is not fetched again", await provider.discographyRequestCount, 1)
+        runner.equal(
+            "a completed same-session discography is not fetched again", await provider.discographyRequestCount, 1)
     }
 
     await runner.suite("Artist selection supersession stays inert") {

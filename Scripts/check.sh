@@ -13,6 +13,11 @@ case "$build_configuration" in
         ;;
 esac
 
+# Fail fast on Swift format drift before Rust or Swift compilation.
+# The sibling self-test covers wrapper discovery/failure contracts without a Swift toolchain.
+"$project_root/Scripts/format-swift-self-test.sh"
+"$project_root/Scripts/format-swift.sh" --check
+
 # The Rust suite owns lifecycle, generation, queue conversion, JSON envelopes,
 # and compile-time C signature checks. Prefer the developer's normal toolchain;
 # the fallback is the project-local toolchain provisioned by the development
@@ -100,6 +105,7 @@ fi
 if [[ -n "${AURAL_SIGNING_IDENTITY:-}" ]]; then
     swift_arguments+=(-Xswiftc -DAURAL_DISTRIBUTION)
 fi
+swift_arguments+=("${aural_swiftc_warnings_as_errors[@]}")
 
 swift build "${swift_arguments[@]}"
 
@@ -112,6 +118,7 @@ check_arguments=(
     --package-path "$project_root"
     --configuration "$build_configuration"
     --product AuralChecks
+    "${aural_swiftc_warnings_as_errors[@]}"
 )
 swift build "${check_arguments[@]}"
 checks_path="$(swift build "${check_arguments[@]}" --show-bin-path)/AuralChecks"
@@ -133,6 +140,7 @@ boundary_arguments=(
     --package-path "$project_root"
     --configuration debug
     --product AuralBoundaryChecks
+    "${aural_swiftc_warnings_as_errors[@]}"
 )
 swift build "${boundary_arguments[@]}"
 boundary_checks_path="$(swift build "${boundary_arguments[@]}" --show-bin-path)/AuralBoundaryChecks"
@@ -318,6 +326,10 @@ if rg -q 'brew untap aws/tap' "$ci_workflow"; then
     print -u2 "CI must not keep the aws/tap Homebrew workaround"
     exit 1
 fi
+if rg -q 'brew install swift-format|brew install swiftlint' "$ci_workflow"; then
+    print -u2 "CI must use the selected toolchain swift-format, not a Homebrew Swift linter"
+    exit 1
+fi
 if ! rg -q 'key: macos-rust-\$\{\{ hashFiles\(' "$ci_workflow"; then
     print -u2 "CI must keep the existing Rust cache key"
     exit 1
@@ -333,4 +345,4 @@ fi
 
 plutil -lint "$project_root/Packaging/Info.plist"
 
-print "Aural checks passed ($build_configuration): Rust, ABI, native app, domain, concrete boundary, architecture, and packaging checks are green"
+print "Aural checks passed ($build_configuration): format, Rust, ABI, native app, domain, concrete boundary, architecture, and packaging checks are green"

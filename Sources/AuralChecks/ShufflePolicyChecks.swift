@@ -6,7 +6,6 @@
 import Foundation
 import AuralDomain
 
-
 func runShufflePolicyChecks(_ check: CheckRunner) {
     /// Tiny deterministic generator so shuffle outcomes are reproducible.
     struct StepRng: RandomNumberGenerator {
@@ -53,9 +52,10 @@ func runShufflePolicyChecks(_ check: CheckRunner) {
 
         let scoringNow: TimeInterval = ShufflePolicy.freshnessWindow
         let scoringURIs = ["a", "b"]
-        var scoringHistory = ["a": scoringNow] // played this instant → freshness 0
-        let staleFirst = ShufflePolicy.score([0, 1], uri: { scoringURIs[$0] }, history: scoringHistory, now: scoringNow)
-        scoringHistory["a"] = scoringNow - scoringNow / 2 // half a window old → freshness 0.5
+        var scoringHistory = ["a": scoringNow]  // played this instant → freshness 0
+        let staleFirst = ShufflePolicy.score(
+            [0, 1], uri: { scoringURIs[$0] }, history: scoringHistory, now: scoringNow)
+        scoringHistory["a"] = scoringNow - scoringNow / 2  // half a window old → freshness 0.5
         let halfFreshFirst = ShufflePolicy.score(
             [0, 1], uri: { scoringURIs[$0] }, history: scoringHistory, now: scoringNow
         )
@@ -64,10 +64,11 @@ func runShufflePolicyChecks(_ check: CheckRunner) {
         check.check("unplayed beats half-fresh in the same slot", halfFreshFirst < unplayedFirst)
 
         let retentionNow: TimeInterval = 200 * 24 * 60 * 60
-        let pruned = ShufflePolicy.pruned([
-            "expired": 0,
-            "current": retentionNow - 60,
-        ], now: retentionNow)
+        let pruned = ShufflePolicy.pruned(
+            [
+                "expired": 0,
+                "current": retentionNow - 60,
+            ], now: retentionNow)
         check.check("expired entries are dropped", !pruned.keys.contains("expired"))
         check.check("recent entries survive pruning", pruned.keys.contains("current"))
 

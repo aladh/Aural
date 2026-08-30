@@ -244,34 +244,42 @@ final class PlaybackStore {
             clock: environment.clock,
             feedback: feedback
         )
-        effects.replace(.engineEvents, with: Task { [weak self] in
-            for await envelope in environment.local.events() {
-                guard !Task.isCancelled, let self else { return }
-                self.receive(envelope)
-            }
-        })
-        effects.replace(.grantRevocations, with: Task { [weak self] in
-            for await _ in environment.account.revocations() {
-                guard !Task.isCancelled else { return }
-                await self?.handleGrantRevocation()
-            }
-        })
-        effects.replace(.lifecycle, with: Task { [weak self] in
-            for await event in environment.lifecycle.events() {
-                guard !Task.isCancelled, let self else { return }
-                await self.receive(event)
-            }
-        })
-        effects.replace(.preferencesRestore, with: Task { [weak self] in
-            guard let self else { return }
-            let epoch = self.accountEpoch
-            await self.queueService.reset(accountEpoch: self.accountEpoch)
-            guard !Task.isCancelled, self.accountEpoch == epoch else { return }
-            self.setShuffleEnabled(await environment.preferences.shuffleEnabled())
-            guard !Task.isCancelled, self.accountEpoch == epoch else { return }
-            self.lastRemoteDeviceID = await environment.preferences.lastRemoteDeviceID()
-            self.shuffleHistoryCache = await environment.preferences.shuffleHistory()
-        })
+        effects.replace(
+            .engineEvents,
+            with: Task { [weak self] in
+                for await envelope in environment.local.events() {
+                    guard !Task.isCancelled, let self else { return }
+                    self.receive(envelope)
+                }
+            })
+        effects.replace(
+            .grantRevocations,
+            with: Task { [weak self] in
+                for await _ in environment.account.revocations() {
+                    guard !Task.isCancelled else { return }
+                    await self?.handleGrantRevocation()
+                }
+            })
+        effects.replace(
+            .lifecycle,
+            with: Task { [weak self] in
+                for await event in environment.lifecycle.events() {
+                    guard !Task.isCancelled, let self else { return }
+                    await self.receive(event)
+                }
+            })
+        effects.replace(
+            .preferencesRestore,
+            with: Task { [weak self] in
+                guard let self else { return }
+                let epoch = self.accountEpoch
+                await self.queueService.reset(accountEpoch: self.accountEpoch)
+                guard !Task.isCancelled, self.accountEpoch == epoch else { return }
+                self.setShuffleEnabled(await environment.preferences.shuffleEnabled())
+                guard !Task.isCancelled, self.accountEpoch == epoch else { return }
+                self.lastRemoteDeviceID = await environment.preferences.lastRemoteDeviceID()
+                self.shuffleHistoryCache = await environment.preferences.shuffleHistory()
+            })
         accountStore.onPhaseChange = { [weak self] phase in
             guard let self else { return }
             self.catalogSession.update(
@@ -283,10 +291,12 @@ final class PlaybackStore {
         accountStore.onReady = { [weak self] in
             guard let self else { return }
             let epoch = self.accountEpoch
-            self.effects.replace(.catalogLoad, with: Task { [weak self] in
-                guard let self, self.accountEpoch == epoch else { return }
-                await self.catalog.homeLibrary.load()
-            })
+            self.effects.replace(
+                .catalogLoad,
+                with: Task { [weak self] in
+                    guard let self, self.accountEpoch == epoch else { return }
+                    await self.catalog.homeLibrary.load()
+                })
         }
     }
 
@@ -367,11 +377,12 @@ final class PlaybackStore {
         engineEpoch: UInt64? = nil
     ) -> Bool {
         send(
-            .presentation(PlaybackPresentationSnapshot(
-                currentTrack: track,
-                transport: transport ?? state.transport,
-                timing: timing ?? state.timing
-            )),
+            .presentation(
+                PlaybackPresentationSnapshot(
+                    currentTrack: track,
+                    transport: transport ?? state.transport,
+                    timing: timing ?? state.timing
+                )),
             source: source,
             engineEpoch: engineEpoch,
             accountEpoch: accountEpoch
@@ -390,14 +401,15 @@ final class PlaybackStore {
         engineEpoch: UInt64? = nil
     ) -> Bool {
         send(
-            .trackMetadata(PlaybackTrackMetadata(
-                uri: uri,
-                title: title,
-                artist: artist,
-                artworkURL: artworkURL,
-                duration: duration,
-                source: provenance
-            )),
+            .trackMetadata(
+                PlaybackTrackMetadata(
+                    uri: uri,
+                    title: title,
+                    artist: artist,
+                    artworkURL: artworkURL,
+                    duration: duration,
+                    source: provenance
+                )),
             source: .metadata,
             engineEpoch: engineEpoch,
             accountEpoch: accountEpoch

@@ -120,7 +120,8 @@ func runKeymasterPersistenceSourceContractChecks(_ check: CheckRunner) {
 
             check.check(
                 "every compilation uses the migrating secure store",
-                containsPersistenceToken(session, "private typealias DefaultKeymasterTokenStore = KeymasterMigratingStore")
+                containsPersistenceToken(
+                    session, "private typealias DefaultKeymasterTokenStore = KeymasterMigratingStore")
                     && !containsPersistenceToken(session, "AURAL_DISTRIBUTION")
                     && !containsPersistenceToken(session, "KeymasterDefaultsStore")
                     && !containsPersistenceToken(session, "KeymasterLegacyDefaultsStore")

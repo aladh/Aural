@@ -6,34 +6,46 @@ func runPlaybackSupportChecks(_ check: CheckRunner) {
         let anchorDate = Date(timeIntervalSince1970: 1_000)
         check.equal(
             "playing advances between backend samples",
-            interpolatedPlaybackPosition(anchor: 40, anchoredAt: anchorDate, now: anchorDate.addingTimeInterval(0.25), isPlaying: true, duration: 200),
+            interpolatedPlaybackPosition(
+                anchor: 40, anchoredAt: anchorDate, now: anchorDate.addingTimeInterval(0.25), isPlaying: true,
+                duration: 200),
             40.25
         )
         check.equal(
             "paused position stays anchored",
-            interpolatedPlaybackPosition(anchor: 40, anchoredAt: anchorDate, now: anchorDate.addingTimeInterval(10), isPlaying: false, duration: 200),
+            interpolatedPlaybackPosition(
+                anchor: 40, anchoredAt: anchorDate, now: anchorDate.addingTimeInterval(10), isPlaying: false,
+                duration: 200),
             40
         )
         check.equal(
             "interpolation stops at track duration",
-            interpolatedPlaybackPosition(anchor: 199.8, anchoredAt: anchorDate, now: anchorDate.addingTimeInterval(1), isPlaying: true, duration: 200),
+            interpolatedPlaybackPosition(
+                anchor: 199.8, anchoredAt: anchorDate, now: anchorDate.addingTimeInterval(1), isPlaying: true,
+                duration: 200),
             200
         )
         check.equal(
             "clock reversal cannot move the playhead backward",
-            interpolatedPlaybackPosition(anchor: 40, anchoredAt: anchorDate, now: anchorDate.addingTimeInterval(-1), isPlaying: true, duration: 200),
+            interpolatedPlaybackPosition(
+                anchor: 40, anchoredAt: anchorDate, now: anchorDate.addingTimeInterval(-1), isPlaying: true,
+                duration: 200),
             40
         )
 
         let receivedAt = Date(timeIntervalSince1970: 1_010)
         check.equal(
             "playing Connect snapshots compensate for their timestamp",
-            playbackSnapshotPosition(positionMilliseconds: 40_000, durationMilliseconds: 200_000, timestampMilliseconds: 1_005_000, isPlaying: true, now: receivedAt),
+            playbackSnapshotPosition(
+                positionMilliseconds: 40_000, durationMilliseconds: 200_000, timestampMilliseconds: 1_005_000,
+                isPlaying: true, now: receivedAt),
             45
         )
         check.equal(
             "paused Connect snapshots stay at their exact position",
-            playbackSnapshotPosition(positionMilliseconds: 40_000, durationMilliseconds: 200_000, timestampMilliseconds: 1_005_000, isPlaying: false, now: receivedAt),
+            playbackSnapshotPosition(
+                positionMilliseconds: 40_000, durationMilliseconds: 200_000, timestampMilliseconds: 1_005_000,
+                isPlaying: false, now: receivedAt),
             40
         )
     }
@@ -43,7 +55,8 @@ func runPlaybackSupportChecks(_ check: CheckRunner) {
         for (before, after) in zip(cycle, cycle.dropFirst()) {
             check.equal("cycle \(before) → \(after)", before.next, after)
         }
-        check.equal("backend flags for context repeat", RepeatMode.context.flags, RepeatFlags(context: true, track: false))
+        check.equal(
+            "backend flags for context repeat", RepeatMode.context.flags, RepeatFlags(context: true, track: false))
         check.equal("backend flags for track repeat", RepeatMode.track.flags, RepeatFlags(context: false, track: true))
         check.equal("backend flags for no repeat", RepeatMode.off.flags, RepeatFlags(context: false, track: false))
         check.equal("flags rebuild to context", RepeatMode(context: true, track: false), .context)
@@ -115,46 +128,70 @@ func runPlaybackSupportChecks(_ check: CheckRunner) {
 
     check.suite("Play history") {
         let now = Date(timeIntervalSince1970: 1_000_000)
-        var entries = PlaybackHistory.updated([], afterPlaying: "spotify:track:a", title: "A", artist: "X", artworkURLString: nil, playedAt: now)
+        var entries = PlaybackHistory.updated(
+            [], afterPlaying: "spotify:track:a", title: "A", artist: "X", artworkURLString: nil, playedAt: now)
         check.equal("newest entry lands first", entries.first?.uri, "spotify:track:a")
 
-        entries = PlaybackHistory.updated(entries, afterPlaying: "spotify:track:a", title: "A", artist: "X", artworkURLString: nil, playedAt: now.addingTimeInterval(60))
+        entries = PlaybackHistory.updated(
+            entries, afterPlaying: "spotify:track:a", title: "A", artist: "X", artworkURLString: nil,
+            playedAt: now.addingTimeInterval(60))
         check.equal("replay does not duplicate", entries.count, 1)
         check.equal("replay refreshes the timestamp", entries.first?.playedAt, now.addingTimeInterval(60))
 
-        entries = PlaybackHistory.withMetadata(entries, for: "spotify:track:a", title: "Real Title", artist: "Real Artist", artworkURLString: "https://example/a.jpg")
+        entries = PlaybackHistory.withMetadata(
+            entries, for: "spotify:track:a", title: "Real Title", artist: "Real Artist",
+            artworkURLString: "https://example/a.jpg")
         check.equal("late metadata fills the title", entries.first?.title, "Real Title")
         check.equal("late metadata keeps other fields", entries.first?.playedAt, now.addingTimeInterval(60))
 
         entries = (0..<PlaybackHistory.cap + 25).reversed().reduce(entries) { current, index in
-            PlaybackHistory.updated(current, afterPlaying: "spotify:track:\(index)", title: "T\(index)", artist: "", artworkURLString: nil, playedAt: now.addingTimeInterval(TimeInterval(index)))
+            PlaybackHistory.updated(
+                current, afterPlaying: "spotify:track:\(index)", title: "T\(index)", artist: "", artworkURLString: nil,
+                playedAt: now.addingTimeInterval(TimeInterval(index)))
         }
         check.equal("history is capped", entries.count, PlaybackHistory.cap)
 
         var capped: [HistoryEntry] = []
         for index in 0..<PlaybackHistory.cap {
-            capped = PlaybackHistory.updated(capped, afterPlaying: "spotify:track:t\(index)", title: "T\(index)", artist: "", artworkURLString: nil, playedAt: now.addingTimeInterval(TimeInterval(index)))
+            capped = PlaybackHistory.updated(
+                capped, afterPlaying: "spotify:track:t\(index)", title: "T\(index)", artist: "", artworkURLString: nil,
+                playedAt: now.addingTimeInterval(TimeInterval(index)))
         }
-        capped = PlaybackHistory.updated(capped, afterPlaying: "spotify:track:new", title: "New", artist: "", artworkURLString: nil, playedAt: now.addingTimeInterval(999))
+        capped = PlaybackHistory.updated(
+            capped, afterPlaying: "spotify:track:new", title: "New", artist: "", artworkURLString: nil,
+            playedAt: now.addingTimeInterval(999))
         check.equal("cap boundary stays at the cap", capped.count, PlaybackHistory.cap)
         check.equal("the new track lands on top", capped.first?.uri, "spotify:track:new")
         check.equal("exactly the oldest row falls off", capped.last?.uri, "spotify:track:t1")
 
         var lifted: [HistoryEntry] = []
         for suffix in ["a", "b", "c"] {
-            lifted = PlaybackHistory.updated(lifted, afterPlaying: "spotify:track:\(suffix)", title: suffix.uppercased(), artist: "", artworkURLString: nil, playedAt: now)
+            lifted = PlaybackHistory.updated(
+                lifted, afterPlaying: "spotify:track:\(suffix)", title: suffix.uppercased(), artist: "",
+                artworkURLString: nil, playedAt: now)
         }
-        lifted = PlaybackHistory.updated(lifted, afterPlaying: "spotify:track:a", title: "A", artist: "", artworkURLString: nil, playedAt: now.addingTimeInterval(30))
+        lifted = PlaybackHistory.updated(
+            lifted, afterPlaying: "spotify:track:a", title: "A", artist: "", artworkURLString: nil,
+            playedAt: now.addingTimeInterval(30))
         check.equal("a buried replay moves to the front", lifted.first?.uri, "spotify:track:a")
         check.equal("the lift does not duplicate", lifted.count, 3)
         check.equal("the other rows keep their order", lifted.last?.uri, "spotify:track:b")
 
-        let untouched = [HistoryEntry(uri: "spotify:track:kept", title: "Kept", artist: "K", artworkURLString: nil, playedAt: now)]
-        let afterMiss = PlaybackHistory.withMetadata(untouched, for: "spotify:track:other", title: "X", artist: "Y", artworkURLString: "https://example/x.jpg")
+        let untouched = [
+            HistoryEntry(uri: "spotify:track:kept", title: "Kept", artist: "K", artworkURLString: nil, playedAt: now)
+        ]
+        let afterMiss = PlaybackHistory.withMetadata(
+            untouched, for: "spotify:track:other", title: "X", artist: "Y", artworkURLString: "https://example/x.jpg")
         check.equal("metadata for an absent uri changes nothing", afterMiss, untouched)
 
-        let owned = [HistoryEntry(uri: "spotify:track:a", title: "A", artist: "X", artworkURLString: "https://example/old.jpg", playedAt: now)]
-        let enriched = PlaybackHistory.withMetadata(owned, for: "spotify:track:a", title: "Better Title", artist: "X", artworkURLString: "https://example/new.jpg")
+        let owned = [
+            HistoryEntry(
+                uri: "spotify:track:a", title: "A", artist: "X", artworkURLString: "https://example/old.jpg",
+                playedAt: now)
+        ]
+        let enriched = PlaybackHistory.withMetadata(
+            owned, for: "spotify:track:a", title: "Better Title", artist: "X",
+            artworkURLString: "https://example/new.jpg")
         check.equal("known artwork survives enrichment", enriched.first?.artworkURLString, "https://example/old.jpg")
         check.equal("non-empty titles still update", enriched.first?.title, "Better Title")
     }
@@ -179,8 +216,12 @@ func runPlaybackSupportChecks(_ check: CheckRunner) {
 
         let local = ConnectDevice(id: "local", name: "Aural", type: "computer", isActive: false)
         let remote = ConnectDevice(id: "phone", name: "Phone", type: "smartphone", isActive: true)
-        check.equal("local device is identified even while inactive", local.displayName(localDeviceID: "local"), "Aural (This Mac)")
-        check.equal("active remote device is identified as playing", remote.displayName(localDeviceID: "local"), "Phone (Playing)")
+        check.equal(
+            "local device is identified even while inactive", local.displayName(localDeviceID: "local"),
+            "Aural (This Mac)")
+        check.equal(
+            "active remote device is identified as playing", remote.displayName(localDeviceID: "local"),
+            "Phone (Playing)")
         check.equal(
             "transport routes to the active remote device",
             connectCommandRoute(isLocalActive: false, localDeviceID: "local", devices: [local, remote]),

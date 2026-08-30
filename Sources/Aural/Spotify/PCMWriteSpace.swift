@@ -40,7 +40,8 @@ nonisolated final class PCMWriteSpace: @unchecked Sendable {
             waiting = false
             return true
         }
-        let deadline = ProcessInfo.processInfo.systemUptime
+        let deadline =
+            ProcessInfo.processInfo.systemUptime
             + Double(max(timeoutMilliseconds, 0)) / 1000
         onWillBlock?()
         while !signaled {

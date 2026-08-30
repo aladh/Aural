@@ -95,7 +95,8 @@ struct NowPlayingTransportControls: View {
                 help: player.isShuffleEnabled ? "Fewer repeats shuffle is on" : "Turn on fewer repeats shuffle",
                 action: player.toggleShuffle
             )
-            TransportIconButton(symbol: "backward.end.fill", label: "Previous", disabled: !player.canSkipTrack, action: player.previous)
+            TransportIconButton(
+                symbol: "backward.end.fill", label: "Previous", disabled: !player.canSkipTrack, action: player.previous)
             Button(action: player.togglePlayback) {
                 ZStack {
                     Circle().fill(Color.accentColor)
@@ -113,7 +114,8 @@ struct NowPlayingTransportControls: View {
             .disabled(!player.canTogglePlayback)
             .help(player.hasCurrentTrack ? (player.showsPauseControl ? "Pause" : "Play") : "Choose music to begin")
             .accessibilityLabel(player.showsPauseControl ? "Pause" : "Play")
-            TransportIconButton(symbol: "forward.end.fill", label: "Next", disabled: !player.canSkipTrack, action: player.next)
+            TransportIconButton(
+                symbol: "forward.end.fill", label: "Next", disabled: !player.canSkipTrack, action: player.next)
             optionButton(
                 symbol: player.repeatMode.symbolName,
                 active: player.repeatMode != .off,
@@ -154,7 +156,9 @@ struct NowPlayingTimeControls: View {
             Text(player.hasCurrentTrack ? formatDuration(player.position) : "—:—").foregroundStyle(.secondary)
             Text(remainingTime).foregroundStyle(.tertiary)
             devicesMenu
-            Button { withAnimation(.snappy(duration: 0.2)) { showsSidePanel.toggle() } } label: {
+            Button {
+                withAnimation(.snappy(duration: 0.2)) { showsSidePanel.toggle() }
+            } label: {
                 Image(systemName: "sidebar.right")
                     .font(.system(size: 13, weight: .semibold))
                     .foregroundStyle(showsSidePanel ? Color.accentColor : Color(nsColor: .secondaryLabelColor))
@@ -174,7 +178,9 @@ struct NowPlayingTimeControls: View {
         Menu {
             Section("Spotify Connect") {
                 ForEach(player.connectDevices) { device in
-                    Button { player.transferPlayback(to: device) } label: {
+                    Button {
+                        player.transferPlayback(to: device)
+                    } label: {
                         Label(deviceName(device), systemImage: device.symbolName)
                     }
                     .disabled(device.isActive || device.id == player.activeRemoteDevice?.id)
@@ -184,7 +190,10 @@ struct NowPlayingTimeControls: View {
         } label: {
             Image(systemName: "airplayaudio")
                 .font(.system(size: 13, weight: .semibold))
-                .foregroundStyle(player.isActiveDevice || player.activeRemoteDevice != nil ? Color.accentColor : Color(nsColor: .secondaryLabelColor))
+                .foregroundStyle(
+                    player.isActiveDevice || player.activeRemoteDevice != nil
+                        ? Color.accentColor : Color(nsColor: .secondaryLabelColor)
+                )
                 .frame(width: 26, height: 26)
         }
         .menuStyle(.borderlessButton)
@@ -201,7 +210,9 @@ struct NowPlayingTimeControls: View {
     }
     private func deviceName(_ device: ConnectDevice) -> String {
         if device.id == player.localDeviceID { return "\(device.name) (This Mac)" }
-        if device.id == player.activeRemoteDevice?.id { return "\(device.name) (\(player.isPlaying ? "Playing" : "Paused"))" }
+        if device.id == player.activeRemoteDevice?.id {
+            return "\(device.name) (\(player.isPlaying ? "Playing" : "Paused"))"
+        }
         return device.displayName(localDeviceID: player.localDeviceID)
     }
 }

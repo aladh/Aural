@@ -342,7 +342,7 @@ nonisolated struct SpotifyConnectAPI: Sendable {
         try validate(sent.status)
 
         guard let response = try? JSONDecoder().decode(SpotifyConnectTrackResponse.self, from: sent.body),
-              let title = response.name, !title.isEmpty
+            let title = response.name, !title.isEmpty
         else {
             throw SpotifyConnectAPIError.malformedResponse
         }
@@ -380,7 +380,7 @@ nonisolated struct SpotifyConnectAPI: Sendable {
     }
 
     private func validate(_ status: Int) throws {
-        guard (200 ..< 300).contains(status) else {
+        guard (200..<300).contains(status) else {
             throw SpotifyConnectAPIError.requestFailed(status)
         }
     }

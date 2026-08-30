@@ -186,16 +186,18 @@ extension PlaybackStore {
         guard isConnected, showsPauseControl, isActiveDevice else { return }
         let epoch = accountEpoch
         let capturedEngineEpoch = engineGeneration
-        effects.replace(.positionRefresh, with: Task { [weak self] in
-            guard let self else { return }
-            let position = await self.coordinator.positionMilliseconds()
-            guard !Task.isCancelled, !self.isTearingDown, self.isConnected else { return }
-            _ = self.setTiming(
-                position: TimeInterval(position) / 1_000,
-                accountEpoch: epoch,
-                engineEpoch: capturedEngineEpoch
-            )
-        })
+        effects.replace(
+            .positionRefresh,
+            with: Task { [weak self] in
+                guard let self else { return }
+                let position = await self.coordinator.positionMilliseconds()
+                guard !Task.isCancelled, !self.isTearingDown, self.isConnected else { return }
+                _ = self.setTiming(
+                    position: TimeInterval(position) / 1_000,
+                    accountEpoch: epoch,
+                    engineEpoch: capturedEngineEpoch
+                )
+            })
     }
 
     // MARK: - Repeat
@@ -234,12 +236,13 @@ extension PlaybackStore {
         }
         performCommand(
             "Could not move playback to \(device.name)",
-            expectedOwner: .uncertain(PlaybackDevice(
-                id: device.id,
-                name: device.name,
-                type: device.type,
-                isActive: false
-            )),
+            expectedOwner: .uncertain(
+                PlaybackDevice(
+                    id: device.id,
+                    name: device.name,
+                    type: device.type,
+                    isActive: false
+                )),
             operation: .transferToDevice(device.id),
             kind: .transfer
         ) { [weak self] accepted in

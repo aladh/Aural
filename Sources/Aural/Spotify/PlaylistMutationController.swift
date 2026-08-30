@@ -52,7 +52,8 @@ final class PlaylistMutationController {
     }
 
     func isOpenPlaylistEditable(_ item: CatalogItem) -> Bool {
-        let ownerURI = playlistStore.loadedURI == item.uri
+        let ownerURI =
+            playlistStore.loadedURI == item.uri
             ? (playlistStore.ownerURI ?? item.ownerURI)
             : item.ownerURI
         return PlaylistEditability.canJustifyEdit(
@@ -63,10 +64,12 @@ final class PlaylistMutationController {
 
     func addTracks(_ tracks: [CatalogTrack], to playlist: CatalogItem) {
         let uris = PlaylistMutationSelection.addURIs(from: tracks)
-        guard PlaylistMutationSelection.canAdd(
-            isTargetEditable: isLibraryPlaylistEditable(playlist),
-            uris: uris
-        ) else { return }
+        guard
+            PlaylistMutationSelection.canAdd(
+                isTargetEditable: isLibraryPlaylistEditable(playlist),
+                uris: uris
+            )
+        else { return }
         guard session.isAvailable else {
             feedback.failure("Connect Spotify before changing playlists.")
             return
@@ -93,16 +96,18 @@ final class PlaylistMutationController {
             in: playlistStore.tracks
         )
         let uids = PlaylistMutationSelection.occurrenceIDsForRemoval(from: selected)
-        guard PlaylistMutationSelection.canRemove(
-            isPlaylistEditable: true,
-            occurrenceIDs: uids
-        ) else { return }
+        guard
+            PlaylistMutationSelection.canRemove(
+                isPlaylistEditable: true,
+                occurrenceIDs: uids
+            )
+        else { return }
         guard session.isAvailable else {
             feedback.failure("Connect Spotify before changing playlists.")
             return
         }
         guard playlistStore.loadedURI == playlist.uri,
-              let playlistID = SpotifyURI.id(from: playlist.uri, kind: "playlist")
+            let playlistID = SpotifyURI.id(from: playlist.uri, kind: "playlist")
         else {
             feedback.failure("That playlist can’t be updated.")
             return

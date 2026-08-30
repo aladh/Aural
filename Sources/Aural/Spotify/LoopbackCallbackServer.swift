@@ -221,7 +221,7 @@ actor LoopbackCallbackServer {
                 let buffer = accumulated + (data ?? Data())
 
                 guard let text = String(data: buffer, encoding: .utf8),
-                      text.contains("\r\n") || text.contains("\n")
+                    text.contains("\r\n") || text.contains("\n")
                 else {
                     // Not a whole request line yet. Keep reading unless the peer is done or
                     // the request is implausibly large for what a redirect can carry.
@@ -258,16 +258,18 @@ actor LoopbackCallbackServer {
         contentType: String = "text/plain; charset=utf-8"
     ) {
         let response = """
-        HTTP/1.1 \(status)\r
-        Content-Type: \(contentType)\r
-        Content-Length: \(body.utf8.count)\r
-        Connection: close\r
-        \r
-        \(body)
-        """
-        connection.send(content: Data(response.utf8), completion: .contentProcessed { _ in
-            connection.cancel()
-        })
+            HTTP/1.1 \(status)\r
+            Content-Type: \(contentType)\r
+            Content-Length: \(body.utf8.count)\r
+            Connection: close\r
+            \r
+            \(body)
+            """
+        connection.send(
+            content: Data(response.utf8),
+            completion: .contentProcessed { _ in
+                connection.cancel()
+            })
     }
 
     /// Pulls the query out of an HTTP request line: `GET /login?code=…&state=… HTTP/1.1`.

@@ -423,9 +423,10 @@ func runQueueMutationChecks(_ check: CheckRunner) {
         )
         check.check(
             "old UID-bearing identities do not survive a UID-only snapshot rotation",
-            visible[0].id != QueueEntry(
-                uri: duplicate, provider: "queue", occurrence: 0, uid: "q9"
-            ).id
+            visible[0].id
+                != QueueEntry(
+                    uri: duplicate, provider: "queue", occurrence: 0, uid: "q9"
+                ).id
         )
 
         let duplicateUIDNext = [
@@ -553,17 +554,19 @@ func runQueueMutationChecks(_ check: CheckRunner) {
     }
 
     check.suite("Overlapping replacements fail closed after a committed mutation") {
-        guard case let .success(firstReplacement) = QueueMutationPolicy.evaluateRemoval(
-            selectedIDs: [visible[0].id],
-            visibleUpcoming: visible,
-            nowPlayingID: "now",
-            historyIDs: ["hist"],
-            mutation: snapshot(next: protocolNext),
-            route: remote,
-            isConnected: true,
-            accountEpoch: 1,
-            engineEpoch: 2
-        ) else {
+        guard
+            case let .success(firstReplacement) = QueueMutationPolicy.evaluateRemoval(
+                selectedIDs: [visible[0].id],
+                visibleUpcoming: visible,
+                nowPlayingID: "now",
+                historyIDs: ["hist"],
+                mutation: snapshot(next: protocolNext),
+                route: remote,
+                isConnected: true,
+                accountEpoch: 1,
+                engineEpoch: 2
+            )
+        else {
             check.check("first overlapping removal should be allowed", false)
             return
         }

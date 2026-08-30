@@ -30,12 +30,15 @@ func runEngineEventFanoutChecks(_ check: CheckRunner) {
         let kinds = EngineEventFanout(clock: SystemPlaybackClock())
         check.equal(
             "mixed playback/queue/connection/devices kinds stay in assigned order",
-            collectSequential(kinds, events: [
-                playbackEvent(),
-                queueEvent(),
-                connectionEvent(),
-                devicesEvent(),
-            ]).map(\.sequence),
+            collectSequential(
+                kinds,
+                events: [
+                    playbackEvent(),
+                    queueEvent(),
+                    connectionEvent(),
+                    devicesEvent(),
+                ]
+            ).map(\.sequence),
             [1, 2, 3, 4]
         )
 

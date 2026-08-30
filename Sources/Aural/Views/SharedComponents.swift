@@ -320,7 +320,7 @@ struct EmptyState: View {
                 .buttonStyle(.borderedProminent)
             }
         }
-            .frame(maxWidth: .infinity, minHeight: 240)
+        .frame(maxWidth: .infinity, minHeight: 240)
     }
 }
 

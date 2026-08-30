@@ -33,9 +33,11 @@ func runConnectMetadataTransportChecks(_ check: CheckRunner) async {
         check.equal("the requested URI is preserved", metadata?.uri, fixtureURI)
         check.equal("successful metadata is one GET", transport.methods, ["GET"])
         check.equal("successful metadata is one attempt", transport.callCount, 1)
-        check.check("the GET is the metadata track path", transport.paths.allSatisfy { path in
-            path.hasPrefix("/metadata/4/track/") && path.contains("market=from_token")
-        })
+        check.check(
+            "the GET is the metadata track path",
+            transport.paths.allSatisfy { path in
+                path.hasPrefix("/metadata/4/track/") && path.contains("market=from_token")
+            })
         check.equal("the GET carries the bearer", transport.authorizationTokens, ["fixture-access"])
         check.equal("the GET carries the client token", transport.clientTokens, ["fixture-client"])
         check.equal("the GET is desktop-client signed", transport.appPlatforms, [SpotifyCredentials.appPlatform])
@@ -99,7 +101,7 @@ func runConnectMetadataTransportChecks(_ check: CheckRunner) async {
         check.equal("malformed JSON is one GET", malformed.methods, ["GET"])
 
         let emptyTitle = RecordingConnectTransport(steps: [
-            .http(status: 200, body: Data(#"{"name":""}"#.utf8)),
+            .http(status: 200, body: Data(#"{"name":""}"#.utf8))
         ])
         await expectThrown(
             check,

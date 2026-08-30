@@ -93,7 +93,11 @@ final class SearchStore {
             await self.performSearch(query)
         }
         debounceTask = task
-        await withTaskCancellationHandler { await task.value } onCancel: { task.cancel() }
+        await withTaskCancellationHandler {
+            await task.value
+        } onCancel: {
+            task.cancel()
+        }
         if token == debounceGeneration {
             debounceTask = nil
         }
@@ -128,7 +132,11 @@ final class SearchStore {
             }
         }
         searchTask = task
-        await withTaskCancellationHandler { await task.value } onCancel: { task.cancel() }
+        await withTaskCancellationHandler {
+            await task.value
+        } onCancel: {
+            task.cancel()
+        }
         if requestID == requestScope {
             isSearching = false
             searchTask = nil

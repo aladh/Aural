@@ -63,11 +63,11 @@ private func decodePlaylist(_ json: String) throws -> PathfinderPlaylist {
 }
 
 private let firstPlaylistJSON = """
-{"uri":"spotify:playlist:first","name":"First Mix","ownerV2":{"data":{"name":"Me","username":"me","uri":"spotify:user:me"}}}
-"""
+    {"uri":"spotify:playlist:first","name":"First Mix","ownerV2":{"data":{"name":"Me","username":"me","uri":"spotify:user:me"}}}
+    """
 private let secondPlaylistJSON = """
-{"uri":"spotify:playlist:second","name":"Second Mix","ownerV2":{"data":{"name":"Me","username":"me","uri":"spotify:user:me"}}}
-"""
+    {"uri":"spotify:playlist:second","name":"Second Mix","ownerV2":{"data":{"name":"Me","username":"me","uri":"spotify:user:me"}}}
+    """
 
 private func firstPlaylist() throws -> PathfinderPlaylist { try decodePlaylist(firstPlaylistJSON) }
 private func secondPlaylist() throws -> PathfinderPlaylist { try decodePlaylist(secondPlaylistJSON) }
@@ -216,7 +216,8 @@ func runHomeLibraryStoreChecks(_ runner: CheckRunner) async {
         )
         await provider.completeNext(.playlists([first]))
         await initial.value
-        runner.equal("the section is loaded before the forced refresh", store.playlists.map(\.uri), ["spotify:playlist:first"])
+        runner.equal(
+            "the section is loaded before the forced refresh", store.playlists.map(\.uri), ["spotify:playlist:first"])
 
         let forced = Task { await store.loadPlaylists(force: true) }
         runner.check(
@@ -291,7 +292,8 @@ func runHomeLibraryStoreChecks(_ runner: CheckRunner) async {
         await provider.completeNext(.playlists([first]))
         await staleEpoch.value
         runner.equal("an older account epoch cannot publish", store.playlists.map(\.uri), [])
-        runner.check("an older account epoch cannot mark the section loaded", !store.loadedSections.contains(.playlists))
+        runner.check(
+            "an older account epoch cannot mark the section loaded", !store.loadedSections.contains(.playlists))
 
         let staleRevision = Task { await store.loadPlaylists() }
         runner.check(

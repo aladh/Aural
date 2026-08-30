@@ -253,7 +253,8 @@ public func connectCommandRoute(
     fallbackRemoteDeviceID: String? = nil
 ) -> ConnectCommandRoute {
     if isLocalActive { return .local }
-    let target = devices.first(where: \.isActive)
+    let target =
+        devices.first(where: \.isActive)
         ?? fallbackRemoteDeviceID.flatMap { id in devices.first { $0.id == id } }
     guard let target else { return .local }
     if target.id == localDeviceID { return .local }

@@ -24,6 +24,7 @@ swift_arguments=(
     --configuration release
     --product Aural
     -Xswiftc -DAURAL_DISTRIBUTION
+    "${aural_swiftc_warnings_as_errors[@]}"
 )
 
 swift build "${swift_arguments[@]}"

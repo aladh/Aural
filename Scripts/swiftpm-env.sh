@@ -15,3 +15,7 @@ mkdir -p "$project_root/.build/module-cache"
 export SDKROOT="$sdk_path"
 export CLANG_MODULE_CACHE_PATH="$project_root/.build/module-cache"
 export SWIFTPM_MODULECACHE_OVERRIDE="$project_root/.build/module-cache"
+
+# Aural-owned `swift build` invocations treat compiler warnings as errors.
+# Command-line -Xswiftc only; do not put this in Package.swift unsafeFlags.
+aural_swiftc_warnings_as_errors=(-Xswiftc -warnings-as-errors)

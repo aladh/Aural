@@ -54,13 +54,14 @@ func runPlaybackCommandPresentationChecks(_ check: CheckRunner) {
             &pauseState,
             envelope: presentationEnvelope(
                 source: .command,
-                event: .commandStarted(PendingPlaybackCommand(
-                    id: pauseID,
-                    kind: .transport,
-                    expectedTransport: .paused,
-                    expectedTiming: frozenPauseTiming,
-                    startedAt: presentationDate
-                ))
+                event: .commandStarted(
+                    PendingPlaybackCommand(
+                        id: pauseID,
+                        kind: .transport,
+                        expectedTransport: .paused,
+                        expectedTiming: frozenPauseTiming,
+                        startedAt: presentationDate
+                    ))
             )
         )
         check.equal("pause applies paused transport atomically", pauseState.transport, .paused)
@@ -81,13 +82,15 @@ func runPlaybackCommandPresentationChecks(_ check: CheckRunner) {
             &pauseState,
             envelope: presentationEnvelope(
                 source: .command,
-                event: .commandFinished(id: pauseID, accepted: false, notice: PlaybackNotice(message: "Pause was rejected"))
+                event: .commandFinished(
+                    id: pauseID, accepted: false, notice: PlaybackNotice(message: "Pause was rejected"))
             )
         )
         check.equal("a rejected pause restores the pre-command transport", pauseState.transport, .playing)
         check.equal("a rejected pause restores the exact pre-command timing", pauseState.timing, priorPlayingTiming)
         check.nil_("a rejected pause clears its pending command", pauseState.pendingCommands[.transport])
-        check.check("a rejected pause is not a no-op relative to optimism", pauseState.timing != afterOptimisticPause.timing)
+        check.check(
+            "a rejected pause is not a no-op relative to optimism", pauseState.timing != afterOptimisticPause.timing)
 
         let priorPausedTiming = PlaybackTiming(position: 50, duration: 200, anchoredAt: playingAnchor)
         let resumeTiming = PlaybackTiming(position: 50, duration: 200, anchoredAt: presentationDate)
@@ -102,20 +105,22 @@ func runPlaybackCommandPresentationChecks(_ check: CheckRunner) {
             &resumeState,
             envelope: presentationEnvelope(
                 source: .command,
-                event: .commandStarted(PendingPlaybackCommand(
-                    id: resumeID,
-                    kind: .transport,
-                    expectedTransport: .playing,
-                    expectedTiming: resumeTiming,
-                    startedAt: presentationDate
-                ))
+                event: .commandStarted(
+                    PendingPlaybackCommand(
+                        id: resumeID,
+                        kind: .transport,
+                        expectedTransport: .playing,
+                        expectedTiming: resumeTiming,
+                        startedAt: presentationDate
+                    ))
             )
         )
         check.equal("resume applies playing transport atomically", resumeState.transport, .playing)
         check.equal("resume re-anchors timing from now without moving position", resumeState.timing, resumeTiming)
         _ = PlaybackReducer.reduce(
             &resumeState,
-            envelope: presentationEnvelope(source: .command, event: .commandFinished(id: resumeID, accepted: true, notice: nil))
+            envelope: presentationEnvelope(
+                source: .command, event: .commandFinished(id: resumeID, accepted: true, notice: nil))
         )
         check.equal("an accepted resume keeps the re-anchored timing", resumeState.timing, resumeTiming)
         check.equal("an accepted resume keeps playing", resumeState.transport, .playing)
@@ -141,13 +146,14 @@ func runPlaybackCommandPresentationChecks(_ check: CheckRunner) {
             &seekState,
             envelope: presentationEnvelope(
                 source: .command,
-                event: .commandStarted(PendingPlaybackCommand(
-                    id: seekID,
-                    kind: .seek,
-                    expectedTransport: nil,
-                    expectedTiming: seekTiming,
-                    startedAt: presentationDate
-                ))
+                event: .commandStarted(
+                    PendingPlaybackCommand(
+                        id: seekID,
+                        kind: .seek,
+                        expectedTransport: nil,
+                        expectedTiming: seekTiming,
+                        startedAt: presentationDate
+                    ))
             )
         )
         check.equal("seek does not change transport", seekState.transport, .playing)
@@ -161,7 +167,8 @@ func runPlaybackCommandPresentationChecks(_ check: CheckRunner) {
             &seekState,
             envelope: presentationEnvelope(
                 source: .command,
-                event: .commandFinished(id: seekID, accepted: false, notice: PlaybackNotice(message: "Seek was rejected"))
+                event: .commandFinished(
+                    id: seekID, accepted: false, notice: PlaybackNotice(message: "Seek was rejected"))
             )
         )
         check.equal("a rejected seek restores the exact pre-command timing", seekState.timing, priorSeekTiming)
@@ -178,18 +185,20 @@ func runPlaybackCommandPresentationChecks(_ check: CheckRunner) {
             &acceptedSeek,
             envelope: presentationEnvelope(
                 source: .command,
-                event: .commandStarted(PendingPlaybackCommand(
-                    id: acceptedSeekID,
-                    kind: .seek,
-                    expectedTransport: nil,
-                    expectedTiming: seekTiming,
-                    startedAt: presentationDate
-                ))
+                event: .commandStarted(
+                    PendingPlaybackCommand(
+                        id: acceptedSeekID,
+                        kind: .seek,
+                        expectedTransport: nil,
+                        expectedTiming: seekTiming,
+                        startedAt: presentationDate
+                    ))
             )
         )
         _ = PlaybackReducer.reduce(
             &acceptedSeek,
-            envelope: presentationEnvelope(source: .command, event: .commandFinished(id: acceptedSeekID, accepted: true, notice: nil))
+            envelope: presentationEnvelope(
+                source: .command, event: .commandFinished(id: acceptedSeekID, accepted: true, notice: nil))
         )
         check.equal("an accepted seek keeps the optimistic timing", acceptedSeek.timing, seekTiming)
         check.nil_("an accepted seek clears its pending command", acceptedSeek.pendingCommands[.seek])
@@ -206,13 +215,14 @@ func runPlaybackCommandPresentationChecks(_ check: CheckRunner) {
             &clearedTrackSeek,
             envelope: presentationEnvelope(
                 source: .command,
-                event: .commandStarted(PendingPlaybackCommand(
-                    id: clearedTrackSeekID,
-                    kind: .seek,
-                    expectedTransport: nil,
-                    expectedTiming: seekTiming,
-                    startedAt: presentationDate
-                ))
+                event: .commandStarted(
+                    PendingPlaybackCommand(
+                        id: clearedTrackSeekID,
+                        kind: .seek,
+                        expectedTransport: nil,
+                        expectedTiming: seekTiming,
+                        startedAt: presentationDate
+                    ))
             )
         )
         let stoppedTiming = PlaybackTiming(position: 0, duration: 0, anchoredAt: presentationDate.addingTimeInterval(1))
@@ -221,11 +231,12 @@ func runPlaybackCommandPresentationChecks(_ check: CheckRunner) {
             envelope: presentationEnvelope(
                 source: .enginePlayback,
                 revision: 1,
-                event: .enginePlayback(EnginePlaybackSnapshot(
-                    transport: .stopped,
-                    trackURI: nil,
-                    timing: stoppedTiming
-                ))
+                event: .enginePlayback(
+                    EnginePlaybackSnapshot(
+                        transport: .stopped,
+                        trackURI: nil,
+                        timing: stoppedTiming
+                    ))
             )
         )
         check.equal("a nil-track snapshot adopts the incoming timing", clearedTrackSeek.timing, stoppedTiming)
@@ -243,20 +254,23 @@ func runPlaybackCommandPresentationChecks(_ check: CheckRunner) {
             &nilCurrentTrackSeek,
             envelope: presentationEnvelope(
                 source: .command,
-                event: .commandStarted(PendingPlaybackCommand(
-                    id: nilCurrentTrackSeekID,
-                    kind: .seek,
-                    expectedTransport: nil,
-                    expectedTiming: seekTiming,
-                    startedAt: presentationDate
-                ))
+                event: .commandStarted(
+                    PendingPlaybackCommand(
+                        id: nilCurrentTrackSeekID,
+                        kind: .seek,
+                        expectedTransport: nil,
+                        expectedTiming: seekTiming,
+                        startedAt: presentationDate
+                    ))
             )
         )
         _ = PlaybackReducer.reduce(
             &nilCurrentTrackSeek,
             envelope: presentationEnvelope(source: .user, event: .currentTrack(nil))
         )
-        check.nil_("a nil current-track event supersedes a seek with no current URI", nilCurrentTrackSeek.pendingCommands[.seek])
+        check.nil_(
+            "a nil current-track event supersedes a seek with no current URI",
+            nilCurrentTrackSeek.pendingCommands[.seek])
         check.equal("a nil current-track event resets timing", nilCurrentTrackSeek.timing.position, 0)
         let afterNilCurrentTrack = nilCurrentTrackSeek
         let nilCurrentTrackFinish = PlaybackReducer.reduce(
@@ -271,7 +285,8 @@ func runPlaybackCommandPresentationChecks(_ check: CheckRunner) {
             )
         )
         check.check("a finish after a nil current-track event is rejected", !nilCurrentTrackFinish)
-        check.equal("a nil current-track event cannot restore seek rollback timing", nilCurrentTrackSeek, afterNilCurrentTrack)
+        check.equal(
+            "a nil current-track event cannot restore seek rollback timing", nilCurrentTrackSeek, afterNilCurrentTrack)
 
         var mismatchedSeek = PlaybackState(
             accountEpoch: 1,
@@ -285,30 +300,35 @@ func runPlaybackCommandPresentationChecks(_ check: CheckRunner) {
             &mismatchedSeek,
             envelope: presentationEnvelope(
                 source: .command,
-                event: .commandStarted(PendingPlaybackCommand(
-                    id: mismatchedSeekID,
-                    kind: .seek,
-                    expectedTransport: nil,
-                    expectedTiming: seekTiming,
-                    startedAt: presentationDate
-                ))
+                event: .commandStarted(
+                    PendingPlaybackCommand(
+                        id: mismatchedSeekID,
+                        kind: .seek,
+                        expectedTransport: nil,
+                        expectedTiming: seekTiming,
+                        startedAt: presentationDate
+                    ))
             )
         )
-        let laggingTiming = PlaybackTiming(position: 21, duration: 200, anchoredAt: presentationDate.addingTimeInterval(1))
+        let laggingTiming = PlaybackTiming(
+            position: 21, duration: 200, anchoredAt: presentationDate.addingTimeInterval(1))
         _ = PlaybackReducer.reduce(
             &mismatchedSeek,
             envelope: presentationEnvelope(
                 source: .enginePlayback,
                 revision: 1,
-                event: .enginePlayback(EnginePlaybackSnapshot(
-                    transport: .playing,
-                    trackURI: "spotify:track:seek",
-                    timing: laggingTiming
-                ))
+                event: .enginePlayback(
+                    EnginePlaybackSnapshot(
+                        transport: .playing,
+                        trackURI: "spotify:track:seek",
+                        timing: laggingTiming
+                    ))
             )
         )
         check.equal("a lagging engine snapshot cannot undo optimistic seek timing", mismatchedSeek.timing, seekTiming)
-        check.equal("a lagging engine snapshot does not reconcile the pending seek", mismatchedSeek.pendingCommands[.seek]?.id, mismatchedSeekID)
+        check.equal(
+            "a lagging engine snapshot does not reconcile the pending seek", mismatchedSeek.pendingCommands[.seek]?.id,
+            mismatchedSeekID)
         _ = PlaybackReducer.reduce(
             &mismatchedSeek,
             envelope: presentationEnvelope(
@@ -334,26 +354,29 @@ func runPlaybackCommandPresentationChecks(_ check: CheckRunner) {
             &matchingSeek,
             envelope: presentationEnvelope(
                 source: .command,
-                event: .commandStarted(PendingPlaybackCommand(
-                    id: matchingSeekID,
-                    kind: .seek,
-                    expectedTransport: nil,
-                    expectedTiming: seekTiming,
-                    startedAt: presentationDate
-                ))
+                event: .commandStarted(
+                    PendingPlaybackCommand(
+                        id: matchingSeekID,
+                        kind: .seek,
+                        expectedTransport: nil,
+                        expectedTiming: seekTiming,
+                        startedAt: presentationDate
+                    ))
             )
         )
-        let confirmedTiming = PlaybackTiming(position: 80, duration: 200, anchoredAt: presentationDate.addingTimeInterval(1))
+        let confirmedTiming = PlaybackTiming(
+            position: 80, duration: 200, anchoredAt: presentationDate.addingTimeInterval(1))
         _ = PlaybackReducer.reduce(
             &matchingSeek,
             envelope: presentationEnvelope(
                 source: .enginePlayback,
                 revision: 1,
-                event: .enginePlayback(EnginePlaybackSnapshot(
-                    transport: .playing,
-                    trackURI: "spotify:track:seek",
-                    timing: confirmedTiming
-                ))
+                event: .enginePlayback(
+                    EnginePlaybackSnapshot(
+                        transport: .playing,
+                        trackURI: "spotify:track:seek",
+                        timing: confirmedTiming
+                    ))
             )
         )
         check.equal("a matching engine snapshot adopts confirmed seek timing", matchingSeek.timing, confirmedTiming)
@@ -386,30 +409,34 @@ func runPlaybackCommandPresentationChecks(_ check: CheckRunner) {
             &trackSwitchSeek,
             envelope: presentationEnvelope(
                 source: .command,
-                event: .commandStarted(PendingPlaybackCommand(
-                    id: trackSwitchSeekID,
-                    kind: .seek,
-                    expectedTransport: nil,
-                    expectedTiming: seekTiming,
-                    startedAt: presentationDate
-                ))
+                event: .commandStarted(
+                    PendingPlaybackCommand(
+                        id: trackSwitchSeekID,
+                        kind: .seek,
+                        expectedTransport: nil,
+                        expectedTiming: seekTiming,
+                        startedAt: presentationDate
+                    ))
             )
         )
-        let trackBTiming = PlaybackTiming(position: 0, duration: 180, anchoredAt: presentationDate.addingTimeInterval(1))
+        let trackBTiming = PlaybackTiming(
+            position: 0, duration: 180, anchoredAt: presentationDate.addingTimeInterval(1))
         _ = PlaybackReducer.reduce(
             &trackSwitchSeek,
             envelope: presentationEnvelope(
                 source: .enginePlayback,
                 revision: 1,
-                event: .enginePlayback(EnginePlaybackSnapshot(
-                    transport: .playing,
-                    trackURI: "spotify:track:b",
-                    timing: trackBTiming
-                ))
+                event: .enginePlayback(
+                    EnginePlaybackSnapshot(
+                        transport: .playing,
+                        trackURI: "spotify:track:b",
+                        timing: trackBTiming
+                    ))
             )
         )
         check.equal("a newer track snapshot adopts the incoming timing", trackSwitchSeek.timing, trackBTiming)
-        check.equal("a newer track snapshot replaces the current track", trackSwitchSeek.currentTrack?.uri, "spotify:track:b")
+        check.equal(
+            "a newer track snapshot replaces the current track", trackSwitchSeek.currentTrack?.uri, "spotify:track:b")
         check.nil_("a newer track snapshot supersedes the old pending seek", trackSwitchSeek.pendingCommands[.seek])
         let afterTrackSwitch = trackSwitchSeek
         let supersededByTrackFinish = PlaybackReducer.reduce(
@@ -424,7 +451,8 @@ func runPlaybackCommandPresentationChecks(_ check: CheckRunner) {
             )
         )
         check.check("a finish after a track switch is rejected", !supersededByTrackFinish)
-        check.equal("a track-switched seek cannot restore the previous track's timing", trackSwitchSeek, afterTrackSwitch)
+        check.equal(
+            "a track-switched seek cannot restore the previous track's timing", trackSwitchSeek, afterTrackSwitch)
 
         let currentTrackSwitchID = UUID(uuidString: "00000000-0000-0000-0000-00000000003A")!
         var currentTrackSwitch = PlaybackState(
@@ -439,13 +467,14 @@ func runPlaybackCommandPresentationChecks(_ check: CheckRunner) {
             &currentTrackSwitch,
             envelope: presentationEnvelope(
                 source: .command,
-                event: .commandStarted(PendingPlaybackCommand(
-                    id: currentTrackSwitchID,
-                    kind: .seek,
-                    expectedTransport: nil,
-                    expectedTiming: seekTiming,
-                    startedAt: presentationDate
-                ))
+                event: .commandStarted(
+                    PendingPlaybackCommand(
+                        id: currentTrackSwitchID,
+                        kind: .seek,
+                        expectedTransport: nil,
+                        expectedTiming: seekTiming,
+                        startedAt: presentationDate
+                    ))
             )
         )
         _ = PlaybackReducer.reduce(
@@ -455,7 +484,8 @@ func runPlaybackCommandPresentationChecks(_ check: CheckRunner) {
                 event: .currentTrack(CurrentTrack(uri: "spotify:track:b"))
             )
         )
-        check.equal("a current-track switch keeps the new track", currentTrackSwitch.currentTrack?.uri, "spotify:track:b")
+        check.equal(
+            "a current-track switch keeps the new track", currentTrackSwitch.currentTrack?.uri, "spotify:track:b")
         check.nil_("a current-track switch supersedes the old pending seek", currentTrackSwitch.pendingCommands[.seek])
         let afterCurrentTrackSwitch = currentTrackSwitch
         let currentTrackFinish = PlaybackReducer.reduce(
@@ -470,7 +500,9 @@ func runPlaybackCommandPresentationChecks(_ check: CheckRunner) {
             )
         )
         check.check("a finish after a current-track switch is rejected", !currentTrackFinish)
-        check.equal("a current-track switch cannot restore the previous track's timing", currentTrackSwitch, afterCurrentTrackSwitch)
+        check.equal(
+            "a current-track switch cannot restore the previous track's timing", currentTrackSwitch,
+            afterCurrentTrackSwitch)
 
         var identitySeek = PlaybackState(
             accountEpoch: 1,
@@ -483,13 +515,14 @@ func runPlaybackCommandPresentationChecks(_ check: CheckRunner) {
             &identitySeek,
             envelope: presentationEnvelope(
                 source: .command,
-                event: .commandStarted(PendingPlaybackCommand(
-                    id: staleSeekID,
-                    kind: .seek,
-                    expectedTransport: nil,
-                    expectedTiming: seekTiming,
-                    startedAt: presentationDate
-                ))
+                event: .commandStarted(
+                    PendingPlaybackCommand(
+                        id: staleSeekID,
+                        kind: .seek,
+                        expectedTransport: nil,
+                        expectedTiming: seekTiming,
+                        startedAt: presentationDate
+                    ))
             )
         )
         _ = PlaybackReducer.reduce(
@@ -498,11 +531,12 @@ func runPlaybackCommandPresentationChecks(_ check: CheckRunner) {
                 engine: 2,
                 source: .engineConnection,
                 revision: 1,
-                event: .engineConnection(EngineConnectionSnapshot(
-                    session: .recovering,
-                    owner: .none,
-                    localDeviceID: nil
-                ))
+                event: .engineConnection(
+                    EngineConnectionSnapshot(
+                        session: .recovering,
+                        owner: .none,
+                        localDeviceID: nil
+                    ))
             )
         )
         check.nil_("an engine-epoch bump drops the pending seek", identitySeek.pendingCommands[.seek])
@@ -534,27 +568,30 @@ func runPlaybackCommandPresentationChecks(_ check: CheckRunner) {
             &supersededSeek,
             envelope: presentationEnvelope(
                 source: .command,
-                event: .commandStarted(PendingPlaybackCommand(
-                    id: supersededSeekID,
-                    kind: .seek,
-                    expectedTransport: nil,
-                    expectedTiming: seekTiming,
-                    startedAt: presentationDate
-                ))
+                event: .commandStarted(
+                    PendingPlaybackCommand(
+                        id: supersededSeekID,
+                        kind: .seek,
+                        expectedTransport: nil,
+                        expectedTiming: seekTiming,
+                        startedAt: presentationDate
+                    ))
             )
         )
-        let replacementTiming = PlaybackTiming(position: 90, duration: 200, anchoredAt: presentationDate.addingTimeInterval(1))
+        let replacementTiming = PlaybackTiming(
+            position: 90, duration: 200, anchoredAt: presentationDate.addingTimeInterval(1))
         _ = PlaybackReducer.reduce(
             &supersededSeek,
             envelope: presentationEnvelope(
                 source: .command,
-                event: .commandStarted(PendingPlaybackCommand(
-                    id: replacementSeekID,
-                    kind: .seek,
-                    expectedTransport: nil,
-                    expectedTiming: replacementTiming,
-                    startedAt: presentationDate.addingTimeInterval(1)
-                ))
+                event: .commandStarted(
+                    PendingPlaybackCommand(
+                        id: replacementSeekID,
+                        kind: .seek,
+                        expectedTransport: nil,
+                        expectedTiming: replacementTiming,
+                        startedAt: presentationDate.addingTimeInterval(1)
+                    ))
             )
         )
         let afterReplacementSeek = supersededSeek
@@ -562,12 +599,14 @@ func runPlaybackCommandPresentationChecks(_ check: CheckRunner) {
             &supersededSeek,
             envelope: presentationEnvelope(
                 source: .command,
-                event: .commandFinished(id: supersededSeekID, accepted: false, notice: PlaybackNotice(message: "Seek was rejected"))
+                event: .commandFinished(
+                    id: supersededSeekID, accepted: false, notice: PlaybackNotice(message: "Seek was rejected"))
             )
         )
         check.check("a superseded seek finish is rejected", !supersededFinish)
         check.equal("a superseded seek finish cannot roll back the replacement", supersededSeek, afterReplacementSeek)
-        check.equal("the replacement seek remains pending", supersededSeek.pendingCommands[.seek]?.id, replacementSeekID)
+        check.equal(
+            "the replacement seek remains pending", supersededSeek.pendingCommands[.seek]?.id, replacementSeekID)
         check.equal("the replacement seek keeps its optimistic timing", supersededSeek.timing, replacementTiming)
         check.equal(
             "the replacement seek rolls back to the superseded optimistic timing",
@@ -609,18 +648,19 @@ func runPlaybackCommandPresentationChecks(_ check: CheckRunner) {
                 &state,
                 envelope: presentationEnvelope(
                     source: .command,
-                    event: .commandStarted(PendingPlaybackCommand(
-                        id: id,
-                        kind: .transport,
-                        expectedTransport: .playing,
-                        expectedTiming: PlaybackTiming(
-                            position: 0,
-                            duration: expected.duration,
-                            anchoredAt: presentationDate
-                        ),
-                        expectedTrack: expected,
-                        startedAt: presentationDate
-                    ))
+                    event: .commandStarted(
+                        PendingPlaybackCommand(
+                            id: id,
+                            kind: .transport,
+                            expectedTransport: .playing,
+                            expectedTiming: PlaybackTiming(
+                                position: 0,
+                                duration: expected.duration,
+                                anchoredAt: presentationDate
+                            ),
+                            expectedTrack: expected,
+                            startedAt: presentationDate
+                        ))
                 )
             )
         }
@@ -652,11 +692,12 @@ func runPlaybackCommandPresentationChecks(_ check: CheckRunner) {
             envelope: presentationEnvelope(
                 source: .enginePlayback,
                 revision: 1,
-                event: .enginePlayback(EnginePlaybackSnapshot(
-                    transport: .playing,
-                    trackURI: trackA.uri,
-                    timing: laggingATiming
-                ))
+                event: .enginePlayback(
+                    EnginePlaybackSnapshot(
+                        transport: .playing,
+                        trackURI: trackA.uri,
+                        timing: laggingATiming
+                    ))
             )
         )
         check.equal("a lagging A snapshot keeps the optimistic B track", playingA.currentTrack, trackB)
@@ -694,11 +735,12 @@ func runPlaybackCommandPresentationChecks(_ check: CheckRunner) {
             envelope: presentationEnvelope(
                 source: .enginePlayback,
                 revision: 1,
-                event: .enginePlayback(EnginePlaybackSnapshot(
-                    transport: .playing,
-                    trackURI: trackB.uri,
-                    timing: PlaybackTiming(position: 1, duration: 180, anchoredAt: presentationDate)
-                ))
+                event: .enginePlayback(
+                    EnginePlaybackSnapshot(
+                        transport: .playing,
+                        trackURI: trackB.uri,
+                        timing: PlaybackTiming(position: 1, duration: 180, anchoredAt: presentationDate)
+                    ))
             )
         )
         check.equal("an authoritative B snapshot keeps B", confirmed.currentTrack?.uri, trackB.uri)
@@ -721,8 +763,12 @@ func runPlaybackCommandPresentationChecks(_ check: CheckRunner) {
             )
         )
         check.check("a late failure after B confirmation is accepted to consume the entry", lateFailure)
-        check.nil_("a late failure after B confirmation consumes the resolution", confirmed.transportCommandResolutions[confirmedID])
-        check.check("a late failure after B confirmation leaves no resolution map entries", confirmed.transportCommandResolutions.isEmpty)
+        check.nil_(
+            "a late failure after B confirmation consumes the resolution",
+            confirmed.transportCommandResolutions[confirmedID])
+        check.check(
+            "a late failure after B confirmation leaves no resolution map entries",
+            confirmed.transportCommandResolutions.isEmpty)
         let secondConfirmedFinish = PlaybackReducer.reduce(
             &confirmed,
             envelope: presentationEnvelope(
@@ -770,11 +816,12 @@ func runPlaybackCommandPresentationChecks(_ check: CheckRunner) {
             envelope: presentationEnvelope(
                 source: .enginePlayback,
                 revision: 1,
-                event: .enginePlayback(EnginePlaybackSnapshot(
-                    transport: .playing,
-                    trackURI: "spotify:track:c",
-                    timing: trackCTiming
-                ))
+                event: .enginePlayback(
+                    EnginePlaybackSnapshot(
+                        transport: .playing,
+                        trackURI: "spotify:track:c",
+                        timing: trackCTiming
+                    ))
             )
         )
         check.equal("an unrelated C snapshot adopts C", superseded.currentTrack?.uri, "spotify:track:c")
@@ -798,8 +845,12 @@ func runPlaybackCommandPresentationChecks(_ check: CheckRunner) {
             )
         )
         check.check("a late finish after C supersession is accepted to consume the entry", supersededFinish)
-        check.nil_("a late finish after C supersession consumes the resolution", superseded.transportCommandResolutions[supersededID])
-        check.check("a late finish after C supersession leaves no resolution map entries", superseded.transportCommandResolutions.isEmpty)
+        check.nil_(
+            "a late finish after C supersession consumes the resolution",
+            superseded.transportCommandResolutions[supersededID])
+        check.check(
+            "a late finish after C supersession leaves no resolution map entries",
+            superseded.transportCommandResolutions.isEmpty)
         check.equal("a late finish after C supersession leaves C", superseded.currentTrack?.uri, "spotify:track:c")
         check.equal("a late finish after C supersession keeps C timing", superseded.timing, trackCTiming)
         check.equal(
@@ -834,11 +885,12 @@ func runPlaybackCommandPresentationChecks(_ check: CheckRunner) {
             envelope: presentationEnvelope(
                 source: .enginePlayback,
                 revision: 1,
-                event: .enginePlayback(EnginePlaybackSnapshot(
-                    transport: .stopped,
-                    trackURI: nil,
-                    timing: PlaybackTiming(anchoredAt: presentationDate)
-                ))
+                event: .enginePlayback(
+                    EnginePlaybackSnapshot(
+                        transport: .stopped,
+                        trackURI: nil,
+                        timing: PlaybackTiming(anchoredAt: presentationDate)
+                    ))
             )
         )
         check.nil_("a nil snapshot clears the optimistic track", cleared.currentTrack)
@@ -883,12 +935,13 @@ func runPlaybackCommandPresentationChecks(_ check: CheckRunner) {
             &raw,
             envelope: presentationEnvelope(
                 source: .command,
-                event: .commandStarted(PendingPlaybackCommand(
-                    id: rawID,
-                    kind: .transport,
-                    expectedTransport: .playing,
-                    startedAt: presentationDate
-                ))
+                event: .commandStarted(
+                    PendingPlaybackCommand(
+                        id: rawID,
+                        kind: .transport,
+                        expectedTransport: .playing,
+                        startedAt: presentationDate
+                    ))
             )
         )
         check.equal("a raw play does not invent a target track", raw.currentTrack, trackA)
@@ -899,11 +952,12 @@ func runPlaybackCommandPresentationChecks(_ check: CheckRunner) {
             envelope: presentationEnvelope(
                 source: .enginePlayback,
                 revision: 1,
-                event: .enginePlayback(EnginePlaybackSnapshot(
-                    transport: .playing,
-                    trackURI: trackA.uri,
-                    timing: laggingATiming
-                ))
+                event: .enginePlayback(
+                    EnginePlaybackSnapshot(
+                        transport: .playing,
+                        trackURI: trackA.uri,
+                        timing: laggingATiming
+                    ))
             )
         )
         check.nil_(
@@ -925,13 +979,14 @@ func runPlaybackCommandPresentationChecks(_ check: CheckRunner) {
             &seekThenPlay,
             envelope: presentationEnvelope(
                 source: .command,
-                event: .commandStarted(PendingPlaybackCommand(
-                    id: staleSeekID,
-                    kind: .seek,
-                    expectedTransport: nil,
-                    expectedTiming: PlaybackTiming(position: 80, duration: 200, anchoredAt: presentationDate),
-                    startedAt: presentationDate
-                ))
+                event: .commandStarted(
+                    PendingPlaybackCommand(
+                        id: staleSeekID,
+                        kind: .seek,
+                        expectedTransport: nil,
+                        expectedTiming: PlaybackTiming(position: 80, duration: 200, anchoredAt: presentationDate),
+                        startedAt: presentationDate
+                    ))
             )
         )
         startPlay(&seekThenPlay, id: seekThenPlayID)
@@ -943,11 +998,12 @@ func runPlaybackCommandPresentationChecks(_ check: CheckRunner) {
             envelope: presentationEnvelope(
                 source: .enginePlayback,
                 revision: 1,
-                event: .enginePlayback(EnginePlaybackSnapshot(
-                    transport: .playing,
-                    trackURI: trackB.uri,
-                    timing: PlaybackTiming(position: 0, duration: 180, anchoredAt: presentationDate)
-                ))
+                event: .enginePlayback(
+                    EnginePlaybackSnapshot(
+                        transport: .playing,
+                        trackURI: trackB.uri,
+                        timing: PlaybackTiming(position: 0, duration: 180, anchoredAt: presentationDate)
+                    ))
             )
         )
         check.nil_("a B snapshot after play does not revive the seek", seekThenPlay.pendingCommands[.seek])
@@ -968,11 +1024,12 @@ func runPlaybackCommandPresentationChecks(_ check: CheckRunner) {
             envelope: presentationEnvelope(
                 source: .enginePlayback,
                 revision: 1,
-                event: .enginePlayback(EnginePlaybackSnapshot(
-                    transport: .playing,
-                    trackURI: "spotify:track:c",
-                    timing: trackCTiming
-                ))
+                event: .enginePlayback(
+                    EnginePlaybackSnapshot(
+                        transport: .playing,
+                        trackURI: "spotify:track:c",
+                        timing: trackCTiming
+                    ))
             )
         )
         check.equal(
@@ -984,12 +1041,13 @@ func runPlaybackCommandPresentationChecks(_ check: CheckRunner) {
             &supersededThenPause,
             envelope: presentationEnvelope(
                 source: .command,
-                event: .commandStarted(PendingPlaybackCommand(
-                    id: pauseAfterPlayID,
-                    kind: .transport,
-                    expectedTransport: .paused,
-                    startedAt: presentationDate
-                ))
+                event: .commandStarted(
+                    PendingPlaybackCommand(
+                        id: pauseAfterPlayID,
+                        kind: .transport,
+                        expectedTransport: .paused,
+                        startedAt: presentationDate
+                    ))
             )
         )
         check.equal(
@@ -997,7 +1055,9 @@ func runPlaybackCommandPresentationChecks(_ check: CheckRunner) {
             supersededThenPause.transportCommandResolutions[supersededID],
             .superseded
         )
-        check.equal("a later pause is the pending transport command", supersededThenPause.pendingCommands[.transport]?.id, pauseAfterPlayID)
+        check.equal(
+            "a later pause is the pending transport command", supersededThenPause.pendingCommands[.transport]?.id,
+            pauseAfterPlayID)
         let capturedPauseSupersession = supersededThenPause.transportCommandResolutions[supersededID]
         let latePlayFinish = PlaybackReducer.reduce(
             &supersededThenPause,
@@ -1011,9 +1071,14 @@ func runPlaybackCommandPresentationChecks(_ check: CheckRunner) {
             )
         )
         check.check("a late play finish after C then pause consumes the play entry", latePlayFinish)
-        check.nil_("a late play finish after C then pause removes the play resolution", supersededThenPause.transportCommandResolutions[supersededID])
-        check.equal("a late play finish after C then pause leaves the pause pending", supersededThenPause.pendingCommands[.transport]?.id, pauseAfterPlayID)
-        check.equal("a late play finish after C then pause leaves C", supersededThenPause.currentTrack?.uri, "spotify:track:c")
+        check.nil_(
+            "a late play finish after C then pause removes the play resolution",
+            supersededThenPause.transportCommandResolutions[supersededID])
+        check.equal(
+            "a late play finish after C then pause leaves the pause pending",
+            supersededThenPause.pendingCommands[.transport]?.id, pauseAfterPlayID)
+        check.equal(
+            "a late play finish after C then pause leaves C", supersededThenPause.currentTrack?.uri, "spotify:track:c")
         check.equal(
             "a late play finish after C then pause is inert",
             playbackCommandFollowUp(
@@ -1038,7 +1103,9 @@ func runPlaybackCommandPresentationChecks(_ check: CheckRunner) {
                 event: .commandFinished(id: pauseAfterPlayID, accepted: true, notice: nil)
             )
         )
-        check.equal("the later pause can still finish after the play entry was consumed", supersededThenPause.transport, .paused)
+        check.equal(
+            "the later pause can still finish after the play entry was consumed", supersededThenPause.transport, .paused
+        )
         check.nil_("an accepted pause clears the pending pause", supersededThenPause.pendingCommands[.transport])
 
         let seekDuringPlayID = UUID(uuidString: "00000000-0000-0000-0000-000000000049")!
@@ -1056,16 +1123,19 @@ func runPlaybackCommandPresentationChecks(_ check: CheckRunner) {
             &seekDuringPlay,
             envelope: presentationEnvelope(
                 source: .command,
-                event: .commandStarted(PendingPlaybackCommand(
-                    id: seekDuringPlayID,
-                    kind: .seek,
-                    expectedTransport: nil,
-                    expectedTiming: PlaybackTiming(position: 90, duration: 180, anchoredAt: presentationDate),
-                    startedAt: presentationDate
-                ))
+                event: .commandStarted(
+                    PendingPlaybackCommand(
+                        id: seekDuringPlayID,
+                        kind: .seek,
+                        expectedTransport: nil,
+                        expectedTiming: PlaybackTiming(position: 90, duration: 180, anchoredAt: presentationDate),
+                        startedAt: presentationDate
+                    ))
             )
         )
-        check.equal("a seek can start while a known-target play is pending", seekDuringPlay.pendingCommands[.seek]?.id, seekDuringPlayID)
+        check.equal(
+            "a seek can start while a known-target play is pending", seekDuringPlay.pendingCommands[.seek]?.id,
+            seekDuringPlayID)
         _ = PlaybackReducer.reduce(
             &seekDuringPlay,
             envelope: presentationEnvelope(
@@ -1078,7 +1148,8 @@ func runPlaybackCommandPresentationChecks(_ check: CheckRunner) {
             )
         )
         check.equal("a rejected play restores A after a nested seek", seekDuringPlay.currentTrack, trackA)
-        check.equal("a rejected play restores A's timing after a nested seek", seekDuringPlay.timing, priorPlayingTiming)
+        check.equal(
+            "a rejected play restores A's timing after a nested seek", seekDuringPlay.timing, priorPlayingTiming)
         check.nil_("a rejected play drops a seek that targeted B", seekDuringPlay.pendingCommands[.seek])
 
         let sameURIPlayID = UUID(uuidString: "00000000-0000-0000-0000-00000000004B")!
@@ -1096,13 +1167,14 @@ func runPlaybackCommandPresentationChecks(_ check: CheckRunner) {
             &sameURI,
             envelope: presentationEnvelope(
                 source: .command,
-                event: .commandStarted(PendingPlaybackCommand(
-                    id: seekSameURIID,
-                    kind: .seek,
-                    expectedTransport: nil,
-                    expectedTiming: PlaybackTiming(position: 90, duration: 200, anchoredAt: presentationDate),
-                    startedAt: presentationDate
-                ))
+                event: .commandStarted(
+                    PendingPlaybackCommand(
+                        id: seekSameURIID,
+                        kind: .seek,
+                        expectedTransport: nil,
+                        expectedTiming: PlaybackTiming(position: 90, duration: 200, anchoredAt: presentationDate),
+                        startedAt: presentationDate
+                    ))
             )
         )
         _ = PlaybackReducer.reduce(
@@ -1133,13 +1205,14 @@ func runPlaybackCommandPresentationChecks(_ check: CheckRunner) {
                 &state,
                 envelope: presentationEnvelope(
                     source: .command,
-                    event: .commandStarted(PendingPlaybackCommand(
-                        id: id,
-                        kind: .options,
-                        expectedTransport: nil,
-                        expectedShuffle: expected,
-                        startedAt: presentationDate
-                    ))
+                    event: .commandStarted(
+                        PendingPlaybackCommand(
+                            id: id,
+                            kind: .options,
+                            expectedTransport: nil,
+                            expectedShuffle: expected,
+                            startedAt: presentationDate
+                        ))
                 )
             )
         }
@@ -1155,13 +1228,14 @@ func runPlaybackCommandPresentationChecks(_ check: CheckRunner) {
                 envelope: presentationEnvelope(
                     source: .enginePlayback,
                     revision: revision,
-                    event: .enginePlayback(EnginePlaybackSnapshot(
-                        transport: .paused,
-                        trackURI: nil,
-                        timing: PlaybackTiming(anchoredAt: presentationDate),
-                        shuffle: shuffle,
-                        repeatMode: repeatMode
-                    ))
+                    event: .enginePlayback(
+                        EnginePlaybackSnapshot(
+                            transport: .paused,
+                            trackURI: nil,
+                            timing: PlaybackTiming(anchoredAt: presentationDate),
+                            shuffle: shuffle,
+                            repeatMode: repeatMode
+                        ))
                 )
             )
         }
@@ -1226,7 +1300,9 @@ func runPlaybackCommandPresentationChecks(_ check: CheckRunner) {
             )
         )
         check.check("a late failure after shuffle confirmation is accepted to consume the entry", lateFailure)
-        check.nil_("a late failure after shuffle confirmation consumes the resolution", confirmed.transportCommandResolutions[confirmedID])
+        check.nil_(
+            "a late failure after shuffle confirmation consumes the resolution",
+            confirmed.transportCommandResolutions[confirmedID])
         check.equal("a late failure after shuffle confirmation keeps off", confirmed.options.shuffle, false)
         check.equal(
             "a captured shuffle confirmation still reports success after consume-only acceptance",
@@ -1280,12 +1356,13 @@ func runPlaybackCommandPresentationChecks(_ check: CheckRunner) {
             &laterOptions,
             envelope: presentationEnvelope(
                 source: .command,
-                event: .commandStarted(PendingPlaybackCommand(
-                    id: laterOptionsID,
-                    kind: .options,
-                    expectedTransport: nil,
-                    startedAt: presentationDate
-                ))
+                event: .commandStarted(
+                    PendingPlaybackCommand(
+                        id: laterOptionsID,
+                        kind: .options,
+                        expectedTransport: nil,
+                        startedAt: presentationDate
+                    ))
             )
         )
         check.equal(
@@ -1293,8 +1370,12 @@ func runPlaybackCommandPresentationChecks(_ check: CheckRunner) {
             laterOptions.transportCommandResolutions[confirmedID],
             .confirmed
         )
-        check.equal("a later options command is the pending options command", laterOptions.pendingCommands[.options]?.id, laterOptionsID)
-        check.equal("a later options command does not invent shuffle rollback", laterOptions.pendingCommands[.options]?.rollbackShuffle, nil as Bool?)
+        check.equal(
+            "a later options command is the pending options command", laterOptions.pendingCommands[.options]?.id,
+            laterOptionsID)
+        check.equal(
+            "a later options command does not invent shuffle rollback",
+            laterOptions.pendingCommands[.options]?.rollbackShuffle, nil as Bool?)
         check.equal("a later options command keeps confirmed off", laterOptions.options.shuffle, false)
         let capturedLaterConfirmation = laterOptions.transportCommandResolutions[confirmedID]
         let lateShuffleFinish = PlaybackReducer.reduce(
@@ -1309,9 +1390,14 @@ func runPlaybackCommandPresentationChecks(_ check: CheckRunner) {
             )
         )
         check.check("a late shuffle finish after a later options command consumes the shuffle entry", lateShuffleFinish)
-        check.nil_("a late shuffle finish after a later options command removes the shuffle resolution", laterOptions.transportCommandResolutions[confirmedID])
-        check.equal("a late shuffle finish after a later options command leaves that command pending", laterOptions.pendingCommands[.options]?.id, laterOptionsID)
-        check.equal("a late shuffle finish after a later options command keeps off", laterOptions.options.shuffle, false)
+        check.nil_(
+            "a late shuffle finish after a later options command removes the shuffle resolution",
+            laterOptions.transportCommandResolutions[confirmedID])
+        check.equal(
+            "a late shuffle finish after a later options command leaves that command pending",
+            laterOptions.pendingCommands[.options]?.id, laterOptionsID)
+        check.equal(
+            "a late shuffle finish after a later options command keeps off", laterOptions.options.shuffle, false)
         check.equal(
             "a late shuffle finish after a later options command still reports success",
             playbackCommandFollowUp(
@@ -1336,7 +1422,9 @@ func runPlaybackCommandPresentationChecks(_ check: CheckRunner) {
                 event: .commandFinished(id: laterOptionsID, accepted: true, notice: nil)
             )
         )
-        check.equal("the later options command can still finish after the shuffle entry was consumed", laterOptions.options.shuffle, false)
+        check.equal(
+            "the later options command can still finish after the shuffle entry was consumed",
+            laterOptions.options.shuffle, false)
         check.nil_("an accepted later options command clears pending options", laterOptions.pendingCommands[.options])
 
         var repeatPending = PlaybackState(
@@ -1349,19 +1437,24 @@ func runPlaybackCommandPresentationChecks(_ check: CheckRunner) {
             &repeatPending,
             envelope: presentationEnvelope(
                 source: .command,
-                event: .commandStarted(PendingPlaybackCommand(
-                    id: repeatID,
-                    kind: .options,
-                    expectedTransport: nil,
-                    startedAt: presentationDate
-                ))
+                event: .commandStarted(
+                    PendingPlaybackCommand(
+                        id: repeatID,
+                        kind: .options,
+                        expectedTransport: nil,
+                        startedAt: presentationDate
+                    ))
             )
         )
         engineShuffle(&repeatPending, shuffle: false, revision: 1, repeatMode: .track)
         check.equal("a repeat options command still adopts engine shuffle", repeatPending.options.shuffle, false)
         check.equal("a repeat options command still adopts engine repeat", repeatPending.options.repeatMode, .track)
-        check.equal("a shuffle sample does not confirm a repeat options command", repeatPending.pendingCommands[.options]?.id, repeatID)
-        check.nil_("a shuffle sample does not record confirmation for a repeat command", repeatPending.transportCommandResolutions[repeatID])
+        check.equal(
+            "a shuffle sample does not confirm a repeat options command", repeatPending.pendingCommands[.options]?.id,
+            repeatID)
+        check.nil_(
+            "a shuffle sample does not record confirmation for a repeat command",
+            repeatPending.transportCommandResolutions[repeatID])
         _ = PlaybackReducer.reduce(
             &repeatPending,
             envelope: presentationEnvelope(
@@ -1374,7 +1467,8 @@ func runPlaybackCommandPresentationChecks(_ check: CheckRunner) {
             )
         )
         check.equal("a rejected repeat options command does not restore shuffle", repeatPending.options.shuffle, false)
-        check.equal("a rejected repeat options command does not restore repeat", repeatPending.options.repeatMode, .track)
+        check.equal(
+            "a rejected repeat options command does not restore repeat", repeatPending.options.repeatMode, .track)
 
         let restoreID = UUID(uuidString: "00000000-0000-0000-0000-000000000055")!
         var restored = PlaybackState(
@@ -1393,7 +1487,8 @@ func runPlaybackCommandPresentationChecks(_ check: CheckRunner) {
         )
         check.equal("a restoring .options event keeps optimistic off", restored.options.shuffle, false)
         check.equal("a restoring .options event still adopts repeat", restored.options.repeatMode, .track)
-        check.equal("a restoring .options event does not confirm off", restored.pendingCommands[.options]?.id, restoreID)
+        check.equal(
+            "a restoring .options event does not confirm off", restored.pendingCommands[.options]?.id, restoreID)
         _ = PlaybackReducer.reduce(
             &restored,
             envelope: presentationEnvelope(
@@ -1402,7 +1497,9 @@ func runPlaybackCommandPresentationChecks(_ check: CheckRunner) {
             )
         )
         check.equal("an accepted shuffle after a restoring .options event keeps off", restored.options.shuffle, false)
-        check.equal("an accepted shuffle after a restoring .options event keeps adopted repeat", restored.options.repeatMode, .track)
+        check.equal(
+            "an accepted shuffle after a restoring .options event keeps adopted repeat", restored.options.repeatMode,
+            .track)
 
         let matchingUserID = UUID(uuidString: "00000000-0000-0000-0000-000000000056")!
         var matchingUser = PlaybackState(
@@ -1421,11 +1518,18 @@ func runPlaybackCommandPresentationChecks(_ check: CheckRunner) {
         )
         check.equal("a matching user .options event keeps optimistic off", matchingUser.options.shuffle, false)
         check.equal("a matching user .options event still adopts repeat", matchingUser.options.repeatMode, .track)
-        check.equal("a matching user .options event does not confirm off", matchingUser.pendingCommands[.options]?.id, matchingUserID)
-        check.nil_("a matching user .options event is not a confirmation", matchingUser.transportCommandResolutions[matchingUserID])
+        check.equal(
+            "a matching user .options event does not confirm off", matchingUser.pendingCommands[.options]?.id,
+            matchingUserID)
+        check.nil_(
+            "a matching user .options event is not a confirmation",
+            matchingUser.transportCommandResolutions[matchingUserID])
         engineShuffle(&matchingUser, shuffle: false, revision: 1)
-        check.equal("an engine sample after a matching user .options event keeps off", matchingUser.options.shuffle, false)
-        check.nil_("an engine sample after a matching user .options event confirms shuffle", matchingUser.pendingCommands[.options])
+        check.equal(
+            "an engine sample after a matching user .options event keeps off", matchingUser.options.shuffle, false)
+        check.nil_(
+            "an engine sample after a matching user .options event confirms shuffle",
+            matchingUser.pendingCommands[.options])
         check.equal(
             "an engine sample after a matching user .options event records confirmation",
             matchingUser.transportCommandResolutions[matchingUserID],
@@ -1459,8 +1563,11 @@ func runPlaybackCommandPresentationChecks(_ check: CheckRunner) {
             )
         )
         check.equal("rejection after only a matching user .options event restores on", rejectUser.options.shuffle, true)
-        check.nil_("rejection after only a matching user .options event clears pending", rejectUser.pendingCommands[.options])
-        check.nil_("rejection after only a matching user .options event has no confirmation", rejectUser.transportCommandResolutions[rejectUserID])
+        check.nil_(
+            "rejection after only a matching user .options event clears pending", rejectUser.pendingCommands[.options])
+        check.nil_(
+            "rejection after only a matching user .options event has no confirmation",
+            rejectUser.transportCommandResolutions[rejectUserID])
     }
 
     check.suite("Repeat options optimism is reducer-owned") {
@@ -1478,13 +1585,14 @@ func runPlaybackCommandPresentationChecks(_ check: CheckRunner) {
                 &state,
                 envelope: presentationEnvelope(
                     source: .command,
-                    event: .commandStarted(PendingPlaybackCommand(
-                        id: id,
-                        kind: .options,
-                        expectedTransport: nil,
-                        expectedRepeatFlags: expected,
-                        startedAt: presentationDate
-                    ))
+                    event: .commandStarted(
+                        PendingPlaybackCommand(
+                            id: id,
+                            kind: .options,
+                            expectedTransport: nil,
+                            expectedRepeatFlags: expected,
+                            startedAt: presentationDate
+                        ))
                 )
             )
         }
@@ -1499,14 +1607,15 @@ func runPlaybackCommandPresentationChecks(_ check: CheckRunner) {
                 envelope: presentationEnvelope(
                     source: .enginePlayback,
                     revision: revision,
-                    event: .enginePlayback(EnginePlaybackSnapshot(
-                        transport: .paused,
-                        trackURI: nil,
-                        timing: PlaybackTiming(anchoredAt: presentationDate),
-                        shuffle: false,
-                        repeatMode: RepeatMode(context: flags.context, track: flags.track),
-                        repeatFlags: flags
-                    ))
+                    event: .enginePlayback(
+                        EnginePlaybackSnapshot(
+                            transport: .paused,
+                            trackURI: nil,
+                            timing: PlaybackTiming(anchoredAt: presentationDate),
+                            shuffle: false,
+                            repeatMode: RepeatMode(context: flags.context, track: flags.track),
+                            repeatFlags: flags
+                        ))
                 )
             )
         }
@@ -1530,7 +1639,9 @@ func runPlaybackCommandPresentationChecks(_ check: CheckRunner) {
                 state.pendingCommands[.options]?.rollbackRepeatFlags,
                 from.flags
             )
-            check.equal("\(label) records the requested target", state.pendingCommands[.options]?.expectedRepeatFlags, from.next.flags)
+            check.equal(
+                "\(label) records the requested target", state.pendingCommands[.options]?.expectedRepeatFlags,
+                from.next.flags)
             _ = PlaybackReducer.reduce(
                 &state,
                 envelope: presentationEnvelope(
@@ -1579,7 +1690,9 @@ func runPlaybackCommandPresentationChecks(_ check: CheckRunner) {
             )
         )
         check.check("a late failure after repeat confirmation is accepted to consume the entry", lateFailure)
-        check.nil_("a late failure after repeat confirmation consumes the resolution", confirmed.transportCommandResolutions[confirmedID])
+        check.nil_(
+            "a late failure after repeat confirmation consumes the resolution",
+            confirmed.transportCommandResolutions[confirmedID])
         check.equal("a late failure after repeat confirmation keeps context", confirmed.options.repeatMode, .context)
         check.equal(
             "a captured repeat confirmation still reports success after consume-only acceptance",
@@ -1681,13 +1794,17 @@ func runPlaybackCommandPresentationChecks(_ check: CheckRunner) {
             &userOptions,
             envelope: presentationEnvelope(
                 source: .user,
-                event: .options(PlaybackOptions(shuffle: false, repeatMode: .context, repeatFlags: RepeatMode.context.flags))
+                event: .options(
+                    PlaybackOptions(shuffle: false, repeatMode: .context, repeatFlags: RepeatMode.context.flags))
             )
         )
         check.equal("a matching user .options event keeps optimistic context", userOptions.options.repeatMode, .context)
         check.equal("a matching user .options event still adopts shuffle", userOptions.options.shuffle, false)
-        check.equal("a matching user .options event does not confirm context", userOptions.pendingCommands[.options]?.id, userID)
-        check.nil_("a matching user .options event is not a confirmation", userOptions.transportCommandResolutions[userID])
+        check.equal(
+            "a matching user .options event does not confirm context", userOptions.pendingCommands[.options]?.id, userID
+        )
+        check.nil_(
+            "a matching user .options event is not a confirmation", userOptions.transportCommandResolutions[userID])
         _ = PlaybackReducer.reduce(
             &userOptions,
             envelope: presentationEnvelope(
@@ -1699,7 +1816,8 @@ func runPlaybackCommandPresentationChecks(_ check: CheckRunner) {
                 )
             )
         )
-        check.equal("rejection after only a matching user .options event restores off", userOptions.options.repeatMode, .off)
+        check.equal(
+            "rejection after only a matching user .options event restores off", userOptions.options.repeatMode, .off)
 
         var intermediate = PlaybackState(
             accountEpoch: 1,
@@ -1710,8 +1828,12 @@ func runPlaybackCommandPresentationChecks(_ check: CheckRunner) {
         startRepeat(&intermediate, id: intermediateID, expected: RepeatMode.track.flags)
         engineRepeat(&intermediate, flags: RepeatMode.off.flags, revision: 1)
         check.equal("context → track intermediate off is visible", intermediate.options.repeatMode, .off)
-        check.equal("context → track intermediate off stays pending", intermediate.pendingCommands[.options]?.id, intermediateID)
-        check.nil_("context → track intermediate off is not confirmation", intermediate.transportCommandResolutions[intermediateID])
+        check.equal(
+            "context → track intermediate off stays pending", intermediate.pendingCommands[.options]?.id, intermediateID
+        )
+        check.nil_(
+            "context → track intermediate off is not confirmation",
+            intermediate.transportCommandResolutions[intermediateID])
         _ = PlaybackReducer.reduce(
             &intermediate,
             envelope: presentationEnvelope(
@@ -1723,8 +1845,12 @@ func runPlaybackCommandPresentationChecks(_ check: CheckRunner) {
                 )
             )
         )
-        check.equal("context → track intermediate off then rejection restores context", intermediate.options.repeatMode, .context)
-        check.equal("context → track intermediate off then rejection restores context flags", intermediate.options.repeatFlags, RepeatMode.context.flags)
+        check.equal(
+            "context → track intermediate off then rejection restores context", intermediate.options.repeatMode,
+            .context)
+        check.equal(
+            "context → track intermediate off then rejection restores context flags", intermediate.options.repeatFlags,
+            RepeatMode.context.flags)
     }
 
     check.suite("Remote transfer owner optimism is reducer-owned") {
@@ -1736,12 +1862,16 @@ func runPlaybackCommandPresentationChecks(_ check: CheckRunner) {
         let localID = UUID(uuidString: "00000000-0000-0000-0000-000000000065")!
         let noneID = UUID(uuidString: "00000000-0000-0000-0000-000000000066")!
         let noneRollbackID = UUID(uuidString: "00000000-0000-0000-0000-000000000067")!
-        let ownerA = PlaybackOwner.remote(PlaybackDevice(id: "speaker-a", name: "Speaker A", type: "speaker", isActive: true))
+        let ownerA = PlaybackOwner.remote(
+            PlaybackDevice(id: "speaker-a", name: "Speaker A", type: "speaker", isActive: true))
         let deviceB = PlaybackDevice(id: "speaker-b", name: "Speaker B", type: "speaker", isActive: false)
         let expectedB = PlaybackOwner.uncertain(deviceB)
-        let remoteB = PlaybackOwner.remote(PlaybackDevice(id: "speaker-b", name: "Speaker B", type: "speaker", isActive: true))
-        let renamedB = PlaybackOwner.remote(PlaybackDevice(id: "speaker-b", name: "Kitchen", type: "speaker", isActive: true))
-        let ownerC = PlaybackOwner.remote(PlaybackDevice(id: "phone", name: "Phone", type: "smartphone", isActive: true))
+        let remoteB = PlaybackOwner.remote(
+            PlaybackDevice(id: "speaker-b", name: "Speaker B", type: "speaker", isActive: true))
+        let renamedB = PlaybackOwner.remote(
+            PlaybackDevice(id: "speaker-b", name: "Kitchen", type: "speaker", isActive: true))
+        let ownerC = PlaybackOwner.remote(
+            PlaybackDevice(id: "phone", name: "Phone", type: "smartphone", isActive: true))
         let localMac = PlaybackOwner.local(PlaybackDevice(id: "mac", name: "Mac", type: "computer", isActive: true))
         let deviceD = PlaybackDevice(id: "speaker-d", name: "Speaker D", type: "speaker", isActive: false)
 
@@ -1755,13 +1885,14 @@ func runPlaybackCommandPresentationChecks(_ check: CheckRunner) {
                 &state,
                 envelope: presentationEnvelope(
                     source: .command,
-                    event: .commandStarted(PendingPlaybackCommand(
-                        id: id,
-                        kind: .transfer,
-                        expectedTransport: nil,
-                        expectedOwner: expected,
-                        startedAt: startedAt
-                    ))
+                    event: .commandStarted(
+                        PendingPlaybackCommand(
+                            id: id,
+                            kind: .transfer,
+                            expectedTransport: nil,
+                            expectedOwner: expected,
+                            startedAt: startedAt
+                        ))
                 )
             )
         }
@@ -1776,11 +1907,12 @@ func runPlaybackCommandPresentationChecks(_ check: CheckRunner) {
                 envelope: presentationEnvelope(
                     source: .engineConnection,
                     revision: revision,
-                    event: .engineConnection(EngineConnectionSnapshot(
-                        session: .ready,
-                        owner: owner,
-                        localDeviceID: "mac"
-                    ))
+                    event: .engineConnection(
+                        EngineConnectionSnapshot(
+                            session: .ready,
+                            owner: owner,
+                            localDeviceID: "mac"
+                        ))
                 )
             )
         }
@@ -1796,12 +1928,13 @@ func runPlaybackCommandPresentationChecks(_ check: CheckRunner) {
                 envelope: presentationEnvelope(
                     source: .engineDevices,
                     revision: revision,
-                    event: .devices(PlaybackDeviceSnapshot(
-                        devices: devices,
-                        localDeviceID: "mac",
-                        revision: revision,
-                        lastRemoteDeviceID: lastRemoteDeviceID
-                    ))
+                    event: .devices(
+                        PlaybackDeviceSnapshot(
+                            devices: devices,
+                            localDeviceID: "mac",
+                            revision: revision,
+                            lastRemoteDeviceID: lastRemoteDeviceID
+                        ))
                 )
             )
         }
@@ -1815,12 +1948,18 @@ func runPlaybackCommandPresentationChecks(_ check: CheckRunner) {
         )
         startTransfer(&rejected, id: transferID, expected: expectedB)
         check.equal("transfer applies the uncertain target atomically", rejected.owner, expectedB)
-        check.equal("transfer captures the exact prior owner", rejected.pendingCommands[.transfer]?.rollbackOwner, Optional(ownerA))
-        check.equal("transfer records the requested target owner", rejected.pendingCommands[.transfer]?.expectedOwner, Optional(expectedB))
+        check.equal(
+            "transfer captures the exact prior owner", rejected.pendingCommands[.transfer]?.rollbackOwner,
+            Optional(ownerA))
+        check.equal(
+            "transfer records the requested target owner", rejected.pendingCommands[.transfer]?.expectedOwner,
+            Optional(expectedB))
         connectionOwner(&rejected, owner: ownerA, revision: 1)
         check.equal("a lagging prior-owner connection keeps the target", rejected.owner, expectedB)
-        check.equal("a lagging prior-owner connection does not confirm", rejected.pendingCommands[.transfer]?.id, transferID)
-        check.nil_("a lagging prior-owner connection is not a confirmation", rejected.transportCommandResolutions[transferID])
+        check.equal(
+            "a lagging prior-owner connection does not confirm", rejected.pendingCommands[.transfer]?.id, transferID)
+        check.nil_(
+            "a lagging prior-owner connection is not a confirmation", rejected.transportCommandResolutions[transferID])
         _ = PlaybackReducer.reduce(
             &rejected,
             envelope: presentationEnvelope(
@@ -1848,12 +1987,14 @@ func runPlaybackCommandPresentationChecks(_ check: CheckRunner) {
             devices: [
                 PlaybackDevice(id: "mac", name: "Mac", type: "computer"),
                 PlaybackDevice(id: "speaker-a", name: "Speaker A", type: "speaker", isActive: true),
-                deviceB
+                deviceB,
             ],
             revision: 1
         )
         check.equal("a lagging prior-owner devices snapshot keeps the target", laggingDevices.owner, expectedB)
-        check.equal("a lagging prior-owner devices snapshot does not confirm", laggingDevices.pendingCommands[.transfer]?.id, transferID)
+        check.equal(
+            "a lagging prior-owner devices snapshot does not confirm", laggingDevices.pendingCommands[.transfer]?.id,
+            transferID)
         _ = PlaybackReducer.reduce(
             &laggingDevices,
             envelope: presentationEnvelope(
@@ -1896,7 +2037,9 @@ func runPlaybackCommandPresentationChecks(_ check: CheckRunner) {
             )
         )
         check.check("a late failure after transfer confirmation is accepted to consume the entry", lateFailure)
-        check.nil_("a late failure after transfer confirmation consumes the resolution", confirmed.transportCommandResolutions[confirmedID])
+        check.nil_(
+            "a late failure after transfer confirmation consumes the resolution",
+            confirmed.transportCommandResolutions[confirmedID])
         check.equal("a late failure after transfer confirmation keeps B", confirmed.owner, remoteB)
         check.equal(
             "a captured transfer confirmation still reports success after consume-only acceptance",
@@ -1927,7 +2070,9 @@ func runPlaybackCommandPresentationChecks(_ check: CheckRunner) {
         connectionOwner(&renamed, owner: renamedB, revision: 1)
         check.equal("a same-id renamed target still confirms", renamed.owner, renamedB)
         check.nil_("a same-id renamed target confirms the command", renamed.pendingCommands[.transfer])
-        check.equal("a same-id renamed target records confirmation", renamed.transportCommandResolutions[confirmedID], .confirmed)
+        check.equal(
+            "a same-id renamed target records confirmation", renamed.transportCommandResolutions[confirmedID],
+            .confirmed)
 
         var devicesConfirmed = PlaybackState(
             accountEpoch: 1,
@@ -1942,13 +2087,16 @@ func runPlaybackCommandPresentationChecks(_ check: CheckRunner) {
             devices: [
                 PlaybackDevice(id: "mac", name: "Mac", type: "computer"),
                 PlaybackDevice(id: "speaker-a", name: "Speaker A", type: "speaker"),
-                PlaybackDevice(id: "speaker-b", name: "Speaker B", type: "speaker", isActive: true)
+                PlaybackDevice(id: "speaker-b", name: "Speaker B", type: "speaker", isActive: true),
             ],
             revision: 1
         )
         check.equal("an active-B devices snapshot confirms the transfer", devicesConfirmed.owner, remoteB)
-        check.nil_("an active-B devices snapshot clears the pending transfer", devicesConfirmed.pendingCommands[.transfer])
-        check.equal("an active-B devices snapshot records confirmation", devicesConfirmed.transportCommandResolutions[confirmedID], .confirmed)
+        check.nil_(
+            "an active-B devices snapshot clears the pending transfer", devicesConfirmed.pendingCommands[.transfer])
+        check.equal(
+            "an active-B devices snapshot records confirmation",
+            devicesConfirmed.transportCommandResolutions[confirmedID], .confirmed)
 
         var uncertainTarget = PlaybackState(
             accountEpoch: 1,
@@ -1960,8 +2108,10 @@ func runPlaybackCommandPresentationChecks(_ check: CheckRunner) {
         startTransfer(&uncertainTarget, id: transferID, expected: expectedB)
         connectionOwner(&uncertainTarget, owner: expectedB, revision: 1)
         check.equal("an uncertain target copy keeps the admitted owner", uncertainTarget.owner, expectedB)
-        check.equal("an uncertain target copy does not confirm", uncertainTarget.pendingCommands[.transfer]?.id, transferID)
-        check.nil_("an uncertain target copy is not a confirmation", uncertainTarget.transportCommandResolutions[transferID])
+        check.equal(
+            "an uncertain target copy does not confirm", uncertainTarget.pendingCommands[.transfer]?.id, transferID)
+        check.nil_(
+            "an uncertain target copy is not a confirmation", uncertainTarget.transportCommandResolutions[transferID])
         _ = PlaybackReducer.reduce(
             &uncertainTarget,
             envelope: presentationEnvelope(
@@ -2067,12 +2217,16 @@ func runPlaybackCommandPresentationChecks(_ check: CheckRunner) {
         startTransfer(&localSupersede, id: localID, expected: expectedB)
         connectionOwner(&localSupersede, owner: localMac, revision: 1)
         check.equal("an unrelated local owner supersedes the remote target", localSupersede.owner, localMac)
-        check.equal("an unrelated local owner records supersession", localSupersede.transportCommandResolutions[localID], .superseded)
+        check.equal(
+            "an unrelated local owner records supersession", localSupersede.transportCommandResolutions[localID],
+            .superseded)
         _ = PlaybackReducer.reduce(
             &localSupersede,
             envelope: presentationEnvelope(
                 source: .command,
-                event: .commandFinished(id: localID, accepted: false, notice: PlaybackNotice(message: "Could not move playback to Speaker B"))
+                event: .commandFinished(
+                    id: localID, accepted: false,
+                    notice: PlaybackNotice(message: "Could not move playback to Speaker B"))
             )
         )
         check.equal("a late failure after local supersession keeps this Mac", localSupersede.owner, localMac)
@@ -2087,7 +2241,9 @@ func runPlaybackCommandPresentationChecks(_ check: CheckRunner) {
         startTransfer(&noneSupersede, id: noneID, expected: expectedB)
         connectionOwner(&noneSupersede, owner: .none, revision: 1)
         check.equal("an unrelated empty owner supersedes the remote target", noneSupersede.owner, .none)
-        check.equal("an unrelated empty owner records supersession", noneSupersede.transportCommandResolutions[noneID], .superseded)
+        check.equal(
+            "an unrelated empty owner records supersession", noneSupersede.transportCommandResolutions[noneID],
+            .superseded)
         _ = PlaybackReducer.reduce(
             &noneSupersede,
             envelope: presentationEnvelope(
@@ -2106,10 +2262,14 @@ func runPlaybackCommandPresentationChecks(_ check: CheckRunner) {
         )
         startTransfer(&noneRollback, id: noneRollbackID, expected: expectedB)
         check.equal("a transfer from none still presents the target", noneRollback.owner, expectedB)
-        check.equal("a transfer from none captures empty rollback", noneRollback.pendingCommands[.transfer]?.rollbackOwner, Optional(PlaybackOwner.none))
+        check.equal(
+            "a transfer from none captures empty rollback", noneRollback.pendingCommands[.transfer]?.rollbackOwner,
+            Optional(PlaybackOwner.none))
         connectionOwner(&noneRollback, owner: .none, revision: 1)
         check.equal("a lagging empty prior owner keeps the target", noneRollback.owner, expectedB)
-        check.equal("a lagging empty prior owner keeps the pending command", noneRollback.pendingCommands[.transfer]?.id, noneRollbackID)
+        check.equal(
+            "a lagging empty prior owner keeps the pending command", noneRollback.pendingCommands[.transfer]?.id,
+            noneRollbackID)
         check.nil_(
             "a lagging empty prior owner is not a resolution",
             noneRollback.transportCommandResolutions[noneRollbackID]
@@ -2142,8 +2302,11 @@ func runPlaybackCommandPresentationChecks(_ check: CheckRunner) {
             laterTransfer.transportCommandResolutions[confirmedID],
             .confirmed
         )
-        check.equal("a later transfer is the pending transfer command", laterTransfer.pendingCommands[.transfer]?.id, laterID)
-        check.equal("a later transfer captures confirmed B as rollback", laterTransfer.pendingCommands[.transfer]?.rollbackOwner, Optional(remoteB))
+        check.equal(
+            "a later transfer is the pending transfer command", laterTransfer.pendingCommands[.transfer]?.id, laterID)
+        check.equal(
+            "a later transfer captures confirmed B as rollback",
+            laterTransfer.pendingCommands[.transfer]?.rollbackOwner, Optional(remoteB))
         check.equal("a later transfer presents D", laterTransfer.owner, PlaybackOwner.uncertain(deviceD))
         let capturedLaterConfirmation = laterTransfer.transportCommandResolutions[confirmedID]
         let lateFirstFinish = PlaybackReducer.reduce(
@@ -2158,8 +2321,12 @@ func runPlaybackCommandPresentationChecks(_ check: CheckRunner) {
             )
         )
         check.check("a late first transfer finish after a later transfer consumes the first entry", lateFirstFinish)
-        check.nil_("a late first transfer finish removes the first resolution", laterTransfer.transportCommandResolutions[confirmedID])
-        check.equal("a late first transfer finish leaves the later command pending", laterTransfer.pendingCommands[.transfer]?.id, laterID)
+        check.nil_(
+            "a late first transfer finish removes the first resolution",
+            laterTransfer.transportCommandResolutions[confirmedID])
+        check.equal(
+            "a late first transfer finish leaves the later command pending",
+            laterTransfer.pendingCommands[.transfer]?.id, laterID)
         check.equal("a late first transfer finish keeps D", laterTransfer.owner, PlaybackOwner.uncertain(deviceD))
         check.equal(
             "a late first transfer finish still reports success for the confirmed id",
@@ -2182,7 +2349,9 @@ func runPlaybackCommandPresentationChecks(_ check: CheckRunner) {
             &laterTransfer,
             envelope: presentationEnvelope(
                 source: .command,
-                event: .commandFinished(id: laterID, accepted: false, notice: PlaybackNotice(message: "Could not move playback to Speaker D"))
+                event: .commandFinished(
+                    id: laterID, accepted: false,
+                    notice: PlaybackNotice(message: "Could not move playback to Speaker D"))
             )
         )
         check.equal("a rejected later transfer restores confirmed B", laterTransfer.owner, remoteB)
@@ -2197,19 +2366,24 @@ func runPlaybackCommandPresentationChecks(_ check: CheckRunner) {
             &localTransfer,
             envelope: presentationEnvelope(
                 source: .command,
-                event: .commandStarted(PendingPlaybackCommand(
-                    id: localID,
-                    kind: .transfer,
-                    expectedTransport: nil,
-                    startedAt: presentationDate
-                ))
+                event: .commandStarted(
+                    PendingPlaybackCommand(
+                        id: localID,
+                        kind: .transfer,
+                        expectedTransport: nil,
+                        startedAt: presentationDate
+                    ))
             )
         )
         check.equal("transfer-to-this-Mac does not invent an owner target", localTransfer.owner, ownerA)
-        check.nil_("transfer-to-this-Mac does not capture owner rollback", localTransfer.pendingCommands[.transfer]?.rollbackOwner)
+        check.nil_(
+            "transfer-to-this-Mac does not capture owner rollback",
+            localTransfer.pendingCommands[.transfer]?.rollbackOwner)
         connectionOwner(&localTransfer, owner: ownerA, revision: 1)
         check.equal("transfer-to-this-Mac still adopts connection owner A", localTransfer.owner, ownerA)
-        check.equal("a lagging A snapshot does not confirm a local transfer", localTransfer.pendingCommands[.transfer]?.id, localID)
+        check.equal(
+            "a lagging A snapshot does not confirm a local transfer", localTransfer.pendingCommands[.transfer]?.id,
+            localID)
         _ = PlaybackReducer.reduce(
             &localTransfer,
             envelope: presentationEnvelope(

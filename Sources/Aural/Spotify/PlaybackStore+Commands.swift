@@ -136,11 +136,13 @@ extension PlaybackStore {
         completion: @escaping @MainActor (Bool) -> Void,
         operation: @escaping @MainActor () async throws -> Result<Void, PlaybackCommandFailure>
     ) {
-        guard playbackCommandShouldAdmit(
-            isTearingDown: isTearingDown,
-            allowsCommands: terminationGate.allowsCommands,
-            hasPendingCommandForKind: state.pendingCommands[kind] != nil
-        ) else {
+        guard
+            playbackCommandShouldAdmit(
+                isTearingDown: isTearingDown,
+                allowsCommands: terminationGate.allowsCommands,
+                hasPendingCommandForKind: state.pendingCommands[kind] != nil
+            )
+        else {
             completion(false)
             return
         }
@@ -148,17 +150,18 @@ extension PlaybackStore {
         let epoch = accountEpoch
         let engineEpoch = engineGeneration
         let started = send(
-            .commandStarted(PendingPlaybackCommand(
-                id: commandID,
-                kind: kind,
-                expectedTransport: expectedPlaybackState.map { $0 ? .playing : .paused },
-                expectedTiming: expectedTiming,
-                expectedTrack: expectedTrack,
-                expectedShuffle: expectedShuffle,
-                expectedRepeatFlags: expectedRepeatFlags,
-                expectedOwner: expectedOwner,
-                startedAt: environment.clock.now()
-            )),
+            .commandStarted(
+                PendingPlaybackCommand(
+                    id: commandID,
+                    kind: kind,
+                    expectedTransport: expectedPlaybackState.map { $0 ? .playing : .paused },
+                    expectedTiming: expectedTiming,
+                    expectedTrack: expectedTrack,
+                    expectedShuffle: expectedShuffle,
+                    expectedRepeatFlags: expectedRepeatFlags,
+                    expectedOwner: expectedOwner,
+                    startedAt: environment.clock.now()
+                )),
             source: .command
         )
         guard started else {
@@ -214,15 +217,17 @@ extension PlaybackStore {
         capturedEngineEpoch: UInt64,
         completion: @escaping @MainActor (Bool) -> Void
     ) {
-        guard playbackCommandShouldSettleOrdinaryCancellation(
-            pendingCommandID: state.pendingCommands[kind]?.id,
-            cancelledCommandID: commandID,
-            capturedAccountEpoch: capturedAccountEpoch,
-            capturedEngineEpoch: capturedEngineEpoch,
-            currentAccountEpoch: accountEpoch,
-            currentEngineEpoch: engineGeneration,
-            isTearingDown: isTearingDown
-        ) else { return }
+        guard
+            playbackCommandShouldSettleOrdinaryCancellation(
+                pendingCommandID: state.pendingCommands[kind]?.id,
+                cancelledCommandID: commandID,
+                capturedAccountEpoch: capturedAccountEpoch,
+                capturedEngineEpoch: capturedEngineEpoch,
+                currentAccountEpoch: accountEpoch,
+                currentEngineEpoch: engineGeneration,
+                isTearingDown: isTearingDown
+            )
+        else { return }
         let finished = send(
             .commandFinished(id: commandID, accepted: false, notice: nil),
             source: .command,
@@ -303,11 +308,13 @@ extension PlaybackStore {
 
     func showTransientCommandError(_ message: String) {
         setNotice(message)
-        effects.replace(.commandError, with: Task { [weak self] in
-            try? await self?.environment.clock.sleep(seconds: 4)
-            guard !Task.isCancelled else { return }
-            self?.setNotice(nil)
-        })
+        effects.replace(
+            .commandError,
+            with: Task { [weak self] in
+                try? await self?.environment.clock.sleep(seconds: 4)
+                guard !Task.isCancelled else { return }
+                self?.setNotice(nil)
+            })
     }
 
 }

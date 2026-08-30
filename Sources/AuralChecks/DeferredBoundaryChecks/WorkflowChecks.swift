@@ -199,13 +199,14 @@ private actor ControlledMetadataRemote: RemotePlaybackClient {
     func complete(_ uri: String) {
         guard let continuation = continuations.removeValue(forKey: uri) else { return }
         activeRequests -= 1
-        continuation.resume(returning: SpotifyConnectTrackMetadata(
-            uri: uri,
-            title: "Title \(uri)",
-            artist: "Artist",
-            artworkURL: nil,
-            duration: 180
-        ))
+        continuation.resume(
+            returning: SpotifyConnectTrackMetadata(
+                uri: uri,
+                title: "Title \(uri)",
+                artist: "Artist",
+                artworkURL: nil,
+                duration: 180
+            ))
     }
 
     private func cancel(_ uri: String) {
@@ -338,7 +339,8 @@ private struct WorkflowCatalog: CatalogProviding {
 func runWorkflowChecks(_ runner: CheckRunner) async {
     runner.suite("Sidebar navigation serialization") {
         let selection = SidebarSelection.playlist("spotify:playlist:sensitive-fixture")
-        runner.equal("selection round-trips through scene storage", SidebarSelection(rawValue: selection.rawValue), selection)
+        runner.equal(
+            "selection round-trips through scene storage", SidebarSelection(rawValue: selection.rawValue), selection)
         runner.equal("diagnostics retain the media kind", selection.diagnosticLabel, "media:playlist")
         runner.check("diagnostics omit the Spotify entity id", !selection.diagnosticLabel.contains("sensitive-fixture"))
     }
@@ -403,7 +405,8 @@ func runWorkflowChecks(_ runner: CheckRunner) async {
             contextURI: "spotify:track:fresh"
         )
         runner.equal("new-account queue remains authoritative", accepted?.snapshot.accountEpoch, 8)
-        runner.equal("new-account queue retains fresh entry", accepted?.snapshot.entries.first?.uri, "spotify:track:fresh")
+        runner.equal(
+            "new-account queue retains fresh entry", accepted?.snapshot.entries.first?.uri, "spotify:track:fresh")
 
         let wrongAccount = await service.acceptConnect(
             [QueueEntry(uri: "spotify:track:wrong", provider: "connect", occurrence: 0)],
@@ -424,7 +427,8 @@ func runWorkflowChecks(_ runner: CheckRunner) async {
         await service.reset(accountEpoch: 1)
         _ = await service.refresh(fallbackEntries: [], currentTrackURI: nil, accountEpoch: 1)
         _ = await service.refresh(fallbackEntries: [], currentTrackURI: nil, accountEpoch: 1)
-        runner.equal("a 429 starts a session cooldown instead of retrying on every open", await webQueue.requestCount, 1)
+        runner.equal(
+            "a 429 starts a session cooldown instead of retrying on every open", await webQueue.requestCount, 1)
 
         await service.reset(accountEpoch: 2)
         _ = await service.refresh(fallbackEntries: [], currentTrackURI: nil, accountEpoch: 2)
@@ -586,7 +590,7 @@ func runWorkflowChecks(_ runner: CheckRunner) async {
         let metadata = TrackMetadataService(remote: remote)
         let service = QueueService(webQueue: UnavailableWebQueue(), metadata: metadata)
         await service.reset(accountEpoch: 3)
-        let entries = (0 ..< 12).map {
+        let entries = (0..<12).map {
             QueueEntry(uri: "spotify:track:\($0)", provider: "queue", occurrence: $0)
         }
         var updates: [ProvenanceQueueSnapshot] = []
@@ -778,23 +782,25 @@ func runWorkflowChecks(_ runner: CheckRunner) async {
         runner.equal("logout shuts the engine down once", engine.count("shutdown"), 1)
         runner.equal("logout clears presentation", player.trackURI, "")
 
-        engine.emit(RustPlaybackEventEnvelope(
-            sequence: 99,
-            receivedAt: Date(),
-            event: .playback(RustPlaybackState(
-                revision: 99,
-                sessionGeneration: 0,
-                isPlaying: true,
-                isPaused: false,
-                trackURI: "spotify:track:stale",
-                positionMS: 1_000,
-                durationMS: 10_000,
-                timestampMS: nil,
-                shuffle: false,
-                repeatTrack: false,
-                repeatContext: false
+        engine.emit(
+            RustPlaybackEventEnvelope(
+                sequence: 99,
+                receivedAt: Date(),
+                event: .playback(
+                    RustPlaybackState(
+                        revision: 99,
+                        sessionGeneration: 0,
+                        isPlaying: true,
+                        isPaused: false,
+                        trackURI: "spotify:track:stale",
+                        positionMS: 1_000,
+                        durationMS: 10_000,
+                        timestampMS: nil,
+                        shuffle: false,
+                        repeatTrack: false,
+                        repeatContext: false
+                    ))
             ))
-        ))
         await Task.yield()
         runner.equal("old engine callback cannot repopulate signed-out state", player.trackURI, "")
 

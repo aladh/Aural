@@ -129,7 +129,8 @@ private actor LifecycleRemoteClient: RemotePlaybackClient {
     }
 
     func finish(success: Bool) {
-        let result: Result<Void, Error> = success
+        let result: Result<Void, Error> =
+            success
             ? .success(())
             : .failure(LifecycleRemoteFailure.boom)
         if let waiting = continuation {
@@ -209,7 +210,9 @@ private struct IdleAttributes: TrackAttributesProviding {
 private enum LifecycleCheckFailure: Error { case unavailable }
 
 private struct IdleCatalog: CatalogProviding {
-    func searchTracks(_: String, limit _: Int) async throws -> [PathfinderTrack] { throw LifecycleCheckFailure.unavailable }
+    func searchTracks(_: String, limit _: Int) async throws -> [PathfinderTrack] {
+        throw LifecycleCheckFailure.unavailable
+    }
     func home() async throws -> PathfinderHome { throw LifecycleCheckFailure.unavailable }
     func libraryPlaylists() async throws -> [PathfinderPlaylist] { throw LifecycleCheckFailure.unavailable }
     func libraryAlbums() async throws -> [PathfinderAlbum] { throw LifecycleCheckFailure.unavailable }
@@ -296,40 +299,43 @@ private func seedRoute(_ player: PlaybackStore, _ route: LifecycleRoute) {
     switch route {
     case .local:
         _ = player.send(
-            .devices(PlaybackDeviceSnapshot(
-                devices: [
-                    PlaybackDevice(id: "mac", name: "Mac", type: "computer", isActive: true),
-                    PlaybackDevice(id: "speaker-b", name: "Speaker B", type: "speaker")
-                ],
-                localDeviceID: "mac",
-                revision: 1
-            )),
+            .devices(
+                PlaybackDeviceSnapshot(
+                    devices: [
+                        PlaybackDevice(id: "mac", name: "Mac", type: "computer", isActive: true),
+                        PlaybackDevice(id: "speaker-b", name: "Speaker B", type: "speaker"),
+                    ],
+                    localDeviceID: "mac",
+                    revision: 1
+                )),
             source: .engineDevices,
             revision: 1
         )
     case .remote:
         _ = player.send(
-            .devices(PlaybackDeviceSnapshot(
-                devices: [
-                    PlaybackDevice(id: "mac", name: "Mac", type: "computer", isActive: false),
-                    PlaybackDevice(id: "speaker-a", name: "Speaker A", type: "speaker", isActive: true),
-                    PlaybackDevice(id: "speaker-b", name: "Speaker B", type: "speaker"),
-                    PlaybackDevice(id: "phone", name: "Phone", type: "smartphone")
-                ],
-                localDeviceID: "mac",
-                revision: 1
-            )),
+            .devices(
+                PlaybackDeviceSnapshot(
+                    devices: [
+                        PlaybackDevice(id: "mac", name: "Mac", type: "computer", isActive: false),
+                        PlaybackDevice(id: "speaker-a", name: "Speaker A", type: "speaker", isActive: true),
+                        PlaybackDevice(id: "speaker-b", name: "Speaker B", type: "speaker"),
+                        PlaybackDevice(id: "phone", name: "Phone", type: "smartphone"),
+                    ],
+                    localDeviceID: "mac",
+                    revision: 1
+                )),
             source: .engineDevices,
             revision: 1
         )
         _ = player.send(.owner(lifecycleOwnerA), source: .command)
     }
     _ = player.send(
-        .presentation(PlaybackPresentationSnapshot(
-            currentTrack: lifecycleTrackA,
-            transport: .playing,
-            timing: lifecycleTiming
-        )),
+        .presentation(
+            PlaybackPresentationSnapshot(
+                currentTrack: lifecycleTrackA,
+                transport: .playing,
+                timing: lifecycleTiming
+            )),
         source: .user
     )
     _ = player.send(.options(PlaybackOptions(shuffle: false, repeatMode: .off)), source: .user)
@@ -346,7 +352,8 @@ private func startLifecycleCommand(
         player.performRoutedCommand(
             kind.action,
             expecting: true,
-            expectedTiming: PlaybackTiming(position: 0, duration: 180, anchoredAt: Date(timeIntervalSince1970: 1_800_000_000)),
+            expectedTiming: PlaybackTiming(
+                position: 0, duration: 180, anchoredAt: Date(timeIntervalSince1970: 1_800_000_000)),
             expectedTrack: lifecycleTrackB,
             local: .playURI(lifecycleTrackB.uri),
             remote: .play(uri: lifecycleTrackB.uri),
@@ -382,33 +389,37 @@ private func confirm(_ player: PlaybackStore, kind: LifecycleKind, revision: UIn
     switch kind {
     case .transport:
         _ = player.send(
-            .enginePlayback(EnginePlaybackSnapshot(
-                transport: .playing,
-                trackURI: lifecycleTrackB.uri,
-                timing: PlaybackTiming(position: 0, duration: 180, anchoredAt: Date(timeIntervalSince1970: 1_800_000_000))
-            )),
+            .enginePlayback(
+                EnginePlaybackSnapshot(
+                    transport: .playing,
+                    trackURI: lifecycleTrackB.uri,
+                    timing: PlaybackTiming(
+                        position: 0, duration: 180, anchoredAt: Date(timeIntervalSince1970: 1_800_000_000))
+                )),
             source: .enginePlayback,
             revision: revision
         )
     case .options:
         _ = player.send(
-            .enginePlayback(EnginePlaybackSnapshot(
-                transport: .playing,
-                trackURI: lifecycleTrackA.uri,
-                timing: lifecycleTiming,
-                repeatMode: .context,
-                repeatFlags: RepeatMode.context.flags
-            )),
+            .enginePlayback(
+                EnginePlaybackSnapshot(
+                    transport: .playing,
+                    trackURI: lifecycleTrackA.uri,
+                    timing: lifecycleTiming,
+                    repeatMode: .context,
+                    repeatFlags: RepeatMode.context.flags
+                )),
             source: .enginePlayback,
             revision: revision
         )
     case .transfer:
         _ = player.send(
-            .engineConnection(EngineConnectionSnapshot(
-                session: .ready,
-                owner: lifecycleRemoteB,
-                localDeviceID: "mac"
-            )),
+            .engineConnection(
+                EngineConnectionSnapshot(
+                    session: .ready,
+                    owner: lifecycleRemoteB,
+                    localDeviceID: "mac"
+                )),
             source: .engineConnection,
             revision: revision
         )
@@ -420,33 +431,37 @@ private func supersede(_ player: PlaybackStore, kind: LifecycleKind, revision: U
     switch kind {
     case .transport:
         _ = player.send(
-            .enginePlayback(EnginePlaybackSnapshot(
-                transport: .playing,
-                trackURI: lifecycleTrackC.uri,
-                timing: PlaybackTiming(position: 0, duration: 160, anchoredAt: Date(timeIntervalSince1970: 1_800_000_000))
-            )),
+            .enginePlayback(
+                EnginePlaybackSnapshot(
+                    transport: .playing,
+                    trackURI: lifecycleTrackC.uri,
+                    timing: PlaybackTiming(
+                        position: 0, duration: 160, anchoredAt: Date(timeIntervalSince1970: 1_800_000_000))
+                )),
             source: .enginePlayback,
             revision: revision
         )
     case .options:
         _ = player.send(
-            .enginePlayback(EnginePlaybackSnapshot(
-                transport: .playing,
-                trackURI: lifecycleTrackA.uri,
-                timing: lifecycleTiming,
-                repeatMode: .track,
-                repeatFlags: RepeatMode.track.flags
-            )),
+            .enginePlayback(
+                EnginePlaybackSnapshot(
+                    transport: .playing,
+                    trackURI: lifecycleTrackA.uri,
+                    timing: lifecycleTiming,
+                    repeatMode: .track,
+                    repeatFlags: RepeatMode.track.flags
+                )),
             source: .enginePlayback,
             revision: revision
         )
     case .transfer:
         _ = player.send(
-            .engineConnection(EngineConnectionSnapshot(
-                session: .ready,
-                owner: lifecycleOwnerC,
-                localDeviceID: "mac"
-            )),
+            .engineConnection(
+                EngineConnectionSnapshot(
+                    session: .ready,
+                    owner: lifecycleOwnerC,
+                    localDeviceID: "mac"
+                )),
             source: .engineConnection,
             revision: revision
         )
@@ -468,7 +483,9 @@ func runPlaybackCommandLifecycleParityChecks(_ runner: CheckRunner) async {
             var completions: [Bool] = []
             startLifecycleCommand(player, kind: kind) { completions.append($0) }
             runner.equal("\(kind.rawValue) waiting route completes immediately as failure", completions, [false])
-            runner.check("\(kind.rawValue) waiting route does not create a pending command", player.state.pendingCommands.isEmpty)
+            runner.check(
+                "\(kind.rawValue) waiting route does not create a pending command", player.state.pendingCommands.isEmpty
+            )
             await player.shutdownForTermination()
         }
     }
@@ -494,7 +511,8 @@ func runPlaybackCommandLifecycleParityChecks(_ runner: CheckRunner) async {
                 runner.equal("\(label) confirmation-free success completion", successCompletions, [true])
                 runner.nil_("\(label) success has no command notice", success.transientCommandError)
                 runner.equal("\(label) success does not reconnect", successAccount.authorizeCount, 0)
-                runner.nil_("\(label) success leaves no pending command", success.state.pendingCommands[kind.commandKind])
+                runner.nil_(
+                    "\(label) success leaves no pending command", success.state.pendingCommands[kind.commandKind])
                 await success.shutdownForTermination()
 
                 let rejected = lifecycleStore(
@@ -510,7 +528,8 @@ func runPlaybackCommandLifecycleParityChecks(_ runner: CheckRunner) async {
                 runner.check("\(label) rejection finishes", rejectedFinished)
                 runner.equal("\(label) rejection completion", rejectedCompletions, [false])
                 runner.equal("\(label) rejection uses the action notice", rejected.transientCommandError, kind.action)
-                runner.nil_("\(label) rejection leaves no pending command", rejected.state.pendingCommands[kind.commandKind])
+                runner.nil_(
+                    "\(label) rejection leaves no pending command", rejected.state.pendingCommands[kind.commandKind])
                 await rejected.shutdownForTermination()
 
                 if route == .local {
@@ -531,7 +550,9 @@ func runPlaybackCommandLifecycleParityChecks(_ runner: CheckRunner) async {
                     let reconnectFinished = await waitUntil { !reconnectCompletions.isEmpty }
                     runner.check("\(label) reconnect-required finishes", reconnectFinished)
                     runner.equal("\(label) reconnect-required completion", reconnectCompletions, [false])
-                    runner.equal("\(label) reconnect-required uses the action notice", reconnect.transientCommandError, kind.action)
+                    runner.equal(
+                        "\(label) reconnect-required uses the action notice", reconnect.transientCommandError,
+                        kind.action)
                     let reconnectStarted = await waitUntil { reconnectAccount.authorizeCount == 1 }
                     runner.check("\(label) reconnect-required starts connect", reconnectStarted)
                     runner.equal("\(label) reconnect-required connect count", reconnectAccount.authorizeCount, 1)
@@ -552,7 +573,9 @@ func runPlaybackCommandLifecycleParityChecks(_ runner: CheckRunner) async {
                 let firstID = duplicate.state.pendingCommands[kind.commandKind]?.id
                 startLifecycleCommand(duplicate, kind: kind) { duplicateCompletions.append($0) }
                 runner.equal("\(label) duplicate completes immediately as failure", duplicateCompletions, [false])
-                runner.equal("\(label) duplicate keeps the original command", duplicate.state.pendingCommands[kind.commandKind]?.id, firstID)
+                runner.equal(
+                    "\(label) duplicate keeps the original command",
+                    duplicate.state.pendingCommands[kind.commandKind]?.id, firstID)
                 if route == .local {
                     duplicateLocal.finish(with: .ok)
                 } else {
@@ -574,7 +597,9 @@ func runPlaybackCommandLifecycleParityChecks(_ runner: CheckRunner) async {
                 runner.check("\(label) command is pending before confirmation", confirmPending)
                 let confirmedID = confirmed.state.pendingCommands[kind.commandKind]?.id
                 confirm(confirmed, kind: kind, revision: 1)
-                runner.nil_("\(label) authoritative snapshot confirms the command", confirmed.state.pendingCommands[kind.commandKind])
+                runner.nil_(
+                    "\(label) authoritative snapshot confirms the command",
+                    confirmed.state.pendingCommands[kind.commandKind])
                 runner.equal(
                     "\(label) authoritative snapshot records confirmation",
                     confirmedID.flatMap { confirmed.state.transportCommandResolutions[$0] },
@@ -587,7 +612,8 @@ func runPlaybackCommandLifecycleParityChecks(_ runner: CheckRunner) async {
                 }
                 let confirmFinished = await waitUntil { !confirmedCompletions.isEmpty }
                 runner.check("\(label) confirmed command still finishes", confirmFinished)
-                runner.equal("\(label) confirmed then coordinator failure reports success", confirmedCompletions, [true])
+                runner.equal(
+                    "\(label) confirmed then coordinator failure reports success", confirmedCompletions, [true])
                 await confirmed.shutdownForTermination()
 
                 let supersedeLocal = LifecycleLocalEngine(result: .error, gated: true)
@@ -601,7 +627,9 @@ func runPlaybackCommandLifecycleParityChecks(_ runner: CheckRunner) async {
                 let supersedePending = await waitUntil { superseded.state.pendingCommands[kind.commandKind] != nil }
                 runner.check("\(label) command is pending before supersession", supersedePending)
                 supersede(superseded, kind: kind, revision: 1)
-                runner.nil_("\(label) unrelated snapshot clears the pending command", superseded.state.pendingCommands[kind.commandKind])
+                runner.nil_(
+                    "\(label) unrelated snapshot clears the pending command",
+                    superseded.state.pendingCommands[kind.commandKind])
                 if route == .local {
                     supersedeLocal.finish(with: .error)
                     let supersedeReached = await waitUntil { supersedeLocal.executeCount == 1 }
@@ -611,8 +639,10 @@ func runPlaybackCommandLifecycleParityChecks(_ runner: CheckRunner) async {
                     let supersedeReached = await waitUntil { await supersedeRemote.sendCount >= 1 }
                     runner.check("\(label) superseded command still reaches the remote fixture", supersedeReached)
                 }
-                runner.check("\(label) superseded then coordinator failure reports no completion", supersededCompletions.isEmpty)
-                runner.nil_("\(label) superseded then coordinator failure has no notice", superseded.transientCommandError)
+                runner.check(
+                    "\(label) superseded then coordinator failure reports no completion", supersededCompletions.isEmpty)
+                runner.nil_(
+                    "\(label) superseded then coordinator failure has no notice", superseded.transientCommandError)
                 await superseded.shutdownForTermination()
 
                 let staleLocal = LifecycleLocalEngine(result: .ok, gated: true)
@@ -631,7 +661,9 @@ func runPlaybackCommandLifecycleParityChecks(_ runner: CheckRunner) async {
                     revision: 1,
                     engineEpoch: stale.engineGeneration + 1
                 )
-                runner.nil_("\(label) engine-epoch bump drops the pending command", stale.state.pendingCommands[kind.commandKind])
+                runner.nil_(
+                    "\(label) engine-epoch bump drops the pending command",
+                    stale.state.pendingCommands[kind.commandKind])
                 if route == .local {
                     staleLocal.finish(with: .ok)
                     let staleReached = await waitUntil { staleLocal.executeCount == 1 }
@@ -670,13 +702,22 @@ func runPlaybackCommandLifecycleParityChecks(_ runner: CheckRunner) async {
                 }
                 runner.check("\(label) ordinary cancellation settles", cancelSettled)
                 runner.equal("\(label) ordinary cancellation reports failure once", cancelCompletions, [false])
-                runner.nil_("\(label) ordinary cancellation clears the pending command", cancelled.state.pendingCommands[kind.commandKind])
+                runner.nil_(
+                    "\(label) ordinary cancellation clears the pending command",
+                    cancelled.state.pendingCommands[kind.commandKind])
                 runner.nil_("\(label) ordinary cancellation has no command notice", cancelled.transientCommandError)
-                runner.equal("\(label) ordinary cancellation restores captured transport", cancelled.state.transport, prior.transport)
-                runner.equal("\(label) ordinary cancellation restores captured timing", cancelled.state.timing, prior.timing)
-                runner.equal("\(label) ordinary cancellation restores captured track", cancelled.state.currentTrack, prior.currentTrack)
-                runner.equal("\(label) ordinary cancellation restores captured options", cancelled.state.options, prior.options)
-                runner.equal("\(label) ordinary cancellation restores captured owner", cancelled.state.owner, prior.owner)
+                runner.equal(
+                    "\(label) ordinary cancellation restores captured transport", cancelled.state.transport,
+                    prior.transport)
+                runner.equal(
+                    "\(label) ordinary cancellation restores captured timing", cancelled.state.timing, prior.timing)
+                runner.equal(
+                    "\(label) ordinary cancellation restores captured track", cancelled.state.currentTrack,
+                    prior.currentTrack)
+                runner.equal(
+                    "\(label) ordinary cancellation restores captured options", cancelled.state.options, prior.options)
+                runner.equal(
+                    "\(label) ordinary cancellation restores captured owner", cancelled.state.owner, prior.owner)
                 if route == .local {
                     cancelLocal.finish(with: .ok)
                 } else {
@@ -709,24 +750,34 @@ func runPlaybackCommandLifecycleParityChecks(_ runner: CheckRunner) async {
                 seedRoute(confirmCancelled, route)
                 var confirmCancelCompletions: [Bool] = []
                 startLifecycleCommand(confirmCancelled, kind: kind) { confirmCancelCompletions.append($0) }
-                let confirmCancelPending = await waitUntil { confirmCancelled.state.pendingCommands[kind.commandKind] != nil }
+                let confirmCancelPending = await waitUntil {
+                    confirmCancelled.state.pendingCommands[kind.commandKind] != nil
+                }
                 runner.check("\(label) command is pending before confirmed cancellation", confirmCancelPending)
                 let confirmCancelID = confirmCancelled.state.pendingCommands[kind.commandKind]?.id
                 confirm(confirmCancelled, kind: kind, revision: 1)
-                runner.nil_("\(label) confirmation clears the pending command before cancel", confirmCancelled.state.pendingCommands[kind.commandKind])
+                runner.nil_(
+                    "\(label) confirmation clears the pending command before cancel",
+                    confirmCancelled.state.pendingCommands[kind.commandKind])
                 if let commandID = confirmCancelID {
                     confirmCancelled.effects.cancel(.command(commandID))
                 }
                 runner.check("\(label) confirmed cancellation reports no completion", confirmCancelCompletions.isEmpty)
                 runner.nil_("\(label) confirmed cancellation has no notice", confirmCancelled.transientCommandError)
                 if kind == .transport {
-                    runner.equal("\(label) confirmed cancellation keeps the target track", confirmCancelled.state.currentTrack?.uri, lifecycleTrackB.uri)
+                    runner.equal(
+                        "\(label) confirmed cancellation keeps the target track",
+                        confirmCancelled.state.currentTrack?.uri, lifecycleTrackB.uri)
                 }
                 if kind == .options {
-                    runner.equal("\(label) confirmed cancellation keeps context repeat", confirmCancelled.state.options.repeatMode, RepeatMode.context)
+                    runner.equal(
+                        "\(label) confirmed cancellation keeps context repeat",
+                        confirmCancelled.state.options.repeatMode, RepeatMode.context)
                 }
                 if kind == .transfer {
-                    runner.equal("\(label) confirmed cancellation keeps the target owner", confirmCancelled.state.owner, lifecycleRemoteB)
+                    runner.equal(
+                        "\(label) confirmed cancellation keeps the target owner", confirmCancelled.state.owner,
+                        lifecycleRemoteB)
                 }
                 if route == .local {
                     confirmCancelLocal.finish(with: .ok)
@@ -743,24 +794,35 @@ func runPlaybackCommandLifecycleParityChecks(_ runner: CheckRunner) async {
                 seedRoute(supersedeCancelled, route)
                 var supersedeCancelCompletions: [Bool] = []
                 startLifecycleCommand(supersedeCancelled, kind: kind) { supersedeCancelCompletions.append($0) }
-                let supersedeCancelPending = await waitUntil { supersedeCancelled.state.pendingCommands[kind.commandKind] != nil }
+                let supersedeCancelPending = await waitUntil {
+                    supersedeCancelled.state.pendingCommands[kind.commandKind] != nil
+                }
                 runner.check("\(label) command is pending before superseded cancellation", supersedeCancelPending)
                 let supersedeCancelID = supersedeCancelled.state.pendingCommands[kind.commandKind]?.id
                 supersede(supersedeCancelled, kind: kind, revision: 1)
-                runner.nil_("\(label) supersession clears the pending command before cancel", supersedeCancelled.state.pendingCommands[kind.commandKind])
+                runner.nil_(
+                    "\(label) supersession clears the pending command before cancel",
+                    supersedeCancelled.state.pendingCommands[kind.commandKind])
                 if let commandID = supersedeCancelID {
                     supersedeCancelled.effects.cancel(.command(commandID))
                 }
-                runner.check("\(label) superseded cancellation reports no completion", supersedeCancelCompletions.isEmpty)
+                runner.check(
+                    "\(label) superseded cancellation reports no completion", supersedeCancelCompletions.isEmpty)
                 runner.nil_("\(label) superseded cancellation has no notice", supersedeCancelled.transientCommandError)
                 if kind == .transport {
-                    runner.equal("\(label) superseded cancellation keeps the unrelated track", supersedeCancelled.state.currentTrack?.uri, lifecycleTrackC.uri)
+                    runner.equal(
+                        "\(label) superseded cancellation keeps the unrelated track",
+                        supersedeCancelled.state.currentTrack?.uri, lifecycleTrackC.uri)
                 }
                 if kind == .options {
-                    runner.equal("\(label) superseded cancellation keeps track repeat", supersedeCancelled.state.options.repeatMode, RepeatMode.track)
+                    runner.equal(
+                        "\(label) superseded cancellation keeps track repeat",
+                        supersedeCancelled.state.options.repeatMode, RepeatMode.track)
                 }
                 if kind == .transfer {
-                    runner.equal("\(label) superseded cancellation keeps the unrelated owner", supersedeCancelled.state.owner, lifecycleOwnerC)
+                    runner.equal(
+                        "\(label) superseded cancellation keeps the unrelated owner", supersedeCancelled.state.owner,
+                        lifecycleOwnerC)
                 }
                 if route == .local {
                     supersedeCancelLocal.finish(with: .ok)
@@ -777,7 +839,9 @@ func runPlaybackCommandLifecycleParityChecks(_ runner: CheckRunner) async {
                 seedRoute(staleCancelled, route)
                 var staleCancelCompletions: [Bool] = []
                 startLifecycleCommand(staleCancelled, kind: kind) { staleCancelCompletions.append($0) }
-                let staleCancelPending = await waitUntil { staleCancelled.state.pendingCommands[kind.commandKind] != nil }
+                let staleCancelPending = await waitUntil {
+                    staleCancelled.state.pendingCommands[kind.commandKind] != nil
+                }
                 runner.check("\(label) command is pending before stale cancellation", staleCancelPending)
                 let staleCancelID = staleCancelled.state.pendingCommands[kind.commandKind]?.id
                 _ = staleCancelled.send(
@@ -786,7 +850,9 @@ func runPlaybackCommandLifecycleParityChecks(_ runner: CheckRunner) async {
                     revision: 1,
                     engineEpoch: staleCancelled.engineGeneration + 1
                 )
-                runner.nil_("\(label) engine-epoch bump drops the pending command before cancel", staleCancelled.state.pendingCommands[kind.commandKind])
+                runner.nil_(
+                    "\(label) engine-epoch bump drops the pending command before cancel",
+                    staleCancelled.state.pendingCommands[kind.commandKind])
                 if let commandID = staleCancelID {
                     staleCancelled.effects.cancel(.command(commandID))
                 }
@@ -823,7 +889,8 @@ func runPlaybackCommandLifecycleParityChecks(_ runner: CheckRunner) async {
                 await teardown.shutdownForTermination()
                 for _ in 0..<50 { await Task.yield() }
                 runner.check("\(label) teardown reports no completion", teardownCompletions.isEmpty)
-                runner.nil_("\(label) teardown leaves no pending command", teardown.state.pendingCommands[kind.commandKind])
+                runner.nil_(
+                    "\(label) teardown leaves no pending command", teardown.state.pendingCommands[kind.commandKind])
             }
         }
     }

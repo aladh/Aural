@@ -59,11 +59,13 @@ public enum CheckSuiteRegistration {
         excludingDirectoryNames: Set<String> = [],
         excludingFileNames: Set<String> = []
     ) throws -> [String] {
-        guard let enumerator = FileManager.default.enumerator(
-            at: directory,
-            includingPropertiesForKeys: [.isRegularFileKey, .isDirectoryKey],
-            options: [.skipsHiddenFiles]
-        ) else {
+        guard
+            let enumerator = FileManager.default.enumerator(
+                at: directory,
+                includingPropertiesForKeys: [.isRegularFileKey, .isDirectoryKey],
+                options: [.skipsHiddenFiles]
+            )
+        else {
             return []
         }
 

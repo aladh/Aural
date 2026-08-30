@@ -227,7 +227,7 @@ public struct ProtobufReader {
         guard count >= 0, data.distance(from: index, to: data.endIndex) >= count else { return nil }
         let end = data.index(index, offsetBy: count)
         defer { index = end }
-        return data[index ..< end]
+        return data[index..<end]
     }
 
     private static func littleEndianUInt64(_ bytes: Data) -> UInt64 {

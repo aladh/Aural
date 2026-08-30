@@ -180,13 +180,13 @@ public enum QueueAddFeedbackPolicy: Sendable {
 public enum LocalQueueReplacementCapability: Sendable {
     public static let isSupported = false
     public static let evidence = """
-    librespot Spirc at 9c7d75615fc093bdcbdb29adbce3fed38c531852 exposes add_to_queue, load, \
-    play/pause, skip, shuffle, repeat, transfer, activate, and disconnect. SetQueueCommand is \
-    inbound-only (spirc.rs handle of dealer SetQueue). Device is_restricted in Aural's cluster \
-    mapping is hardcoded false and is not a restriction signal. Follow-up: a panic-barrier FFI \
-    that performs the same connect_state.set_next_tracks/set_prev_tracks replacement Spirc \
-    already applies for remote SetQueue, or a proven same-device HTTP set_queue path.
-    """
+        librespot Spirc at 9c7d75615fc093bdcbdb29adbce3fed38c531852 exposes add_to_queue, load, \
+        play/pause, skip, shuffle, repeat, transfer, activate, and disconnect. SetQueueCommand is \
+        inbound-only (spirc.rs handle of dealer SetQueue). Device is_restricted in Aural's cluster \
+        mapping is hardcoded false and is not a restriction signal. Follow-up: a panic-barrier FFI \
+        that performs the same connect_state.set_next_tracks/set_prev_tracks replacement Spirc \
+        already applies for remote SetQueue, or a proven same-device HTTP set_queue path.
+        """
 }
 
 /// Occurrence-safe upcoming-queue selection. History and now-playing are never part of the
@@ -336,7 +336,7 @@ public enum QueueMutationPolicy: Sendable {
         if !isConnected { return .failure(.notConnected) }
         if selectedIDs.isEmpty { return .failure(.nothingSelected) }
         if let nowPlayingID, selectedIDs.contains(nowPlayingID),
-           selectedIDs.isSubset(of: [nowPlayingID])
+            selectedIDs.isSubset(of: [nowPlayingID])
         {
             return .failure(.nowPlayingOrHistory)
         }
@@ -376,39 +376,46 @@ public enum QueueMutationPolicy: Sendable {
             return .failure(.provisional)
         }
         guard mutation.source == .connect,
-              mutation.completeness == .complete
+            mutation.completeness == .complete
         else {
             return .failure(.incompleteProvenance)
         }
         guard !mutation.disallowSetQueue, !mutation.disallowRemovingFromNextTracks else {
             return .failure(.restricted)
         }
-        guard QueueProtocolProjection.matchesVisibleUpcoming(
-            protocolNext: mutation.next,
-            visible: visibleUpcoming
-        ) else {
+        guard
+            QueueProtocolProjection.matchesVisibleUpcoming(
+                protocolNext: mutation.next,
+                visible: visibleUpcoming
+            )
+        else {
             return .failure(.incompleteProvenance)
         }
-        guard QueueProtocolProjection.identitiesAreProven(
-            protocolNext: mutation.next,
-            visible: visibleUpcoming
-        ) else {
+        guard
+            QueueProtocolProjection.identitiesAreProven(
+                protocolNext: mutation.next,
+                visible: visibleUpcoming
+            )
+        else {
             return .failure(.staleIdentities)
         }
-        guard let remaining = QueueProtocolProjection.removingUpcomingOccurrences(
-            selectedIDs: targeted,
-            visibleUpcoming: visibleUpcoming,
-            protocolNext: mutation.next
-        ) else {
+        guard
+            let remaining = QueueProtocolProjection.removingUpcomingOccurrences(
+                selectedIDs: targeted,
+                visibleUpcoming: visibleUpcoming,
+                protocolNext: mutation.next
+            )
+        else {
             return .failure(.staleIdentities)
         }
         let removedCount = mutation.next.count - remaining.count
         guard removedCount > 0 else { return .failure(.nothingSelected) }
-        return .success(QueueReplacement(
-            next: remaining,
-            prev: mutation.prev,
-            queueRevision: mutation.queueRevision,
-            removedCount: removedCount
-        ))
+        return .success(
+            QueueReplacement(
+                next: remaining,
+                prev: mutation.prev,
+                queueRevision: mutation.queueRevision,
+                removedCount: removedCount
+            ))
     }
 }

@@ -146,13 +146,15 @@ func runCommandEffectRegistryChecks(_ runner: CheckRunner) async {
         runner.check("completing the superseded task did not drop the replacement", replacementCancelled.isSet)
     }
 
-    await runner.suite("PlaybackEffectRegistry replace runs the previous onCancel") {
+    runner.suite("PlaybackEffectRegistry replace runs the previous onCancel") {
         let effects = PlaybackEffectRegistry()
         let commandID = UUID()
         let previousCancelled = CancellationFlag()
-        effects.replace(.command(commandID), with: Task<Void, Never> {}, onCancel: {
-            previousCancelled.mark()
-        })
+        effects.replace(
+            .command(commandID), with: Task<Void, Never> {},
+            onCancel: {
+                previousCancelled.mark()
+            })
         effects.replace(.command(commandID), with: Task<Void, Never> {})
         runner.check("replacing a token runs the previous onCancel", previousCancelled.isSet)
     }

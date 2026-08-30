@@ -41,7 +41,9 @@ func runTrackTableDisplayCacheChecks(_ check: CheckRunner) {
 
         let seeded = CatalogTrackCollection(tracks: [track(id: "seed", title: "Seed")])
         check.check("seeded construction mints its own version", seeded.version != collection.version)
-        check.check("two fresh owners mint distinct versions", CatalogTrackCollection().version != CatalogTrackCollection().version)
+        check.check(
+            "two fresh owners mint distinct versions",
+            CatalogTrackCollection().version != CatalogTrackCollection().version)
     }
 
     check.suite("Track table display cache") {
@@ -77,7 +79,7 @@ func runTrackTableDisplayCacheChecks(_ check: CheckRunner) {
         check.equal("title ascending uses the native comparator", cache.rows.map(\.id), ["alpha", "beta", "gamma"])
 
         let titleDescending: [KeyPathComparator<CatalogTrack>] = [
-            KeyPathComparator(\.title, order: .reverse),
+            KeyPathComparator(\.title, order: .reverse)
         ]
         check.check("descending recomputes", cache.update(collection, sortOrder: titleDescending))
         check.equal("title descending reverses the column", cache.rows.map(\.id), ["gamma", "beta", "alpha"])
