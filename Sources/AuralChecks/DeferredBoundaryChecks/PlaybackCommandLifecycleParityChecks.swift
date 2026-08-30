@@ -723,6 +723,11 @@ func runPlaybackCommandLifecycleParityChecks(_ runner: CheckRunner) async {
                 } else {
                     await cancelRemote.finish(success: true)
                 }
+                let cancelledFixtureReleased = await waitUntil {
+                    if route == .local { return cancelLocal.executeCount == 1 }
+                    return await cancelRemote.completedCount == 1
+                }
+                runner.check("\(label) cancelled fixture releases before reuse", cancelledFixtureReleased)
 
                 var nextCompletions: [Bool] = []
                 startLifecycleCommand(cancelled, kind: kind) { nextCompletions.append($0) }
@@ -732,6 +737,11 @@ func runPlaybackCommandLifecycleParityChecks(_ runner: CheckRunner) async {
                     "\(label) the later command is a new id",
                     cancelled.state.pendingCommands[kind.commandKind]?.id != cancelledID
                 )
+                let nextReached = await waitUntil {
+                    if route == .local { return cancelLocal.enteredCount == 2 }
+                    return await cancelRemote.sendCount >= 2
+                }
+                runner.check("\(label) later command reaches the fixture before completion", nextReached)
                 if route == .local {
                     cancelLocal.finish(with: .ok)
                 } else {
