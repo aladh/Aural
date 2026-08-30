@@ -189,8 +189,6 @@ final class PlaybackStore {
     /// but must not be counted as something the listener just played in this Aural session.
     @ObservationIgnored var hasReceivedPlaybackSnapshot = false
     @ObservationIgnored let effects = PlaybackEffectRegistry()
-    /// Nil until tried, true after a successful documented queue request, false after the
-    /// desktop grant is rejected by api.spotify.com for this session.
     /// True between `endSession` starting and the next `initializePlayer`. Backend events
     /// are delivered as detached tasks, so one queued just before a logout can land after
     /// the presentation was cleared; without this gate it would mark a signed-out

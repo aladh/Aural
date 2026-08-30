@@ -77,8 +77,8 @@ func runPrivacySanitizationChecks(_ check: CheckRunner) async {
         await expectFailure(
             check,
             "Partner GraphQL",
-            PartnerAPIError.graphQLErrors,
-            description: "Spotify returned a GraphQL error",
+            PartnerAPIError.graphQLErrors("profileAttributes"),
+            description: "Spotify returned a GraphQL error for profileAttributes",
             perform: {
                 _ = try await partnerAPI(
                     status: 200,
