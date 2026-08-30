@@ -60,6 +60,11 @@ final class AlbumDetailStore {
             }
             await lifetime.run(handle) { [weak self] in
                 guard let self else { return }
+                defer {
+                    if self.lifetime.owns(handle) {
+                        isLoading = false
+                    }
+                }
                 do {
                     let album = try await provider.album(id: id)
                     guard self.lifetime.isCurrent(handle, selectedURI: self.item?.uri) else { return }
@@ -75,9 +80,6 @@ final class AlbumDetailStore {
                         return
                     }
                     self.error = error.localizedDescription
-                }
-                if self.lifetime.owns(handle) {
-                    isLoading = false
                 }
             }
         }
@@ -130,6 +132,11 @@ final class ArtistDetailStore {
             }
             await lifetime.run(handle) { [weak self] in
                 guard let self else { return }
+                defer {
+                    if self.lifetime.owns(handle) {
+                        isLoading = false
+                    }
+                }
                 do {
                     async let overview = provider.artist(id: id)
                     async let discography = provider.artistDiscography(id: id)
@@ -143,9 +150,6 @@ final class ArtistDetailStore {
                         return
                     }
                     self.error = error.localizedDescription
-                }
-                if self.lifetime.owns(handle) {
-                    isLoading = false
                 }
             }
         }

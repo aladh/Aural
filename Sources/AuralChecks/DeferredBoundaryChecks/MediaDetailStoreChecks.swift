@@ -228,6 +228,19 @@ private func waitUntil(_ condition: @MainActor () async -> Bool) async -> Bool {
 }
 
 @MainActor
+private func waitUntilArtistPair(
+    _ provider: GatedArtistCatalog,
+    overview: Int,
+    discography: Int
+) async -> Bool {
+    await waitUntil {
+        let overviewCount = await provider.overviewRequestCount
+        let discographyCount = await provider.discographyRequestCount
+        return overviewCount == overview && discographyCount == discography
+    }
+}
+
+@MainActor
 private struct AlbumLoadProbe {
     let task: Task<Void, Never>
     let hasEntered: () -> Bool
@@ -562,7 +575,7 @@ func runMediaDetailStoreChecks(_ runner: CheckRunner) async {
         let firstLoad = Task { await store.load(firstArtistItem) }
         runner.check(
             "artist overview and discography both park",
-            await waitUntil { await provider.overviewRequestCount == 1 && await provider.discographyRequestCount == 1 }
+            await waitUntilArtistPair(provider, overview: 1, discography: 1)
         )
         let follower = startJoiningArtistLoad(store, item: firstArtistItem)
         runner.check(
@@ -606,12 +619,12 @@ func runMediaDetailStoreChecks(_ runner: CheckRunner) async {
         let stale = Task { await store.load(firstArtistItem) }
         runner.check(
             "the superseded artist pair parks",
-            await waitUntil { await provider.overviewRequestCount == 1 && await provider.discographyRequestCount == 1 }
+            await waitUntilArtistPair(provider, overview: 1, discography: 1)
         )
         let current = Task { await store.load(secondArtistItem) }
         runner.check(
             "a different artist starts a new parallel pair",
-            await waitUntil { await provider.overviewRequestCount == 2 && await provider.discographyRequestCount == 2 }
+            await waitUntilArtistPair(provider, overview: 2, discography: 2)
         )
         runner.equal("the newest artist is presented immediately", store.item?.uri, "spotify:artist:second")
         runner.equal("a new artist clears previous releases", store.releases.map(\.uri), [])
@@ -642,7 +655,7 @@ func runMediaDetailStoreChecks(_ runner: CheckRunner) async {
         let inflight = Task { await store.load(firstArtistItem) }
         runner.check(
             "the torn-down artist pair parks",
-            await waitUntil { await provider.overviewRequestCount == 1 && await provider.discographyRequestCount == 1 }
+            await waitUntilArtistPair(provider, overview: 1, discography: 1)
         )
         store.reset()
         runner.check("reset clears artist loading", !store.isLoading)
