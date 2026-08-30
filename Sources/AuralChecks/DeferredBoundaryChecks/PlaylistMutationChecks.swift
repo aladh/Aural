@@ -141,11 +141,11 @@ private let ownedAfterRemovalJSON = """
     {"uri":"spotify:playlist:owned","name":"Owned Mix","description":null,"ownerV2":{"data":{"username":"me","name":"Me","uri":"spotify:user:me"}},"content":{"totalCount":1,"items":[{"uid":"uid-b","itemV2":{"data":{"uri":"spotify:track:dup","name":"Dup","trackDuration":{"totalMilliseconds":1000}}}}]}}
     """
 private let ownedAfterAddJSON = """
-{"uri":"spotify:playlist:owned","name":"Owned Mix","description":null,"ownerV2":{"data":{"username":"me","name":"Me","uri":"spotify:user:me"}},"content":{"totalCount":3,"items":[{"uid":"uid-a","itemV2":{"data":{"uri":"spotify:track:dup","name":"Dup","trackDuration":{"totalMilliseconds":1000}}}},{"uid":"uid-b","itemV2":{"data":{"uri":"spotify:track:dup","name":"Dup","trackDuration":{"totalMilliseconds":1000}}}},{"uid":"uid-c","itemV2":{"data":{"uri":"spotify:track:new","name":"New","trackDuration":{"totalMilliseconds":1000}}}}]}}
-"""
+    {"uri":"spotify:playlist:owned","name":"Owned Mix","description":null,"ownerV2":{"data":{"username":"me","name":"Me","uri":"spotify:user:me"}},"content":{"totalCount":3,"items":[{"uid":"uid-a","itemV2":{"data":{"uri":"spotify:track:dup","name":"Dup","trackDuration":{"totalMilliseconds":1000}}}},{"uid":"uid-b","itemV2":{"data":{"uri":"spotify:track:dup","name":"Dup","trackDuration":{"totalMilliseconds":1000}}}},{"uid":"uid-c","itemV2":{"data":{"uri":"spotify:track:new","name":"New","trackDuration":{"totalMilliseconds":1000}}}}]}}
+    """
 private let foreignContentsJSON = """
-{"uri":"spotify:playlist:foreign","name":"Foreign Mix","description":null,"ownerV2":{"data":{"username":"them","name":"Them","uri":"spotify:user:them"}},"content":{"totalCount":1,"items":[{"uid":"uid-f","itemV2":{"data":{"uri":"spotify:track:other","name":"Other","trackDuration":{"totalMilliseconds":1000}}}}]}}
-"""
+    {"uri":"spotify:playlist:foreign","name":"Foreign Mix","description":null,"ownerV2":{"data":{"username":"them","name":"Them","uri":"spotify:user:them"}},"content":{"totalCount":1,"items":[{"uid":"uid-f","itemV2":{"data":{"uri":"spotify:track:other","name":"Other","trackDuration":{"totalMilliseconds":1000}}}}]}}
+    """
 
 @MainActor
 private func makeCatalog(
@@ -526,16 +526,28 @@ func runPlaylistMutationChecks(_ runner: CheckRunner) async {
         }
         runner.equal("committed add still reports mutation success", feedback.message?.kind, .success)
         runner.equal("committed add still names the playlist", feedback.message?.text, "Added to Owned Mix")
-        runner.equal("failed reload keeps the previous nonempty rows", catalog.playlistStore.tracks.map(\.id), loadedIDs)
+        runner.equal(
+            "failed reload keeps the previous nonempty rows",
+            catalog.playlistStore.tracks.map(\.id),
+            loadedIDs
+        )
         runner.notNil("failed reload records a refresh error beside those rows", catalog.playlistStore.error)
         runner.equal("failed reload does not send another add", await services.addCalls.count, 1)
         runner.equal("forced reconcile attempted one playlist read", await services.playlistLoadCount, loadsBefore + 1)
 
         await catalog.playlistStore.load(owned, force: true)
         runner.notNil("retry failure keeps the stale-refresh error", catalog.playlistStore.error)
-        runner.equal("retry failure still keeps the previous rows", catalog.playlistStore.tracks.map(\.id), loadedIDs)
+        runner.equal(
+            "retry failure still keeps the previous rows",
+            catalog.playlistStore.tracks.map(\.id),
+            loadedIDs
+        )
         runner.equal("retry does not repeat the add", await services.addCalls.count, 1)
-        runner.equal("retry failure loads the open playlist once more", await services.playlistLoadCount, loadsBefore + 2)
+        runner.equal(
+            "retry failure loads the open playlist once more",
+            await services.playlistLoadCount,
+            loadsBefore + 2
+        )
 
         await services.setPlaylistError(nil)
         do {
@@ -582,7 +594,11 @@ func runPlaylistMutationChecks(_ runner: CheckRunner) async {
                 && feedback.message?.text == "Removed from Owned Mix"
         }
         runner.equal("committed remove still reports mutation success", feedback.message?.kind, .success)
-        runner.equal("failed remove reload keeps previous nonempty rows", catalog.playlistStore.tracks.map(\.id), loadedIDs)
+        runner.equal(
+            "failed remove reload keeps previous nonempty rows",
+            catalog.playlistStore.tracks.map(\.id),
+            loadedIDs
+        )
         runner.notNil("failed remove reload records a refresh error", catalog.playlistStore.error)
         runner.equal("failed remove reload does not send another removal", await services.removeCalls.count, 1)
         feedback.dismiss()
@@ -661,7 +677,11 @@ func runPlaylistMutationChecks(_ runner: CheckRunner) async {
             }
             await catalog.playlistStore.load(foreign)
             runner.nil_("switching playlists clears the previous stale-refresh error", catalog.playlistStore.error)
-            runner.equal("switching playlists loads the new playlist rows", catalog.playlistStore.tracks.map(\.id), ["uid-f"])
+            runner.equal(
+                "switching playlists loads the new playlist rows",
+                catalog.playlistStore.tracks.map(\.id),
+                ["uid-f"]
+            )
         }
         runner.equal("playlist switch does not send another add", await services.addCalls.count, 1)
         feedback.dismiss()
