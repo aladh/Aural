@@ -308,6 +308,34 @@ if rg -n 'security@example\.com|replace this placeholder' \
     exit 1
 fi
 
+# The debug quality gate must keep using an existing runner rg, cache only repo-local
+# SwiftPM products (including the redirected module cache), and leave Rust caching alone.
+ci_workflow="$project_root/.github/workflows/ci.yml"
+if [[ ! -f "$ci_workflow" ]]; then
+    print -u2 "CI workflow is missing"
+    exit 1
+fi
+if ! rg -q 'command -v rg' "$ci_workflow"; then
+    print -u2 "CI must use an existing rg before Homebrew ripgrep"
+    exit 1
+fi
+if ! rg -q 'brew install ripgrep' "$ci_workflow"; then
+    print -u2 "CI must still install ripgrep when the runner has no rg"
+    exit 1
+fi
+if rg -q 'brew untap aws/tap' "$ci_workflow"; then
+    print -u2 "CI must not keep the aws/tap Homebrew workaround"
+    exit 1
+fi
+if ! rg -q 'key: macos-rust-\$\{\{ hashFiles\(' "$ci_workflow"; then
+    print -u2 "CI must keep the existing Rust cache key"
+    exit 1
+fi
+if ! rg -U -q --fixed-strings $'          echo "SWIFT_TOOLCHAIN_KEY=$(shasum -a 256 "$RUNNER_TEMP/swift-toolchain.txt" | awk \'{print $1}\')" >> "$GITHUB_ENV"\n\n      - name: Cache SwiftPM build directory\n        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0\n        with:\n          path: |\n            .build/*\n            !.build/aural-signing\n          key: macos-swiftpm-${{ runner.os }}-${{ runner.arch }}-${{ env.SWIFT_TOOLCHAIN_KEY }}-${{ hashFiles(\'Package.swift\', \'Package.resolved\') }}-${{ github.sha }}\n          restore-keys: |\n            macos-swiftpm-${{ runner.os }}-${{ runner.arch }}-${{ env.SWIFT_TOOLCHAIN_KEY }}-' "$ci_workflow"; then
+    print -u2 "CI must hash the Swift toolchain, then cache .build with a per-commit key and compatible restore prefix"
+    exit 1
+fi
+
 plutil -lint "$project_root/Packaging/Info.plist"
 
 print "Aural checks passed ($build_configuration): Rust, ABI, native app, domain, concrete boundary, architecture, and packaging checks are green"
