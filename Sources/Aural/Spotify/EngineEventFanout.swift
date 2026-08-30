@@ -13,10 +13,15 @@ import Foundation
 /// yield; other emitters only enqueue. Mixed-kind `bufferingNewest(64)` eviction is unchanged.
 nonisolated final class EngineEventFanout: @unchecked Sendable {
     private let lock = NSLock()
+    private let clock: any PlaybackClock
     private var continuations: [UUID: AsyncStream<RustPlaybackEventEnvelope>.Continuation] = [:]
     private var pending: [RustPlaybackEventEnvelope] = []
     private var sequence: UInt64 = 0
     private var delivering = false
+
+    init(clock: any PlaybackClock) {
+        self.clock = clock
+    }
 
     /// `onStart` runs after the continuation is installed and the lock is released, matching the
     /// engine's "subscribe before synchronous registration" rule. `onTermination` runs after the
@@ -41,13 +46,14 @@ nonisolated final class EngineEventFanout: @unchecked Sendable {
     /// `afterPrepare` runs after this envelope's sequence is assigned and it is queued, and before
     /// this thread yields or returns. Tests use it to force A-before-B assignment and B-before-A
     /// scheduling. It must not wait on this drain completing if it also calls `emit`.
+    /// `receivedAt` is the injected clock at assignment; backend/source revisions stay on the payload.
     func emit(_ event: RustPlaybackEvent, afterPrepare: (@Sendable () -> Void)? = nil) {
         lock.lock()
         sequence &+= 1
         pending.append(
             RustPlaybackEventEnvelope(
                 sequence: sequence,
-                receivedAt: Date(),
+                receivedAt: clock.now(),
                 event: event
             )
         )

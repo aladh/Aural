@@ -1052,6 +1052,45 @@ func runPlaybackReducerChecks(_ check: CheckRunner) {
         )
         check.check("a stale-engine position refresh is rejected", !staleEngine)
         check.equal("a stale-engine position refresh is inert", state, beforeStaleEngine)
+
+        _ = PlaybackReducer.reduce(
+            &state,
+            envelope: envelope(account: 2, engine: 3, source: .user, event: .transport(.paused))
+        )
+        check.equal("pause transport keeps the existing timing anchor", state.timing.anchoredAt, traceDate)
+
+        let seekAt = traceDate.addingTimeInterval(30)
+        _ = PlaybackReducer.reduce(
+            &state,
+            envelope: envelope(
+                account: 2,
+                engine: 3,
+                source: .user,
+                event: .timing(position: 80, duration: 200, anchoredAt: seekAt)
+            )
+        )
+        check.equal("seek replaces the pause anchor", state.timing.anchoredAt, seekAt)
+
+        _ = PlaybackReducer.reduce(
+            &state,
+            envelope: envelope(
+                account: 2,
+                engine: 3,
+                source: .enginePlayback,
+                revision: 7,
+                event: .enginePlayback(EnginePlaybackSnapshot(
+                    transport: .playing,
+                    trackURI: "spotify:track:now",
+                    timing: PlaybackTiming(position: 81, duration: 200, anchoredAt: seekAt.addingTimeInterval(1))
+                ))
+            )
+        )
+        check.equal(
+            "engine timing uses the snapshot anchor, not the source revision",
+            state.timing.anchoredAt,
+            seekAt.addingTimeInterval(1)
+        )
+        check.equal("engine playback records the backend revision separately", state.sourceRevisions[.enginePlayback], 7)
     }
 
     check.suite("Queue precedence and identity") {
