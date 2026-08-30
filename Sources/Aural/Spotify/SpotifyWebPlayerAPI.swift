@@ -49,8 +49,10 @@ nonisolated struct SpotifyWebPlayerAPI: Sendable {
     }
 
     func queue() async throws -> [CatalogTrack] {
+        // QueueService owns 429 cooldown and Connect fallback. Generic safe-read
+        // replay would sleep through Retry-After before that policy could run.
         let sent = try await SpotifyCredentials.retryingRefusedCredentials(
-            replay: .safe,
+            replay: .unsafe,
             retryTiming: retryTiming,
             invalidateAccessToken: invalidateAccessToken
         ) {
