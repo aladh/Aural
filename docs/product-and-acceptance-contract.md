@@ -106,7 +106,9 @@ ADRs; historical measurements belong in the performance baseline.
   not advertise or route those commands.
 - Successful add/remove refresh only the affected open playlist and report through
   `TransientFeedbackPresenter`. Failure, cancellation, and stale account/session results leave
-  presentation state unchanged.
+  presentation state unchanged. A committed write stays successful if that refresh fails; the open
+  playlist then keeps its previous rows, shows that they may be stale, and Retry reloads rows without
+  repeating the mutation.
 - Dragging selected tracks onto playlist rows is omitted. A native SwiftUI Table transfer
   representation serializes the dragged row rather than the occurrence-aware multi-selection;
   disabled drop targeting for non-editable rows could not be demonstrated without private
