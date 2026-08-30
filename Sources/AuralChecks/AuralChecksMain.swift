@@ -8,34 +8,37 @@ private struct RegisteredCheckSuite {
 
 @main
 enum AuralChecksMain {
-    static var suiteNames: [String] { suites.map(\.name) }
+    static var suiteNames: [String] { registeredSuites().map(\.name) }
 
-    private static let suites: [RegisteredCheckSuite] = [
-        RegisteredCheckSuite(name: "protobuf") { runProtobufChecks($0) },
-        RegisteredCheckSuite(name: "shuffle-policy") { runShufflePolicyChecks($0) },
-        RegisteredCheckSuite(name: "track-table-display-cache") { runTrackTableDisplayCacheChecks($0) },
-        RegisteredCheckSuite(name: "playback-support") { runPlaybackSupportChecks($0) },
-        RegisteredCheckSuite(name: "parsing") { runParsingChecks($0) },
-        RegisteredCheckSuite(name: "pagination-collect") { await runPaginationCollectChecks($0) },
-        RegisteredCheckSuite(name: "spotify-transient-retry") { runSpotifyTransientRetryChecks($0) },
-        RegisteredCheckSuite(name: "playback-projection-contract") { runPlaybackProjectionContractChecks($0) },
-        RegisteredCheckSuite(name: "playback-store-state-writer-contract") {
-            runPlaybackStoreStateWriterContractChecks($0)
-        },
-        RegisteredCheckSuite(name: "playback-reducer") { runPlaybackReducerChecks($0) },
-        RegisteredCheckSuite(name: "playback-command-presentation") { runPlaybackCommandPresentationChecks($0) },
-        RegisteredCheckSuite(name: "playback-command-lifecycle") { runPlaybackCommandLifecycleChecks($0) },
-        RegisteredCheckSuite(name: "playback-command-effect-spike") { runPlaybackCommandEffectSpikeChecks($0) },
-        RegisteredCheckSuite(name: "session-lifetime") { runSessionLifetimeChecks($0) },
-        RegisteredCheckSuite(name: "playlist-editability") { runPlaylistEditabilityChecks($0) },
-        RegisteredCheckSuite(name: "queue-mutation") { runQueueMutationChecks($0) },
-        RegisteredCheckSuite(name: "check-suite-selection") { runner in
-            runCheckSuiteSelectionChecks(runner, catalog: AuralChecksMain.suiteNames)
-        },
-    ]
+    static func registeredSuites() -> [RegisteredCheckSuite] {
+        [
+            RegisteredCheckSuite(name: "protobuf") { runProtobufChecks($0) },
+            RegisteredCheckSuite(name: "shuffle-policy") { runShufflePolicyChecks($0) },
+            RegisteredCheckSuite(name: "track-table-display-cache") { runTrackTableDisplayCacheChecks($0) },
+            RegisteredCheckSuite(name: "playback-support") { runPlaybackSupportChecks($0) },
+            RegisteredCheckSuite(name: "parsing") { runParsingChecks($0) },
+            RegisteredCheckSuite(name: "pagination-collect") { await runPaginationCollectChecks($0) },
+            RegisteredCheckSuite(name: "spotify-transient-retry") { runSpotifyTransientRetryChecks($0) },
+            RegisteredCheckSuite(name: "playback-projection-contract") { runPlaybackProjectionContractChecks($0) },
+            RegisteredCheckSuite(name: "playback-store-state-writer-contract") {
+                runPlaybackStoreStateWriterContractChecks($0)
+            },
+            RegisteredCheckSuite(name: "playback-reducer") { runPlaybackReducerChecks($0) },
+            RegisteredCheckSuite(name: "playback-command-presentation") { runPlaybackCommandPresentationChecks($0) },
+            RegisteredCheckSuite(name: "playback-command-lifecycle") { runPlaybackCommandLifecycleChecks($0) },
+            RegisteredCheckSuite(name: "playback-command-effect-spike") { runPlaybackCommandEffectSpikeChecks($0) },
+            RegisteredCheckSuite(name: "session-lifetime") { runSessionLifetimeChecks($0) },
+            RegisteredCheckSuite(name: "playlist-editability") { runPlaylistEditabilityChecks($0) },
+            RegisteredCheckSuite(name: "queue-mutation") { runQueueMutationChecks($0) },
+            RegisteredCheckSuite(name: "check-suite-selection") { runner in
+                runCheckSuiteSelectionChecks(runner, catalog: AuralChecksMain.suiteNames)
+            },
+        ]
+    }
 
     static func main() async {
-        let catalog = suiteNames
+        let suites = registeredSuites()
+        let catalog = suites.map(\.name)
         let launch = CheckSuiteLaunch.interpret(
             arguments: Array(CommandLine.arguments.dropFirst()),
             catalog: catalog,
@@ -48,7 +51,7 @@ enum AuralChecksMain {
         }
 
         let runner = CheckRunner()
-        let runs = Dictionary(uniqueKeysWithValues: Self.suites.map { ($0.name, $0.run) })
+        let runs = Dictionary(uniqueKeysWithValues: suites.map { ($0.name, $0.run) })
         for name in namesToRun {
             guard let run = runs[name] else {
                 writeCheckSelectionError("Check suite \(name) was selected but not registered.")
