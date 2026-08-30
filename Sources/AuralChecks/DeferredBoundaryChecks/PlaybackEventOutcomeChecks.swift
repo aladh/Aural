@@ -638,6 +638,7 @@ func runPlaybackEventOutcomeChecks(_ runner: CheckRunner) async {
         let cancelled = playbackStore(
             outcomeEnvironment(remote: ImmediateMetadataRemote(), webQueue: webQueue)
         )
+        await cancelled.restore()
         _ = cancelled.send(.session(.ready), source: .account)
         cancelled.catalogSession.update(accountEpoch: cancelled.accountEpoch, isAvailable: true)
         cancelled.refreshQueue()
@@ -751,6 +752,7 @@ func runPlaybackEventOutcomeChecks(_ runner: CheckRunner) async {
         let payloadStore = playbackStore(
             outcomeEnvironment(local: payloadEngine, remote: ImmediateMetadataRemote())
         )
+        await payloadStore.restore()
         seedReadyLocalPlayback(payloadStore, uri: uri)
         let mirroredGeneration = payloadStore.engineGeneration
         let payloadGeneration = mirroredGeneration + 1
@@ -788,6 +790,7 @@ func runPlaybackEventOutcomeChecks(_ runner: CheckRunner) async {
         let bumpedStore = playbackStore(
             outcomeEnvironment(local: bumpedEngine, remote: ImmediateMetadataRemote())
         )
+        await bumpedStore.restore()
         seedReadyLocalPlayback(bumpedStore, uri: uri)
         let beforeBump = bumpedStore.engineGeneration
         bumpedStore.refreshQueueSnapshot()
