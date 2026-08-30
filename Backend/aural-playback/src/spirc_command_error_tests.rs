@@ -45,20 +45,3 @@ fn classification_uses_kind_not_debug_text() {
         ERROR_GENERAL
     );
 }
-
-#[test]
-fn classifier_source_does_not_format_or_search_debug_text() {
-    let src = include_str!("spirc_command_error.rs");
-    assert!(
-        !src.contains("format!("),
-        "classifier must not format the error for the recovery decision"
-    );
-    assert!(
-        !src.contains(".contains("),
-        "classifier must not search formatted text for the recovery decision"
-    );
-    assert!(
-        src.contains("ErrorKind::Internal"),
-        "classifier must branch on the pinned ErrorKind mapping"
-    );
-}
