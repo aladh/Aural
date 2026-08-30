@@ -29,6 +29,7 @@ enum BoundaryChecksMain {
         await runPaginationWalkChecks(runner)
         await runWorkflowChecks(runner)
         await runHomeLibraryStoreChecks(runner)
+        await runMediaDetailStoreChecks(runner)
         await runAccountEpochOwnershipChecks(runner)
         await runCommandEffectRegistryChecks(runner)
         await runPlaybackCommandFailureChecks(runner)
