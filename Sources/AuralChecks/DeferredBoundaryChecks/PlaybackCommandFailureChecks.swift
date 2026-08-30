@@ -1826,6 +1826,8 @@ func runPlaybackCommandFailureChecks(_ runner: CheckRunner) async {
         if let commandID = cancelStore.state.pendingCommands[.transfer]?.id {
             cancelStore.effects.cancel(.command(commandID))
         }
+        let cancelSettled = await waitUntil { cancelStore.state.pendingCommands[.transfer] == nil }
+        runner.check("cancellation settles the pending transfer", cancelSettled)
         runner.equal("cancellation restores the captured owner", cancelStore.state.owner, ownerA)
         runner.nil_("cancellation clears the pending transfer", cancelStore.state.pendingCommands[.transfer])
         await cancelStore.shutdownForTermination()
