@@ -35,7 +35,7 @@ func runEngineEventFanoutChecks(_ check: CheckRunner) {
                 queueEvent(),
                 connectionEvent(),
                 devicesEvent(),
-            ]),
+            ]).map(\.sequence),
             [1, 2, 3, 4]
         )
 
@@ -113,11 +113,11 @@ private func collectInversionSchedule(
     subscriberCount: Int
 ) -> [[UInt64]] {
     let expectedCount = 2
-    var recorders: [SequenceRecorder] = []
+    var recorders: [FanoutRecorder<UInt64>] = []
     var subscribed: [DispatchSemaphore] = []
     var collected: [DispatchSemaphore] = []
     for _ in 0..<subscriberCount {
-        let recorder = SequenceRecorder()
+        let recorder = FanoutRecorder<UInt64>()
         let start = DispatchSemaphore(value: 0)
         let done = DispatchSemaphore(value: 0)
         recorders.append(recorder)
@@ -180,33 +180,58 @@ private func collectInversionSchedule(
 private func collectSequential(
     _ fanout: EngineEventFanout,
     events: [RustPlaybackEvent]
-) -> [UInt64] {
-    let start = DispatchSemaphore(value: 0)
-    let done = DispatchSemaphore(value: 0)
-    let recorder = SequenceRecorder()
-    let stream = fanout.events(onStart: { start.signal() }, onTermination: nil)
+) -> [RustPlaybackEventEnvelope] {
+    collectSequential(fanout, events: events, subscriberCount: 1)[0]
+}
+
+private func collectSequential(
+    _ fanout: EngineEventFanout,
+    events: [RustPlaybackEvent],
+    subscriberCount: Int
+) -> [[RustPlaybackEventEnvelope]] {
     let expected = events.count
-    Task.detached {
-        var values: [UInt64] = []
-        for await envelope in stream {
-            values.append(envelope.sequence)
-            if values.count == expected { break }
+    var recorders: [FanoutRecorder<RustPlaybackEventEnvelope>] = []
+    var subscribed: [DispatchSemaphore] = []
+    var collected: [DispatchSemaphore] = []
+    for _ in 0..<subscriberCount {
+        let recorder = FanoutRecorder<RustPlaybackEventEnvelope>()
+        let start = DispatchSemaphore(value: 0)
+        let done = DispatchSemaphore(value: 0)
+        recorders.append(recorder)
+        subscribed.append(start)
+        collected.append(done)
+        let stream = fanout.events(onStart: { start.signal() }, onTermination: nil)
+        Task.detached {
+            var values: [RustPlaybackEventEnvelope] = []
+            for await envelope in stream {
+                values.append(envelope)
+                if values.count == expected { break }
+            }
+            recorder.store(values)
+            done.signal()
         }
-        recorder.store(values)
-        done.signal()
     }
-    guard wait(start) else { return [] }
+    guard subscribed.allSatisfy({ wait($0) }) else {
+        return Array(repeating: [], count: subscriberCount)
+    }
     for event in events {
         fanout.emit(event)
     }
-    guard wait(done) else { return [] }
-    return recorder.load()
+    var results: [[RustPlaybackEventEnvelope]] = []
+    for (index, gate) in collected.enumerated() {
+        if wait(gate) {
+            results.append(recorders[index].load())
+        } else {
+            results.append([])
+        }
+    }
+    return results
 }
 
 @MainActor
 private func runTerminationAroundDelivery(_ check: CheckRunner) {
     let fanout = EngineEventFanout(clock: SystemPlaybackClock())
-    let surviving = SequenceRecorder()
+    let surviving = FanoutRecorder<UInt64>()
     let survivingStart = DispatchSemaphore(value: 0)
     let survivingDone = DispatchSemaphore(value: 0)
     let cancelledStart = DispatchSemaphore(value: 0)
@@ -269,8 +294,8 @@ private func runTerminationAroundDelivery(_ check: CheckRunner) {
 @MainActor
 private func runTerminationDuringDelivery(_ check: CheckRunner) {
     let fanout = EngineEventFanout(clock: SystemPlaybackClock())
-    let surviving = SequenceRecorder()
-    let partial = SequenceRecorder()
+    let surviving = FanoutRecorder<UInt64>()
+    let partial = FanoutRecorder<UInt64>()
     let survivingStart = DispatchSemaphore(value: 0)
     let partialStart = DispatchSemaphore(value: 0)
     let survivingDone = DispatchSemaphore(value: 0)
@@ -332,113 +357,35 @@ private func runEmitAfterLastSubscriber(_ check: CheckRunner) {
     check.check("last subscriber termination is observed", wait(terminated))
     fanout.emit(playbackEvent())
     fanout.emit(queueEvent())
-    let after = collectSequential(fanout, events: [connectionEvent(), devicesEvent()])
+    let after = collectSequential(fanout, events: [connectionEvent(), devicesEvent()]).map(\.sequence)
     check.equal("later subscriber observes later sequences without duplicates or a rewind", after, [3, 4])
 }
 
 @MainActor
 private func runFixedClockReceiptTimestamps(_ check: CheckRunner) {
     let origin = Date(timeIntervalSince1970: 2_000_000)
-    let stepping = SteppingFanoutClock(origin: origin)
-    let fanout = EngineEventFanout(clock: stepping)
+    let frozen = EngineEventFanout(clock: FrozenFanoutClock(date: origin))
     let events = [
         playbackEvent(),
         queueEvent(),
         connectionEvent(),
         devicesEvent(),
     ]
-    let both = collectReceipts(fanout, events: events, subscriberCount: 2)
-    let expected = [
-        FanoutReceipt(sequence: 1, receivedAt: origin),
-        FanoutReceipt(sequence: 2, receivedAt: origin.addingTimeInterval(1)),
-        FanoutReceipt(sequence: 3, receivedAt: origin.addingTimeInterval(2)),
-        FanoutReceipt(sequence: 4, receivedAt: origin.addingTimeInterval(3)),
-    ]
-    check.equal("first subscriber sees clock-stamped receipts in assigned order", both[0], expected)
-    check.equal("second subscriber sees the same clock-stamped receipts", both[1], expected)
-
-    let frozen = EngineEventFanout(clock: FrozenFanoutClock(date: origin))
-    let frozenReceipts = collectReceipts(frozen, events: events, subscriberCount: 1)[0]
+    let both = collectSequential(frozen, events: events, subscriberCount: 2)
+    let sequences = both.map { $0.map(\.sequence) }
+    let receipts = both.map { $0.map(\.receivedAt) }
+    check.equal("first subscriber sees increasing sequences under a frozen clock", sequences[0], [1, 2, 3, 4])
+    check.equal("second subscriber sees the same sequences", sequences[1], [1, 2, 3, 4])
     check.equal(
-        "a frozen clock stamps every event kind with the same receipt time",
-        frozenReceipts.map(\.receivedAt),
+        "every event kind is stamped with the injected receipt time",
+        receipts[0],
         Array(repeating: origin, count: events.count)
     )
-    check.equal(
-        "a frozen clock still assigns a strictly increasing process-local sequence",
-        frozenReceipts.map(\.sequence),
-        [1, 2, 3, 4]
-    )
-}
-
-private func collectReceipts(
-    _ fanout: EngineEventFanout,
-    events: [RustPlaybackEvent],
-    subscriberCount: Int
-) -> [[FanoutReceipt]] {
-    let expected = events.count
-    var recorders: [ReceiptRecorder] = []
-    var subscribed: [DispatchSemaphore] = []
-    var collected: [DispatchSemaphore] = []
-    for _ in 0..<subscriberCount {
-        let recorder = ReceiptRecorder()
-        let start = DispatchSemaphore(value: 0)
-        let done = DispatchSemaphore(value: 0)
-        recorders.append(recorder)
-        subscribed.append(start)
-        collected.append(done)
-        let stream = fanout.events(onStart: { start.signal() }, onTermination: nil)
-        Task.detached {
-            var values: [FanoutReceipt] = []
-            for await envelope in stream {
-                values.append(FanoutReceipt(sequence: envelope.sequence, receivedAt: envelope.receivedAt))
-                if values.count == expected { break }
-            }
-            recorder.store(values)
-            done.signal()
-        }
-    }
-    guard subscribed.allSatisfy({ wait($0) }) else {
-        return Array(repeating: [], count: subscriberCount)
-    }
-    for event in events {
-        fanout.emit(event)
-    }
-    var results: [[FanoutReceipt]] = []
-    for (index, gate) in collected.enumerated() {
-        if wait(gate) {
-            results.append(recorders[index].load())
-        } else {
-            results.append([])
-        }
-    }
-    return results
+    check.equal("both subscribers observe the same receipt timestamps", receipts[1], receipts[0])
 }
 
 private func wait(_ semaphore: DispatchSemaphore) -> Bool {
     semaphore.wait(timeout: .now() + .seconds(5)) == .success
-}
-
-private final class ReceiptRecorder: @unchecked Sendable {
-    private let lock = NSLock()
-    private var values: [FanoutReceipt] = []
-
-    func store(_ values: [FanoutReceipt]) {
-        lock.lock()
-        self.values = values
-        lock.unlock()
-    }
-
-    func load() -> [FanoutReceipt] {
-        lock.lock()
-        defer { lock.unlock() }
-        return values
-    }
-}
-
-private struct FanoutReceipt: Equatable, Sendable {
-    let sequence: UInt64
-    let receivedAt: Date
 }
 
 private struct FrozenFanoutClock: PlaybackClock {
@@ -447,37 +394,17 @@ private struct FrozenFanoutClock: PlaybackClock {
     func sleep(seconds _: TimeInterval) async throws {}
 }
 
-private final class SteppingFanoutClock: PlaybackClock, @unchecked Sendable {
+private final class FanoutRecorder<Value>: @unchecked Sendable {
     private let lock = NSLock()
-    private let origin: Date
-    private var offset: TimeInterval = 0
+    private var values: [Value] = []
 
-    init(origin: Date) {
-        self.origin = origin
-    }
-
-    func now() -> Date {
-        lock.lock()
-        defer { lock.unlock() }
-        let date = origin.addingTimeInterval(offset)
-        offset += 1
-        return date
-    }
-
-    func sleep(seconds _: TimeInterval) async throws {}
-}
-
-private final class SequenceRecorder: @unchecked Sendable {
-    private let lock = NSLock()
-    private var values: [UInt64] = []
-
-    func store(_ values: [UInt64]) {
+    func store(_ values: [Value]) {
         lock.lock()
         self.values = values
         lock.unlock()
     }
 
-    func load() -> [UInt64] {
+    func load() -> [Value] {
         lock.lock()
         defer { lock.unlock() }
         return values

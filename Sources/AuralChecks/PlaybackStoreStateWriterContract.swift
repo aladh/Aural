@@ -16,6 +16,10 @@ enum PlaybackStoreStateWriterContract {
             .filter { !$0.contains("let state") }
     }
 
+    static func dateCallLines(in source: String) -> [String] {
+        matchingLines(in: source, pattern: #"\bDate\s*\(\s*\)"#)
+    }
+
     private static func matchingLines(in source: String, pattern: String) -> [String] {
         let regex = try! NSRegularExpression(pattern: pattern)
         return source.split(separator: "\n", omittingEmptySubsequences: false).compactMap { line in

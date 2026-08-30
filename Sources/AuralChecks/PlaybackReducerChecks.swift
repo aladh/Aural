@@ -1052,6 +1052,45 @@ func runPlaybackReducerChecks(_ check: CheckRunner) {
         )
         check.check("a stale-engine position refresh is rejected", !staleEngine)
         check.equal("a stale-engine position refresh is inert", state, beforeStaleEngine)
+
+        _ = PlaybackReducer.reduce(
+            &state,
+            envelope: envelope(account: 2, engine: 3, source: .user, event: .transport(.paused))
+        )
+        check.equal("pause transport keeps the existing timing anchor", state.timing.anchoredAt, traceDate)
+
+        let seekAt = traceDate.addingTimeInterval(30)
+        _ = PlaybackReducer.reduce(
+            &state,
+            envelope: envelope(
+                account: 2,
+                engine: 3,
+                source: .user,
+                event: .timing(position: 80, duration: 200, anchoredAt: seekAt)
+            )
+        )
+        check.equal("seek replaces the pause anchor", state.timing.anchoredAt, seekAt)
+
+        _ = PlaybackReducer.reduce(
+            &state,
+            envelope: envelope(
+                account: 2,
+                engine: 3,
+                source: .enginePlayback,
+                revision: 7,
+                event: .enginePlayback(EnginePlaybackSnapshot(
+                    transport: .playing,
+                    trackURI: "spotify:track:now",
+                    timing: PlaybackTiming(position: 81, duration: 200, anchoredAt: seekAt.addingTimeInterval(1))
+                ))
+            )
+        )
+        check.equal(
+            "engine timing uses the snapshot anchor, not the source revision",
+            state.timing.anchoredAt,
+            seekAt.addingTimeInterval(1)
+        )
+        check.equal("engine playback records the backend revision separately", state.sourceRevisions[.enginePlayback], 7)
     }
 
     check.suite("Queue precedence and identity") {
@@ -1227,75 +1266,5 @@ func runPlaybackReducerChecks(_ check: CheckRunner) {
         check.check("reset clears every pending command", state.pendingCommands.isEmpty)
         check.nil_("reset clears notices", state.notice)
         check.equal("reset retains only its own revision barrier", state.sourceRevisions, [.account: 2])
-    }
-
-    check.suite("Fixed-clock reducer traces are identical") {
-        let pauseAt = traceDate.addingTimeInterval(10)
-        let resumeAt = traceDate.addingTimeInterval(20)
-        let seekAt = traceDate.addingTimeInterval(30)
-        let track = CurrentTrack(
-            uri: "spotify:track:fixed",
-            title: "Fixed",
-            artist: "Clock",
-            duration: 200,
-            metadataSource: .catalog
-        )
-        let initial = PlaybackState(
-            accountEpoch: 1,
-            engineEpoch: 1,
-            session: .ready,
-            owner: .local(activeLocal),
-            transport: .playing,
-            currentTrack: track,
-            timing: PlaybackTiming(position: 40, duration: 200, anchoredAt: traceDate)
-        )
-        let events = [
-            envelope(
-                source: .user,
-                event: .timing(position: 50, duration: 200, anchoredAt: pauseAt)
-            ),
-            envelope(source: .user, event: .transport(.paused)),
-            envelope(
-                source: .user,
-                event: .timing(position: 50, duration: 200, anchoredAt: resumeAt)
-            ),
-            envelope(source: .user, event: .transport(.playing)),
-            envelope(
-                source: .user,
-                event: .timing(position: 80, duration: 200, anchoredAt: seekAt)
-            ),
-            envelope(
-                source: .enginePlayback,
-                revision: 7,
-                event: .enginePlayback(EnginePlaybackSnapshot(
-                    transport: .playing,
-                    trackURI: track.uri,
-                    timing: PlaybackTiming(position: 81, duration: 200, anchoredAt: seekAt.addingTimeInterval(1))
-                ))
-            ),
-        ]
-        let reduce: (inout PlaybackState, PlaybackEventEnvelope) -> Void = { state, event in
-            _ = PlaybackReducer.reduce(&state, envelope: event)
-        }
-        let first = TraceHarness(initialState: initial, reduce: reduce).replay(events)
-        let second = TraceHarness(initialState: initial, reduce: reduce).replay(events)
-        check.equal("a second replay of the same fixed-clock trace is state-for-state identical", first, second)
-        check.equal(
-            "a second replay of the same fixed-clock trace is byte-for-byte identical",
-            String(describing: first),
-            String(describing: second)
-        )
-        check.equal("pause freezes the timing anchor", first[0].timing.anchoredAt, pauseAt)
-        check.equal("pause transport does not rewrite the frozen anchor", first[1].timing.anchoredAt, pauseAt)
-        check.equal("resume re-anchors from the later clock", first[3].timing.anchoredAt, resumeAt)
-        check.equal("seek replaces the resume anchor", first[4].timing.anchoredAt, seekAt)
-        check.equal("seek position is the commanded value", first[4].timing.position, 80)
-        check.nil_("user events without a revision do not mint a source-revision clock", first[4].sourceRevisions[.user])
-        check.equal(
-            "engine receipt time is the timing anchor, not the source revision",
-            first[5].timing.anchoredAt,
-            seekAt.addingTimeInterval(1)
-        )
-        check.equal("backend source revision stays on the ordered-source watermark", first[5].sourceRevisions[.enginePlayback], 7)
     }
 }

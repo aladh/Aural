@@ -117,6 +117,27 @@ func runPlaybackStoreStateWriterContractChecks(_ check: CheckRunner) {
                 productionMutations,
                 []
             )
+            check.equal(
+                "production PlaybackStore cannot call Date() for stamping",
+                sources.flatMap(PlaybackStoreStateWriterContract.dateCallLines(in:)),
+                []
+            )
         }
+    }
+
+    check.suite("PlaybackStore Date() scan") {
+        check.equal(
+            "a Date() stamp is reported",
+            PlaybackStoreStateWriterContract.dateCallLines(in: "receivedAt: Date = Date()"),
+            ["receivedAt: Date = Date()"]
+        )
+        check.check(
+            "Date type names without a call are ignored",
+            PlaybackStoreStateWriterContract.dateCallLines(in: "receivedAt: Date? = nil").isEmpty
+        )
+        check.check(
+            "commented Date() calls are ignored",
+            PlaybackStoreStateWriterContract.dateCallLines(in: "// receivedAt: Date = Date()").isEmpty
+        )
     }
 }
