@@ -80,6 +80,12 @@ public struct AccountScopedRequestIdentity: Equatable, Sendable {
     }
 }
 
+/// Account-scoped request cancellation is inert: it must not publish results or user-facing errors.
+public func isCancellation(_ error: Error) -> Bool {
+    if error is CancellationError { return true }
+    return (error as? URLError)?.code == .cancelled
+}
+
 /// Connect queue *callback* watermark. Distinct from provenance-snapshot revisions
 /// recorded on `PlaybackEventSource.engineQueue`. `engineEpoch` is only a stale-engine floor:
 /// adopting that epoch elsewhere must not clear a newer callback generation.

@@ -232,12 +232,8 @@ final class CatalogMetadataRepository {
             guard isCurrent(scope, sessionSnapshot: sessionSnapshot) else { return }
             trackAttributes.merge(fetched) { current, _ in current }
             trimAttributeCache(preserving: Set(fetched.keys))
-        } catch is CancellationError {
-            return
-        } catch let error as URLError where error.code == .cancelled {
-            return
         } catch {
-            guard isCurrent(scope, sessionSnapshot: sessionSnapshot) else { return }
+            guard !isCancellation(error), isCurrent(scope, sessionSnapshot: sessionSnapshot) else { return }
             debugLog(
                 "CatalogMetadataRepository",
                 "Track attributes failed; error=\(String(describing: type(of: error)))"

@@ -128,10 +128,9 @@ final class SearchStore {
     ) async {
         do {
             try await operation()
-        } catch is CancellationError {
         } catch CatalogProviderCapabilityError.unsupported {
         } catch {
-            guard isCurrent(identity) else { return }
+            guard !isCancellation(error), isCurrent(identity) else { return }
             errors[section] = error.localizedDescription
         }
     }
