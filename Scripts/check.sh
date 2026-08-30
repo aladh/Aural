@@ -263,6 +263,12 @@ if rg -n 'func addToPlaylist|func removeFromPlaylist|func moveInPlaylist' \
     exit 1
 fi
 
+if rg -n 'parkNextConnectAccept|parkNextCommittedReplacement|waitForTestConnectAcceptGate|waitForTestCommittedReplacementGate|CheckedContinuation|pendingConnectAcceptGate|pendingCommittedReplacementGate' \
+    "$project_root/Sources/Aural/Spotify/QueueService.swift"; then
+    print -u2 "QueueService must not own test-only continuation gates"
+    exit 1
+fi
+
 if rg -n '\.draggable\(|\.dropDestination\(|onDrop\(' \
     "$project_root/Sources/Aural/Views" --glob '*.swift'; then
     print -u2 "Playlist drag-and-drop was omitted; do not reintroduce unverified SwiftUI drag UI"

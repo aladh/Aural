@@ -230,7 +230,8 @@ final class PlaybackStore {
         queueService = QueueService(
             webQueue: environment.webQueue,
             metadata: metadataService,
-            clock: environment.clock
+            clock: environment.clock,
+            hook: environment.queueServiceHook
         )
         accountStore = AccountStore(environment: environment, coordinator: coordinator)
         let catalogSession = CatalogSessionAvailability(accountEpoch: accountStore.epoch, isAvailable: false)
