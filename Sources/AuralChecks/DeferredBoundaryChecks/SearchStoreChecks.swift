@@ -71,12 +71,10 @@ private final class CooperativeParkedClock: PlaybackClock, @unchecked Sendable {
 
     func sleep(seconds: TimeInterval) async throws {
         let id = UUID()
-        lock.lock()
-        recordedSleeps.append(seconds)
-        lock.unlock()
         try await withTaskCancellationHandler {
             try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
                 lock.lock()
+                recordedSleeps.append(seconds)
                 waiters[id] = continuation
                 lock.unlock()
             }
