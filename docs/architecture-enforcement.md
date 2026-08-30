@@ -4,11 +4,12 @@ This file is a **registry**, not a second architecture manual. It maps each hard
 coherent group with a single owner) to a stable ID. Read the cited ADR, product, security, or
 contributor document for the invariant; do not copy those documents here.
 
-`#83` slice 1 (PR `#123`, `beca6c1`) recorded ownership. Slice 2 prunes obsolete `check.sh`
-snapshots, keeps durable shell rules, and moves `SRC-PROJ-001` into existing Swift checks.
-Do not add `check-source-contracts.sh`, a temp-tree harness, nested `AGENTS.md`, or a
-byte-count gate. `#42` formatter/warning order is unchanged. Hold the `AGENTS.md` shrink
-for a later ~17–18.5 KiB link-and-compress pass.
+`#83` slice 1 (PR `#123`, `beca6c1`) recorded ownership. Slice 2 pruned obsolete `check.sh`
+snapshots, kept durable shell rules, and moved `SRC-PROJ-001` into existing Swift checks. Slice 3
+compresses the root `AGENTS.md` by linking product, setup, release, and mechanical detail to those
+owners while retaining safety, high-consequence lifecycle/FFI rules, native-Mac judgment, commands,
+and completion guidance. Do not add `check-source-contracts.sh`, a temp-tree harness, nested
+`AGENTS.md`, or a byte-count gate. `#42` formatter/warning order is unchanged.
 
 ## How to read a row
 
@@ -46,7 +47,7 @@ Slice 2 completed the net-deletion course in issue comment 5471143087.
 
 | ID | Invariant | Canonical source | Primary owner | Current location | Status | Accepted limitation | Disposition |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| CMP-PLT-001 | macOS 15+ on Apple silicon is the only supported platform. Linux is outside the current support contract. | Product contract; `AGENTS.md`; `CONTRIBUTING.md` | SwiftPM `platforms: [.macOS(.v15)]` for the OS floor. Residual Apple-silicon owner: `rust-toolchain.toml` `targets = ["aarch64-apple-darwin"]`, `Backend/aural-playback/build.sh`, ARM64-only tagged-release packaging in `.github/workflows/release.yml`, and review of contributor/support claims. | `Package.swift`; `rust-toolchain.toml`; `Backend/aural-playback/build.sh`; `release.yml` | mechanically enforced (macOS 15 + ARM64 Rust/release artifacts) + manually reviewed (no Intel support path) | SwiftPM does not encode Apple silicon. Intel macOS is unsupported by packaging and toolchain pins, not by a SwiftPM `arch` flag. `AGENTS.md` still says Linux is “not a current constraint” in the agent-priority sense. | keep |
+| CMP-PLT-001 | macOS 15+ on Apple silicon is the only supported platform. Linux is outside the current support contract. | Product contract; `AGENTS.md`; `CONTRIBUTING.md` | SwiftPM `platforms: [.macOS(.v15)]` for the OS floor. Residual Apple-silicon owner: `rust-toolchain.toml` `targets = ["aarch64-apple-darwin"]`, `Backend/aural-playback/build.sh`, ARM64-only tagged-release packaging in `.github/workflows/release.yml`, and review of contributor/support claims. | `Package.swift`; `rust-toolchain.toml`; `Backend/aural-playback/build.sh`; `release.yml` | mechanically enforced (macOS 15 + ARM64 Rust/release artifacts) + manually reviewed (no Intel support path) | SwiftPM does not encode Apple silicon. Intel macOS is unsupported by packaging and toolchain pins, not by a SwiftPM `arch` flag. The compressed `AGENTS.md` states only the supported envelope. | keep |
 | CMP-DEP-001 | Swift target direction is `AuralApp → AuralCore → AuralDomain`. `AuralDomain` has no UI, audio, network, or FFI target dependencies. | ADR 001–002; `AGENTS.md` repository map | SwiftPM target graph | `Package.swift` (`AuralDomain` has no `dependencies:`) | mechanically enforced | Graph forbids target edges, not `import` statements; `SRC-DOM-001` covers imports. | keep |
 | CMP-FFI-001 | Only `AuralCore` depends on `AuralPlaybackCore`. | ADR 001 | SwiftPM graph | `Package.swift` | mechanically enforced | Does not prove a single Swift *file* importer; that is `SRC-FFI-001`. | keep |
 | CMP-CHK-001 | `AuralChecks` and `AuralBoundaryChecks` never ship in the app executable. | ADR 002; `AGENTS.md` map | Separate products; `AuralChecks` excludes `DeferredBoundaryChecks` and `LegacyLogicChecks.swift` | `Package.swift`; `Scripts/check.sh` builds those products only | mechanically enforced | Packaging scripts must continue omitting these products. | keep |
@@ -222,55 +223,31 @@ down to unsafe only.
 `Scripts/check-clean.sh`: 4 steps, **1** composite policy (clean Debug+Release). Disposition:
 keep. No additional `rg` architecture assertions.
 
-## Coverage appendix: `AGENTS.md` on current `main`
+## Coverage appendix: `AGENTS.md` compression map
 
-**File identity:** `AGENTS.md` is **27,042 bytes** and **414 lines** (`wc -c` / `wc -l`, UTF-8,
-newline-terminated) on `beca6c1` / `#42` `d1acd598`. Slice 2 does not edit `AGENTS.md`. Comment
-5470746515 measured 26,821 / 409 before `#42` added the format commands.
+The pre-compression audit established **27,042 bytes**, **414 lines**, **122 surface units**, and
+**165 atomic rules**. It counted joined Markdown list items, repository/verification table rows, and
+the callback-ownership paragraph, then split packed hard-architecture bullets into distinct
+invariants. That baseline proved every normative rule had a disposition before prose was removed.
 
-### Counting method
+The link-and-compress slice is **18,406 bytes** and **289 lines**. It does not delete product,
+release, generated-state, or mechanical contracts: it links their canonical documents and retains
+only the operating summary. Human judgment remains here; compiler/test/ABI/source enforcement
+remains with the owner listed above.
 
-1. **Surface rows (122).** Parse markdown list items by joining wrapped continuation lines
-   (**104** items). Add repository-map and verification-matrix **data** rows (**10 + 7 = 17**).
-   Add the non-list hard-architecture paragraph “When adding a callback…” (**1**).
-   104 + 17 + 1 = **122** surface units. Nested first-five-minutes document links are included in
-   the 104 so they are not silent; they map to `DOC-AGENT-001`, not to new mechanical IDs.
-2. **Normative vs judgment.** A surface unit is **normative** if it states a must / must-not /
-   only / never / do-not / required / equivalent constraint (including “is the only”,
-   “never ships”, “avoid `nonisolated(unsafe)`”, live-safety children under “they must not”,
-   and required release/DoD steps). Taste-pass **questions** and DRY/KISS/YAGNI slogans are
-   still inventoried (`DOC-TASTE-001`, `DOC-ENG-001`) so they are not omitted; they are not
-   source-contract candidates.
-3. **Atomic split (165).** Split packed **Hard architecture** bullets on sentence boundaries
-   (**43** sentences from **16** `-` bullets plus the callback paragraph). Further split
-   conjunctions that are distinct invariants (for example `nonisolated(unsafe)` vs unstructured
-   `Task`; Pathfinder DTOs vs catalog add/remove; panic-barrier vs process hook). Product and
-   implementation packed bullets that share one owner stay **grouped** (this index). The
-   resulting atomic count is **165**, matching the prior audit’s “about 165” after the same
-   split. Taste principles that restate product UX are not double-counted as extra mechanical
-   rules.
-
-Judgment-sized share: **21** surface units in taste/principles/taste-pass that stay human
-(`DOC-ENG-001`, `DOC-TASTE-001`) — aligned with the prior “about 21.” Stronger-owner share:
-hard-architecture and map/FFI/check-shipping units already owned by ADR/compiler/tests/ABI
-(**about 45** surface units). This registry does not treat those counts as a second spec.
-
-| `AGENTS.md` section | Surface units | Inventory IDs (none omitted) |
-| --- | --- | --- |
-| Mission and priorities (5 numbered + 6 constraints) | 11 list | DOC-PRI-001, DOC-PROD-001, CMP-PLT-001, CMP-LIVE-001, CMP-TCA-001 / ADR 001, SRC-HYG-003 |
-| Engineering principles | 4 list + reinforcing paragraph | DOC-ENG-001 |
-| Taste and judgment (12 principles + 8-pass + preference) | 20 list | DOC-TASTE-001 (product overlaps DOC-UI-001) |
-| First five minutes | 10 list (incl. 5 nested doc links) | DOC-AGENT-001 |
-| Repository map table | 10 rows + 1 reverse-dep sentence | DOC-MAP-001, CMP-DEP-001, CMP-CHK-001, SRC-DOM-001 |
-| Hard architecture | 16 bullets + 1 paragraph → 43+ atomic | TST-STATE-001, TST-CMD-001, TST-DEP-001, TST-FBK-001, TST-EPC-001, TST-ENV-001, TST-LIF-001, TST-QUE-001, SRC-FFI-001, SRC-FFI-002, TST-PLM-001, TST-PCM-001, ABI-SYM-001, TST-FFI-001, DOC-COMBINE-001, SRC-ISO-001, DOC-ESCAPE-001, DOC-ARCH-001 |
-| Implementation conventions | 10 list | DOC-CONC-001, DOC-IMPL-001, DOC-LOG-001, DOC-CACHE-001, CMP-LIVE-001, TST-FIX-001, FMT-RUST-001, FMT-SWIFT-001 |
-| macOS product and UI | 9 list + screenshot sentence | DOC-UI-001, TST-QUE-001 |
-| Live Spotify safety | 5 forbidden + surrounding prose | DOC-SAFE-001 |
-| Build and verification | 7 table rows + command prose | DOC-VER-001, TST-GATE-001, FMT-SWIFT-001, FMT-SWIFT-002, FMT-SWIFT-003, FMT-RUST-*, ABI-*, CMP-*, SRC-* (gate description), DOC-PR-001 |
-| Generated files, signing, recovery | 3 prose blocks | DOC-GEN-001, ABI-ARC-001 |
-| Dependencies, security, hygiene | 7 list | DOC-DEP-001, DOC-SEC-001, DOC-CI-001 |
-| Versions and releases | 5 numbered + tag-workflow paragraph | DOC-REL-001, CMP-PKG-001 |
-| Definition of done and handoff | 7 numbered + resume paragraph | DOC-DOD-001 |
+| Current `AGENTS.md` section | Inventory ownership (none omitted) |
+| --- | --- |
+| Mission and priorities | DOC-PRI-001, DOC-PROD-001, CMP-PLT-001, CMP-LIVE-001, CMP-TCA-001 / ADR 001, SRC-HYG-003 |
+| Working judgment | DOC-ENG-001 |
+| Native-Mac taste | DOC-TASTE-001, DOC-UI-001, DOC-CACHE-001 |
+| First five minutes | DOC-AGENT-001 |
+| Repository and ownership map | DOC-MAP-001, CMP-DEP-001, CMP-CHK-001, SRC-DOM-001 |
+| High-consequence architecture | TST-STATE-001, TST-CMD-001, TST-DEP-001, TST-FBK-001, TST-EPC-001, TST-ENV-001, TST-LIF-001, TST-QUE-001, TST-PLM-001, TST-PCM-001, TST-FFI-001, ABI-SYM-001, SRC-FFI-001, SRC-FFI-002, SRC-ISO-001, DOC-COMBINE-001, DOC-ESCAPE-001, DOC-ARCH-001 |
+| Implementation conventions | DOC-CONC-001, DOC-IMPL-001, DOC-LOG-001, DOC-CACHE-001, CMP-LIVE-001, TST-FIX-001, FMT-RUST-001, FMT-SWIFT-001 |
+| Live Spotify safety | DOC-SAFE-001 |
+| Commands and proportional verification | DOC-VER-001, TST-GATE-001, FMT-*, ABI-*, CMP-*, SRC-*, DOC-PR-001 |
+| Generated state, security, and releases | DOC-GEN-001, ABI-ARC-001, DOC-DEP-001, DOC-SEC-001, DOC-CI-001, DOC-REL-001, CMP-PKG-001 |
+| Definition of done and handoff | DOC-DOD-001 |
 
 ## Adjacent issues (do not reimplement here)
 
@@ -284,7 +261,7 @@ hard-architecture and map/FFI/check-shipping units already owned by ADR/compiler
 
 ## Out of slice / verification
 
-No source-contract harness, byte-count gate, nested `AGENTS.md`, or `AGENTS.md` shrink.
-Against current `main` plus this prune: `AGENTS.md` unchanged (27,042 bytes, 414 lines, 122/165).
-`Scripts/check.sh`: 33 sites (32 failing + 1 relink). Registry: 72 active IDs + 7 pruned.
-Proportional verification is `git diff --stat` / `--check` and macos-15 CI.
+No source-contract harness, byte-count gate, nested `AGENTS.md`, runtime dependency, code change, or
+policy expansion. `Scripts/check.sh` remains at 33 sites (32 failing + 1 relink); the registry remains
+72 active IDs + 7 pruned. Proportional verification is link/path checks, `git diff --stat` /
+`--check`, and macos-15 CI.

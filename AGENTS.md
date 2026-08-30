@@ -1,8 +1,8 @@
 # AGENTS.md
 
-This file is the fast operating manual for coding agents working on Aural. Read it before changing
-the repository. It captures project-specific constraints and routes you to the canonical documents;
-it does not replace them.
+This is the fast operating manual for coding agents working on Aural. Read it before changing the
+repository. It captures the judgment and safety constraints needed during implementation and routes
+mechanical detail to its canonical owner.
 
 ## Mission and priorities
 
@@ -11,264 +11,175 @@ like a focused Mac app: polished, fast, resource-conscious, accessible, and unsu
 unsupported, reverse-engineered Spotify interfaces, so reliability and containment matter more than
 feature count.
 
-When priorities compete, use this order:
+When priorities compete:
 
-1. Do not disrupt the user's live Spotify account or leak private data.
+1. Do not disrupt the user's live Spotify account or expose private data.
 2. Preserve playback, account, queue, and concurrency correctness.
-3. Prefer idiomatic macOS behavior and a small product surface.
-4. Keep architecture boundaries explicit and testable.
-5. Optimize measured, high-impact paths without adding speculative complexity.
+3. Prefer idiomatic macOS behavior and a deliberately small product surface.
+4. Keep ownership and architecture boundaries explicit and testable.
+5. Optimize measured high-impact paths without speculative complexity.
 
-Current product constraints:
+The supported envelope is macOS 15+ on Apple silicon with Spotify Premium. The shipping app is
+SwiftUI/AppKit, not a WebView, Chromium shell, or cross-platform UI. Rust/librespot remains a
+contained playback leaf under [ADR 001](docs/ADR-001-playback-engine.md). Production uses live
+integrations; fakes and synthetic fixtures belong only in checks. Keep the experimental and
+unofficial-project warnings prominent in public material.
 
-- macOS 15+ on Apple silicon is the only supported platform. Linux is not a current constraint.
-- Spotify Premium is required.
-- The app is SwiftUI/AppKit, not a WebView, Chromium shell, or cross-platform UI.
-- Rust/librespot remains a contained playback leaf. Do not plan another Rust removal without new
-  evidence that changes [ADR 001](docs/ADR-001-playback-engine.md).
-- Production code uses live integrations. Fakes and synthetic fixtures belong only in checks.
-- Keep the experimental and unofficial-project warnings prominent in public documentation and
-  releases.
+## Working judgment
 
-## Engineering principles
+- **DRY:** keep knowledge and policy with one canonical owner, but do not force responsibilities
+  with different lifetimes through a shared abstraction.
+- **KISS:** prefer the smallest direct design that makes ownership, state, and failure behavior
+  obvious. Fewer concepts, dependencies, and execution paths are easier to verify.
+- **YAGNI:** do not add portability, configuration, frameworks, extension points, or generalized
+  infrastructure for hypothetical needs.
+- **Make the change easy, then make the easy change:** when behavior fights the structure, first
+  create the smallest behavior-preserving seam, then implement through it. Keep both reviewable.
+- Remove work before adding machinery. Fix the class of bug at its owner rather than patching a
+  symptom, and add the closest deterministic regression check.
 
-- **DRY (Don't Repeat Yourself):** keep each piece of knowledge and product policy in one canonical
-  place. Remove duplicated behavior that can drift, but do not force superficially similar code
-  through an abstraction when the underlying responsibilities or lifetimes differ.
-- **KISS (Keep It Simple):** prefer the smallest direct design that makes ownership, state, and
-  failure behavior obvious. Fewer concepts, dependencies, layers, and execution paths are usually
-  easier to verify and maintain.
-- **YAGNI (You Aren't Gonna Need It):** do not add extension points, configuration, portability,
-  frameworks, or generalized infrastructure for hypothetical requirements. Build for a concrete
-  current need and leave the code easy to change when a real need arrives.
-- **“Make the change easy, then make the easy change.” — Kent Beck:** when a requested change fights
-  the current structure, first make the smallest behavior-preserving refactor that creates a clean
-  seam. Then implement the behavior through that seam. Keep both steps reviewable and verify the
-  invariant before and after.
+These are decision aids, not slogans. DRY does not justify premature abstraction, KISS does not hide
+edge cases, and YAGNI does not excuse a known correctness or operability gap.
 
-These principles reinforce one another, but they are not slogans to apply mechanically. In
-particular, DRY does not justify premature abstraction, KISS does not justify hiding edge cases, and
-YAGNI does not justify leaving a known correctness or operability gap.
+## Native-Mac taste
 
-## Aural's taste and judgment
+Aural should have **quiet confidence**: native, visually calm, information-dense without feeling
+cramped, and capable without advertising every capability.
 
-Rules catch regressions; taste decides among several technically valid solutions. Aural should have
-**quiet confidence**: unmistakably native, visually calm, information-dense without feeling cramped,
-and capable without advertising every capability. The best implementation often feels obvious in
-retrospect and disappears during use.
+- Start with established macOS behavior. Prefer system structure, materials, typography, controls,
+  menus, focus, keyboard behavior, accessibility, and inactive-window semantics over custom chrome.
+- Remove before adding. Every persistent control must earn its space through frequent use or
+  essential state. Capability alone does not justify UI.
+- Keep one clear hierarchy. At a glance the user should see where they are, what is playing, and the
+  primary action. Spend space on content, not decorative containers or repeated labels.
+- Make state honest. Loading, empty, stale, disabled, error, reconnecting, and remote-owner states
+  are part of the design. Never advertise an action that cannot succeed or display speculation as
+  authoritative playback state.
+- Preserve spatial anchors and useful content across refresh, metadata arrival, tab changes, and
+  window focus. Motion should explain continuity, not delay input or draw attention to chrome.
+- Use semantic, restrained color and verify light/dark, active/inactive, selected, disabled,
+  keyboard-focused, reduced-motion, and VoiceOver states.
+- Fast is a feeling built from details: keep the main thread free, cancel obsolete work, downsample
+  artwork, bound caches, avoid gratuitous polling, and prefer deleting work to elaborate machinery.
+- Keep architecture cognitively cheap. One explicit owner, a typed transition, and a deterministic
+  check beat a clever abstraction or a protocol without a real boundary.
+- Judge the whole loop: launch, sign-in, loading, browsing, resizing, keyboard navigation,
+  close/reopen, offline recovery, sign-out, and fresh-clone development—not only steady-state UI.
 
-Use these principles when the specification does not settle a decision:
-
-- **Start with the Mac, not a mockup.** Ask how Finder, Music, Settings, and well-made productivity
-  apps solve the interaction. Use system structure, materials, typography, spacing, controls,
-  commands, focus, and accessibility before inventing a visual language. Native is a behavioral
-  standard, not merely an SF Symbol and a blur.
-- **Remove before adding.** Aural became better by removing the redundant app header, profile card,
-  manual refresh, volume control, playlist icons, track-row artwork, and unnecessary pickers. Every
-  persistent control must earn its space through frequent use or essential state. Capability alone
-  is not a reason to expose UI.
-- **One clear hierarchy.** At a glance, the user should see where they are, what is playing, and the
-  primary action. Supporting metadata should be quieter, aligned, and close to what it describes.
-  Avoid competing cards, oversized empty hero regions, decorative containers, and repeated labels.
-- **Dense, not crowded.** Music libraries benefit from efficient tables and stable side panels.
-  Spend space on readable titles and useful columns, not repeated artwork or ornamental padding.
-  Preserve breathing room around groups rather than inflating every row and control.
-- **State must be honest.** Never show Pause when nothing is playing, imply that a remote device is
-  local, display a control as available when it cannot succeed, or leave `Unknown` when information
-  is resolvable. Loading, empty, stale, disabled, error, inactive-window, and reconnecting states are
-  part of the design—not cleanup after the happy path.
-- **Motion explains; it does not perform.** Smooth progress is useful because time is continuous.
-  Stable Queue/History headers are useful because context should not jump. Prefer subtle system
-  transitions, preserve spatial anchors, and avoid animation that delays input or attracts attention
-  to chrome.
-- **Color is semantic and restrained.** The accent identifies selection and primary actions; it
-  should not create blue-on-blue ambiguity or overwhelm content. Test every user-selected accent in
-  light, dark, active, inactive, selected, disabled, and keyboard-focused states. Do not hardcode a
-  color where a semantic style conveys intent.
-- **Controls should look and act like their meaning.** Use track-skip icons rather than seek icons,
-  direct column sorting rather than a picker, the app menu for Sign Out, and the native Settings
-  scene for preferences. Labels, tooltips, shortcuts, hit targets, and VoiceOver descriptions should
-  agree with the visible action.
-- **Fast is a feeling built from details.** Keep the main thread free, cancel obsolete work, hydrate
-  metadata progressively, downsample artwork, bound caches, and avoid gratuitous polling. Preserve
-  useful content during refresh instead of flashing empty states. Optimize measured bottlenecks, but
-  prefer deleting work over adding elaborate machinery.
-- **Architecture should reduce cognitive load.** A small explicit owner, a typed state transition,
-  and a deterministic check are preferable to a clever abstraction. Do not generalize from one use,
-  introduce a protocol without a boundary, or split code merely to make the tree look architectural.
-- **Fix the class of bug.** A white inactive-window Play button is a semantic styling problem, not
-  one bad RGB value. Empty playlists after a request race are a lifetime/epoch problem, not a reason
-  to reload more often. Find the invariant, enforce it at its owner, then add the closest regression
-  check.
-- **Polish the whole loop.** Judge launch, sign-in, loading, browsing, resizing, keyboard navigation,
-  window deactivation, close/reopen, offline/error recovery, sign-out, and fresh-clone development.
-  A beautiful steady-state screenshot does not compensate for a janky transition or fragile setup.
-
-Before accepting a UI or architecture change, perform this taste pass:
-
-1. **Glance:** Is the primary content/action obvious in two seconds?
-2. **Delete:** Can an element, state, abstraction, request, or timer disappear with no loss?
-3. **Native:** Would a Mac user predict the location, behavior, keyboard path, and inactive state?
-4. **Truth:** Does every visible state match authoritative playback/account data?
-5. **Stability:** Do refreshes, tab switches, metadata arrival, and window focus preserve spatial
-   anchors and useful content?
-6. **Edges:** Are empty, loading, error, stale, disabled, long-text, light/dark, and accessibility
-   states deliberately handled?
-7. **Cost:** What work, memory, wakeups, ownership, and failure modes did the change add?
-8. **Coherence:** Does it make Aural feel like one focused app rather than another feature attached?
-
-When two options remain, prefer the one with fewer concepts, fewer persistent controls, clearer
-ownership, more native behavior, and a better failure mode. Novelty must justify itself; simplicity
-does not mean crude, and polish does not mean decoration.
+For UI and architecture decisions, make a quick pass over: **glance, delete, native behavior,
+truthfulness, stability, edge states, cost, and coherence**. When two options remain, prefer fewer
+concepts and controls, clearer ownership, more native behavior, and the better failure mode. The
+canonical UX rules and acceptance procedure live in the
+[product and acceptance contract](docs/product-and-acceptance-contract.md).
 
 ## First five minutes
 
 1. Run `git status --short` and preserve unrelated user changes. Never reset or overwrite them.
 2. Read the documents relevant to the task:
-   - [README.md](README.md): project identity, capabilities, requirements, getting started, and
-     limitations. Keep the experimental and unofficial warnings prominent.
-   - [Product and acceptance contract](docs/product-and-acceptance-contract.md): intentional UX
-     behavior and safe live-account testing. Treat this as the product specification.
-   - [Development setup](docs/development-setup.md): fresh clone, generated state, recovery.
-   - [Architecture decision records](docs/architecture-decisions.md): accepted boundaries,
-     ownership decisions, and the index of ADRs relevant to the task.
-   - [CONTRIBUTING.md](CONTRIBUTING.md): checks, fixtures, packaging, architecture overview, and
-     public-repository hygiene.
+   - [README.md](README.md): identity, capabilities, requirements, and limitations.
+   - [Product and acceptance contract](docs/product-and-acceptance-contract.md): product behavior
+     and safe live-account testing.
+   - [Development setup](docs/development-setup.md): fresh clone, generated state, and recovery.
+   - [Architecture decision records](docs/architecture-decisions.md): accepted boundaries.
+   - [Architecture enforcement inventory](docs/architecture-enforcement.md): each hard rule's
+     canonical source, primary enforcement owner, location, and limitation.
+   - [CONTRIBUTING.md](CONTRIBUTING.md): commands, fixtures, packaging, releases, repository
+     hygiene, and pull-request policy.
 3. Inspect the implementation and its nearest checks before editing. Search with `rg`/`rg --files`.
-4. Make the smallest cohesive change that fixes the underlying behavior, not just its visible
-   symptom.
-5. Verify in proportion to risk using the matrix below, inspect the diff, then update docs when an
-   intentional contract or architecture decision changed.
+4. Make the smallest cohesive change that fixes the underlying behavior.
+5. Verify in proportion to risk, inspect the diff, and update the owning document when an
+   intentional product or architecture decision changes.
 
-If this file and a more specific canonical document disagree, follow the more specific document and
-update `AGENTS.md` in the same change. Do not let instructions and implementation drift silently.
+If this manual conflicts with a more specific canonical document, follow the specific document and
+repair the stale link or summary rather than creating another owner.
 
-## Repository map
+## Repository and ownership map
 
 | Area | Responsibility |
 | --- | --- |
-| `Sources/AuralApp/` | Thin executable launcher only. |
-| `Sources/Aural/` | `AuralCore`: composition root, SwiftUI/AppKit UI, feature stores, Spotify APIs, auth, audio renderer, and playback adapters. |
-| `Sources/AuralDomain/` | Portable deterministic models, reducer, session lifetime rules, parsing, sorting, and policies. No UI, audio, network, or FFI imports. |
+| `Sources/AuralApp/` | Thin executable launcher. |
+| `Sources/Aural/` | `AuralCore`: composition root, native UI, feature stores, Spotify/auth adapters, audio renderer, and playback adapter. |
+| `Sources/AuralDomain/` | Portable models, reducer, lifetime rules, parsing, sorting, and policies. No UI, audio, network, or FFI imports. |
 | `Sources/AuralPlaybackCore/` | Checked-in C header/module map for the Rust ABI. |
-| `Backend/aural-playback/` | Rust/librespot session, Spotify Connect, streaming, decoding, reconnection, queue truth, and C exports. |
-| `Sources/AuralChecks/` | Pure domain checks and deterministic playback traces. Never ships. |
-| `Sources/AuralChecks/DeferredBoundaryChecks/` | Concrete codec, fixture, coordinator, and queue boundary checks. Never ships. |
-| `Scripts/` and `script/` | Canonical verification, packaging, signing, diagnostics, icon, archive, and launch entry points. |
-| `Packaging/` and `Assets/` | App metadata, entitlements, privacy manifest, and app icon sources. |
-| `docs/` | Accepted architecture, product invariants, protocol notes, and measured baselines. |
+| `Backend/aural-playback/` | Rust/librespot session, Connect, streaming, decoding, recovery, queue truth, and C exports. |
+| `Sources/AuralChecks/` | Pure domain checks and deterministic playback traces; never ships. |
+| `Sources/AuralChecks/DeferredBoundaryChecks/` | Concrete codecs, fixtures, coordinator, and queue checks; never ships. |
+| `Scripts/`, `script/`, `Packaging/`, `Assets/` | Verification, build, signing, diagnostics, packaging metadata, privacy manifest, and icon sources. |
+| `docs/` | Product contract, accepted decisions, enforcement ownership, protocol notes, and measured baselines. |
 
 Swift target direction is `AuralApp -> AuralCore -> AuralDomain`, with `AuralCore` reaching the C
-leaf through the narrow adapter below. Do not add reverse dependencies merely for convenience.
+leaf through the narrow playback adapter. Do not add reverse dependencies for convenience.
 
-## Hard architecture rules
+## High-consequence architecture
 
-The normal quality gate enforces several of these mechanically. Treat all of them as design rules:
+The [enforcement inventory](docs/architecture-enforcement.md) records the compiler, behavior suite,
+ABI fixture, source check, or human review that owns each rule. Do not duplicate those mechanisms.
+The following constraints remain here because violating them can cause subtle live-account,
+lifetime, or foreign-boundary failures:
 
-- `AuralDomain.PlaybackState` is the single atomic playback-presentation snapshot.
-- `PlaybackReducer` is the only way to mutate that state. Add explicit events/actions rather than
-  writable projections or coordinated assignments across several published properties.
-- `PlaybackStore` is the `@MainActor` compatibility/action surface. `PlaybackCoordinator` owns and
-  serializes side effects. `PlaybackEffectRegistry` owns store-level `Task` lifetimes. Do not adopt
-  The Composable Architecture or a generic `Effect` type; see
-  [ADR 003](docs/ADR-003-playback-command-effects.md). Reducer acceptance normally gates follow-ups.
-  A rejected transport finish may report success only when a same-lifetime authoritative snapshot
-  already reconciled the pending expected transport; stale, superseded, teardown, epoch-invalidated,
-  and non-transport results stay inert. Views render state and invoke narrow actions.
+- `AuralDomain.PlaybackState` is the single atomic playback-presentation snapshot and
+  `PlaybackReducer` is its only mutation entrance. `PlaybackStore` is the `@MainActor`
+  compatibility/action surface, `PlaybackCoordinator` serializes side effects, and
+  `PlaybackEffectRegistry` owns store-level task lifetimes. Reducer acceptance normally gates
+  follow-ups. A rejected transport finish may report success only after a same-lifetime
+  authoritative snapshot reconciles the expected transport; stale, superseded, teardown, and
+  epoch-invalidated results stay inert. Do not add TCA, a generic `Effect`, or partial store-side
+  presentation writes. See
+  [ADR 002](docs/ADR-002-playback-state-and-dependencies.md) and
+  [ADR 003](docs/ADR-003-playback-command-effects.md).
 - Production dependencies are assembled once in `PlaybackEnvironment.live`. Views and feature
-  stores must not instantiate Spotify APIs, auth singletons, or the Rust engine directly.
-- `TransientFeedbackPresenter` is the app/root-composed owner for transient mutation success,
-  informational, and failure messages. Do not put those messages in `PlaybackState`, and do not
-  add a generic event bus or per-feature banners.
-- Every suspended account-scoped operation must capture and revalidate its generation/account
-  epoch before applying a result. Selection-scoped and request-scoped work needs equivalent stale
-  result protection and cancellation.
-- Ordered callback sources carry revisions. Session/engine generations prevent a stale callback or
-  teardown from mutating a replacement session. `RustPlaybackEngine` assigns the process-local
-  envelope sequence and delivers it on one drain so subscribers observe strictly increasing order;
-  `AsyncStream.Continuation.yield` and `onTermination` must not run while that lock is held.
-- Rust player-session lifecycle operations that write `SESSION`, `SPIRC`, `PLAYER`, `MIXER`, or
-  `PLAYER_EVENT_TX` (exported init build, reconnect cleanup+build, and exported cleanup) serialize
-  through one async mutex in `aural-playback`. Do not hold a per-global `Mutex` guard across
-  `await`, and do not re-enter that lifecycle lock from an inner helper. Reconnect captures
-  `SESSION_GENERATION` at trigger time, revalidates after acquiring the lock, and must not clean up
-  or rebuild a newer generation. Exported init re-checks the already-initialized no-op inside that
-  lock, not only before waiting. This is not the cross-language lifecycle actor.
-- Queue source precedence and context identity belong to `QueueService`. Metadata enrichment may
-  replace fallback labels, but it must never reorder or erase a newer authoritative queue.
-- `Sources/Aural/Spotify/PlaybackCore.swift` is the only Swift file allowed to import
-  `AuralPlaybackCore`. `RustPlaybackEngine.swift` is the only caller of `PlaybackCore`.
-- Playlist writes use the injected `PlaylistMutating` port and `PlaylistMutationController`.
-  Do not add add/remove methods to read-only `CatalogProviding`, and do not leak Pathfinder
-  mutation DTOs into views.
-- PCM travels directly from the engine adapter to `AudioRenderer`; never route it through observable
-  UI state. Keep callbacks bounded and do not block the Rust callback thread.
-- Keep the checked-in C header and Rust exports exactly aligned. Changes to FFI ownership, pointer
-  lifetime, string allocation, callbacks, or threading require Rust tests and the clean gate.
-- Every `aural-playback` `extern "C"` export must enter through the panic-barrier helpers in
-  `ffi.rs` so a Rust panic cannot unwind into Swift. Map a contained panic to the defined sentinel
-  for that return type. Call `block_on_export` rather than `RUNTIME.block_on` from an export, and
-  `refuse_if_nested_runtime` before any export mutates lifecycle flags that `block_on` would have
-  reached: nested runtime re-entry returns `ERROR_GENERAL` and must not be reported as grant
-  supersession. Do not hold Rust locks while invoking Swift, and do not treat the barrier as making
-  invalid foreign pointers safe. Do not replace the process panic hook.
-- Prefer Swift structured concurrency, `AsyncStream`, and Observation for new state. Introduce
-  Combine only at a publisher-native system boundary where it is materially simpler.
-- Avoid `nonisolated(unsafe)`, mutable global state, broad singletons, unstructured `Task` lifetimes,
-  and in-place partial playback presentation updates.
+  stores render state and invoke narrow actions; they do not construct Spotify APIs, auth
+  singletons, or the Rust engine. `TransientFeedbackPresenter` owns transient mutation feedback;
+  it is not playback state or a generic event bus.
+- Every suspended account-, engine-, selection-, or request-scoped operation must capture and
+  revalidate its identity before applying a result. Ordered callback sources carry revisions;
+  account and engine generations prevent stale callbacks or teardown from mutating replacements.
+  `RustPlaybackEngine` assigns process-local envelope sequence on one drain. Never call
+  `AsyncStream.Continuation.yield` or `onTermination` while its fan-out lock is held.
+- Rust lifecycle operations that write `SESSION`, `SPIRC`, `PLAYER`, `MIXER`, or
+  `PLAYER_EVENT_TX` serialize through one async lifecycle mutex. Do not hold a per-global guard
+  across `await` or re-enter the lifecycle lock from an inner helper. Reconnect captures
+  `SESSION_GENERATION` at trigger time and revalidates after acquiring the lock; exported init
+  re-checks its already-initialized no-op inside the lock.
+- `QueueService` owns queue precedence and context identity. Metadata may enrich labels but must not
+  reorder or erase newer authoritative state. Playlist writes use `PlaylistMutating` and
+  `PlaylistMutationController`; keep read-only catalog access separate and mutation DTOs out of
+  views.
+- `Sources/Aural/Spotify/PlaybackCore.swift` is the only Swift importer of `AuralPlaybackCore`, and
+  `RustPlaybackEngine.swift` is its only caller. Keep the checked-in C header and Rust exports
+  exactly aligned. FFI ownership, pointer lifetime, allocation, callback, or threading changes need
+  Rust coverage and the clean gate.
+- Every `aural-playback` `extern "C"` export enters through the panic-barrier helpers in `ffi.rs`.
+  Use `block_on_export`, and call `refuse_if_nested_runtime` before mutating lifecycle flags that a
+  nested `block_on` would have reached. Nested runtime re-entry returns `ERROR_GENERAL` and is not
+  grant supersession. Map panics to the defined sentinel; do not replace the process panic hook,
+  hold Rust locks while invoking Swift, or assume the barrier makes invalid foreign pointers safe.
+- PCM travels directly from the engine adapter to `AudioRenderer`, never through observable UI
+  state. Keep callbacks bounded and do not block the Rust callback thread.
+- Prefer Swift structured concurrency, `AsyncStream`, Observation, immutable `Sendable` values,
+  and explicit actor isolation. Combine belongs only at a publisher-native system boundary where
+  it is materially simpler. Avoid `nonisolated(unsafe)`, mutable global state, broad singletons, and
+  unowned task lifetimes.
 
-When adding a callback, account request, queue provider, or optimistic command, define explicitly:
-owner, lifetime, cancellation, generation/epoch, ordering/revision, stale-result behavior, error
-policy, and deterministic coverage.
+For every new callback, account request, queue provider, or optimistic command, define its owner,
+lifetime, cancellation, generation/epoch, ordering/revision, stale-result behavior, error policy,
+and deterministic coverage before implementation.
 
 ## Implementation conventions
 
-- Swift 6.1 concurrency diagnostics are part of correctness. Prefer actor isolation and immutable,
-  `Sendable` values over suppression.
-- Keep UI types declarative and small. Move orchestration to the owning store/coordinator, pure
-  transformations to `AuralDomain`, and transport details to boundary adapters.
-- Preserve the existing store split (`AccountStore`, `CatalogStore`, `HomeLibraryStore`,
-  `PlaylistStore`, `SearchStore`, media-detail stores, and the `PlaybackStore` extensions). Do not
-  rebuild a god controller.
-- Prefer protocols only at real substitution or system boundaries. Do not create layers solely to
-  mirror folders.
-- Use typed state and exhaustive switches instead of loosely related booleans and sentinel strings.
-- User-facing failure should be actionable but privacy-safe. Use Unified Logging through the
-  existing logging facilities; never log tokens, OAuth redirects, raw API payloads, or private
-  library/account identifiers.
+- Keep UI declarative and small. Move orchestration to the owning store/coordinator, pure
+  transformations to `AuralDomain`, and transport detail to boundary adapters.
+- Preserve the existing feature-store split rather than rebuilding a god controller. Introduce a
+  protocol only at a real substitution or system boundary.
+- Prefer typed state and exhaustive switches over loosely related booleans and sentinel strings.
+- User-facing failures must be actionable and privacy-safe. Use the existing Unified Logging
+  facilities; never log tokens, OAuth redirects, raw API payloads, or private account/library IDs.
 - Keep caches cost-bounded and clear presentation caches when the window closes. Measure before
   adding caching, polling, timers, or retained artwork.
 - Do not add mocks, demo data, placeholder catalog content, or captured Spotify payloads to the
-  shipping app. Test fixtures must be reduced, synthetic, and non-identifying.
-- Follow existing naming and formatting. Run Rust formatting rather than hand-formatting Rust.
-- Add comments for invariants and non-obvious lifetime/order constraints, not for line-by-line
-  narration.
-
-## macOS product and UI rules
-
-The complete UX contract lives in
-[docs/product-and-acceptance-contract.md](docs/product-and-acceptance-contract.md). In particular:
-
-- Prefer native SwiftUI/AppKit controls, tables, menus, Settings, keyboard behavior, accessibility,
-  focus, and inactive-window semantics. Avoid custom chrome when a native pattern exists.
-- The fixed 220-point sidebar and inspector have equal width and are not drag-collapsible.
-- Sign Out belongs in the **Aural** application menu. Do not restore a profile/status card, manual
-  Spotify refresh control, redundant app header/logo, playlist sidebar icons, or volume control.
-- Transport order is Shuffle, Previous, Play/Pause, Next, Repeat. Use track-skip symbols with outer
-  bars. With no current track, show disabled Play—not Pause.
-- Mirror the active Spotify Connect device without silently transferring it. Smooth progress is an
-  interpolation over authoritative state and must re-anchor on seek, pause, track, or owner changes.
-- Queue provenance determines order. Metadata only enriches it. Avoid permanent `Unknown` labels
-  when identifiers can be resolved.
-- Playlist rows have no artwork; columns remain distinct and natively sortable. Clicking Date Added
-  toggles its sort directly. Song count belongs beside the author, not in the table.
-- Closing the main window must keep the app running in the Dock and reopenable through normal macOS
-  behavior while releasing presentation caches.
-- Validate custom accent colors in active/inactive windows, light/dark appearances, keyboard focus,
-  and accessibility labels.
-
-Treat a screenshot mismatch as a symptom. Check layout semantics, focus, hit targets, accessibility,
-window activation, reduced motion, and system appearance—not only pixels.
+  shipping app. Fixtures are reduced, synthetic, and non-identifying.
+- Follow the checked-in Swift formatter and Rust formatter. Comment invariants and non-obvious
+  lifetime/order constraints, not line-by-line narration.
 
 ## Live Spotify safety
 
@@ -276,139 +187,103 @@ window activation, reduced motion, and system appearance—not only pixels.
 a transport command can interrupt music on another computer.
 
 Without explicit permission in the current request, agents may run deterministic checks and may,
-when requested, launch/sign in/browse read-only UI. They must not:
+when requested, launch, sign in, and browse read-only UI. They must not:
 
 - press Play/Pause, Previous, Next, Shuffle, Repeat, or Seek;
 - transfer playback or change the active device;
 - add to or modify the queue;
 - edit the library, playlists, follows, or saved state;
-- treat earlier permission in the thread as permanent permission.
+- sign out, or treat earlier permission in the thread as permanent permission.
 
-Observing remote playback and queue state is read-only. Signing out is an account mutation and
-should only be tested when it is in scope.
-
-When playback is explicitly authorized for the current test, follow the bounded procedure in the
+Observing remote playback and queue state is read-only. When playback is explicitly authorized for
+the current test, follow the bounded procedure in the
 [acceptance contract](docs/product-and-acceptance-contract.md#explicit-playback-test): inspect the
-active device first, mute macOS before local audio, use a named item and short interval, stop/pause
-the tested device afterward, and report anything that could not be restored. Queue, transfer,
-shuffle/repeat, sleep/wake, and output-device tests each need separately clear scope.
+active device first, mute macOS before local audio, use a named item and short interval, stop or
+pause afterward, and report anything that could not be restored. Queue, transfer, shuffle/repeat,
+sleep/wake, and output-device tests each need separately clear scope.
 
-## Build and verification
+## Commands and proportional verification
 
-All commands run from the repository root.
+Run commands from the repository root:
 
 ```bash
 # Normal non-playback quality gate
 ./Scripts/check.sh
 
-# Swift format from the selected Swift 6.1+ toolchain
-./Scripts/format-swift.sh --check
-./Scripts/format-swift.sh --write
-
 # Slow clean Debug + Release gate
 ./Scripts/check-clean.sh
 
-# Build/package/sign/launch a local development app
+# Check or rewrite all tracked Swift files
+./Scripts/format-swift.sh --check
+./Scripts/format-swift.sh --write
+
+# Build/package/sign/launch a development app (only when launch is authorized)
 ./script/build_and_run.sh
 
 # Package without launching
 ./Scripts/package-app.sh --debug
 ./Scripts/package-app.sh --release
 
-# Bounded local diagnostic export; review before sharing
+# Export a bounded local diagnostic report; review it before sharing
 ./Scripts/export-diagnostics.sh
 ```
 
-`check.sh` runs Swift `swift-format` check, Rust fmt/Clippy `--all-targets -- -D warnings`/tests,
-rebuilds a stale generated archive, validates C exports, builds Aural-owned Swift with
-`-warnings-as-errors`, runs both check executables, enforces architecture rules, and validates
-packaging. It does not sign in or play music.
+`check.sh` covers formatting, warning-clean Rust and Swift builds, locked tests, ABI parity,
+deterministic check products, architecture contracts, and packaging without signing in or playing
+music. `check-clean.sh` owns clean-room Debug and Release verification. The detailed gate,
+iteration, packaging, signing, and tagged-release commands live in
+[CONTRIBUTING.md](CONTRIBUTING.md).
 
-Minimum verification by change:
+Minimum verification:
 
 | Change | Required verification |
 | --- | --- |
-| Documentation only | Check links/commands, `git diff --check`, and inspect rendered Markdown when layout matters. |
-| Pure domain/policy/parsing | Add/update `AuralChecks`; run `./Scripts/check.sh`. |
+| Documentation only | Check links and commands, run `git diff --check`, and inspect rendered Markdown when layout matters. |
+| Pure domain/policy/parsing | Add or update `AuralChecks`; run `./Scripts/check.sh`. |
 | Swift UI/store/API/boundary | Add the closest deterministic or boundary check; run `./Scripts/check.sh`; perform only authorized manual acceptance. |
-| Rust/session/queue/FFI | Add Rust coverage, run `./Scripts/check-clean.sh`, and inspect C ownership/export parity. |
-| Dependencies/build/signing/packaging/release | Run `./Scripts/check-clean.sh` plus the relevant package/validation path. Never publish merely to test. |
-| App icon | Run `./Scripts/generate-icon.sh`; inspect small and large Finder representations; commit `Assets/AuralIcon.png` and `Assets/Aural.icns`. |
-| Performance | Compare like-for-like Debug/Release, foreground/background, paused/playing states; record environment and methodology. Playback measurements require permission. |
+| Rust/session/queue/FFI | Add Rust coverage, run `./Scripts/check-clean.sh`, and inspect ABI ownership/export parity. |
+| Dependencies/build/signing/packaging/release | Run the clean gate and relevant package/validation path. Never publish merely to test. |
+| Performance | Compare like-for-like configurations and record environment/methodology. Playback measurements require permission. |
 
-Use `AURAL_CHECK_REPEATS=N ./Scripts/check.sh` (maximum 25) to stress deterministic ordering when a
-concurrency or lifecycle change merits it. A green build alone is insufficient for behavior that can
-be covered by a deterministic transition trace.
+Use `AURAL_CHECK_REPEATS=N ./Scripts/check.sh` (maximum 25) when a concurrency or lifecycle change
+merits stress. A green build is not enough for behavior that can be covered by a deterministic
+transition. Do not launch Aural merely to prove compilation: `build_and_run.sh` terminates an
+existing process and can disturb an authenticated session.
 
-Do not launch Aural just to prove compilation. `build_and_run.sh` terminates an existing Aural
-process before packaging; that can disturb another debugging or authenticated session.
+Follow [CONTRIBUTING.md](CONTRIBUTING.md#pull-requests) for issue references, PR contents, and manual
+testing disclosure. Do not duplicate that policy here.
 
-Follow the pull-request issue-reference rule in
-[CONTRIBUTING.md](CONTRIBUTING.md#pull-requests). Do not duplicate that wording here.
+## Generated state, security, and releases
 
-## Generated files, signing, and recovery
+Generated archives, packages, diagnostics, signing material, private payloads, and account data do
+not belong in Git. In particular, never commit `.build/`, `.swiftpm/`, `Aural.app/`, `dist/`,
+`diagnostics/`, `AuralArtwork/`, Rust `target/`, static `.a` archives, signing keychains or
+certificates, `.DS_Store`, tokens, OAuth callbacks, raw responses, or private screenshots. Inspect
+the staged diff. Prefer fresh-clone recovery and never run destructive cleanup over user work. See
+[development setup](docs/development-setup.md), [CONTRIBUTING.md](CONTRIBUTING.md),
+[PRIVACY.md](PRIVACY.md), and [SECURITY.md](SECURITY.md) for the owning procedures.
 
-Never commit `.build/`, `.swiftpm/`, `Aural.app/`, `dist/`, `diagnostics/`, `AuralArtwork/`, Rust
-`target/`, static `.a` archives, signing keychains/certificates, or `.DS_Store` files.
-
-`Backend/lib/libaural_playback.a` is architecture-specific generated output. Build/check scripts
-recreate it. The development signing identity and keychain under `.build/aural-signing/` are local,
-reproducible, and unsuitable for distribution. Do not install project development identities in the
-login keychain or weaken signing to suppress prompts.
-
-Prefer a fresh clone to copying generated state from an old checkout. Do not run destructive Git or
-filesystem cleanup over user work. Diagnose first, preserve unrelated changes, and remove only
-explicit, verified generated targets.
-
-## Dependencies, security, and public-repository hygiene
-
-- The public repository is `https://github.com/aladh/Aural` and uses Renovate for dependency update
-  PRs. Do not add Dependabot alongside it.
-- Pin GitHub Actions by full commit SHA and keep the readable version comment.
-- Rust dependencies are locked. Review upstream/API/license impact together; librespot changes are
-  protocol and behavior changes, not routine version bumps.
-- Never commit Spotify credentials, tokens, OAuth callbacks, account exports, Keychain material,
-  diagnostic bundles, crash reports with private data, response dumps, or screenshots of a private
-  library/account.
-- Preserve [LICENSE](LICENSE), [NOTICE](NOTICE),
-  [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md), [PRIVACY.md](PRIVACY.md), and
-  [SECURITY.md](SECURITY.md). Update attribution when adapted upstream code changes.
-- Before distributing binaries, review the complete transitive license set. Repository notices are
-  not by themselves a binary-distribution audit.
-- Report vulnerabilities privately as documented in `SECURITY.md`.
-
-## Versions and releases
-
-`Packaging/Info.plist` is the version source of truth. For a release:
-
-1. Update both `CFBundleShortVersionString` and monotonically increasing `CFBundleVersion`.
-2. Run the clean gate and validate the release package.
-3. Commit and push the version change.
-4. Create an annotated `vMAJOR.MINOR.PATCH` tag exactly matching the short version.
-5. Push the tag only with explicit release authorization, then inspect the GitHub workflow and
-   prerelease artifacts/checksum.
-
-The tag workflow is ARM64-only and currently produces an experimental hardened-runtime, ad-hoc
-signed prerelease, not a notarized Developer ID build. State that limitation in release notes. Never
-change tags, publish a release, create a remote, or mutate repository settings merely as a normal
-implementation step.
+Preserve `LICENSE`, `NOTICE`, and `THIRD_PARTY_NOTICES.md`; review the full transitive license set
+before distributing binaries. GitHub Actions stay SHA-pinned, Renovate owns dependency updates, and
+librespot updates are protocol changes rather than routine bumps. `Packaging/Info.plist` and the
+tagged-release section of `CONTRIBUTING.md` own version and release steps. Tags, releases, remotes,
+and repository settings require explicit authorization; never mutate them as ordinary verification.
 
 ## Definition of done and handoff
 
 Before declaring work complete:
 
-1. Re-read the request and the relevant product/architecture contract.
+1. Re-read the request and relevant product/architecture contract.
 2. Inspect `git diff` and `git status --short`; preserve unrelated edits and remove accidental
-   generated/private files.
+   generated or private files.
 3. Add deterministic coverage at the closest ownership boundary.
-4. Run the proportional gate and report the exact commands/results. Do not claim manual acceptance
-   that was not performed.
-5. Check failure, empty, loading, stale-result, cancellation, inactive-window, and accessibility
-   states when relevant—not just the happy path.
-6. Update the canonical document when product behavior, architecture, setup, privacy, security,
-   attribution, or release behavior changed.
-7. Summarize the user-visible result, important design choice, verification, and any remaining risk.
+4. Run the proportional gate and report exact commands and results. Do not claim acceptance that
+   was not performed.
+5. Check relevant failure, empty, loading, stale, cancellation, inactive-window, and accessibility
+   states—not only the happy path.
+6. Update the canonical owner when product behavior, architecture, setup, privacy, security,
+   attribution, or release behavior changes.
+7. Summarize the user-visible result, important design choice, verification, and remaining risk.
 
-Leave the repository so another agent can resume from a fresh clone using only checked-in source
-and documentation. If knowledge is required to operate the project safely more than once, capture it
-in the appropriate canonical document instead of relying on chat history.
+Leave the repository resumable from a fresh clone using checked-in source and canonical documents.
+If knowledge is needed more than once, record it at the proper owner instead of relying on chat.
