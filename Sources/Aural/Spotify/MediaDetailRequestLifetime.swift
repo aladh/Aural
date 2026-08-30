@@ -179,7 +179,9 @@ final class MediaDetailRequestLifetime {
 
     /// Releases one waiter. Cancels the underlying task only when the last live claim
     /// for that exact flight leaves. A stale claim is a no-op.
-    private static func releaseClaim(
+    ///
+    /// `nonisolated` so cancellation handlers can run it without hopping to MainActor.
+    private nonisolated static func releaseClaim(
         _ claim: WaiterClaim,
         joinState: OSAllocatedUnfairLock<JoinState>
     ) {
