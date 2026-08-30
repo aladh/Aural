@@ -44,7 +44,7 @@ A later link-and-compress pass should target about 17–18.5 KiB. Do not force 1
 | FMT-SWIFT-002 | Aural-owned `swift build` invocations fail on compiler warnings. | `#42` / `d1acd598`; `AGENTS.md` | `-Xswiftc -warnings-as-errors` via `aural_swiftc_warnings_as_errors` in `Scripts/swiftpm-env.sh` | Applied to `Aural`, `AuralChecks`, and `AuralBoundaryChecks` in `Scripts/check.sh`, and to `Scripts/compile-release-aural.sh`. Not `Package.swift` `unsafeFlags`. | mechanically enforced | Command-line flag only; does not prove every future `swift build` site. | keep |
 | FMT-SWIFT-003 | Wrapper discovery/failure contracts cannot drift from the documented commands. | `#42` / `d1acd598`; `CONTRIBUTING.md` | `Scripts/format-swift-self-test.sh` (temp Git repo + fake toolchain; does not mutate the working tree) | Invoked first in `Scripts/check.sh` | mechanically enforced | Self-test does not run the real `swift-format` binary. | keep |
 | FMT-RUST-001 | Rust formatting is `rustfmt`, not hand-edited style. | `#42`; `AGENTS.md`; `CONTRIBUTING.md` | `cargo fmt --all -- --check` | `Scripts/check.sh` (Rust block) | mechanically enforced | `#42` left the Rust baseline unchanged. | keep |
-| FMT-RUST-002 | Clippy is warning-clean on all targets. | `#42`; `CONTRIBUTING.md` | `cargo clippy --all-targets -- -D warnings` | `Scripts/check.sh` | mechanically enforced | Not `clippy::pedantic`. | keep |
+| FMT-RUST-002 | Clippy is warning-clean on all locked targets. | `#42`; `CONTRIBUTING.md` | `cargo clippy --locked --all-targets -- -D warnings` | `Scripts/check.sh` | mechanically enforced | Not `clippy::pedantic`. | keep |
 
 ## Compiler and package graph (`CMP`)
 
@@ -53,7 +53,7 @@ A later link-and-compress pass should target about 17–18.5 KiB. Do not force 1
 | CMP-PLT-001 | macOS 15+ is the only platform target. | Product contract; `AGENTS.md` | SwiftPM `platforms: [.macOS(.v15)]` | `Package.swift` | mechanically enforced | Linux is not a constraint; the compiler does not prove Apple silicon. | keep |
 | CMP-DEP-001 | Swift target direction is `AuralApp → AuralCore → AuralDomain`. `AuralDomain` has no UI, audio, network, or FFI target dependencies. | ADR 001–002; `AGENTS.md` repository map | SwiftPM target graph | `Package.swift` (`AuralDomain` has no `dependencies:`) | mechanically enforced | Graph forbids target edges, not `import` statements; `SRC-DOM-001` covers imports. | keep |
 | CMP-FFI-001 | Only `AuralCore` depends on `AuralPlaybackCore`. | ADR 001 | SwiftPM graph | `Package.swift` | mechanically enforced | Does not prove a single Swift *file* importer; that is `SRC-FFI-001`. | keep |
-| CMP-CHK-001 | `AuralChecks` and `AuralBoundaryChecks` never ship in the app executable. | ADR 002; `AGENTS.md` map | Separate products; `AuralChecks` excludes `DeferredBoundaryChecks` | `Package.swift`; `Scripts/check.sh` builds those products only | mechanically enforced | Packaging scripts must continue omitting these products. | keep |
+| CMP-CHK-001 | `AuralChecks` and `AuralBoundaryChecks` never ship in the app executable. | ADR 002; `AGENTS.md` map | Separate products; `AuralChecks` excludes `DeferredBoundaryChecks` and `LegacyLogicChecks.swift` | `Package.swift`; `Scripts/check.sh` builds those products only | mechanically enforced | Packaging scripts must continue omitting these products. | keep |
 | CMP-CHK-002 | `AuralChecks` does not link `AuralCore` or the Rust archive. Boundary checks may, and stay Debug/`@testable`. | ADR 002; `CONTRIBUTING.md` | Package graph + `check.sh` forcing Debug for `AuralBoundaryChecks` | `Package.swift`; `Scripts/check.sh` | mechanically enforced | Release `check.sh` still builds shipping `Aural` in the requested configuration. | keep |
 | CMP-TCA-001 | No TCA or generic Effect package. | ADR 003 | Empty `Package.swift` `dependencies` plus review | `Package.swift`; `CONTRIBUTING.md` | mechanically enforced (graph) + manually reviewed (new deps) | Absence of one package name is not a ban on every future library. | keep |
 | CMP-LIVE-001 | Production code uses live integrations; fakes belong in checks. | Product contract; `AGENTS.md` | Package + `SRC-HYG-003` + review of shipping sources | `Package.swift`; `SRC-HYG-003` | mechanically enforced (hygiene tokens) + manually reviewed | Compiler cannot prove “no demo catalog.” | keep |
@@ -104,8 +104,8 @@ tombstones and duplicate snapshots; it does not extract a second harness.
 | SRC-DOM-001 | `AuralDomain` must not `import` AppKit, SwiftUI, AVFoundation, or `AuralPlaybackCore`. | ADR 002; `AGENTS.md` | `rg` on `Sources/AuralDomain` | forbidden `^import` | mechanically enforced | Line-start import only; does not prove “no network.” | keep in `check.sh` |
 | SRC-FFI-001 | Only `Sources/Aural/Spotify/PlaybackCore.swift` imports `AuralPlaybackCore`. | ADR 001 | Exact `rg -l` path equality | `Scripts/check.sh` | mechanically enforced | Missing file reports as mismatch, not a dedicated missing-scope error. | keep in `check.sh` |
 | SRC-FFI-002 | Only `RustPlaybackEngine.swift` contains `PlaybackCore.` call sites. | ADR 001 | Exact `rg -l` path equality under `Sources/Aural` | `Scripts/check.sh` | mechanically enforced | Token `PlaybackCore.` is not a typed call graph. | keep in `check.sh` |
-| SRC-DEP-001 | Views and listed feature stores must not construct `PartnerAPI(`, `SpotifyConnectAPI(`, `WebPlayer` API, Keymaster auth/session, `RustPlaybackEngine.shared`, or `PlaybackCore.`. | ADR 002 | Explicit path list + `rg` | `feature_dependencies` array | mechanically enforced | **Brittle path list.** New store files can escape. | generalize in a later net-deletion slice |
-| SRC-ISO-001 | Production Swift must not use `nonisolated(unsafe)`. | `AGENTS.md` | Combined `rg` with deleted type name | same check as `SRC-OBS-001` | mechanically enforced | Comment/string matches; does not prove other unsafe globals. | keep in `check.sh` (split from tombstone) |
+| SRC-DEP-001 | Views and listed feature stores must not construct `PartnerAPI(`, `SpotifyConnectAPI(`, `WebPlayer` API, Keymaster auth/session, `RustPlaybackEngine.shared`, or `PlaybackCore.`. | ADR 002 | Explicit path list + `rg` | `feature_dependencies` array | mechanically enforced | Current list is `Views/` plus named `PlaybackStore*` files, `AccountStore`, `HomeLibraryStore`, `SearchStore`, `PlaylistStore`, `PlaylistMutationController`, and `CatalogStore`. **Already out of scope:** `Sources/Aural/Spotify/MediaDetailStores.swift` (album/artist stores in the AGENTS store split). New store files can also escape. `KeymasterTokenStore.swift` is a token-storage port, not that feature-store list. | generalize in a later net-deletion slice |
+| SRC-ISO-001 | Production Swift must not use `nonisolated(unsafe)`. | `AGENTS.md` | Combined `rg` with deleted type name | same check as `SRC-OBS-001` | mechanically enforced | Comment/string matches; does not prove other unsafe globals. Does **not** own unstructured `Task`, mutable globals, singletons, or in-place presentation (`DOC-ESCAPE-001`). | keep in `check.sh` (split from tombstone) |
 | SRC-PROJ-001 | `PlaybackStore+Projections.swift` has no explicit setters. | ADR 002; `#84` | `rg` setter pattern on that file | `Scripts/check.sh` | mechanically enforced | Semantic reducer ownership stays `TST-STATE-001`. | move to existing Swift checks; delete the shell `rg` |
 | SRC-WRITER-001 | `PlaybackStore.state` assigned only at declaration and `send` commit; no `state.member =`. | ADR 002; `#84` | Exact full-line snapshot + member `rg` on eight store files | `Scripts/check.sh` | mechanically enforced | **Exact source-shape snapshot.** Duplicates `TST-STATE-001`. | delete (tests remain owner) |
 | SRC-INOUT-001 | Playback revision gates must not take `lastRevision: inout`. | Swift exclusivity; store comments | `rg` in `Sources/Aural/Spotify` | `Scripts/check.sh` | mechanically enforced | Lexical exclusivity aid, not epoch correctness (`TST-EPC-001`). | keep if still the documented shape; else generalize |
@@ -152,7 +152,9 @@ candidates.
 | DOC-TASTE-001 | Taste principles, taste pass (glance/delete/native/truth/stability/edges/cost/coherence), and “prefer fewer concepts.” | `AGENTS.md`; product contract | Human review before UI/architecture changes | `AGENTS.md`; product contract | manually reviewed | Overlaps product UX; product document wins on conflict. | retain as judgment |
 | DOC-AGENT-001 | First-five-minutes workflow; never reset unrelated work; follow the more specific canonical doc and update `AGENTS.md` in the same change. | `AGENTS.md` | Review | `AGENTS.md` | manually reviewed | | retain as judgment |
 | DOC-MAP-001 | Repository map responsibilities (thin `AuralApp`, domain/portable checks never ship, scripts vs packaging). | `AGENTS.md`; ADR 002 | `CMP-*` + review | map table | manually reviewed + `CMP-CHK-001` | | retain as judgment; graph owns shipping |
-| DOC-IMPL-001 | Declarative UI; store split; protocols only at real boundaries; typed state; comment policy; rustfmt not hand-format (Rust owned by `FMT-RUST-001`). | `AGENTS.md` | Review | `AGENTS.md` | manually reviewed | Store-split is not a filename linter. | retain as judgment |
+| DOC-IMPL-001 | Declarative UI; existing store split (including media-detail stores); protocols only at real boundaries; typed state and exhaustive switches; comments for invariants, not narration. | `AGENTS.md` | Review | `AGENTS.md` | manually reviewed | Store-split is not a filename linter. Swift 6.1 diagnostics are `DOC-CONC-001`. Formatting is `FMT-*`. Logging/caches/fixtures are `DOC-LOG-001` / `DOC-CACHE-001` / `CMP-LIVE-001`. | retain as judgment |
+| DOC-CONC-001 | Swift 6.1 concurrency diagnostics are part of correctness. Prefer actor isolation and immutable `Sendable` values over suppression. | `AGENTS.md` implementation conventions | Swift 6.1 compiler; remaining warnings fail via `FMT-SWIFT-002` | `swift build` in `Scripts/check.sh` / `compile-release-aural.sh` | mechanically enforced (diagnostics/warnings) + manually reviewed (suppression) | Isolation errors are compiler errors; this is not a ban on every `@preconcurrency` import. | keep |
+| DOC-ESCAPE-001 | Avoid unstructured `Task` lifetimes, mutable global state, broad singletons, and in-place partial playback presentation updates. | `AGENTS.md` hard architecture | Review; in-place presentation also `TST-STATE-001` | Domain/store checks + review | manually reviewed + behavior-tested (presentation writes) | Not a regex. `SRC-ISO-001` owns only `nonisolated(unsafe)`. | retain as judgment |
 | DOC-LOG-001 | Never log tokens, OAuth redirects, raw API payloads, or private library/account identifiers. | `PRIVACY.md`; `SECURITY.md`; `CONTRIBUTING.md` | Privacy sanitization suite + review | `PrivacySanitizationChecks.swift`; Unified Logging | behavior-tested (sanitizers) + manually reviewed | Cannot prove every `Logger` call. | keep tests; retain residual as judgment |
 | DOC-CACHE-001 | Cost-bounded caches; purge presentation caches when the main window closes; measure before adding timers. | Product contract; `PRIVACY.md` | Review + some boundary coverage | product contract | manually reviewed | | retain as judgment |
 | DOC-UI-001 | Native controls; 220-pt equal sidebars; Sign Out in app menu; transport order and skip glyphs; disabled Play with no track; no silent transfer; progress re-anchor; queue provenance vs Unknown; playlist table rules; window-close keeps Dock app. | Product contract (canonical); `AGENTS.md` summary | Product contract + authorized manual acceptance | `docs/product-and-acceptance-contract.md`; some panel/workflow checks | behavior-tested (narrow) + manually reviewed | Screenshot mismatch is a symptom. | retain as judgment except where a suite already covers a slice |
@@ -170,8 +172,8 @@ candidates.
 
 ## `Scripts/check.sh` assertion inventory
 
-Every fail-the-gate policy site on current `main` (`d1acd598`). Gate mechanics (toolchain present,
-configuration enum, relink if archive newer) are included so none are silent.
+Every fail-the-gate policy site on current `main` (`d1acd598`), plus one non-failing
+relink side effect so the `check.sh` control flow is not silent.
 
 | # | Kind | Inventory ID | Disposition |
 | --- | --- | --- | --- |
@@ -180,12 +182,12 @@ configuration enum, relink if archive newer) are included so none are silent.
 | 3 | `Scripts/format-swift.sh --check` | FMT-SWIFT-001 | keep |
 | 4 | `cargo` executable found | (gate mechanic) | keep |
 | 5 | `cargo fmt --check` | FMT-RUST-001 | keep |
-| 6 | Clippy `-D warnings` | FMT-RUST-002 | keep |
+| 6 | Clippy `--locked --all-targets -- -D warnings` | FMT-RUST-002 | keep |
 | 7 | `cargo test --locked` | TST-RUST-001 | keep |
 | 8 | Rebuild archive if missing/stale | ABI-ARC-001 | keep |
 | 9 | Header vs archive symbol set | ABI-SYM-001 | keep |
 | 10 | Header exports consumed by `PlaybackCore.swift` | ABI-USE-001 | keep |
-| 11 | Relink `Aural` if archive newer than binary | (gate mechanic) | keep |
+| 11 | Relink `Aural` if archive newer than binary | (side effect) | not a failing policy; keep as build mechanic |
 | 12 | `swift build` shipping `Aural` with `-warnings-as-errors` (optional `-DAURAL_DISTRIBUTION`) | FMT-SWIFT-002; CMP-CHK-002 | keep |
 | 13 | `AURAL_CHECK_REPEATS` in 1…25 | TST-GATE-001 | keep |
 | 14 | Build and run `AuralChecks` (all suites, warnings-as-errors) | CMP-CHK-001; TST-GATE-001; FMT-SWIFT-002 | keep |
@@ -217,11 +219,11 @@ configuration enum, relink if archive newer) are included so none are silent.
 | 40 | Release `AURAL_DISTRIBUTION` step after debug gate | CI-REL-001 (PR `#111`) | keep |
 | 41 | `plutil -lint Packaging/Info.plist` | CMP-PKG-001 | keep |
 
-**Totals:** 41 `check.sh` assertion sites. Dispositions: **keep** 24 (1–18, 31–33, 37, 40–41);
+**Totals:** 41 numbered `check.sh` sites; **40** fail-the-gate policies and **1** relink side
+effect (11). Dispositions among the 40 policies: **keep** 23 (1–10, 12–18, 31–33, 37, 40–41);
 **keep or generalize** 6 (24, 29–30, 34–35, 38); **generalize** 1 (25); **generalize or
 delete** 1 (28); **move to Swift checks** 1 (21); **delete** 6 (20, 22–23, 26–27, 36);
-**delete snapshot / generalize** 1 (39); **mixed** 1 (19: delete `LiveSpotifyController`, keep
-`SRC-ISO-001`). 24+6+1+1+1+6+1+1 = 41.
+**delete snapshot / generalize** 1 (39); **mixed** 1 (19). 23+6+1+1+1+6+1+1 = 40 policies.
 
 `Scripts/check-clean.sh`: 4 steps, **1** composite policy (clean Debug+Release). Disposition:
 keep. No additional `rg` architecture assertions.
@@ -267,8 +269,8 @@ hard-architecture and map/FFI/check-shipping units already owned by ADR/compiler
 | Taste and judgment (12 principles + 8-pass + preference) | 20 list | DOC-TASTE-001 (product overlaps DOC-UI-001) |
 | First five minutes | 10 list (incl. 5 nested doc links) | DOC-AGENT-001 |
 | Repository map table | 10 rows + 1 reverse-dep sentence | DOC-MAP-001, CMP-DEP-001, CMP-CHK-001, SRC-DOM-001 |
-| Hard architecture | 16 bullets + 1 paragraph → 43+ atomic | TST-STATE-001, TST-CMD-001, TST-DEP-001, TST-FBK-001, TST-EPC-001, TST-ENV-001, TST-LIF-001, TST-QUE-001, SRC-FFI-001, SRC-FFI-002, TST-PLM-001, TST-PCM-001, ABI-SYM-001, TST-FFI-001, DOC-COMBINE-001, SRC-ISO-001, DOC-ARCH-001 |
-| Implementation conventions | 10 list | FMT-SWIFT-002, DOC-IMPL-001, DOC-LOG-001, DOC-CACHE-001, CMP-LIVE-001, TST-FIX-001, FMT-RUST-001 |
+| Hard architecture | 16 bullets + 1 paragraph → 43+ atomic | TST-STATE-001, TST-CMD-001, TST-DEP-001, TST-FBK-001, TST-EPC-001, TST-ENV-001, TST-LIF-001, TST-QUE-001, SRC-FFI-001, SRC-FFI-002, TST-PLM-001, TST-PCM-001, ABI-SYM-001, TST-FFI-001, DOC-COMBINE-001, SRC-ISO-001, DOC-ESCAPE-001, DOC-ARCH-001 |
+| Implementation conventions | 10 list | DOC-CONC-001, DOC-IMPL-001, DOC-LOG-001, DOC-CACHE-001, CMP-LIVE-001, TST-FIX-001, FMT-RUST-001, FMT-SWIFT-001 |
 | macOS product and UI | 9 list + screenshot sentence | DOC-UI-001, TST-QUE-001 |
 | Live Spotify safety | 5 forbidden + surrounding prose | DOC-SAFE-001 |
 | Build and verification | 7 table rows + command prose | DOC-VER-001, TST-GATE-001, FMT-SWIFT-001, FMT-SWIFT-002, FMT-SWIFT-003, FMT-RUST-*, ABI-*, CMP-*, SRC-* (gate description), DOC-PR-001 |
@@ -301,8 +303,8 @@ Recorded against `origin/main` `d1acd598` after merging `#42` into this branch:
   split (methods above).
 - `Scripts/check.sh`: 41 assertion sites; dispositions in the assertion table.
 - `Scripts/check-clean.sh`: 1 composite clean-gate policy.
-- This registry: 77 stable IDs (5 FMT, 8 CMP, 14 TST, 5 ABI, 17 SRC, 7 CI, 21 DOC) plus 41
-  numbered `check.sh` sites and 1 `check-clean.sh` policy. `docs/architecture-enforcement.md` is
-  39,389 bytes and 308 lines (`wc -c` / `wc -l`).
+- This registry: 79 stable IDs (5 FMT, 8 CMP, 14 TST, 5 ABI, 17 SRC, 7 CI, 23 DOC) plus 41
+  numbered `check.sh` sites (40 failing policies + 1 relink side effect) and 1 `check-clean.sh`
+  policy.
 - Proportional docs verification: path existence, `git diff --check`. No app launch or
   Spotify access. GitHub macos-15 synthetic-merge CI is the compile/format authority.
