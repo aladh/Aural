@@ -257,11 +257,21 @@ func runEnginePayloadContractChecks(_ check: CheckRunner) {
                 .local
             )
             check.equal(
-                "inactive speaker stays remotely addressable by identity",
+                "an active local computer in the snapshot wins over a speaker fallback",
                 AuralDomain.connectCommandRoute(
                     isLocalActive: false,
                     localDeviceID: mac.id,
                     devices: state.devices,
+                    fallbackRemoteDeviceID: speaker.id
+                ),
+                .local
+            )
+            check.equal(
+                "decoded speaker identity stays remotely addressable when it is the listed target",
+                AuralDomain.connectCommandRoute(
+                    isLocalActive: false,
+                    localDeviceID: mac.id,
+                    devices: [speaker, unknown],
                     fallbackRemoteDeviceID: speaker.id
                 ),
                 .remote(from: "fixture-mac", to: "fixture-speaker")
