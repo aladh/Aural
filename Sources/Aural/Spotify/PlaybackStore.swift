@@ -215,8 +215,7 @@ final class PlaybackStore {
 
     init(
         environment: PlaybackEnvironment = .live,
-        feedback: TransientFeedbackPresenter,
-        queueServiceHook: any QueueServiceHook = InertQueueServiceHook()
+        feedback: TransientFeedbackPresenter
     ) {
         self.environment = environment
         self.feedback = feedback
@@ -232,7 +231,7 @@ final class PlaybackStore {
             webQueue: environment.webQueue,
             metadata: metadataService,
             clock: environment.clock,
-            hook: queueServiceHook
+            hook: environment.queueServiceHook
         )
         accountStore = AccountStore(environment: environment, coordinator: coordinator)
         let catalogSession = CatalogSessionAvailability(accountEpoch: accountStore.epoch, isAvailable: false)

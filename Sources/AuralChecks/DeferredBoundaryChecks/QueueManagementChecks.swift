@@ -152,7 +152,7 @@ private struct IdleQueueCatalog: CatalogProviding {
 }
 
 private func isolatedQueueService(
-    hook: any QueueServiceHook = InertQueueServiceHook()
+    hook: (any QueueServiceHook)? = nil
 ) -> QueueService {
     QueueService(
         webQueue: IdleQueueWeb(),
@@ -168,7 +168,8 @@ private func connectEntry(_ uri: String, occurrence: Int = 0) -> QueueEntry {
 private func queueEnvironment(
     local: any LocalPlaybackEngine = QueueLocalEngine(),
     remote: any RemotePlaybackClient,
-    clock: any PlaybackClock = SystemPlaybackClock()
+    clock: any PlaybackClock = SystemPlaybackClock(),
+    queueServiceHook: (any QueueServiceHook)? = nil
 ) -> PlaybackEnvironment {
     PlaybackEnvironment(
         remote: remote,
@@ -181,7 +182,8 @@ private func queueEnvironment(
         clock: clock,
         catalog: IdleQueueCatalog(),
         playlistMutations: UnavailablePlaylistMutations(),
-        trackAttributes: IdleQueueAttributes()
+        trackAttributes: IdleQueueAttributes(),
+        queueServiceHook: queueServiceHook
     )
 }
 
@@ -264,10 +266,6 @@ private func seedAuthoritativeQueue(_ player: PlaybackStore, revision: UInt64 = 
         engineEpoch: player.engineGeneration,
         accountEpoch: player.accountEpoch
     )
-}
-
-private func waitForPreferencesQueueReset(_ hook: QueueServiceTestHook) async -> Bool {
-    await waitUntil { await hook.resetCount >= 1 }
 }
 
 private func waitUntil(
@@ -928,11 +926,9 @@ func runQueueManagementChecks(_ runner: CheckRunner) async {
         let feedback = TransientFeedbackPresenter(clock: SystemPlaybackClock(), duration: 4)
         let hook = QueueServiceTestHook()
         let player = PlaybackStore(
-            environment: queueEnvironment(remote: remote),
-            feedback: feedback,
-            queueServiceHook: hook
+            environment: queueEnvironment(remote: remote, queueServiceHook: hook),
+            feedback: feedback
         )
-        runner.check("init restore finished before parking accept", await waitForPreferencesQueueReset(hook))
         seedRemoteOwner(player)
         await player.queueService.reset(accountEpoch: player.accountEpoch)
         await hook.parkNextConnectAccept()
@@ -1007,11 +1003,9 @@ func runQueueManagementChecks(_ runner: CheckRunner) async {
         let acceptFeedback = TransientFeedbackPresenter(clock: SystemPlaybackClock(), duration: 4)
         let acceptHook = QueueServiceTestHook()
         let accept = PlaybackStore(
-            environment: queueEnvironment(remote: QueueRemoteClient(.succeed)),
-            feedback: acceptFeedback,
-            queueServiceHook: acceptHook
+            environment: queueEnvironment(remote: QueueRemoteClient(.succeed), queueServiceHook: acceptHook),
+            feedback: acceptFeedback
         )
-        runner.check("inspector-close restore finished before parking accept", await waitForPreferencesQueueReset(acceptHook))
         seedRemoteOwner(accept)
         await accept.queueService.reset(accountEpoch: accept.accountEpoch)
         await acceptHook.parkNextConnectAccept()
@@ -1043,11 +1037,9 @@ func runQueueManagementChecks(_ runner: CheckRunner) async {
         let teardownFeedback = TransientFeedbackPresenter(clock: SystemPlaybackClock(), duration: 4)
         let teardownHook = QueueServiceTestHook()
         let teardown = PlaybackStore(
-            environment: queueEnvironment(remote: teardownRemote),
-            feedback: teardownFeedback,
-            queueServiceHook: teardownHook
+            environment: queueEnvironment(remote: teardownRemote, queueServiceHook: teardownHook),
+            feedback: teardownFeedback
         )
-        runner.check("teardown restore finished before parking accept", await waitForPreferencesQueueReset(teardownHook))
         seedRemoteOwner(teardown)
         await seedAuthoritativeQueue(teardown)
         teardown.removeUpcomingQueueOccurrences(selectedIDs: [teardown.queueNextEntries[0].id])
@@ -1079,11 +1071,9 @@ func runQueueManagementChecks(_ runner: CheckRunner) async {
         let epochFeedback = TransientFeedbackPresenter(clock: SystemPlaybackClock(), duration: 4)
         let epochHook = QueueServiceTestHook()
         let epochPlayer = PlaybackStore(
-            environment: queueEnvironment(remote: remote),
-            feedback: epochFeedback,
-            queueServiceHook: epochHook
+            environment: queueEnvironment(remote: remote, queueServiceHook: epochHook),
+            feedback: epochFeedback
         )
-        runner.check("epoch restore finished before parking commit", await waitForPreferencesQueueReset(epochHook))
         seedRemoteOwner(epochPlayer)
         await seedAuthoritativeQueue(epochPlayer)
         await epochHook.parkNextCommittedReplacement()
@@ -1106,11 +1096,9 @@ func runQueueManagementChecks(_ runner: CheckRunner) async {
         let cancelFeedback = TransientFeedbackPresenter(clock: SystemPlaybackClock(), duration: 4)
         let cancelHook = QueueServiceTestHook()
         let cancelPlayer = PlaybackStore(
-            environment: queueEnvironment(remote: cancelRemote),
-            feedback: cancelFeedback,
-            queueServiceHook: cancelHook
+            environment: queueEnvironment(remote: cancelRemote, queueServiceHook: cancelHook),
+            feedback: cancelFeedback
         )
-        runner.check("cancel restore finished before parking commit", await waitForPreferencesQueueReset(cancelHook))
         seedRemoteOwner(cancelPlayer)
         await seedAuthoritativeQueue(cancelPlayer)
         await cancelHook.parkNextCommittedReplacement()
@@ -1311,9 +1299,10 @@ func runQueueManagementChecks(_ runner: CheckRunner) async {
             await waitUntil { await resetHook.connectAcceptIsParked() }
         )
         await resetService.reset(accountEpoch: 2)
+        await resetHook.reset()
         let stale = await staleTask.value
-        runner.nil_("reset resumes then rejects the old-epoch accept", stale)
-        runner.equal("reset resumes the parked continuation once", await resetHook.acceptConnectResumeCount, 1)
+        runner.nil_("hook resume after service reset rejects the old-epoch accept", stale)
+        runner.equal("hook reset resumes the parked continuation once", await resetHook.acceptConnectResumeCount, 1)
 
         let revisionHook = QueueServiceTestHook()
         let revisionService = isolatedQueueService(hook: revisionHook)
@@ -1359,6 +1348,7 @@ func runQueueManagementChecks(_ runner: CheckRunner) async {
             let engineEvents = try auralSourceFile("Aural/Spotify/PlaybackStore+EngineEvents.swift")
             let models = try auralSourceFile("AuralDomain/PlaybackPanelModels.swift")
             let service = try auralSourceFile("Aural/Spotify/QueueService.swift")
+            let environment = try auralSourceFile("Aural/Spotify/PlaybackEnvironment.swift")
             let store = try auralSourceFile("Aural/Spotify/PlaybackStore.swift")
             runner.check(
                 "Connect intake binds occurrence uids into selectable identity",
@@ -1420,10 +1410,10 @@ func runQueueManagementChecks(_ runner: CheckRunner) async {
             )
             runner.check(
                 "QueueService does not store test continuation gates",
-                containsToken(service, "await hook.beforeAcceptConnect()")
+                containsToken(service, "if let hook {")
+                    && containsToken(service, "await hook.beforeAcceptConnect()")
                     && containsToken(service, "await hook.beforeRecordCommittedReplacement()")
-                    && containsToken(service, "await hook.reset()")
-                    && containsToken(service, "InertQueueServiceHook")
+                    && !containsToken(service, "hook.reset")
                     && !containsToken(service, "parkNextConnectAccept")
                     && !containsToken(service, "parkNextCommittedReplacement")
                     && !containsToken(service, "waitForTestConnectAcceptGate")
@@ -1433,9 +1423,10 @@ func runQueueManagementChecks(_ runner: CheckRunner) async {
                     && !containsToken(service, "pendingCommittedReplacementGate")
             )
             runner.check(
-                "PlaybackStore injects the hook at QueueService initialization",
-                containsToken(store, "queueServiceHook: any QueueServiceHook = InertQueueServiceHook()")
-                    && containsToken(store, "hook: queueServiceHook")
+                "the queue hook is an environment dependency, not a store sidecar",
+                containsToken(environment, "queueServiceHook: (any QueueServiceHook)?")
+                    && containsToken(store, "hook: environment.queueServiceHook")
+                    && !containsToken(store, "queueServiceHook: any QueueServiceHook")
             )
         }
     }

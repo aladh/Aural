@@ -274,6 +274,7 @@ nonisolated struct PlaybackEnvironment: Sendable {
     let catalog: any CatalogProviding
     let playlistMutations: any PlaylistMutating
     let trackAttributes: any TrackAttributesProviding
+    let queueServiceHook: (any QueueServiceHook)? = nil
 
     static let live: PlaybackEnvironment = {
         let partnerAPI = PartnerAPI()

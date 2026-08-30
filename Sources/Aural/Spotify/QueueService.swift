@@ -95,19 +95,11 @@ nonisolated struct AcceptedConnectQueue: Sendable {
     let mutation: QueueMutationSnapshot
 }
 
-/// Entry suspension points for `acceptConnect` and `recordCommittedReplacement`.
-/// Production uses `InertQueueServiceHook`, which returns immediately and owns
-/// no continuations, counters, or parking flags.
+/// Optional suspension points around `acceptConnect` and `recordCommittedReplacement`.
+/// Production stores `nil` and does not `await`. Checks inject `QueueServiceTestHook`.
 nonisolated protocol QueueServiceHook: Sendable {
     func beforeAcceptConnect() async
     func beforeRecordCommittedReplacement() async
-    func reset() async
-}
-
-nonisolated struct InertQueueServiceHook: QueueServiceHook {
-    func beforeAcceptConnect() async {}
-    func beforeRecordCommittedReplacement() async {}
-    func reset() async {}
 }
 
 actor QueueService {
@@ -120,7 +112,7 @@ actor QueueService {
     private let webQueue: any WebQueueClient
     private let metadata: TrackMetadataService
     private let clock: any PlaybackClock
-    private let hook: any QueueServiceHook
+    private let hook: (any QueueServiceHook)?
     private(set) var accountEpoch: UInt64 = 0
     private var revision: UInt64 = 0
     private var lastConnectSourceRevision: UInt64 = 0
@@ -134,7 +126,7 @@ actor QueueService {
         webQueue: any WebQueueClient,
         metadata: TrackMetadataService,
         clock: any PlaybackClock = SystemPlaybackClock(),
-        hook: any QueueServiceHook = InertQueueServiceHook()
+        hook: (any QueueServiceHook)? = nil
     ) {
         self.webQueue = webQueue
         self.metadata = metadata
@@ -151,7 +143,6 @@ actor QueueService {
         webRetryNotBefore = nil
         snapshot = nil
         mutation = nil
-        await hook.reset()
         await metadata.reset()
     }
 
@@ -162,7 +153,10 @@ actor QueueService {
         accountEpoch requestedEpoch: UInt64,
         engineEpoch: UInt64
     ) async -> QueueMutationSnapshot? {
-        await hook.beforeRecordCommittedReplacement()
+        if let hook {
+            // Production stores nil, so this await is check-only and does not hop the live actor.
+            await hook.beforeRecordCommittedReplacement()
+        }
         guard !Task.isCancelled else { return nil }
         guard requestedEpoch == accountEpoch else { return nil }
         guard var current = mutation, current.engineEpoch == engineEpoch else { return nil }
@@ -186,7 +180,10 @@ actor QueueService {
         disallowSetQueue: Bool = false,
         disallowRemovingFromNextTracks: Bool = false
     ) async -> AcceptedConnectQueue? {
-        await hook.beforeAcceptConnect()
+        if let hook {
+            // Production stores nil, so this await is check-only and does not hop the live actor.
+            await hook.beforeAcceptConnect()
+        }
         guard !Task.isCancelled else { return nil }
         guard requestedEpoch == accountEpoch else { return nil }
         if let sourceRevision {

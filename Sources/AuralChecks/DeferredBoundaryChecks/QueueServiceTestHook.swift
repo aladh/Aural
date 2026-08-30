@@ -3,7 +3,8 @@ import Foundation
 
 /// Check-only scheduler that parks `QueueService` at the injected hook points.
 /// Continuation storage, parking flags, and resume counters live here, not on
-/// the shipping actor.
+/// the shipping actor. `reset()` is check-owned; `QueueService.reset` does not
+/// call it.
 actor QueueServiceTestHook: QueueServiceHook {
     private var pendingConnectAccept = false
     private var connectAcceptGate: CheckedContinuation<Void, Never>?
