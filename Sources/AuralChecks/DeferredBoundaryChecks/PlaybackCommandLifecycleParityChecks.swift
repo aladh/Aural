@@ -37,11 +37,18 @@ private final class LifecycleLocalEngine: LocalPlaybackEngine, @unchecked Sendab
     private let condition = NSCondition()
     private var allowed = false
     private var result: PlaybackEngineResult
+    private var storedEnteredCount = 0
     private var storedExecuteCount = 0
 
     init(result: PlaybackEngineResult, gated: Bool) {
         self.result = result
         allowed = !gated
+    }
+
+    var enteredCount: Int {
+        condition.lock()
+        defer { condition.unlock() }
+        return storedEnteredCount
     }
 
     var executeCount: Int {
@@ -58,6 +65,7 @@ private final class LifecycleLocalEngine: LocalPlaybackEngine, @unchecked Sendab
     func initialize() -> PlaybackEngineResult { .ok }
     func execute(_: LocalPlaybackOperation) -> PlaybackEngineResult {
         condition.lock()
+        storedEnteredCount += 1
         while !allowed {
             condition.wait()
         }
@@ -656,6 +664,11 @@ func runPlaybackCommandLifecycleParityChecks(_ runner: CheckRunner) async {
                 startLifecycleCommand(cancelled, kind: kind) { cancelCompletions.append($0) }
                 let cancelPending = await waitUntil { cancelled.state.pendingCommands[kind.commandKind] != nil }
                 runner.check("\(label) command is pending before cancellation", cancelPending)
+                let cancelReached = await waitUntil {
+                    if route == .local { return cancelLocal.enteredCount == 1 }
+                    return await cancelRemote.sendCount >= 1
+                }
+                runner.check("\(label) cancelled command still reaches the fixture", cancelReached)
                 if let commandID = cancelled.state.pendingCommands[kind.commandKind]?.id {
                     cancelled.effects.cancel(.command(commandID))
                 }
@@ -664,11 +677,6 @@ func runPlaybackCommandLifecycleParityChecks(_ runner: CheckRunner) async {
                 } else {
                     await cancelRemote.finish(success: true)
                 }
-                let cancelReached = await waitUntil {
-                    if route == .local { return cancelLocal.executeCount == 1 }
-                    return await cancelRemote.sendCount >= 1
-                }
-                runner.check("\(label) cancelled command still reaches the fixture", cancelReached)
                 runner.check("\(label) cancelled command reports no completion", cancelCompletions.isEmpty)
                 runner.notNil("\(label) cancellation leaves the pending command", cancelled.state.pendingCommands[kind.commandKind])
                 await cancelled.shutdownForTermination()
