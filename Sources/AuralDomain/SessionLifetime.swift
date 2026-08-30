@@ -120,6 +120,19 @@ public struct ConnectQueueCallbackWatermark: Equatable, Sendable {
     }
 }
 
+/// Pre-reducer store admission for a playback command.
+///
+/// Route selection, route refusal, and waiting for local Connect identity never consult this,
+/// so those paths cannot create pending commands. Duplicate-kind refusal here is the store
+/// gate; the reducer also rejects a second `commandStarted` for the same kind.
+public func playbackCommandShouldAdmit(
+    isTearingDown: Bool,
+    allowsCommands: Bool,
+    hasPendingCommandForKind: Bool
+) -> Bool {
+    !isTearingDown && allowsCommands && !hasPendingCommandForKind
+}
+
 /// Dependent work after `PlaybackStore.send(.commandFinished)`.
 ///
 /// Same-lifetime is the first gate: epoch invalidation and teardown stay inert even when a

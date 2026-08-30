@@ -31,12 +31,14 @@ different namespace. Command effects must not fold that watermark into reducer-o
 (cancel-in-flight for that token), completed, or cancelled. Account teardown calls
 `cancelAccountScoped()`.
 
-Transport commands today:
+Transport commands today share one store kernel, `performAdmittedPlaybackCommand`:
 
 1. Refuse a second command of the same `PlaybackCommandKind` while one is pending.
 2. `send(.commandStarted)` for an optimistic transport when requested.
 3. `effects.replace(.command(commandID), …)` with a unique UUID token.
-4. Await `PlaybackCoordinator.performLocal` / `performRemoteOperation`.
+4. Await the caller-supplied local or remote operation. Route selection, route refusal, and
+   waiting for local Connect identity stay outside the kernel so they cannot create pending
+   commands.
 5. Exit if the task was cancelled, the account epoch changed, or teardown began.
 6. `send(.commandFinished)` and, until this change, run reconnect / completion / extra notices
    even when that send was rejected.
@@ -167,7 +169,8 @@ Reasons:
 
 ## Production change justified by the spike
 
-In `PlaybackStore+Commands`, `commandStarted` must be accepted before a command task starts.
+In `PlaybackStore+Commands`, local and remote live routes share `performAdmittedPlaybackCommand`.
+`commandStarted` must be accepted before a command task starts.
 `commandFinished` follow-ups (completion, detailed notice, reconnect) go through
 `playbackCommandFollowUp`:
 

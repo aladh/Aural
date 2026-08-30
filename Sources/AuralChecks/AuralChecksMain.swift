@@ -16,6 +16,7 @@ enum AuralChecksMain {
         runPlaybackStoreStateWriterContractChecks(runner)
         runPlaybackReducerChecks(runner)
         runPlaybackCommandPresentationChecks(runner)
+        runPlaybackCommandLifecycleChecks(runner)
         runPlaybackCommandEffectSpikeChecks(runner)
         runSessionLifetimeChecks(runner)
         runPlaylistEditabilityChecks(runner)

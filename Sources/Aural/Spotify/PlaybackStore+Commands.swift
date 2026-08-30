@@ -22,11 +22,123 @@ extension PlaybackStore {
         kind: PlaybackCommandKind = .transport,
         completion: @escaping @MainActor (Bool) -> Void = { _ in }
     ) {
-        guard !isTearingDown, terminationGate.allowsCommands else {
-            completion(false)
-            return
+        performAdmittedPlaybackCommand(
+            action,
+            kind: kind,
+            expecting: expectedPlaybackState,
+            expectedTiming: expectedTiming,
+            expectedTrack: expectedTrack,
+            expectedShuffle: expectedShuffle,
+            expectedRepeatFlags: expectedRepeatFlags,
+            expectedOwner: expectedOwner,
+            completion: completion
+        ) {
+            try await coordinator.performLocalCommand(operation)
         }
-        guard state.pendingCommands[kind] == nil else {
+    }
+
+    func performRoutedCommand(
+        _ action: String,
+        kind: PlaybackCommandKind = .transport,
+        expecting expectedPlaybackState: Bool? = nil,
+        expectedTiming: PlaybackTiming? = nil,
+        expectedTrack: CurrentTrack? = nil,
+        expectedShuffle: Bool? = nil,
+        expectedRepeatFlags: RepeatFlags? = nil,
+        expectedOwner: PlaybackOwner? = nil,
+        local: LocalPlaybackOperation,
+        remote command: SpotifyConnectCommand,
+        completion: @escaping @MainActor (Bool) -> Void = { _ in }
+    ) {
+        performRoutedOperation(
+            action,
+            kind: kind,
+            expecting: expectedPlaybackState,
+            expectedTiming: expectedTiming,
+            expectedTrack: expectedTrack,
+            expectedShuffle: expectedShuffle,
+            expectedRepeatFlags: expectedRepeatFlags,
+            expectedOwner: expectedOwner,
+            local: local,
+            remote: { api, from, to in try await api.send(command, from: from, to: to) },
+            completion: completion
+        )
+    }
+
+    func performRoutedOperation(
+        _ action: String,
+        kind: PlaybackCommandKind = .transport,
+        expecting expectedPlaybackState: Bool? = nil,
+        expectedTiming: PlaybackTiming? = nil,
+        expectedTrack: CurrentTrack? = nil,
+        expectedShuffle: Bool? = nil,
+        expectedRepeatFlags: RepeatFlags? = nil,
+        expectedOwner: PlaybackOwner? = nil,
+        local: LocalPlaybackOperation,
+        remote: @escaping @Sendable (any RemotePlaybackClient, String, String) async throws -> Void,
+        completion: @escaping @MainActor (Bool) -> Void = { _ in }
+    ) {
+        switch commandRoute {
+        case .local:
+            AuralLog.commands.info("Routing \(String(describing: kind), privacy: .public) command locally")
+            performCommand(
+                action,
+                expecting: expectedPlaybackState,
+                expectedTiming: expectedTiming,
+                expectedTrack: expectedTrack,
+                expectedShuffle: expectedShuffle,
+                expectedRepeatFlags: expectedRepeatFlags,
+                expectedOwner: expectedOwner,
+                operation: local,
+                kind: kind,
+                completion: completion
+            )
+        case .waitingForLocalIdentity:
+            AuralLog.commands.notice("Command delayed while local Connect identity is unavailable")
+            showTransientCommandError("Aural is still joining Spotify Connect.")
+            completion(false)
+        case let .remote(from, to):
+            AuralLog.commands.info(
+                "Routing \(String(describing: kind), privacy: .public) command remotely; source=\(from, privacy: .private(mask: .hash)); target=\(to, privacy: .private(mask: .hash))"
+            )
+            performAdmittedPlaybackCommand(
+                action,
+                kind: kind,
+                expecting: expectedPlaybackState,
+                expectedTiming: expectedTiming,
+                expectedTrack: expectedTrack,
+                expectedShuffle: expectedShuffle,
+                expectedRepeatFlags: expectedRepeatFlags,
+                expectedOwner: expectedOwner,
+                completion: completion
+            ) {
+                try await coordinator.performRemoteCommand { client in
+                    try await remote(client, from, to)
+                }
+            }
+        }
+    }
+
+    /// Shared playback-command lifecycle kernel. Route selection, route refusal, and
+    /// waiting-for-local-identity stay outside so they cannot create pending commands.
+    /// Callers supply the local or remote operation after choosing a live route.
+    private func performAdmittedPlaybackCommand(
+        _ action: String,
+        kind: PlaybackCommandKind,
+        expecting expectedPlaybackState: Bool?,
+        expectedTiming: PlaybackTiming?,
+        expectedTrack: CurrentTrack?,
+        expectedShuffle: Bool?,
+        expectedRepeatFlags: RepeatFlags?,
+        expectedOwner: PlaybackOwner?,
+        completion: @escaping @MainActor (Bool) -> Void,
+        operation: @escaping @MainActor () async throws -> Result<Void, PlaybackCommandFailure>
+    ) {
+        guard playbackCommandShouldAdmit(
+            isTearingDown: isTearingDown,
+            allowsCommands: terminationGate.allowsCommands,
+            hasPendingCommandForKind: state.pendingCommands[kind] != nil
+        ) else {
             completion(false)
             return
         }
@@ -56,148 +168,7 @@ extension PlaybackStore {
             defer { self?.effects.complete(effectID) }
             guard let self else { return }
             do {
-                let outcome = try await self.coordinator.performLocalCommand(operation)
-                guard !Task.isCancelled, self.accountEpoch == epoch, !self.isTearingDown else { return }
-                self.applyCommandOutcome(
-                    commandID: commandID,
-                    kind: kind,
-                    capturedAccountEpoch: epoch,
-                    capturedEngineEpoch: engineEpoch,
-                    outcome: outcome,
-                    action: action,
-                    completion: completion
-                )
-            } catch {
-                return
-            }
-        })
-    }
-
-    func performRoutedCommand(
-        _ action: String,
-        kind: PlaybackCommandKind = .transport,
-        expecting expectedPlaybackState: Bool? = nil,
-        expectedTiming: PlaybackTiming? = nil,
-        expectedTrack: CurrentTrack? = nil,
-        expectedShuffle: Bool? = nil,
-        expectedRepeatFlags: RepeatFlags? = nil,
-        local: LocalPlaybackOperation,
-        remote command: SpotifyConnectCommand,
-        completion: @escaping @MainActor (Bool) -> Void = { _ in }
-    ) {
-        performRoutedOperation(
-            action,
-            kind: kind,
-            expecting: expectedPlaybackState,
-            expectedTiming: expectedTiming,
-            expectedTrack: expectedTrack,
-            expectedShuffle: expectedShuffle,
-            expectedRepeatFlags: expectedRepeatFlags,
-            local: local,
-            remote: { api, from, to in try await api.send(command, from: from, to: to) },
-            completion: completion
-        )
-    }
-
-    func performRoutedOperation(
-        _ action: String,
-        kind: PlaybackCommandKind = .transport,
-        expecting expectedPlaybackState: Bool? = nil,
-        expectedTiming: PlaybackTiming? = nil,
-        expectedTrack: CurrentTrack? = nil,
-        expectedShuffle: Bool? = nil,
-        expectedRepeatFlags: RepeatFlags? = nil,
-        local: LocalPlaybackOperation,
-        remote: @escaping @Sendable (any RemotePlaybackClient, String, String) async throws -> Void,
-        completion: @escaping @MainActor (Bool) -> Void = { _ in }
-    ) {
-        switch commandRoute {
-        case .local:
-            AuralLog.commands.info("Routing \(String(describing: kind), privacy: .public) command locally")
-            performCommand(
-                action,
-                expecting: expectedPlaybackState,
-                expectedTiming: expectedTiming,
-                expectedTrack: expectedTrack,
-                expectedShuffle: expectedShuffle,
-                expectedRepeatFlags: expectedRepeatFlags,
-                operation: local,
-                kind: kind,
-                completion: completion
-            )
-        case .waitingForLocalIdentity:
-            AuralLog.commands.notice("Command delayed while local Connect identity is unavailable")
-            showTransientCommandError("Aural is still joining Spotify Connect.")
-            completion(false)
-        case let .remote(from, to):
-            AuralLog.commands.info(
-                "Routing \(String(describing: kind), privacy: .public) command remotely; source=\(from, privacy: .private(mask: .hash)); target=\(to, privacy: .private(mask: .hash))"
-            )
-            performRemoteOperation(
-                action,
-                kind: kind,
-                expecting: expectedPlaybackState,
-                expectedTiming: expectedTiming,
-                expectedTrack: expectedTrack,
-                expectedShuffle: expectedShuffle,
-                expectedRepeatFlags: expectedRepeatFlags,
-                from: from,
-                to: to,
-                operation: remote,
-                completion: completion
-            )
-        }
-    }
-
-    private func performRemoteOperation(
-        _ action: String,
-        kind: PlaybackCommandKind,
-        expecting expectedPlaybackState: Bool?,
-        expectedTiming: PlaybackTiming?,
-        expectedTrack: CurrentTrack?,
-        expectedShuffle: Bool?,
-        expectedRepeatFlags: RepeatFlags?,
-        from sourceID: String,
-        to targetID: String,
-        operation: @escaping @Sendable (any RemotePlaybackClient, String, String) async throws -> Void,
-        completion: @escaping @MainActor (Bool) -> Void
-    ) {
-        guard !isTearingDown, terminationGate.allowsCommands else {
-            completion(false)
-            return
-        }
-        guard state.pendingCommands[kind] == nil else {
-            completion(false)
-            return
-        }
-        let commandID = UUID()
-        let epoch = accountEpoch
-        let engineEpoch = engineGeneration
-        let started = send(
-            .commandStarted(PendingPlaybackCommand(
-                id: commandID,
-                kind: kind,
-                expectedTransport: expectedPlaybackState.map { $0 ? .playing : .paused },
-                expectedTiming: expectedTiming,
-                expectedTrack: expectedTrack,
-                expectedShuffle: expectedShuffle,
-                expectedRepeatFlags: expectedRepeatFlags,
-                startedAt: environment.clock.now()
-            )),
-            source: .command
-        )
-        guard started else {
-            completion(false)
-            return
-        }
-        let effectID = PlaybackEffectID.command(commandID)
-        effects.replace(effectID, with: Task { [weak self] in
-            defer { self?.effects.complete(effectID) }
-            guard let self else { return }
-            do {
-                let outcome = try await self.coordinator.performRemoteCommand { remote in
-                    try await operation(remote, sourceID, targetID)
-                }
+                let outcome = try await operation()
                 guard !Task.isCancelled, self.accountEpoch == epoch, !self.isTearingDown else { return }
                 self.applyCommandOutcome(
                     commandID: commandID,

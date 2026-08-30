@@ -30,6 +30,7 @@ enum BoundaryChecksMain {
         await runAccountEpochOwnershipChecks(runner)
         await runCommandEffectRegistryChecks(runner)
         await runPlaybackCommandFailureChecks(runner)
+        await runPlaybackCommandLifecycleParityChecks(runner)
         await runRepeatTransitionChecks(runner)
         await runPlaybackEventOutcomeChecks(runner)
         await runPlaylistMutationChecks(runner)

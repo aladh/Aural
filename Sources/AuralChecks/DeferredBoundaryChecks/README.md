@@ -11,6 +11,7 @@ spike in [ADR 003](../../../docs/ADR-003-playback-command-effects.md). The concr
 auth parsing and PKCE, bearer 401 retry and grant-load single-flight, credentialed transport retry,
 wire codecs, catalog resolution, formatting, privacy-safe API failure
 surfaces, Partner API pagination call sites, injected coordinator/queue invalidation workflows, typed playback-command failures,
+local/remote command-lifecycle parity,
 `PlaybackEffectRegistry` task cancellation, transient mutation feedback, native playlist
 add/remove, native queue add/remove, PCM writer wake/bypass, and serialized engine event
 fan-out ordering. Do not move check code back into `Sources/Aural`: test code must not ship
