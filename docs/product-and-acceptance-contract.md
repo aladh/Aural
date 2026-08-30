@@ -25,7 +25,8 @@ ADRs; historical measurements belong in the performance baseline.
 - The sidebar has native navigation symbols for primary destinations, but playlist shortcuts are
   text-only. Do not add a redundant app logo or app-name header to the content area.
 - The right inspector contains Queue and History in a stable segmented header. Switching tabs must
-  not move the header. The current queue item is text-only; history may show artwork.
+  not move the header. The current queue item is text-only; history may show artwork. VoiceOver for
+  that now-playing row uses the same catalog-enriched title and artist as the visible text.
 - Closing the main window purges presentation caches but does not quit Aural. The app remains in the
   Dock and reopens through the Dock icon or the standard macOS Window command.
 - Sign Out belongs in the macOS **Aural** application menu, not in a custom profile card. Settings
