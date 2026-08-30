@@ -130,12 +130,8 @@ final class PlaylistStore {
             replaceTracks(entries.compactMap(CatalogMapping.playlistTrack(from:)))
             metadata.replaceTracks(tracks, from: .playlist)
             metadata.loadTrackAttributes(for: tracks)
-        } catch is CancellationError {
-            return
-        } catch let error as URLError where error.code == .cancelled {
-            return
         } catch {
-            guard isCurrent(identity, uri: item.uri) else { return }
+            guard !isCancellation(error), isCurrent(identity, uri: item.uri) else { return }
             self.error = error.localizedDescription
         }
     }

@@ -75,9 +75,8 @@ final class AlbumDetailStore {
                 loadedSession = currentSession
                 metadata.replaceTracks(tracks, from: .album)
                 metadata.loadTrackAttributes(for: tracks)
-            } catch is CancellationError {
             } catch {
-                guard self.isCurrent(identity, uri: selected.uri) else { return }
+                guard !isCancellation(error), self.isCurrent(identity, uri: selected.uri) else { return }
                 self.error = error.localizedDescription
             }
             if currentID == requestID {
@@ -163,9 +162,8 @@ final class ArtistDetailStore {
                 let artistName = profile.profile?.name ?? selected.title
                 releases = allReleases.releases.compactMap { CatalogMapping.item(from: $0, artist: artistName) }
                 loadedSession = currentSession
-            } catch is CancellationError {
             } catch {
-                guard self.isCurrent(identity, uri: selected.uri) else { return }
+                guard !isCancellation(error), self.isCurrent(identity, uri: selected.uri) else { return }
                 self.error = error.localizedDescription
             }
             if currentID == requestID {

@@ -11,7 +11,7 @@ spike in [ADR 003](../../../docs/ADR-003-playback-command-effects.md). The concr
 auth parsing and PKCE, bearer 401 retry and grant-load single-flight, credentialed transport retry,
 Connect metadata HTTP method/count/order,
 wire codecs, catalog resolution, formatting, privacy-safe API failure
-surfaces, Partner API pagination call sites, injected coordinator/queue invalidation workflows, optional QueueService scheduling hooks that production never awaits, typed playback-command failures,
+surfaces, Partner API pagination call sites, injected coordinator/queue invalidation workflows, Home library force/single-flight lifetimes, optional QueueService scheduling hooks that production never awaits, typed playback-command failures,
 local/remote command-lifecycle parity,
 `PlaybackEffectRegistry` task cancellation, transient mutation feedback, native playlist
 add/remove, native queue add/remove, PCM writer wake/bypass, serialized engine event

@@ -177,7 +177,7 @@ final class PlaylistMutationController {
     }
 
     private func reportFailure(_ error: Error) {
-        if Self.isCancellation(error) { return }
+        if isCancellation(error) { return }
         if let apiError = error as? PartnerAPIError, case .mutationRejected = apiError {
             feedback.failure("Spotify couldn’t change that playlist.")
             return
@@ -197,10 +197,5 @@ final class PlaylistMutationController {
             return "Removed from \(playlistTitle)"
         }
         return "Removed \(count) songs from \(playlistTitle)"
-    }
-
-    private nonisolated static func isCancellation(_ error: Error) -> Bool {
-        if error is CancellationError { return true }
-        return (error as? URLError)?.code == .cancelled
     }
 }

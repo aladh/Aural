@@ -50,6 +50,7 @@ final class HomeLibraryStore {
     @ObservationIgnored private var initialLoadTask: Task<Void, Never>?
     @ObservationIgnored private var initialLoadToken: UUID?
     @ObservationIgnored private var sectionTasks: [Section: Task<Void, Never>] = [:]
+    @ObservationIgnored private var sectionSessionSnapshots: [Section: CatalogSessionSnapshot] = [:]
     @ObservationIgnored private var loadSessionSnapshot: CatalogSessionSnapshot?
 
     init(
@@ -69,6 +70,7 @@ final class HomeLibraryStore {
         initialLoadTask = nil
         initialLoadToken = nil
         sectionTasks.removeAll(keepingCapacity: false)
+        sectionSessionSnapshots.removeAll(keepingCapacity: false)
         requestIDs.removeAll(keepingCapacity: false)
         loadSessionSnapshot = nil
         greeting = "Home"
@@ -179,9 +181,13 @@ final class HomeLibraryStore {
         force: Bool,
         operation: @escaping @Sendable () async throws -> SectionPayload
     ) async {
-        guard session.isAvailable else { return }
+        let currentSession = session.snapshot
+        guard currentSession.isAvailable else { return }
         if !force, loadedSections.contains(section) { return }
-        if let task = sectionTasks[section] {
+        if let task = sectionTasks[section],
+           !force,
+           sectionSessionSnapshots[section] == currentSession
+        {
             await task.value
             return
         }
@@ -190,6 +196,8 @@ final class HomeLibraryStore {
         let requestID = nextRequestID
         requestIDs[section] = requestID
         let identity = session.requestIdentity(requestID: requestID)
+        sectionTasks[section]?.cancel()
+        sectionSessionSnapshots[section] = currentSession
         begin(section)
         let task = Task { [weak self] in
             guard let self else { return }
@@ -244,6 +252,7 @@ final class HomeLibraryStore {
         guard requestIDs[section] == identity.requestID else { return }
         loadingSections.remove(section)
         sectionTasks[section] = nil
+        sectionSessionSnapshots[section] = nil
     }
 
     private func record(
@@ -251,7 +260,7 @@ final class HomeLibraryStore {
         for section: Section,
         identity: AccountScopedRequestIdentity
     ) {
-        guard !Self.isCancellation(error), isCurrent(identity, for: section) else { return }
+        guard !isCancellation(error), isCurrent(identity, for: section) else { return }
         AuralLog.catalog.error(
             "Catalog section failed: \(section.rawValue, privacy: .public); error=\(String(describing: type(of: error)), privacy: .public)"
         )
@@ -271,10 +280,5 @@ final class HomeLibraryStore {
             && identity.sessionRevision == session.snapshot.revision
             && session.isAvailable
             && !Task.isCancelled
-    }
-
-    private nonisolated static func isCancellation(_ error: Error) -> Bool {
-        if error is CancellationError { return true }
-        return (error as? URLError)?.code == .cancelled
     }
 }

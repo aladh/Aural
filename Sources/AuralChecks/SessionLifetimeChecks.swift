@@ -92,6 +92,17 @@ func runSessionLifetimeChecks(_ check: CheckRunner) {
         )
     }
 
+    check.suite("Catalog request cancellation classification") {
+        check.check("CancellationError is cancellation", isCancellation(CancellationError()))
+        check.check("URLError.cancelled is cancellation", isCancellation(URLError(.cancelled)))
+        check.check(
+            "a failed catalog transport is not cancellation",
+            !isCancellation(URLError(.badServerResponse))
+        )
+        enum CatalogCheckFailure: Error { case unavailable }
+        check.check("an ordinary error is not cancellation", !isCancellation(CatalogCheckFailure.unavailable))
+    }
+
     check.suite("Connect queue callback watermark") {
         var watermark = ConnectQueueCallbackWatermark()
         check.check(
