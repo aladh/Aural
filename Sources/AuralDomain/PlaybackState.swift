@@ -786,8 +786,8 @@ public enum PlaybackReducer {
                     if let rollbackOwner = pair.value.rollbackOwner {
                         candidate.owner = rollbackOwner
                     }
-                    // A nil notice is ordinary cancellation: restore rollback without
-                    // replacing an unrelated existing notice.
+                    // A rejected finish with no notice restores rollback without replacing an
+                    // unrelated existing notice. Cancellation is one caller of that rule.
                     if let notice {
                         candidate.notice = notice
                     }

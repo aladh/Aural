@@ -35,7 +35,9 @@ Transport commands today share one store kernel, `performAdmittedPlaybackCommand
 
 1. Refuse a second command of the same `PlaybackCommandKind` while one is pending.
 2. `send(.commandStarted)` for an optimistic transport when requested.
-3. `effects.replace(.command(commandID), …)` with a unique UUID token.
+3. `effects.replace(.command(commandID), …)` with a unique UUID token. Replacing that token
+   runs any previous `onCancel` and then cancels the superseded task. `complete` is keyed by
+   the registration object from that replace.
 4. Await the caller-supplied local or remote operation. Route selection, route refusal, and
    waiting for local Connect identity stay outside the kernel so they cannot create pending
    commands.

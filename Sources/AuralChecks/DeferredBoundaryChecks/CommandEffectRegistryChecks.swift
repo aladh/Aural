@@ -102,14 +102,16 @@ func runCommandEffectRegistryChecks(_ runner: CheckRunner) async {
         let commandID = UUID()
         let replacementCancelled = CancellationFlag()
 
+        let supersededRegistration = PlaybackEffectRegistration()
         let superseded: Task<Void, Never> = Task {
             do {
                 try await Task.sleep(nanoseconds: cancellationWorkNanoseconds)
             } catch {}
-            effects.complete(.command(commandID))
+            effects.complete(.command(commandID), registration: supersededRegistration)
         }
-        effects.replace(.command(commandID), with: superseded)
+        effects.replace(.command(commandID), with: superseded, registration: supersededRegistration)
 
+        let replacementRegistration = PlaybackEffectRegistration()
         let replacement: Task<Void, Never> = Task {
             await withTaskCancellationHandler {
                 do {
@@ -119,10 +121,21 @@ func runCommandEffectRegistryChecks(_ runner: CheckRunner) async {
                 replacementCancelled.mark()
             }
         }
-        effects.replace(.command(commandID), with: replacement)
+        effects.replace(.command(commandID), with: replacement, registration: replacementRegistration)
         runner.check("the superseded task ends without waiting out a long sleep", await awaitBounded(superseded))
         effects.cancel(.command(commandID))
         runner.check("the replacement token is still cancellable", await awaitBounded(replacement))
         runner.check("completing the superseded task did not drop the replacement", replacementCancelled.isSet)
+    }
+
+    await runner.suite("PlaybackEffectRegistry replace runs the previous onCancel") {
+        let effects = PlaybackEffectRegistry()
+        let commandID = UUID()
+        let previousCancelled = CancellationFlag()
+        effects.replace(.command(commandID), with: Task<Void, Never> {}, onCancel: {
+            previousCancelled.mark()
+        })
+        effects.replace(.command(commandID), with: Task<Void, Never> {})
+        runner.check("replacing a token runs the previous onCancel", previousCancelled.isSet)
     }
 }

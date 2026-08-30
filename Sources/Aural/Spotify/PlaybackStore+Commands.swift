@@ -166,24 +166,15 @@ extension PlaybackStore {
             return
         }
         let effectID = PlaybackEffectID.command(commandID)
+        let registration = PlaybackEffectRegistration()
         effects.replace(
             effectID,
             with: Task { [weak self] in
-                defer { self?.effects.complete(effectID) }
+                defer { self?.effects.complete(effectID, registration: registration) }
                 guard let self else { return }
                 do {
                     let outcome = try await operation()
-                    if Task.isCancelled {
-                        self.settleCancelledPlaybackCommand(
-                            commandID: commandID,
-                            kind: kind,
-                            capturedAccountEpoch: epoch,
-                            capturedEngineEpoch: engineEpoch,
-                            completion: completion
-                        )
-                        return
-                    }
-                    guard self.accountEpoch == epoch, !self.isTearingDown else { return }
+                    guard !Task.isCancelled, self.accountEpoch == epoch, !self.isTearingDown else { return }
                     self.applyCommandOutcome(
                         commandID: commandID,
                         kind: kind,
@@ -194,17 +185,12 @@ extension PlaybackStore {
                         completion: completion
                     )
                 } catch is CancellationError {
-                    self.settleCancelledPlaybackCommand(
-                        commandID: commandID,
-                        kind: kind,
-                        capturedAccountEpoch: epoch,
-                        capturedEngineEpoch: engineEpoch,
-                        completion: completion
-                    )
+                    return
                 } catch {
                     return
                 }
             },
+            registration: registration,
             onCancel: { [weak self] in
                 self?.settleCancelledPlaybackCommand(
                     commandID: commandID,
