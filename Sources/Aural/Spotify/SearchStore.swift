@@ -77,13 +77,10 @@ final class SearchStore {
     /// View-driven query path. Cancelled or superseded before the delay leaves
     /// committed results and `isSearching` unchanged.
     func scheduleSearch(_ term: String) async {
-        debounceGeneration &+= 1
+        invalidatePendingAdmission()
         let token = debounceGeneration
-        debounceTask?.cancel()
         let query = term.trimmingCharacters(in: .whitespacesAndNewlines)
-        let scheduledEpoch = session.accountEpoch
-        let scheduledRevision = session.snapshot.revision
-        let scheduledAvailable = session.isAvailable
+        let scheduled = session.snapshot
         let task = Task { [weak self] in
             guard let self else { return }
             do {
@@ -92,10 +89,7 @@ final class SearchStore {
                 return
             }
             guard token == self.debounceGeneration, !Task.isCancelled else { return }
-            guard self.session.accountEpoch == scheduledEpoch,
-                self.session.snapshot.revision == scheduledRevision,
-                self.session.isAvailable == scheduledAvailable
-            else { return }
+            guard self.session.snapshot == scheduled else { return }
             await self.performSearch(query)
         }
         debounceTask = task

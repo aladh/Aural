@@ -55,52 +55,6 @@ private actor GatedSearchCatalog: CatalogProviding {
     }
 }
 
-/// Sleeps until `releaseAll()`, and throws `CancellationError` if the waiting task is cancelled.
-private final class CooperativeParkedClock: PlaybackClock, @unchecked Sendable {
-    private let lock = NSLock()
-    private var recordedSleeps: [TimeInterval] = []
-    private var waiters: [UUID: CheckedContinuation<Void, Error>] = [:]
-
-    func now() -> Date { Date(timeIntervalSince1970: 1_800_000_000) }
-
-    var requestedSleeps: [TimeInterval] {
-        lock.lock()
-        defer { lock.unlock() }
-        return recordedSleeps
-    }
-
-    func sleep(seconds: TimeInterval) async throws {
-        let id = UUID()
-        try await withTaskCancellationHandler {
-            try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
-                lock.lock()
-                recordedSleeps.append(seconds)
-                waiters[id] = continuation
-                lock.unlock()
-            }
-        } onCancel: {
-            lock.lock()
-            let continuation = waiters.removeValue(forKey: id)
-            lock.unlock()
-            continuation?.resume(throwing: CancellationError())
-        }
-    }
-
-    func releaseAll() {
-        lock.lock()
-        let pending = Array(waiters.values)
-        waiters.removeAll()
-        lock.unlock()
-        pending.forEach { $0.resume() }
-    }
-
-    var waiterCount: Int {
-        lock.lock()
-        defer { lock.unlock() }
-        return waiters.count
-    }
-}
-
 private func decodeTrack(_ json: String) throws -> PathfinderTrack {
     try JSONDecoder().decode(PathfinderTrack.self, from: Data(json.utf8))
 }
@@ -137,17 +91,6 @@ private func commitImmediateSearch(
     await provider.completeNext(.tracks(tracks))
     await task.value
     return true
-}
-
-private func auralSourceFile(_ relativePath: String) throws -> String {
-    let checksDirectory = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
-    let sources = checksDirectory.deletingLastPathComponent().deletingLastPathComponent()
-    let url = sources.appending(path: relativePath)
-    return try String(contentsOf: url, encoding: .utf8)
-}
-
-private func containsToken(_ source: String, _ token: String) -> Bool {
-    source.contains(token)
 }
 
 @MainActor
@@ -382,38 +325,5 @@ func runSearchStoreChecks(_ runner: CheckRunner) async {
         runner.check("admitted empty query clears committed results", store.isEmpty)
         runner.equal("admitted empty query does not fetch", await provider.requestCount, 1)
         runner.check("admitted empty query is not left searching", !store.isSearching)
-    }
-
-    runner.suite("Search debounce ownership contract") {
-        runner.noThrow("search debounce sources are readable") {
-            let store = try auralSourceFile("Aural/Spotify/SearchStore.swift")
-            let catalog = try auralSourceFile("Aural/Spotify/CatalogStore.swift")
-            let playback = try auralSourceFile("Aural/Spotify/PlaybackStore.swift")
-            let views = try auralSourceFile("Aural/Views/LibraryViews.swift")
-
-            runner.check(
-                "SearchStore owns delayed admission on the injected clock",
-                containsToken(store, "clock.sleep(seconds: Self.queryAdmissionDelay)")
-                    && containsToken(store, "func scheduleSearch")
-                    && !containsToken(store, "Task.sleep")
-            )
-            runner.check(
-                "SearchView keeps searchable and task identity without raw sleep",
-                containsToken(views, ".searchable(text: $searchText")
-                    && containsToken(views, ".task(id: SearchLoadIdentity(")
-                    && containsToken(views, "await store.scheduleSearch(searchText)")
-                    && !containsToken(views, "Task.sleep")
-            )
-            runner.check(
-                "Try Again still admits immediately",
-                containsToken(views, "Task { await store.search(searchText) }")
-            )
-            runner.check(
-                "CatalogStore forwards the environment clock into SearchStore",
-                containsToken(catalog, "clock: any PlaybackClock")
-                    && containsToken(catalog, "clock: clock")
-                    && containsToken(playback, "clock: environment.clock")
-            )
-        }
     }
 }

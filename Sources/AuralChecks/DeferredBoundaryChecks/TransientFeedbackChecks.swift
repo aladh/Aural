@@ -177,44 +177,6 @@ private final class UncooperativeParkedClock: PlaybackClock, @unchecked Sendable
     }
 }
 
-/// Sleeps until `releaseAll()`, and throws `CancellationError` if the waiting task is cancelled.
-private final class CooperativeParkedClock: PlaybackClock, @unchecked Sendable {
-    private let lock = NSLock()
-    private var waiters: [UUID: CheckedContinuation<Void, Error>] = [:]
-
-    func now() -> Date { Date(timeIntervalSince1970: 1_800_000_000) }
-
-    func sleep(seconds _: TimeInterval) async throws {
-        let id = UUID()
-        try await withTaskCancellationHandler {
-            try await withCheckedThrowingContinuation { continuation in
-                lock.lock()
-                waiters[id] = continuation
-                lock.unlock()
-            }
-        } onCancel: {
-            lock.lock()
-            let continuation = waiters.removeValue(forKey: id)
-            lock.unlock()
-            continuation?.resume(throwing: CancellationError())
-        }
-    }
-
-    func releaseAll() {
-        lock.lock()
-        let pending = Array(waiters.values)
-        waiters.removeAll()
-        lock.unlock()
-        pending.forEach { $0.resume() }
-    }
-
-    var waiterCount: Int {
-        lock.lock()
-        defer { lock.unlock() }
-        return waiters.count
-    }
-}
-
 private func feedbackEnvironment(
     local: any LocalPlaybackEngine = FeedbackLocalEngine(),
     remote: any RemotePlaybackClient = FeedbackRemoteClient(.succeed),
