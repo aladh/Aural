@@ -7,28 +7,21 @@ private let otherFixtureURI = "spotify:track:0000000000000000000001"
 private let privacySentinel = "AURAL_PRIVACY_SENTINEL_connect-metadata_61"
 
 private let metadataBody = Data(
-    """
-    {
-      "name": "Fixture Title",
-      "artist": [{"name": "First"}, {"name": "Second"}],
-      "album": {
-        "cover_group": {
-          "image": [
-            {"file_id": "small", "width": 64, "height": 64},
-            {"file_id": "large", "width": 300, "height": 300}
-          ]
-        }
-      },
-      "duration": 123000
-    }
-    """.utf8
+    #"{"name":"Fixture Title","artist":[{"name":"First"},{"name":"Second"}],"album":{"cover_group":{"image":[{"file_id":"small","width":64,"height":64},{"file_id":"large","width":300,"height":300}]}},"duration":123000}"#
+        .utf8
 )
 
 @MainActor
 func runConnectMetadataTransportChecks(_ check: CheckRunner) async {
     await check.suite("Connect metadata is one signed GET") {
         let transport = RecordingConnectTransport(steps: [.http(status: 200, body: metadataBody)])
-        let metadata = try? await connectAPI(transport: transport.send).trackMetadata(for: fixtureURI)
+        let metadata: SpotifyConnectTrackMetadata?
+        do {
+            metadata = try await connectAPI(transport: transport.send).trackMetadata(for: fixtureURI)
+        } catch {
+            check.check("successful metadata throws \(error)", false)
+            metadata = nil
+        }
 
         check.equal("title is decoded", metadata?.title, "Fixture Title")
         check.equal("artists are joined", metadata?.artist, "First, Second")
@@ -347,9 +340,16 @@ private final class RecordingConnectTransport: @unchecked Sendable {
         if let origin = request.value(forHTTPHeaderField: "Origin") {
             recordedOrigins.append(origin)
         }
+        let url = request.url ?? URL(string: "https://example.invalid/")!
+        guard index < steps.count else {
+            index += 1
+            return (
+                Data(),
+                HTTPURLResponse(url: url, statusCode: 598, httpVersion: "HTTP/1.1", headerFields: nil)!
+            )
+        }
         let step = steps[index]
         index += 1
-        let url = request.url ?? URL(string: "https://example.invalid/")!
         switch step {
         case let .http(status, body, headers):
             return (
