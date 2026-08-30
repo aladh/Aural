@@ -25,7 +25,8 @@ enum PlaybackStoreProjectionContract {
     }
 
     private static func isExplicitSetterPayload(_ uncommentedLine: String) -> Bool {
-        let payload = uncommentedLine
+        let payload =
+            uncommentedLine
             .replacingOccurrences(of: #"\"([^"\\]|\\.)*\""#, with: "", options: .regularExpression)
             .trimmingCharacters(in: .whitespaces)
         return payload.range(
