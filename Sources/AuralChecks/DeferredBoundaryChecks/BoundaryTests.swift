@@ -32,6 +32,7 @@ enum BoundaryChecksMain {
             RegisteredCheckSuite(name: "uri") { runURIChecks($0) },
             RegisteredCheckSuite(name: "formatting") { runFormattingChecks($0) },
             RegisteredCheckSuite(name: "track-attribute") { runTrackAttributeChecks($0) },
+            RegisteredCheckSuite(name: "media-selection") { runMediaSelectionChecks($0) },
             RegisteredCheckSuite(name: "fixture-contract") { runFixtureContractChecks($0) },
             RegisteredCheckSuite(name: "engine-payload-contract") { runEnginePayloadContractChecks($0) },
             RegisteredCheckSuite(name: "pcm-write-space") { runPCMWriteSpaceChecks($0) },
@@ -83,7 +84,6 @@ enum BoundaryChecksMain {
             }
             await run(runner)
         }
-
         if !runner.succeeded {
             print(runner.failures.joined(separator: "\n"))
             exit(1)
