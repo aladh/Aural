@@ -119,14 +119,42 @@ struct PlaylistDetailView: View {
                 message: "Spotify returned no playable tracks."
             )
         } else {
-            TrackTable(
-                tracks: store.trackCollection,
-                metadata: metadata,
-                playback: playback,
-                showsDateAdded: true,
-                playlistActions: playlistActions
-            )
+            VStack(spacing: 0) {
+                if store.error != nil {
+                    staleRefreshWarning
+                    Divider()
+                }
+                TrackTable(
+                    tracks: store.trackCollection,
+                    metadata: metadata,
+                    playback: playback,
+                    showsDateAdded: true,
+                    playlistActions: playlistActions
+                )
+            }
         }
+    }
+
+    private var staleRefreshWarning: some View {
+        HStack(alignment: .center, spacing: 12) {
+            Image(systemName: "exclamationmark.triangle")
+                .foregroundStyle(.secondary)
+                .accessibilityHidden(true)
+            Text("Couldn't refresh this playlist. The songs shown may be out of date.")
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            Button("Retry") {
+                Task { await store.load(item, force: true) }
+            }
+            .buttonStyle(.bordered)
+            .controlSize(.small)
+            .disabled(store.isLoading)
+            .accessibilityHint("Reload the playlist without repeating the last change.")
+        }
+        .padding(.horizontal, 30)
+        .padding(.vertical, 10)
+        .accessibilityElement(children: .contain)
     }
 
     private var showsSongCount: Bool {
