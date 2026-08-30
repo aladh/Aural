@@ -276,6 +276,9 @@ nonisolated struct PlaybackEnvironment: Sendable {
     let trackAttributes: any TrackAttributesProviding
     let queueServiceHook: (any QueueServiceHook)?
 
+    /// Hand-written so checks can pass a hook. A defaulted stored property is
+    /// dropped from the synthesized memberwise initializer, which then rejects
+    /// `queueServiceHook:` as an extra argument.
     init(
         remote: any RemotePlaybackClient,
         local: any LocalPlaybackEngine,

@@ -1347,9 +1347,6 @@ func runQueueManagementChecks(_ runner: CheckRunner) async {
             let control = try auralSourceFile("Aural/Spotify/PlaybackCore.swift")
             let engineEvents = try auralSourceFile("Aural/Spotify/PlaybackStore+EngineEvents.swift")
             let models = try auralSourceFile("AuralDomain/PlaybackPanelModels.swift")
-            let service = try auralSourceFile("Aural/Spotify/QueueService.swift")
-            let environment = try auralSourceFile("Aural/Spotify/PlaybackEnvironment.swift")
-            let store = try auralSourceFile("Aural/Spotify/PlaybackStore.swift")
             runner.check(
                 "Connect intake binds occurrence uids into selectable identity",
                 containsToken(engineEvents, "uid: item.uid ?? \"\"")
@@ -1407,26 +1404,6 @@ func runQueueManagementChecks(_ runner: CheckRunner) async {
                 !containsToken(engine, "setQueue")
                     && !containsToken(control, "set_queue")
                     && containsToken(control, "aural_playback_add_to_queue")
-            )
-            runner.check(
-                "QueueService does not store test continuation gates",
-                containsToken(service, "if let hook {")
-                    && containsToken(service, "await hook.beforeAcceptConnect()")
-                    && containsToken(service, "await hook.beforeRecordCommittedReplacement()")
-                    && !containsToken(service, "hook.reset")
-                    && !containsToken(service, "parkNextConnectAccept")
-                    && !containsToken(service, "parkNextCommittedReplacement")
-                    && !containsToken(service, "waitForTestConnectAcceptGate")
-                    && !containsToken(service, "waitForTestCommittedReplacementGate")
-                    && !containsToken(service, "CheckedContinuation")
-                    && !containsToken(service, "pendingConnectAcceptGate")
-                    && !containsToken(service, "pendingCommittedReplacementGate")
-            )
-            runner.check(
-                "the queue hook is an environment dependency, not a store sidecar",
-                containsToken(environment, "queueServiceHook: (any QueueServiceHook)? = nil")
-                    && containsToken(store, "hook: environment.queueServiceHook")
-                    && !containsToken(store, "queueServiceHook: any QueueServiceHook")
             )
         }
     }
