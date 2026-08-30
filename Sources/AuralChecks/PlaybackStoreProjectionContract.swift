@@ -6,8 +6,8 @@ import Foundation
 /// accessor there would recreate partial-presentation state. `func set…` methods and
 /// setters in other files are out of scope for this file-bounded guard.
 ///
-/// Matching is comment-safe: quoted strings and `//` line comments are dropped before
-/// the setter pattern runs, so a documented example is not an accessor.
+/// Comment and string handling uses `uncommentedSource`. Setter detection then drops
+/// remaining quoted string contents so a documented example is not an accessor.
 enum PlaybackStoreProjectionContract {
     static func explicitSetterLines(in source: String) -> [String] {
         source
@@ -17,29 +17,84 @@ enum PlaybackStoreProjectionContract {
     }
 
     static func isExplicitSetterLine(_ line: String) -> Bool {
-        let payload = lexicalPayload(in: line).trimmingCharacters(in: .whitespaces)
+        let payload = uncommentedSource(line)
+            .replacingOccurrences(of: #"\"([^"\\]|\\.)*\""#, with: "", options: .regularExpression)
+            .trimmingCharacters(in: .whitespaces)
         return payload.range(
             of: #"\bset\s*(\([^)]*\))?\s*\{"#,
             options: .regularExpression
         ) != nil
     }
 
-    private static func lexicalPayload(in line: String) -> String {
-        var payload = ""
-        payload.reserveCapacity(line.count)
+    static func uncommentedSource(_ source: String) -> String {
+        var result = ""
+        var index = source.startIndex
+        var blockDepth = 0
+        var inLineComment = false
         var inString = false
-        for character in line {
-            if character == "\"" {
-                inString.toggle()
+        var escaped = false
+        while index < source.endIndex {
+            let next = source.index(after: index)
+            let startsPair = next < source.endIndex
+            let pair = startsPair ? String(source[index...next]) : ""
+            let character = source[index]
+
+            if inLineComment {
+                if character == "\n" {
+                    inLineComment = false
+                    result.append("\n")
+                }
+                index = next
                 continue
             }
-            if !inString {
-                payload.append(character)
+
+            if blockDepth > 0 {
+                if pair == "/*" {
+                    blockDepth += 1
+                    index = source.index(after: next)
+                } else if pair == "*/" {
+                    blockDepth -= 1
+                    index = source.index(after: next)
+                } else {
+                    index = next
+                }
+                continue
             }
+
+            if inString {
+                result.append(character)
+                if escaped {
+                    escaped = false
+                } else if character == "\\" {
+                    escaped = true
+                } else if character == "\"" {
+                    inString = false
+                }
+                index = next
+                continue
+            }
+
+            if pair == "/*" {
+                blockDepth = 1
+                index = source.index(after: next)
+                continue
+            }
+            if pair == "//" {
+                inLineComment = true
+                index = source.index(after: next)
+                continue
+            }
+
+            if character == "\"" {
+                inString = true
+            }
+            result.append(character)
+            index = next
         }
-        if let comment = payload.range(of: "//") {
-            return String(payload[..<comment.lowerBound])
-        }
-        return payload
+        return result
+    }
+
+    static func containsUncommented(_ source: String, _ token: String) -> Bool {
+        uncommentedSource(source).contains(token)
     }
 }
