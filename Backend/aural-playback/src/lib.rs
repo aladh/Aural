@@ -14,6 +14,7 @@ mod proxy_sink;
 mod queue;
 mod runtime;
 mod session_lifecycle;
+mod spirc_command_error;
 mod state;
 mod transport;
 
@@ -26,6 +27,7 @@ pub(crate) use proxy_sink::mk_proxy_sink;
 pub(crate) use queue::*;
 pub(crate) use runtime::*;
 pub(crate) use session_lifecycle::*;
+pub(crate) use spirc_command_error::*;
 pub(crate) use state::*;
 pub(crate) use transport::*;
 
@@ -64,5 +66,7 @@ mod json_contract_tests;
 mod lifecycle_serialization_tests;
 #[cfg(test)]
 mod queue_tests;
+#[cfg(test)]
+mod spirc_command_error_tests;
 #[cfg(test)]
 mod tests;

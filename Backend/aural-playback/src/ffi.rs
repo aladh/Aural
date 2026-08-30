@@ -106,15 +106,12 @@ pub(crate) fn current_spirc(what: &str) -> Option<Arc<Spirc>> {
 
 /// Logs a failed Spirc command against `what` and maps it to its FFI error code.
 ///
-/// A closed channel is reported separately (`ERROR_NEEDS_REINIT`) because Swift responds to
-/// it by rebuilding the player rather than by surfacing a failure.
+/// A closed command channel is reported separately (`ERROR_NEEDS_REINIT`) because Swift
+/// responds to it by rebuilding the player rather than by surfacing a failure. The recovery
+/// code comes from [`classify_spirc_command_error`]; the `Debug` formatting here is log-only.
 pub(crate) fn spirc_error(what: &str, err: &librespot_core::Error) -> i32 {
     debug!("{} error: {:?}", what, err);
-    if format!("{:?}", err).contains("channel closed") {
-        ERROR_NEEDS_REINIT
-    } else {
-        ERROR_GENERAL
-    }
+    classify_spirc_command_error(err)
 }
 
 /// Runs a command against the current Spirc and maps the outcome to an FFI error code.
