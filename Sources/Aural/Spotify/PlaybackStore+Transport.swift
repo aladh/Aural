@@ -203,38 +203,19 @@ extension PlaybackStore {
     /// Cycles off → repeat queue → repeat track → off, like Spotify's transport.
     func cycleRepeat() {
         guard canStartPlayback else { return }
-        let previousMode = repeatMode
-        let previousFlags = state.options.repeatFlags
-        let nextMode = previousMode.next
-        let nextFlags = nextMode.flags
-        setRepeat(mode: nextMode, flags: nextFlags)
-        let plan = RepeatTransitionPlan.planning(from: previousFlags, to: nextFlags)
-        let enginePlaybackRevision = state.sourceRevisions[.enginePlayback]
+        let nextFlags = repeatMode.next.flags
+        let plan = RepeatTransitionPlan.planning(from: state.options.repeatFlags, to: nextFlags)
         performRoutedOperation(
             "Could not update repeat",
             kind: .options,
+            expectedRepeatFlags: nextFlags,
             local: .repeatOptions(plan),
             remote: { api, from, to in
                 try await RepeatTransitionApplication.applyRemote(plan) { mutation in
                     try await api.send(.repeatMutation(mutation), from: from, to: to)
                 }
             }
-        ) { [weak self] accepted in
-            guard let self, !accepted else { return }
-            let disposition = reconcileRepeatCommandFailure(
-                visibleMode: self.repeatMode,
-                visibleFlags: self.state.options.repeatFlags,
-                previousMode: previousMode,
-                previousFlags: previousFlags,
-                targetMode: nextMode,
-                targetFlags: nextFlags,
-                enginePlaybackRevisionChanged:
-                    self.state.sourceRevisions[.enginePlayback] != enginePlaybackRevision
-            )
-            if disposition == .restorePrevious {
-                self.setRepeat(mode: previousMode, flags: previousFlags)
-            }
-        }
+        )
     }
 
     // MARK: - Spotify Connect devices

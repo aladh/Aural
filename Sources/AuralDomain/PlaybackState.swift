@@ -374,6 +374,10 @@ public struct PendingPlaybackCommand: Equatable, Sendable {
     public let expectedShuffle: Bool?
     /// Exact pre-command shuffle captured at `commandStarted` for a live shuffle command.
     public let rollbackShuffle: Bool?
+    /// Requested canonical repeat flags for a live options command. Shuffle commands leave this nil.
+    public let expectedRepeatFlags: RepeatFlags?
+    /// Exact pre-command raw repeat flags captured at `commandStarted` for a live repeat command.
+    public let rollbackRepeatFlags: RepeatFlags?
     /// Requested remote-transfer owner. Transfer-to-this-Mac leaves this nil.
     public let expectedOwner: PlaybackOwner?
     /// Exact pre-command owner captured at `commandStarted` for a remote transfer.
@@ -391,6 +395,8 @@ public struct PendingPlaybackCommand: Equatable, Sendable {
         rollbackPresentation: PlaybackPresentationSnapshot? = nil,
         expectedShuffle: Bool? = nil,
         rollbackShuffle: Bool? = nil,
+        expectedRepeatFlags: RepeatFlags? = nil,
+        rollbackRepeatFlags: RepeatFlags? = nil,
         expectedOwner: PlaybackOwner? = nil,
         rollbackOwner: PlaybackOwner? = nil,
         startedAt: Date
@@ -405,13 +411,15 @@ public struct PendingPlaybackCommand: Equatable, Sendable {
         self.rollbackPresentation = rollbackPresentation
         self.expectedShuffle = expectedShuffle
         self.rollbackShuffle = rollbackShuffle
+        self.expectedRepeatFlags = expectedRepeatFlags
+        self.rollbackRepeatFlags = rollbackRepeatFlags
         self.expectedOwner = expectedOwner
         self.rollbackOwner = rollbackOwner
         self.startedAt = startedAt
     }
 }
 
-/// How a known-target transport, shuffle, or remote-transfer command left `pendingCommands`
+/// How a known-target transport, shuffle, repeat, or remote-transfer command left `pendingCommands`
 /// without `commandFinished`. Stored per command id so a later pause/resume cannot recycle
 /// the nil catch-all. `commandFinished` consumes a matching entry (pending rollback or
 /// consume-only) so the map does not grow for the process/session lifetime.
@@ -675,8 +683,12 @@ public enum PlaybackReducer {
                 in: &candidate
             )
         case let .options(options):
-            candidate.options.repeatMode = options.repeatMode
-            candidate.options.repeatFlags = options.repeatFlags
+            reconcileRepeat(
+                flags: options.repeatFlags,
+                mode: options.repeatMode,
+                source: envelope.source,
+                in: &candidate
+            )
             reconcileShuffle(options.shuffle, source: envelope.source, in: &candidate)
         case let .queue(incoming):
             candidate.queue = mergePlaybackQueueSnapshots(
@@ -689,9 +701,9 @@ public enum PlaybackReducer {
             applyConnectionPlaybackOwner(&candidate, source: envelope.source)
         case let .commandStarted(command):
             // Capture current presentation before applying the caller's target. The store must
-            // not mutate transport, timing, track, shuffle, or owner first, or rollback records
-            // the optimistic values. Do not clear other commands' resolutions: a later pause
-            // must not recycle the already-reconciled-success path for a superseded play.
+            // not mutate transport, timing, track, shuffle, repeat, or owner first, or rollback
+            // records the optimistic values. Do not clear other commands' resolutions: a later
+            // pause must not recycle the already-reconciled-success path for a superseded play.
             let prepared = PendingPlaybackCommand(
                 id: command.id,
                 kind: command.kind,
@@ -715,6 +727,10 @@ public enum PlaybackReducer {
                 rollbackShuffle: command.rollbackShuffle ?? (
                     command.expectedShuffle == nil ? nil : candidate.options.shuffle
                 ),
+                expectedRepeatFlags: command.expectedRepeatFlags,
+                rollbackRepeatFlags: command.rollbackRepeatFlags ?? (
+                    command.expectedRepeatFlags == nil ? nil : candidate.options.repeatFlags
+                ),
                 expectedOwner: command.expectedOwner,
                 rollbackOwner: command.rollbackOwner ?? (
                     command.expectedOwner == nil ? nil : candidate.owner
@@ -736,6 +752,9 @@ public enum PlaybackReducer {
             }
             if let expectedShuffle = command.expectedShuffle {
                 candidate.options.shuffle = expectedShuffle
+            }
+            if let expectedRepeat = command.expectedRepeatFlags {
+                applyRepeatFlags(expectedRepeat, to: &candidate)
             }
             if let expectedOwner = command.expectedOwner {
                 candidate.owner = expectedOwner
@@ -761,12 +780,20 @@ public enum PlaybackReducer {
                     if let rollbackShuffle = pair.value.rollbackShuffle {
                         candidate.options.shuffle = rollbackShuffle
                     }
+                    if let rollbackRepeat = pair.value.rollbackRepeatFlags {
+                        applyRepeatFlags(rollbackRepeat, to: &candidate)
+                    }
                     if let rollbackOwner = pair.value.rollbackOwner {
                         candidate.owner = rollbackOwner
                     }
                     candidate.notice = notice
-                } else if let expectedShuffle = pair.value.expectedShuffle {
-                    candidate.options.shuffle = expectedShuffle
+                } else {
+                    if let expectedShuffle = pair.value.expectedShuffle {
+                        candidate.options.shuffle = expectedShuffle
+                    }
+                    if let expectedRepeat = pair.value.expectedRepeatFlags {
+                        applyRepeatFlags(expectedRepeat, to: &candidate)
+                    }
                 }
             } else if candidate.transportCommandResolutions[id] != nil {
                 // Consume a confirmed/superseded entry without touching presentation.
@@ -898,9 +925,9 @@ public enum PlaybackReducer {
             let flags = snapshot.repeatFlags
                 ?? snapshot.repeatMode?.flags
                 ?? candidate.options.repeatFlags
-            candidate.options.repeatFlags = flags
-            candidate.options.repeatMode = snapshot.repeatMode
+            let mode = snapshot.repeatMode
                 ?? RepeatMode(context: flags.context, track: flags.track)
+            reconcileRepeat(flags: flags, mode: mode, source: .enginePlayback, in: &candidate)
         }
     }
 
@@ -930,6 +957,66 @@ public enum PlaybackReducer {
             }
             return
         }
+    }
+
+    /// Repeat options optimism is reducer-owned. Matching authoritative engine flags confirm
+    /// so a late coordinator failure cannot restore the prior pair. Exact prior flags are
+    /// lagging and must not confirm or replace the target. The known two-step intermediate
+    /// is applied for honest Connect/FFI sequencing but stays pending so compensation can
+    /// still restore the captured previous pair. Unrelated authoritative flags supersede.
+    /// User/preference `.options` events cannot confirm or supersede.
+    private static func reconcileRepeat(
+        flags: RepeatFlags,
+        mode: RepeatMode,
+        source: PlaybackEventSource,
+        in state: inout PlaybackState
+    ) {
+        guard let pending = state.pendingCommands[.options],
+              let expected = pending.expectedRepeatFlags
+        else {
+            state.options.repeatFlags = flags
+            state.options.repeatMode = mode
+            return
+        }
+        if flags == expected {
+            applyRepeatFlags(expected, to: &state)
+            if source == .enginePlayback {
+                state.pendingCommands[.options] = nil
+                state.transportCommandResolutions[pending.id] = .confirmed
+            }
+            return
+        }
+        if flags == pending.rollbackRepeatFlags {
+            return
+        }
+        if let previous = pending.rollbackRepeatFlags,
+           isRepeatTransitionIntermediate(previous: previous, target: expected, incoming: flags)
+        {
+            state.options.repeatFlags = flags
+            state.options.repeatMode = mode
+            return
+        }
+        if source == .enginePlayback {
+            state.options.repeatFlags = flags
+            state.options.repeatMode = mode
+            state.pendingCommands[.options] = nil
+            state.transportCommandResolutions[pending.id] = .superseded
+        }
+    }
+
+    private static func isRepeatTransitionIntermediate(
+        previous: RepeatFlags,
+        target: RepeatFlags,
+        incoming: RepeatFlags
+    ) -> Bool {
+        let plan = RepeatTransitionPlan.planning(from: previous, to: target)
+        guard let first = plan.mutations.first, plan.mutations.count > 1 else { return false }
+        return previous.applying(first) == incoming
+    }
+
+    private static func applyRepeatFlags(_ flags: RepeatFlags, to state: inout PlaybackState) {
+        state.options.repeatFlags = flags
+        state.options.repeatMode = RepeatMode(context: flags.context, track: flags.track)
     }
 
     /// A lagging snapshot of the pre-command owner must not undo a pending remote-transfer
