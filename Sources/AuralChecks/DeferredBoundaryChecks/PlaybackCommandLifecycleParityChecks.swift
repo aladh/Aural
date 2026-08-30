@@ -531,11 +531,13 @@ func runPlaybackCommandLifecycleParityChecks(_ runner: CheckRunner) async {
                     seedRoute(reconnect, route)
                     var reconnectCompletions: [Bool] = []
                     startLifecycleCommand(reconnect, kind: kind) { reconnectCompletions.append($0) }
-                    _ = await waitUntil { !reconnectCompletions.isEmpty }
+                    let reconnectFinished = await waitUntil { !reconnectCompletions.isEmpty }
+                    runner.check("\(label) reconnect-required finishes", reconnectFinished)
                     runner.equal("\(label) reconnect-required completion", reconnectCompletions, [false])
                     runner.equal("\(label) reconnect-required uses the action notice", reconnect.transientCommandError, kind.action)
-                    _ = await waitUntil { reconnectAccount.authorizeCount == 1 }
-                    runner.equal("\(label) reconnect-required starts connect", reconnectAccount.authorizeCount, 1)
+                    let reconnectStarted = await waitUntil { reconnectAccount.authorizeCount == 1 }
+                    runner.check("\(label) reconnect-required starts connect", reconnectStarted)
+                    runner.equal("\(label) reconnect-required connect count", reconnectAccount.authorizeCount, 1)
                     await reconnect.shutdownForTermination()
                 }
 
