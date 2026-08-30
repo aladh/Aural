@@ -36,9 +36,14 @@ let package = Package(
             path: "Sources/AuralApp"
         ),
         .target(name: "AuralDomain"),
+        // Shared check CLI selection only. Not a CheckRunner/waitUntil library.
+        .target(
+            name: "AuralCheckSelection",
+            path: "Sources/AuralCheckSelection"
+        ),
         .executableTarget(
             name: "AuralChecks",
-            dependencies: ["AuralDomain"],
+            dependencies: ["AuralDomain", "AuralCheckSelection"],
             exclude: [
                 "DeferredBoundaryChecks",
                 "LegacyLogicChecks.swift",
@@ -46,7 +51,7 @@ let package = Package(
         ),
         .executableTarget(
             name: "AuralBoundaryChecks",
-            dependencies: ["AuralCore"],
+            dependencies: ["AuralCore", "AuralCheckSelection"],
             path: "Sources/AuralChecks/DeferredBoundaryChecks",
             exclude: ["README.md"],
             resources: [.copy("Fixtures")]
