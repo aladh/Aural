@@ -151,6 +151,20 @@ private struct IdleQueueCatalog: CatalogProviding {
     func playlist(id _: String) async throws -> PathfinderPlaylistUnion { throw QueueCheckFailure.unavailable }
 }
 
+private func isolatedQueueService(
+    hook: any QueueServiceHook = InertQueueServiceHook()
+) -> QueueService {
+    QueueService(
+        webQueue: IdleQueueWeb(),
+        metadata: TrackMetadataService(remote: QueueRemoteClient(.succeed)),
+        hook: hook
+    )
+}
+
+private func connectEntry(_ uri: String, occurrence: Int = 0) -> QueueEntry {
+    QueueEntry(uri: uri, provider: "connect", occurrence: occurrence)
+}
+
 private func queueEnvironment(
     local: any LocalPlaybackEngine = QueueLocalEngine(),
     remote: any RemotePlaybackClient,
@@ -908,10 +922,15 @@ func runQueueManagementChecks(_ runner: CheckRunner) async {
     await runner.suite("Connect accept invalidation after suspension") {
         let remote = QueueRemoteClient(.succeed)
         let feedback = TransientFeedbackPresenter(clock: SystemPlaybackClock(), duration: 4)
-        let player = PlaybackStore(environment: queueEnvironment(remote: remote), feedback: feedback)
+        let hook = QueueServiceTestHook()
+        let player = PlaybackStore(
+            environment: queueEnvironment(remote: remote),
+            feedback: feedback,
+            queueServiceHook: hook
+        )
         seedRemoteOwner(player)
         await player.queueService.reset(accountEpoch: player.accountEpoch)
-        await player.queueService.parkNextConnectAccept()
+        await hook.parkNextConnectAccept()
         player.receive(
             connectQueueEnvelope(
                 sequence: 1,
@@ -921,18 +940,18 @@ func runQueueManagementChecks(_ runner: CheckRunner) async {
         )
         runner.check(
             "connect accept parked after actor hop",
-            await waitUntil { await player.queueService.connectAcceptIsParked() }
+            await waitUntil { await hook.connectAcceptIsParked() }
         )
         player.accountStore.advanceEpoch()
         player.engineGeneration &+= 1
         player.queueMutation = nil
-        await player.queueService.resumeConnectAccept()
+        await hook.resumeConnectAccept()
         await yieldPasses()
         runner.nil_("account and engine invalidation after accept does not restore mutation", player.queueMutation)
         runner.check("invalidated accept does not populate presentation", player.queueNextEntries.isEmpty)
 
         await player.queueService.reset(accountEpoch: player.accountEpoch)
-        await player.queueService.parkNextConnectAccept()
+        await hook.parkNextConnectAccept()
         player.receive(
             connectQueueEnvelope(
                 sequence: 2,
@@ -942,7 +961,7 @@ func runQueueManagementChecks(_ runner: CheckRunner) async {
         )
         runner.check(
             "teardown accept parked",
-            await waitUntil { await player.queueService.connectAcceptIsParked() }
+            await waitUntil { await hook.connectAcceptIsParked() }
         )
         player.isTearingDown = true
         player.queueMutation = nil
@@ -981,13 +1000,15 @@ func runQueueManagementChecks(_ runner: CheckRunner) async {
         await replacement.shutdownForTermination()
 
         let acceptFeedback = TransientFeedbackPresenter(clock: SystemPlaybackClock(), duration: 4)
+        let acceptHook = QueueServiceTestHook()
         let accept = PlaybackStore(
             environment: queueEnvironment(remote: QueueRemoteClient(.succeed)),
-            feedback: acceptFeedback
+            feedback: acceptFeedback,
+            queueServiceHook: acceptHook
         )
         seedRemoteOwner(accept)
         await accept.queueService.reset(accountEpoch: accept.accountEpoch)
-        await accept.queueService.parkNextConnectAccept()
+        await acceptHook.parkNextConnectAccept()
         accept.receive(
             connectQueueEnvelope(
                 sequence: 1,
@@ -997,15 +1018,15 @@ func runQueueManagementChecks(_ runner: CheckRunner) async {
         )
         runner.check(
             "connect accept parked before inspector close",
-            await waitUntil { await accept.queueService.connectAcceptIsParked() }
+            await waitUntil { await acceptHook.connectAcceptIsParked() }
         )
         accept.cancelQueueRefresh()
         await yieldPasses()
         runner.check(
             "closing the inspector does not cancel Connect intake",
-            await accept.queueService.connectAcceptIsParked()
+            await acceptHook.connectAcceptIsParked()
         )
-        await accept.queueService.resumeConnectAccept()
+        await acceptHook.resumeConnectAccept()
         runner.check(
             "Connect accept still applies after inspector close",
             await waitUntil { accept.queueMutation?.next.map(\.uid) == ["q0", "q2"] }
@@ -1014,15 +1035,17 @@ func runQueueManagementChecks(_ runner: CheckRunner) async {
 
         let teardownRemote = QueueRemoteClient(.park)
         let teardownFeedback = TransientFeedbackPresenter(clock: SystemPlaybackClock(), duration: 4)
+        let teardownHook = QueueServiceTestHook()
         let teardown = PlaybackStore(
             environment: queueEnvironment(remote: teardownRemote),
-            feedback: teardownFeedback
+            feedback: teardownFeedback,
+            queueServiceHook: teardownHook
         )
         seedRemoteOwner(teardown)
         await seedAuthoritativeQueue(teardown)
         teardown.removeUpcomingQueueOccurrences(selectedIDs: [teardown.queueNextEntries[0].id])
         runner.check("teardown replacement started", await waitUntil { await teardownRemote.sendCount == 1 })
-        await teardown.queueService.parkNextConnectAccept()
+        await teardownHook.parkNextConnectAccept()
         teardown.receive(
             connectQueueEnvelope(
                 sequence: 1,
@@ -1032,7 +1055,7 @@ func runQueueManagementChecks(_ runner: CheckRunner) async {
         )
         runner.check(
             "teardown accept parked",
-            await waitUntil { await teardown.queueService.connectAcceptIsParked() }
+            await waitUntil { await teardownHook.connectAcceptIsParked() }
         )
         teardown.queueMutation = nil
         teardown.effects.cancelAccountScoped()
@@ -1047,20 +1070,25 @@ func runQueueManagementChecks(_ runner: CheckRunner) async {
     await runner.suite("Committed replacement invalidation after suspension") {
         let remote = QueueRemoteClient(.succeed)
         let epochFeedback = TransientFeedbackPresenter(clock: SystemPlaybackClock(), duration: 4)
-        let epochPlayer = PlaybackStore(environment: queueEnvironment(remote: remote), feedback: epochFeedback)
+        let epochHook = QueueServiceTestHook()
+        let epochPlayer = PlaybackStore(
+            environment: queueEnvironment(remote: remote),
+            feedback: epochFeedback,
+            queueServiceHook: epochHook
+        )
         seedRemoteOwner(epochPlayer)
         await seedAuthoritativeQueue(epochPlayer)
-        await epochPlayer.queueService.parkNextCommittedReplacement()
+        await epochHook.parkNextCommittedReplacement()
         epochPlayer.removeUpcomingQueueOccurrences(selectedIDs: [epochPlayer.queueNextEntries[0].id])
         runner.check("set_queue reached the remote", await waitUntil { await remote.sendCount == 1 })
         runner.check(
             "committed replacement parked after the actor hop",
-            await waitUntil { await epochPlayer.queueService.committedReplacementIsParked() }
+            await waitUntil { await epochHook.committedReplacementIsParked() }
         )
         epochPlayer.accountStore.advanceEpoch()
         epochPlayer.engineGeneration &+= 1
         epochPlayer.queueMutation = nil
-        await epochPlayer.queueService.resumeCommittedReplacement()
+        await epochHook.resumeCommittedReplacement()
         await yieldPasses()
         runner.nil_("epoch invalidation after commit hop does not restore mutation", epochPlayer.queueMutation)
         runner.nil_("epoch invalidation after commit hop does not toast success", epochFeedback.message)
@@ -1068,17 +1096,19 @@ func runQueueManagementChecks(_ runner: CheckRunner) async {
 
         let cancelRemote = QueueRemoteClient(.succeed)
         let cancelFeedback = TransientFeedbackPresenter(clock: SystemPlaybackClock(), duration: 4)
+        let cancelHook = QueueServiceTestHook()
         let cancelPlayer = PlaybackStore(
             environment: queueEnvironment(remote: cancelRemote),
-            feedback: cancelFeedback
+            feedback: cancelFeedback,
+            queueServiceHook: cancelHook
         )
         seedRemoteOwner(cancelPlayer)
         await seedAuthoritativeQueue(cancelPlayer)
-        await cancelPlayer.queueService.parkNextCommittedReplacement()
+        await cancelHook.parkNextCommittedReplacement()
         cancelPlayer.removeUpcomingQueueOccurrences(selectedIDs: [cancelPlayer.queueNextEntries[0].id])
         runner.check(
             "cancelled committed replacement parked",
-            await waitUntil { await cancelPlayer.queueService.committedReplacementIsParked() }
+            await waitUntil { await cancelHook.committedReplacementIsParked() }
         )
         cancelPlayer.queueMutation = nil
         cancelPlayer.effects.cancelAccountScoped()
@@ -1119,6 +1149,197 @@ func runQueueManagementChecks(_ runner: CheckRunner) async {
         await local.shutdownForTermination()
     }
 
+    await runner.suite("QueueService hook ownership") {
+        let inert = isolatedQueueService()
+        await inert.reset(accountEpoch: 1)
+        let inertAccepted = await inert.acceptConnect(
+            [connectEntry("spotify:track:a")],
+            accountEpoch: 1,
+            sourceRevision: 1,
+            contextURI: "spotify:track:now",
+            engineEpoch: 7,
+            protocolNext: [QueueProtocolTrack(uri: "spotify:track:a", uid: "q0", provider: "queue")],
+            queueRevision: "rev-1"
+        )
+        runner.equal("inert acceptConnect returns the Connect revision", inertAccepted?.snapshot.revision, 1)
+        let inertCommitted = await inert.recordCommittedReplacement(
+            QueueReplacement(
+                next: [QueueProtocolTrack(uri: "spotify:track:b", uid: "q1", provider: "queue")],
+                prev: [],
+                queueRevision: "rev-2",
+                removedCount: 1
+            ),
+            accountEpoch: 1,
+            engineEpoch: 7
+        )
+        runner.equal("inert recordCommittedReplacement updates protocol next", inertCommitted?.next.first?.uid, "q1")
+
+        let counting = QueueServiceTestHook()
+        let counted = isolatedQueueService(hook: counting)
+        await counted.reset(accountEpoch: 1)
+        _ = await counted.acceptConnect(
+            [connectEntry("spotify:track:a")],
+            accountEpoch: 1,
+            sourceRevision: 1,
+            contextURI: nil
+        )
+        _ = await counted.recordCommittedReplacement(
+            QueueReplacement(next: [], prev: [], queueRevision: "rev-0", removedCount: 0),
+            accountEpoch: 1,
+            engineEpoch: 0
+        )
+        runner.equal("unparked acceptConnect enters once", await counting.acceptConnectEnterCount, 1)
+        runner.equal("unparked acceptConnect does not suspend", await counting.acceptConnectSuspendCount, 0)
+        runner.equal("unparked acceptConnect does not resume", await counting.acceptConnectResumeCount, 0)
+        runner.equal("unparked recordCommittedReplacement enters once", await counting.committedReplacementEnterCount, 1)
+        runner.equal("unparked recordCommittedReplacement does not suspend", await counting.committedReplacementSuspendCount, 0)
+        runner.equal("unparked recordCommittedReplacement does not resume", await counting.committedReplacementResumeCount, 0)
+
+        let acceptHook = QueueServiceTestHook()
+        let parkedAccept = isolatedQueueService(hook: acceptHook)
+        await parkedAccept.reset(accountEpoch: 1)
+        await acceptHook.parkNextConnectAccept()
+        let acceptTask = Task {
+            await parkedAccept.acceptConnect(
+                [connectEntry("spotify:track:parked")],
+                accountEpoch: 1,
+                sourceRevision: 4,
+                contextURI: "spotify:track:now"
+            )
+        }
+        runner.check(
+            "acceptConnect suspends at the injected hook",
+            await waitUntil { await acceptHook.connectAcceptIsParked() }
+        )
+        runner.equal("parked acceptConnect entered once", await acceptHook.acceptConnectEnterCount, 1)
+        runner.equal("parked acceptConnect suspended once", await acceptHook.acceptConnectSuspendCount, 1)
+        runner.equal("parked acceptConnect has not resumed", await acceptHook.acceptConnectResumeCount, 0)
+        await acceptHook.resumeConnectAccept()
+        await acceptHook.resumeConnectAccept()
+        let parkedAccepted = await acceptTask.value
+        runner.equal("resumed acceptConnect applies the Connect revision", parkedAccepted?.snapshot.revision, 4)
+        runner.equal("acceptConnect resumed once", await acceptHook.acceptConnectResumeCount, 1)
+        runner.equal("acceptConnect is not parked after resume", await acceptHook.connectAcceptIsParked(), false)
+
+        let replaceHook = QueueServiceTestHook()
+        let parkedReplace = isolatedQueueService(hook: replaceHook)
+        await parkedReplace.reset(accountEpoch: 1)
+        _ = await parkedReplace.acceptConnect(
+            [connectEntry("spotify:track:a")],
+            accountEpoch: 1,
+            sourceRevision: 1,
+            contextURI: nil,
+            engineEpoch: 3,
+            protocolNext: [QueueProtocolTrack(uri: "spotify:track:a", uid: "q0", provider: "queue")],
+            queueRevision: "rev-1"
+        )
+        await replaceHook.parkNextCommittedReplacement()
+        let replaceTask = Task {
+            await parkedReplace.recordCommittedReplacement(
+                QueueReplacement(
+                    next: [QueueProtocolTrack(uri: "spotify:track:b", uid: "q1", provider: "queue")],
+                    prev: [],
+                    queueRevision: "rev-2",
+                    removedCount: 1
+                ),
+                accountEpoch: 1,
+                engineEpoch: 3
+            )
+        }
+        runner.check(
+            "recordCommittedReplacement suspends at the injected hook",
+            await waitUntil { await replaceHook.committedReplacementIsParked() }
+        )
+        runner.equal("parked recordCommittedReplacement entered once", await replaceHook.committedReplacementEnterCount, 1)
+        runner.equal("parked recordCommittedReplacement suspended once", await replaceHook.committedReplacementSuspendCount, 1)
+        await replaceHook.resumeCommittedReplacement()
+        await replaceHook.resumeCommittedReplacement()
+        let parkedReplaced = await replaceTask.value
+        runner.equal("resumed recordCommittedReplacement commits protocol next", parkedReplaced?.next.first?.uid, "q1")
+        runner.equal("recordCommittedReplacement resumed once", await replaceHook.committedReplacementResumeCount, 1)
+        runner.equal(
+            "recordCommittedReplacement is not parked after resume",
+            await replaceHook.committedReplacementIsParked(),
+            false
+        )
+
+        let cancelHook = QueueServiceTestHook()
+        let cancelService = isolatedQueueService(hook: cancelHook)
+        await cancelService.reset(accountEpoch: 1)
+        await cancelHook.parkNextConnectAccept()
+        let cancelTask = Task {
+            await cancelService.acceptConnect(
+                [connectEntry("spotify:track:cancel")],
+                accountEpoch: 1,
+                sourceRevision: 9,
+                contextURI: nil
+            )
+        }
+        runner.check(
+            "cancellable acceptConnect parks",
+            await waitUntil { await cancelHook.connectAcceptIsParked() }
+        )
+        cancelTask.cancel()
+        let cancelled = await cancelTask.value
+        runner.nil_("cancelled acceptConnect does not apply", cancelled)
+        runner.equal("cancellation resumes the parked continuation", await cancelHook.connectAcceptIsParked(), false)
+        runner.equal("cancellation resumes acceptConnect once", await cancelHook.acceptConnectResumeCount, 1)
+
+        let resetHook = QueueServiceTestHook()
+        let resetService = isolatedQueueService(hook: resetHook)
+        await resetService.reset(accountEpoch: 1)
+        await resetHook.parkNextConnectAccept()
+        let staleTask = Task {
+            await resetService.acceptConnect(
+                [connectEntry("spotify:track:stale")],
+                accountEpoch: 1,
+                sourceRevision: 2,
+                contextURI: nil
+            )
+        }
+        runner.check(
+            "reset-target acceptConnect parks",
+            await waitUntil { await resetHook.connectAcceptIsParked() }
+        )
+        await resetService.reset(accountEpoch: 2)
+        let stale = await staleTask.value
+        runner.nil_("reset resumes then rejects the old-epoch accept", stale)
+        runner.equal("reset resumes the parked continuation once", await resetHook.acceptConnectResumeCount, 1)
+
+        let revisionHook = QueueServiceTestHook()
+        let revisionService = isolatedQueueService(hook: revisionHook)
+        await revisionService.reset(accountEpoch: 1)
+        await revisionHook.parkNextConnectAccept()
+        let firstRevision = Task {
+            await revisionService.acceptConnect(
+                [connectEntry("spotify:track:new")],
+                accountEpoch: 1,
+                sourceRevision: 5,
+                contextURI: "spotify:track:now"
+            )
+        }
+        runner.check(
+            "revision acceptConnect parks",
+            await waitUntil { await revisionHook.connectAcceptIsParked() }
+        )
+        await revisionHook.resumeConnectAccept()
+        runner.equal("authoritative accept keeps sourceRevision 5", (await firstRevision.value)?.snapshot.revision, 5)
+        let sameRevision = await revisionService.acceptConnect(
+            [connectEntry("spotify:track:same")],
+            accountEpoch: 1,
+            sourceRevision: 5,
+            contextURI: "spotify:track:now"
+        )
+        runner.equal("equal sourceRevision does not replace the snapshot URI", sameRevision?.snapshot.entries.first?.uri, "spotify:track:new")
+        let olderRevision = await revisionService.acceptConnect(
+            [connectEntry("spotify:track:old")],
+            accountEpoch: 1,
+            sourceRevision: 4,
+            contextURI: "spotify:track:now"
+        )
+        runner.equal("older sourceRevision keeps the accepted snapshot", olderRevision?.snapshot.entries.first?.uri, "spotify:track:new")
+    }
+
     runner.suite("Queue management source contract") {
         runner.noThrow("queue mutation sources are readable") {
             let table = try auralSourceFile("Aural/Views/SharedComponents.swift")
@@ -1128,6 +1349,8 @@ func runQueueManagementChecks(_ runner: CheckRunner) async {
             let control = try auralSourceFile("Aural/Spotify/PlaybackCore.swift")
             let engineEvents = try auralSourceFile("Aural/Spotify/PlaybackStore+EngineEvents.swift")
             let models = try auralSourceFile("AuralDomain/PlaybackPanelModels.swift")
+            let service = try auralSourceFile("Aural/Spotify/QueueService.swift")
+            let store = try auralSourceFile("Aural/Spotify/PlaybackStore.swift")
             runner.check(
                 "Connect intake binds occurrence uids into selectable identity",
                 containsToken(engineEvents, "uid: item.uid ?? \"\"")
@@ -1185,6 +1408,25 @@ func runQueueManagementChecks(_ runner: CheckRunner) async {
                 !containsToken(engine, "setQueue")
                     && !containsToken(control, "set_queue")
                     && containsToken(control, "aural_playback_add_to_queue")
+            )
+            runner.check(
+                "QueueService does not store test continuation gates",
+                containsToken(service, "await hook.beforeAcceptConnect()")
+                    && containsToken(service, "await hook.beforeRecordCommittedReplacement()")
+                    && containsToken(service, "await hook.reset()")
+                    && containsToken(service, "InertQueueServiceHook")
+                    && !containsToken(service, "parkNextConnectAccept")
+                    && !containsToken(service, "parkNextCommittedReplacement")
+                    && !containsToken(service, "waitForTestConnectAcceptGate")
+                    && !containsToken(service, "waitForTestCommittedReplacementGate")
+                    && !containsToken(service, "CheckedContinuation")
+                    && !containsToken(service, "pendingConnectAcceptGate")
+                    && !containsToken(service, "pendingCommittedReplacementGate")
+            )
+            runner.check(
+                "PlaybackStore injects the hook at QueueService initialization",
+                containsToken(store, "queueServiceHook: any QueueServiceHook = InertQueueServiceHook()")
+                    && containsToken(store, "hook: queueServiceHook")
             )
         }
     }

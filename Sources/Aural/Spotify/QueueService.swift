@@ -95,6 +95,21 @@ nonisolated struct AcceptedConnectQueue: Sendable {
     let mutation: QueueMutationSnapshot
 }
 
+/// Entry suspension points for `acceptConnect` and `recordCommittedReplacement`.
+/// Production uses `InertQueueServiceHook`, which returns immediately and owns
+/// no continuations, counters, or parking flags.
+nonisolated protocol QueueServiceHook: Sendable {
+    func beforeAcceptConnect() async
+    func beforeRecordCommittedReplacement() async
+    func reset() async
+}
+
+nonisolated struct InertQueueServiceHook: QueueServiceHook {
+    func beforeAcceptConnect() async {}
+    func beforeRecordCommittedReplacement() async {}
+    func reset() async {}
+}
+
 actor QueueService {
     private enum WebCapability {
         case unknown
@@ -105,6 +120,7 @@ actor QueueService {
     private let webQueue: any WebQueueClient
     private let metadata: TrackMetadataService
     private let clock: any PlaybackClock
+    private let hook: any QueueServiceHook
     private(set) var accountEpoch: UInt64 = 0
     private var revision: UInt64 = 0
     private var lastConnectSourceRevision: UInt64 = 0
@@ -113,21 +129,17 @@ actor QueueService {
     private var webRetryNotBefore: Date?
     private var snapshot: ProvenanceQueueSnapshot?
     private var mutation: QueueMutationSnapshot?
-    private var pendingConnectAcceptGate = false
-    private var connectAcceptGate: CheckedContinuation<Void, Never>?
-    private var connectAcceptGateID: UInt64 = 0
-    private var pendingCommittedReplacementGate = false
-    private var committedReplacementGate: CheckedContinuation<Void, Never>?
-    private var committedReplacementGateID: UInt64 = 0
 
     init(
         webQueue: any WebQueueClient,
         metadata: TrackMetadataService,
-        clock: any PlaybackClock = SystemPlaybackClock()
+        clock: any PlaybackClock = SystemPlaybackClock(),
+        hook: any QueueServiceHook = InertQueueServiceHook()
     ) {
         self.webQueue = webQueue
         self.metadata = metadata
         self.clock = clock
+        self.hook = hook
     }
 
     func reset(accountEpoch: UInt64) async {
@@ -139,43 +151,18 @@ actor QueueService {
         webRetryNotBefore = nil
         snapshot = nil
         mutation = nil
-        pendingConnectAcceptGate = false
-        resumeConnectAccept()
-        pendingCommittedReplacementGate = false
-        resumeCommittedReplacement()
+        await hook.reset()
         await metadata.reset()
     }
 
     func mutationSnapshot() -> QueueMutationSnapshot? { mutation }
-
-    func parkNextConnectAccept() {
-        pendingConnectAcceptGate = true
-    }
-
-    func connectAcceptIsParked() -> Bool { connectAcceptGate != nil }
-
-    func resumeConnectAccept() {
-        connectAcceptGate?.resume()
-        connectAcceptGate = nil
-    }
-
-    func parkNextCommittedReplacement() {
-        pendingCommittedReplacementGate = true
-    }
-
-    func committedReplacementIsParked() -> Bool { committedReplacementGate != nil }
-
-    func resumeCommittedReplacement() {
-        committedReplacementGate?.resume()
-        committedReplacementGate = nil
-    }
 
     func recordCommittedReplacement(
         _ replacement: QueueReplacement,
         accountEpoch requestedEpoch: UInt64,
         engineEpoch: UInt64
     ) async -> QueueMutationSnapshot? {
-        await waitForTestCommittedReplacementGate()
+        await hook.beforeRecordCommittedReplacement()
         guard !Task.isCancelled else { return nil }
         guard requestedEpoch == accountEpoch else { return nil }
         guard var current = mutation, current.engineEpoch == engineEpoch else { return nil }
@@ -199,7 +186,7 @@ actor QueueService {
         disallowSetQueue: Bool = false,
         disallowRemovingFromNextTracks: Bool = false
     ) async -> AcceptedConnectQueue? {
-        await waitForTestConnectAcceptGate()
+        await hook.beforeAcceptConnect()
         guard !Task.isCancelled else { return nil }
         guard requestedEpoch == accountEpoch else { return nil }
         if let sourceRevision {
@@ -361,44 +348,6 @@ actor QueueService {
     private func acceptedQueue() -> AcceptedConnectQueue? {
         guard let snapshot, let mutation else { return nil }
         return AcceptedConnectQueue(snapshot: snapshot, mutation: mutation)
-    }
-
-    private func waitForTestConnectAcceptGate() async {
-        guard pendingConnectAcceptGate else { return }
-        pendingConnectAcceptGate = false
-        connectAcceptGateID &+= 1
-        let id = connectAcceptGateID
-        await withTaskCancellationHandler {
-            await withCheckedContinuation { continuation in
-                connectAcceptGate = continuation
-            }
-        } onCancel: {
-            Task { await self.resumeConnectAcceptIfCurrent(id) }
-        }
-    }
-
-    private func resumeConnectAcceptIfCurrent(_ id: UInt64) {
-        guard id == connectAcceptGateID else { return }
-        resumeConnectAccept()
-    }
-
-    private func waitForTestCommittedReplacementGate() async {
-        guard pendingCommittedReplacementGate else { return }
-        pendingCommittedReplacementGate = false
-        committedReplacementGateID &+= 1
-        let id = committedReplacementGateID
-        await withTaskCancellationHandler {
-            await withCheckedContinuation { continuation in
-                committedReplacementGate = continuation
-            }
-        } onCancel: {
-            Task { await self.resumeCommittedReplacementIfCurrent(id) }
-        }
-    }
-
-    private func resumeCommittedReplacementIfCurrent(_ id: UInt64) {
-        guard id == committedReplacementGateID else { return }
-        resumeCommittedReplacement()
     }
 
     private func uniqueTrackURIs(in entries: [QueueEntry]) -> [String] {
