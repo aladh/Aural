@@ -189,15 +189,45 @@ func runPlaybackProjectionContractChecks(_ check: CheckRunner) {
             let history = CurrentTrackRowAccessibilityContract.typeBody(named: "HistoryRow", in: panel) ?? ""
             check.check(
                 "upcoming queue VoiceOver stays title and subtitle",
-                CurrentTrackRowAccessibilityContract.collapsed(upcoming)
-                    .contains(".accessibilityLabel(\"\\(title), \\(subtitle)\")")
+                CurrentTrackRowAccessibilityContract.containsQuotedAccessibilityLabel(
+                    upcoming,
+                    "\\(title), \\(subtitle)"
+                )
             )
             check.check(
                 "history VoiceOver stays play-by-relative phrasing",
-                CurrentTrackRowAccessibilityContract.collapsed(history).contains(
-                    ".accessibilityLabel(\"Play \\(entry.title) by \\(entry.artist), played \\(entry.playedAt.formatted(.relative(presentation: .named)))\")"
+                CurrentTrackRowAccessibilityContract.containsQuotedAccessibilityLabel(
+                    history,
+                    "Play \\(entry.title) by \\(entry.artist), played \\(entry.playedAt.formatted(.relative(presentation: .named)))"
                 )
             )
         }
+
+        let wrappedHistoryLabel = """
+            .accessibilityLabel(
+                "Play \\(entry.title) by \\(entry.artist), played \\(entry.playedAt.formatted(.relative(presentation: .named)))"
+            )
+            """
+        check.check(
+            "a wrapped history VoiceOver label still matches",
+            CurrentTrackRowAccessibilityContract.containsQuotedAccessibilityLabel(
+                wrappedHistoryLabel,
+                "Play \\(entry.title) by \\(entry.artist), played \\(entry.playedAt.formatted(.relative(presentation: .named)))"
+            )
+        )
+        check.check(
+            "a one-line history VoiceOver label still matches",
+            CurrentTrackRowAccessibilityContract.containsQuotedAccessibilityLabel(
+                ".accessibilityLabel(\"Play \\(entry.title) by \\(entry.artist), played \\(entry.playedAt.formatted(.relative(presentation: .named)))\")",
+                "Play \\(entry.title) by \\(entry.artist), played \\(entry.playedAt.formatted(.relative(presentation: .named)))"
+            )
+        )
+        check.check(
+            "a different history VoiceOver phrasing is reported",
+            !CurrentTrackRowAccessibilityContract.containsQuotedAccessibilityLabel(
+                wrappedHistoryLabel,
+                "Now playing \\(entry.title) by \\(entry.artist)"
+            )
+        )
     }
 }

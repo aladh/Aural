@@ -66,8 +66,9 @@ enum CurrentTrackRowAccessibilityContract {
     }
 
     static func accessibilityLabelUsesDisplayedProjections(in row: String) -> Bool {
-        collapsed(row).contains(
-            ".accessibilityLabel(\"Now playing \\(player.displayedTrackTitle) by \\(player.displayedArtistName)\")"
+        containsQuotedAccessibilityLabel(
+            row,
+            "Now playing \\(player.displayedTrackTitle) by \\(player.displayedArtistName)"
         )
     }
 
@@ -85,7 +86,15 @@ enum CurrentTrackRowAccessibilityContract {
         )
     }
 
+    static func containsQuotedAccessibilityLabel(_ source: String, _ quoted: String) -> Bool {
+        compact(source).contains(compact(".accessibilityLabel(\"\(quoted)\")"))
+    }
+
     static func collapsed(_ source: String) -> String {
         source.split { $0.isWhitespace }.joined(separator: " ")
+    }
+
+    static func compact(_ source: String) -> String {
+        source.filter { !$0.isWhitespace }
     }
 }
