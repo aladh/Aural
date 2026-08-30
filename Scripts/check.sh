@@ -308,6 +308,68 @@ if rg -n 'security@example\.com|replace this placeholder' \
     exit 1
 fi
 
+# The debug quality gate must keep using an existing runner rg, cache only repo-local
+# SwiftPM products (including the redirected module cache), and leave Rust caching alone.
+ci_workflow="$project_root/.github/workflows/ci.yml"
+if [[ ! -f "$ci_workflow" ]]; then
+    print -u2 "CI workflow is missing"
+    exit 1
+fi
+if ! rg -q 'command -v rg' "$ci_workflow"; then
+    print -u2 "CI must use an existing rg before Homebrew ripgrep"
+    exit 1
+fi
+if ! rg -q 'brew install ripgrep' "$ci_workflow"; then
+    print -u2 "CI must still install ripgrep when the runner has no rg"
+    exit 1
+fi
+if rg -q 'brew untap aws/tap' "$ci_workflow"; then
+    print -u2 "CI must not keep the aws/tap Homebrew workaround"
+    exit 1
+fi
+if ! rg -q 'key: macos-rust-\$\{\{ hashFiles\(' "$ci_workflow"; then
+    print -u2 "CI must keep the existing Rust cache key"
+    exit 1
+fi
+swiftpm_cache_block="$(
+    awk '
+        $0 == "      - name: Cache SwiftPM build directory" {grab=1}
+        grab {print}
+        grab && $0 ~ /^      - name:/ && $0 != "      - name: Cache SwiftPM build directory" {exit}
+    ' "$ci_workflow"
+)"
+if [[ -z "$swiftpm_cache_block" ]]; then
+    print -u2 "CI must cache the SwiftPM .build directory"
+    exit 1
+fi
+if ! print -r -- "$swiftpm_cache_block" | rg -q '^\s+\.build/\*$'; then
+    print -u2 "CI SwiftPM cache must include repository .build products"
+    exit 1
+fi
+if ! print -r -- "$swiftpm_cache_block" | rg -q '!\.build/aural-signing'; then
+    print -u2 "CI SwiftPM cache must exclude local signing material"
+    exit 1
+fi
+if print -r -- "$swiftpm_cache_block" | rg -q 'cargo|aural-playback/target|~/|\.\./|DerivedData|dist/|Aural\.app'; then
+    print -u2 "CI SwiftPM cache must stay inside repository .build"
+    exit 1
+fi
+if ! print -r -- "$swiftpm_cache_block" | rg -q 'runner\.os' || \
+   ! print -r -- "$swiftpm_cache_block" | rg -q 'runner\.arch' || \
+   ! print -r -- "$swiftpm_cache_block" | rg -q 'SWIFT_TOOLCHAIN_KEY' || \
+   ! print -r -- "$swiftpm_cache_block" | rg -q "hashFiles\('Package\.swift', 'Package\.resolved'\)"; then
+    print -u2 "CI SwiftPM cache key must include OS, architecture, Swift toolchain, and package manifests"
+    exit 1
+fi
+if ! print -r -- "$swiftpm_cache_block" | rg -q 'restore-keys:'; then
+    print -u2 "CI SwiftPM cache must restore compatible prior products"
+    exit 1
+fi
+if print -r -- "$swiftpm_cache_block" | rg -q 'github\.sha|github\.ref'; then
+    print -u2 "CI SwiftPM cache must not key on synthetic merge SHAs or refs"
+    exit 1
+fi
+
 plutil -lint "$project_root/Packaging/Info.plist"
 
 print "Aural checks passed ($build_configuration): Rust, ABI, native app, domain, concrete boundary, architecture, and packaging checks are green"

@@ -34,15 +34,31 @@ jobs:
 
       - name: Install verification tools
         run: |
-          if brew tap | grep -qx 'aws/tap'; then
-            brew untap aws/tap
+          if command -v rg >/dev/null 2>&1; then
+            rg --version
+          else
+            brew install ripgrep
           fi
-          brew install ripgrep
 
       - name: Show toolchains
         run: |
-          swift --version
+          set -euo pipefail
+          {
+            swift --version
+            uname -m
+          } | tee "$RUNNER_TEMP/swift-toolchain.txt"
           rustc --version
+          echo "SWIFT_TOOLCHAIN_KEY=$(shasum -a 256 "$RUNNER_TEMP/swift-toolchain.txt" | awk '{print $1}')" >> "$GITHUB_ENV"
+
+      - name: Cache SwiftPM build directory
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            .build/*
+            !.build/aural-signing
+          key: macos-swiftpm-${{ runner.os }}-${{ runner.arch }}-${{ env.SWIFT_TOOLCHAIN_KEY }}-${{ hashFiles('Package.swift', 'Package.resolved') }}
+          restore-keys: |
+            macos-swiftpm-${{ runner.os }}-${{ runner.arch }}-${{ env.SWIFT_TOOLCHAIN_KEY }}-
 
       - name: Run checks
         run: ./Scripts/check.sh
