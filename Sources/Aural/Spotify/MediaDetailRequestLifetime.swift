@@ -19,21 +19,36 @@ final class MediaDetailRequestLifetime {
         let uri: String
     }
 
+    /// Opaque waiter token. `awaitFlight` releases this claim on cancel or return.
+    struct WaiterClaim: Sendable {
+        fileprivate let flightID: UInt64
+        fileprivate let claimID: UInt64
+        fileprivate let task: Task<Void, Never>
+    }
+
     enum Admission {
         case skip
-        case join(Task<Void, Never>)
+        case join(WaiterClaim)
         case start(Handle)
     }
 
     private struct JoinFlight: Sendable {
+        let flightID: UInt64
         let task: Task<Void, Never>
         let uri: String
         let session: CatalogSessionSnapshot
+        var liveClaims: Set<UInt64>
+    }
+
+    private struct JoinState: Sendable {
+        var flight: JoinFlight?
     }
 
     private let session: CatalogSessionAvailability
     private var requestID: UInt64 = 0
-    private let joinFlight = OSAllocatedUnfairLock<JoinFlight?>(initialState: nil)
+    private var nextFlightID: UInt64 = 0
+    private var nextClaimID: UInt64 = 0
+    private let joinState = OSAllocatedUnfairLock(initialState: JoinState())
     private var loadedURI: String?
     private var loadedSession: CatalogSessionSnapshot?
 
@@ -43,7 +58,7 @@ final class MediaDetailRequestLifetime {
 
     func reset() {
         requestID &+= 1
-        cancelJoinFlight()
+        invalidateJoinFlight()
         loadedURI = nil
         loadedSession = nil
     }
@@ -54,17 +69,21 @@ final class MediaDetailRequestLifetime {
         if loadedURI == uri, loadedSession == currentSession {
             return .skip
         }
-        // Join only while the lock still holds a live flight. Cancellation clears that
-        // box before `Task.cancel()`, so admit cannot join a flight already tearing down.
-        let joined = joinFlight.withLock { current -> Task<Void, Never>? in
-            guard let current,
-                  current.uri == uri,
-                  current.session == currentSession,
-                  !current.task.isCancelled
+
+        nextClaimID &+= 1
+        let claimID = nextClaimID
+        let joined = joinState.withLock { state -> WaiterClaim? in
+            guard var flight = state.flight,
+                  flight.uri == uri,
+                  flight.session == currentSession,
+                  !flight.task.isCancelled,
+                  !flight.liveClaims.isEmpty
             else {
                 return nil
             }
-            return current.task
+            flight.liveClaims.insert(claimID)
+            state.flight = flight
+            return WaiterClaim(flightID: flight.flightID, claimID: claimID, task: flight.task)
         }
         if let joined {
             return .join(joined)
@@ -72,7 +91,7 @@ final class MediaDetailRequestLifetime {
 
         requestID &+= 1
         let identity = session.requestIdentity(requestID: requestID)
-        cancelJoinFlight()
+        invalidateJoinFlight()
         loadedURI = nil
         loadedSession = nil
         return .start(
@@ -80,33 +99,45 @@ final class MediaDetailRequestLifetime {
         )
     }
 
+    func awaitFlight(_ claim: WaiterClaim) async {
+        await withTaskCancellationHandler {
+            await claim.task.value
+        } onCancel: { [joinState] in
+            Self.releaseClaim(claim, joinState: joinState)
+        }
+        Self.releaseClaim(claim, joinState: joinState)
+    }
+
     func run(_ handle: Handle, operation: @escaping @MainActor () async -> Void) async {
+        nextFlightID &+= 1
+        let flightID = nextFlightID
+        nextClaimID &+= 1
+        let ownerClaimID = nextClaimID
         let newTask = Task { [weak self] in
             await operation()
-            self?.complete(handle)
+            self?.complete(handle, flightID: flightID)
         }
-        joinFlight.withLock {
-            $0 = JoinFlight(task: newTask, uri: handle.uri, session: handle.sessionSnapshot)
+        joinState.withLock { state in
+            state.flight = JoinFlight(
+                flightID: flightID,
+                task: newTask,
+                uri: handle.uri,
+                session: handle.sessionSnapshot,
+                liveClaims: [ownerClaimID]
+            )
         }
+        let ownerClaim = WaiterClaim(flightID: flightID, claimID: ownerClaimID, task: newTask)
         await withTaskCancellationHandler {
             await newTask.value
-        } onCancel: { [joinFlight] in
-            joinFlight.withLock { current in
-                if current?.task == newTask {
-                    current = nil
-                }
-            }
-            newTask.cancel()
+        } onCancel: { [joinState] in
+            Self.releaseClaim(ownerClaim, joinState: joinState)
         }
+        Self.releaseClaim(ownerClaim, joinState: joinState)
     }
 
     func abandonUnstarted(_ handle: Handle) {
         guard owns(handle) else { return }
-        joinFlight.withLock { current in
-            if current?.uri == handle.uri, current?.session == handle.sessionSnapshot {
-                current = nil
-            }
-        }
+        invalidateJoinFlight()
     }
 
     func isCurrent(_ handle: Handle, selectedURI: String?) -> Bool {
@@ -129,20 +160,42 @@ final class MediaDetailRequestLifetime {
         loadedSession = handle.sessionSnapshot
     }
 
-    private func complete(_ handle: Handle) {
+    private func complete(_ handle: Handle, flightID: UInt64) {
         guard owns(handle) else { return }
-        joinFlight.withLock { current in
-            if current?.uri == handle.uri, current?.session == handle.sessionSnapshot {
-                current = nil
-            }
+        joinState.withLock { state in
+            guard state.flight?.flightID == flightID else { return }
+            state.flight = nil
         }
     }
 
-    private func cancelJoinFlight() {
-        let stale = joinFlight.withLock { current -> Task<Void, Never>? in
-            let task = current?.task
-            current = nil
+    private func invalidateJoinFlight() {
+        let stale = joinState.withLock { state -> Task<Void, Never>? in
+            let task = state.flight?.task
+            state.flight = nil
             return task
+        }
+        stale?.cancel()
+    }
+
+    /// Releases one waiter. Cancels the underlying task only when the last live claim
+    /// for that exact flight leaves. A stale claim is a no-op.
+    private static func releaseClaim(
+        _ claim: WaiterClaim,
+        joinState: OSAllocatedUnfairLock<JoinState>
+    ) {
+        let stale = joinState.withLock { state -> Task<Void, Never>? in
+            guard var flight = state.flight, flight.flightID == claim.flightID else {
+                return nil
+            }
+            guard flight.liveClaims.remove(claim.claimID) != nil else {
+                return nil
+            }
+            if flight.liveClaims.isEmpty {
+                state.flight = nil
+                return flight.task
+            }
+            state.flight = flight
+            return nil
         }
         stale?.cancel()
     }

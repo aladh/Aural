@@ -44,8 +44,8 @@ final class AlbumDetailStore {
         switch lifetime.admit(uri: selected.uri) {
         case .skip:
             return
-        case let .join(task):
-            await task.value
+        case let .join(claim):
+            await lifetime.awaitFlight(claim)
         case let .start(handle):
             item = selected
             trackCollection.replace([])
@@ -117,8 +117,8 @@ final class ArtistDetailStore {
         switch lifetime.admit(uri: selected.uri) {
         case .skip:
             return
-        case let .join(task):
-            await task.value
+        case let .join(claim):
+            await lifetime.awaitFlight(claim)
         case let .start(handle):
             item = selected
             releases = []

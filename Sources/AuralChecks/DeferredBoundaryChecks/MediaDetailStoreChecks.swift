@@ -340,6 +340,41 @@ func runMediaDetailStoreChecks(_ runner: CheckRunner) async {
         runner.equal("a completed same-session album is not fetched again", await provider.requestCount, 1)
     }
 
+    await runner.suite("Media detail join claim survives owner cancel") {
+        let provider = GatedAlbumCatalog()
+        let session = CatalogSessionAvailability(accountEpoch: 1, isAvailable: true)
+        let (store, _) = makeAlbumStore(provider: provider, session: session)
+
+        let owner = Task { await store.load(firstAlbumItem) }
+        runner.check(
+            "the owner album request parks",
+            await waitUntil { await provider.requestCount == 1 }
+        )
+        let joiner = startJoiningAlbumLoad(store, item: firstAlbumItem)
+        runner.check(
+            "the joiner entered load",
+            await waitUntil { joiner.hasEntered() }
+        )
+        runner.equal("the joiner claimed the in-flight request", await provider.requestCount, 1)
+        runner.check("the joiner is waiting on the claimed flight", !joiner.hasFinished())
+
+        owner.cancel()
+        runner.equal(
+            "owner cancel does not start a second provider request after a join claim",
+            await provider.requestCount,
+            1
+        )
+        runner.check("the joiner remains on the live flight after owner cancel", !joiner.hasFinished())
+
+        await provider.completeNext(.album(firstAlbumValue))
+        await joiner.task.value
+        await owner.value
+        runner.check("the joiner finishes after the claimed flight", joiner.hasFinished())
+        runner.equal("the joiner receives the in-flight result", store.tracks.map(\.uri), ["spotify:track:first"])
+        runner.check("claimed-flight loading finishes", !store.isLoading)
+        runner.nil_("claimed-flight success does not surface an error", store.error)
+    }
+
     await runner.suite("Media detail cancelled owner does not join") {
         let provider = GatedAlbumCatalog()
         let session = CatalogSessionAvailability(accountEpoch: 1, isAvailable: true)
@@ -351,6 +386,7 @@ func runMediaDetailStoreChecks(_ runner: CheckRunner) async {
             await waitUntil { await provider.requestCount == 1 }
         )
         owner.cancel()
+        // Drain last-claim release so this admission observes no live flight.
         for _ in 0..<16 { await Task.yield() }
         let reload = Task { await store.load(firstAlbumItem) }
         runner.check(
