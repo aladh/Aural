@@ -13,6 +13,8 @@ linking errors, not to silently change its decision.
 | [ADR 002: Atomic playback state and explicit dependency ownership](ADR-002-playback-state-and-dependencies.md) | Accepted | Use one reducer-owned playback snapshot, explicit dependency assembly, and generation-aware async ownership. |
 | [ADR 003: Keep PlaybackEffectRegistry; reject TCA and a generic Effect type](ADR-003-playback-command-effects.md) | Accepted | Keep store-level `PlaybackEffectRegistry`; do not adopt TCA or a generic Effect type. Reducer acceptance normally gates follow-ups; a captured same-lifetime transport resolution and matching-snapshot reconciliation are the documented exceptions, and consume-only acceptance cannot report coordinator failure. |
 
+Related index: [Architecture enforcement inventory](architecture-enforcement.md) records the canonical source, primary owner, and disposition of each hard rule. It is a registry, not another ADR.
+
 ## Maintaining the index
 
 - Give each new record the next three-digit number and add it to this table in the same change.
