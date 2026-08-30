@@ -161,7 +161,8 @@ extension PlaybackStore {
                     expectedOwner: expectedOwner,
                     startedAt: environment.clock.now()
                 )),
-            source: .command
+            source: .command,
+            playbackLifetime: lifetime
         )
         guard started else {
             completion(false)
@@ -176,12 +177,13 @@ extension PlaybackStore {
                 guard let self else { return }
                 do {
                     let outcome = try await operation()
-                    // Engine identity is revalidated by the reducer-stamped finish and the
-                    // shared follow-up below. Do not reject here: an authoritative snapshot can
-                    // confirm or supersede a command while its coordinator operation is suspended.
+                    // Account replacement and teardown make every outcome inert here. Engine
+                    // replacement is intentionally resolved by the lifetime-stamped reducer
+                    // finish and shared follow-up: an authoritative engine sample may confirm
+                    // or supersede a command while its coordinator operation is suspended.
                     guard
                         !Task.isCancelled,
-                        self.accountEpoch == lifetime.accountEpoch,
+                        lifetime.accountEpoch == self.accountEpoch,
                         !self.isTearingDown
                     else { return }
                     self.applyCommandOutcome(
@@ -232,8 +234,7 @@ extension PlaybackStore {
         let finished = send(
             .commandFinished(id: commandID, accepted: false, notice: nil),
             source: .command,
-            engineEpoch: capturedLifetime.engineGeneration,
-            accountEpoch: capturedLifetime.accountEpoch
+            playbackLifetime: capturedLifetime
         )
         guard finished else { return }
         completion(false)
@@ -275,8 +276,7 @@ extension PlaybackStore {
                 notice: notice
             ),
             source: .command,
-            engineEpoch: capturedLifetime.engineGeneration,
-            accountEpoch: capturedLifetime.accountEpoch
+            playbackLifetime: capturedLifetime
         )
         switch playbackCommandFollowUp(
             finishAccepted: finished,

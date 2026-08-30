@@ -80,11 +80,11 @@ public struct AccountScopedRequestIdentity: Equatable, Sendable {
     }
 }
 
-/// Immutable identity of one playback-scoped async lifetime.
+/// Immutable stamp for one playback-scoped async lifetime.
 ///
-/// Account epoch and engine generation intentionally remain distinct values, but travel
-/// together so suspended playback work cannot accidentally capture or compare only one half.
-/// This is an option value, not a writable lifecycle owner, counter, revision, or watermark.
+/// Account epoch and engine generation intentionally remain distinct values, but command work
+/// carries and stamps them as one unit. This is not a writable lifecycle owner, counter,
+/// revision, or watermark.
 public struct PlaybackLifetime: Equatable, Sendable {
     public let accountEpoch: UInt64
     public let engineGeneration: UInt64
@@ -94,9 +94,6 @@ public struct PlaybackLifetime: Equatable, Sendable {
         self.engineGeneration = engineGeneration
     }
 
-    public func isCurrent(_ current: Self, isTearingDown: Bool) -> Bool {
-        !isTearingDown && self == current
-    }
 }
 
 /// Account-scoped request cancellation is inert: it must not publish results or user-facing errors.
@@ -205,7 +202,7 @@ public func playbackCommandFollowUp(
     currentLifetime: PlaybackLifetime,
     isTearingDown: Bool
 ) -> PlaybackCommandFollowUp {
-    guard capturedLifetime.isCurrent(currentLifetime, isTearingDown: isTearingDown) else {
+    guard !isTearingDown, capturedLifetime == currentLifetime else {
         return .inert
     }
     switch finishedCommandResolution {
@@ -238,6 +235,7 @@ public func playbackCommandShouldSettleOrdinaryCancellation(
     currentLifetime: PlaybackLifetime,
     isTearingDown: Bool
 ) -> Bool {
-    capturedLifetime.isCurrent(currentLifetime, isTearingDown: isTearingDown)
+    !isTearingDown
+        && capturedLifetime == currentLifetime
         && pendingCommandID == cancelledCommandID
 }

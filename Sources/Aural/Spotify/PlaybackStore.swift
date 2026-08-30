@@ -199,8 +199,8 @@ final class PlaybackStore {
     @ObservationIgnored var terminationGate = PlaybackTerminationGate()
     @ObservationIgnored var lastEngineEventSequence: UInt64 = 0
     @ObservationIgnored var engineGeneration: UInt64 = 0
-    /// One immutable capture for playback-scoped work. This projects the two existing
-    /// lifecycle owners and must never become a third writable counter.
+    /// One immutable stamp for playback-scoped work. This projects the two existing
+    /// lifecycle owners without becoming a third writable counter.
     var playbackLifetime: PlaybackLifetime {
         PlaybackLifetime(accountEpoch: accountEpoch, engineGeneration: engineGeneration)
     }
@@ -368,6 +368,27 @@ final class PlaybackStore {
             "Rejected event; source=\(String(describing: source), privacy: .public); account=\(stampedAccountEpoch, privacy: .public); engine=\(stampedEngineEpoch, privacy: .public); revision=\(String(describing: revision), privacy: .public)"
         )
         return false
+    }
+
+    /// Stamps playback-scoped work with the exact lifetime captured before suspension.
+    /// The reducer envelope remains scalar because account and engine have independent
+    /// semantics there; command call sites cannot accidentally mix captures from two lifetimes.
+    @discardableResult
+    func send(
+        _ event: PlaybackEvent,
+        source: PlaybackEventSource,
+        revision: UInt64? = nil,
+        playbackLifetime: PlaybackLifetime,
+        receivedAt: Date? = nil
+    ) -> Bool {
+        send(
+            event,
+            source: source,
+            revision: revision,
+            engineEpoch: playbackLifetime.engineGeneration,
+            accountEpoch: playbackLifetime.accountEpoch,
+            receivedAt: receivedAt
+        )
     }
 
     @discardableResult
