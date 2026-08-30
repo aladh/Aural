@@ -5,19 +5,23 @@
 
 import Foundation
 
-/// Owner-bumped identity of an authoritative `[CatalogTrack]` assignment.
+/// Authoritative catalog rows plus the revision that identifies that assignment.
 ///
-/// Catalog stores pass value arrays into `TrackTable`. Playback and metadata observation can
-/// re-evaluate that table without assigning a new collection, and same-count middle-element
-/// replacement is a real playlist and search update. A `UInt64` revision is the cheapest sound
-/// cache key: it does not scan the array, hash it, or fingerprint count/first/last/buffer identity.
-public func replaceCatalogTracks(
-    _ tracks: inout [CatalogTrack],
-    revision: inout UInt64,
-    with newTracks: [CatalogTrack]
-) {
-    tracks = newTracks
-    revision &+= 1
+/// `TrackTable` caches display order on `revision` plus SwiftUI `sortOrder`. Equatable
+/// still compares the rows, so do not use this value as an `onChange` trigger for that cache.
+public struct CatalogTrackCollection: Equatable, Sendable {
+    public private(set) var tracks: [CatalogTrack]
+    public private(set) var revision: UInt64
+
+    public init(tracks: [CatalogTrack] = [], revision: UInt64 = 0) {
+        self.tracks = tracks
+        self.revision = revision
+    }
+
+    public mutating func replace(_ tracks: [CatalogTrack]) {
+        self.tracks = tracks
+        revision &+= 1
+    }
 }
 
 /// Cached projection of catalog rows for a native `Table` sort order.

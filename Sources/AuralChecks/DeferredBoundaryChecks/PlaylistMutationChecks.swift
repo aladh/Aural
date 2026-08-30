@@ -474,7 +474,7 @@ func runPlaylistMutationChecks(_ runner: CheckRunner) async {
         let first = fixtureTrack(id: "uid-a", uri: "spotify:track:a")
         let second = fixtureTrack(id: "uid-b", uri: "spotify:track:b")
         catalog.playlistStore.replaceLoadedPlaylist(uri: "spotify:playlist:owned", tracks: [first, second])
-        let loadedRevision = catalog.playlistStore.tracksRevision
+        let loadedRevision = catalog.playlistStore.trackCollection.revision
         runner.check("loading tracks bumps the collection revision", loadedRevision > 0)
         catalog.playlistStore.replaceLoadedPlaylist(
             uri: "spotify:playlist:owned",
@@ -483,7 +483,7 @@ func runPlaylistMutationChecks(_ runner: CheckRunner) async {
         runner.equal("replacement keeps the same row count", catalog.playlistStore.tracks.count, 2)
         runner.equal(
             "same-count middle replacement bumps again",
-            catalog.playlistStore.tracksRevision,
+            catalog.playlistStore.trackCollection.revision,
             loadedRevision &+ 1
         )
         runner.equal(
@@ -531,27 +531,36 @@ func runPlaylistMutationChecks(_ runner: CheckRunner) async {
             runner.check(
                 "TrackTable projects rows from an owner revision instead of comparing tracks",
                 containsToken(table, "TrackTableDisplayCache")
-                    && containsToken(table, "let tracksRevision: UInt64")
+                    && containsToken(table, "CatalogTrackCollection")
                     && containsToken(table, "onChange(of: displayInputs")
+                    && containsToken(table, "tracks.revision")
                     && !containsToken(table, "onChange(of: tracks")
                     && !containsToken(table, "displayedTracks")
                     && !containsToken(table, "updateDisplayedTracks")
             )
             runner.check(
-                "every TrackTable owner passes a collection revision",
-                containsToken(playlistDetail, "tracksRevision: store.tracksRevision")
-                    && containsToken(mediaDetail, "tracksRevision: store.tracksRevision")
-                    && containsToken(libraryViews, "tracksRevision: store.tracksRevision")
-                    && containsToken(libraryViews, "tracksRevision: tracksRevision")
-                    && containsToken(root, "tracksRevision: catalog.homeLibrary.likedTracksRevision")
+                "every TrackTable owner passes a CatalogTrackCollection",
+                containsToken(playlistDetail, "tracks: store.trackCollection")
+                    && containsToken(mediaDetail, "tracks: store.trackCollection")
+                    && containsToken(libraryViews, "tracks: store.trackCollection")
+                    && containsToken(root, "tracks: catalog.homeLibrary.likedTrackCollection")
             )
             runner.check(
-                "catalog track lists bump the collection revision on assignment",
-                containsToken(playlistStore, "replaceCatalogTracks(&tracks, revision: &tracksRevision")
-                    && containsToken(searchStore, "replaceCatalogTracks(&tracks, revision: &tracksRevision")
-                    && containsToken(albumStore, "replaceCatalogTracks(")
-                    && containsToken(albumStore, "revision: &tracksRevision")
-                    && containsToken(homeLibrary, "replaceCatalogTracks(&likedTracks, revision: &likedTracksRevision")
+                "catalog track lists replace through CatalogTrackCollection",
+                containsToken(playlistStore, "trackCollection.replace")
+                    && containsToken(searchStore, "trackCollection.replace")
+                    && containsToken(albumStore, "trackCollection.replace")
+                    && containsToken(homeLibrary, "likedTrackCollection.replace")
+                    && !containsToken(playlistStore, "replaceCatalogTracks")
+                    && !containsToken(searchStore, "replaceCatalogTracks")
+                    && !containsToken(albumStore, "replaceCatalogTracks")
+                    && !containsToken(homeLibrary, "replaceCatalogTracks")
+            )
+            runner.check(
+                "PlaylistStore does not keep a second sorted copy",
+                !containsToken(playlistStore, "sortedTracks")
+                    && !containsToken(playlistStore, "dateSort")
+                    && !containsToken(playlistStore, "resortTracks")
             )
             runner.check(
                 "Remove from Playlist and Delete pass only occurrence UIDs",

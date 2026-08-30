@@ -22,15 +22,14 @@ func runTrackTableDisplayCacheChecks(_ check: CheckRunner) {
     }
 
     check.suite("Catalog track collection revision") {
-        var tracks = [track(id: "a", title: "A")]
-        var revision: UInt64 = 0
-        replaceCatalogTracks(&tracks, revision: &revision, with: [track(id: "a", title: "A"), track(id: "b", title: "B")])
-        check.equal("first assignment bumps the revision", revision, 1)
-        check.equal("assignment publishes the new rows", tracks.map(\.id), ["a", "b"])
+        var collection = CatalogTrackCollection()
+        collection.replace([track(id: "a", title: "A"), track(id: "b", title: "B")])
+        check.equal("first assignment bumps the revision", collection.revision, 1)
+        check.equal("assignment publishes the new rows", collection.tracks.map(\.id), ["a", "b"])
 
-        let equalReplacement = tracks
-        replaceCatalogTracks(&tracks, revision: &revision, with: equalReplacement)
-        check.equal("equal content still bumps so owners cannot skip a replacement", revision, 2)
+        let equalReplacement = collection.tracks
+        collection.replace(equalReplacement)
+        check.equal("equal content still bumps so owners cannot skip a replacement", collection.revision, 2)
     }
 
     check.suite("Track table display cache") {

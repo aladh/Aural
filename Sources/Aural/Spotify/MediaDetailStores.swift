@@ -12,8 +12,8 @@ import Foundation
 @Observable
 final class AlbumDetailStore {
     private(set) var item: CatalogItem?
-    private(set) var tracks: [CatalogTrack] = []
-    private(set) var tracksRevision: UInt64 = 0
+    private(set) var trackCollection = CatalogTrackCollection()
+    var tracks: [CatalogTrack] { trackCollection.tracks }
     private(set) var releaseDate = ""
     private(set) var isLoading = false
     private(set) var error: String?
@@ -37,7 +37,7 @@ final class AlbumDetailStore {
         task = nil
         loadedSession = nil
         item = nil
-        replaceCatalogTracks(&tracks, revision: &tracksRevision, with: [])
+        trackCollection.replace([])
         releaseDate = ""
         isLoading = false
         error = nil
@@ -54,7 +54,7 @@ final class AlbumDetailStore {
         task = nil
         loadedSession = nil
         item = selected
-        replaceCatalogTracks(&tracks, revision: &tracksRevision, with: [])
+        trackCollection.replace([])
         releaseDate = ""
         error = nil
         isLoading = true
@@ -68,10 +68,8 @@ final class AlbumDetailStore {
             do {
                 let album = try await provider.album(id: id)
                 guard self.isCurrent(identity, uri: selected.uri) else { return }
-                replaceCatalogTracks(
-                    &tracks,
-                    revision: &tracksRevision,
-                    with: album.tracks.compactMap { CatalogMapping.albumTrack(from: $0, album: album) }
+                trackCollection.replace(
+                    album.tracks.compactMap { CatalogMapping.albumTrack(from: $0, album: album) }
                 )
                 releaseDate = album.date?.day ?? ""
                 loadedSession = currentSession

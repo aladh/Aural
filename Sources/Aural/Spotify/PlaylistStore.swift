@@ -2,7 +2,7 @@
 //  PlaylistStore.swift
 //  Aural
 //
-//  Selected-playlist detail and sorting state.
+//  Selected-playlist detail state.
 //
 
 import AuralDomain
@@ -11,15 +11,8 @@ import Foundation
 @MainActor
 @Observable
 final class PlaylistStore {
-    private(set) var tracks: [CatalogTrack] = []
-    private(set) var tracksRevision: UInt64 = 0
-    var dateSort: PlaylistDateSort = .playlistOrder {
-        didSet {
-            guard oldValue != dateSort else { return }
-            resortTracks()
-        }
-    }
-    private(set) var sortedTracks: [CatalogTrack] = []
+    private(set) var trackCollection = CatalogTrackCollection()
+    var tracks: [CatalogTrack] { trackCollection.tracks }
     var description = ""
     private(set) var loadedURI: String?
     private(set) var ownerURI: String?
@@ -49,7 +42,6 @@ final class PlaylistStore {
         loadTask = nil
         loadSessionSnapshot = nil
         replaceTracks([])
-        dateSort = .playlistOrder
         description = ""
         loadedURI = nil
         ownerURI = nil
@@ -134,9 +126,6 @@ final class PlaylistStore {
             guard isCurrent(identity, uri: item.uri) else { return }
             description = PlaylistDescription.plainText(from: playlist.description ?? "")
             ownerURI = CatalogMapping.ownerURI(from: playlist) ?? item.ownerURI
-            if isNewPlaylist {
-                dateSort = .playlistOrder
-            }
             let entries = playlist.content.flatMap(\.items) ?? []
             replaceTracks(entries.compactMap(CatalogMapping.playlistTrack(from:)))
             metadata.replaceTracks(tracks, from: .playlist)
@@ -152,8 +141,7 @@ final class PlaylistStore {
     }
 
     private func replaceTracks(_ newTracks: [CatalogTrack]) {
-        replaceCatalogTracks(&tracks, revision: &tracksRevision, with: newTracks)
-        resortTracks()
+        trackCollection.replace(newTracks)
     }
 
     private func isCurrent(
@@ -167,16 +155,5 @@ final class PlaylistStore {
             isAvailable: session.isAvailable,
             isCancelled: Task.isCancelled
         )
-    }
-
-    private func resortTracks() {
-        sortedTracks = switch dateSort {
-        case .playlistOrder:
-            tracks
-        case .newestFirst:
-            sortedByDateAdded(tracks, newestFirst: true)
-        case .oldestFirst:
-            sortedByDateAdded(tracks, newestFirst: false)
-        }
     }
 }

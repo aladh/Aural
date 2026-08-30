@@ -14,9 +14,7 @@ struct TrackPlaylistActions {
 /// Single-click selects; command-click extends a simple multi-selection; double-click
 /// or Return plays the primary row, matching desktop table behavior.
 struct TrackTable: View {
-    let tracks: [CatalogTrack]
-    /// Owner-bumped identity of `tracks`. Display order caches this plus `sortOrder`.
-    let tracksRevision: UInt64
+    let tracks: CatalogTrackCollection
     let metadata: CatalogMetadataRepository
     let playback: CatalogPlaybackAccess
     var showsDateAdded = false
@@ -26,21 +24,19 @@ struct TrackTable: View {
     @State private var displayCache: TrackTableDisplayCache
 
     init(
-        tracks: [CatalogTrack],
-        tracksRevision: UInt64,
+        tracks: CatalogTrackCollection,
         metadata: CatalogMetadataRepository,
         playback: CatalogPlaybackAccess,
         showsDateAdded: Bool = false,
         playlistActions: TrackPlaylistActions? = nil
     ) {
         self.tracks = tracks
-        self.tracksRevision = tracksRevision
         self.metadata = metadata
         self.playback = playback
         self.showsDateAdded = showsDateAdded
         self.playlistActions = playlistActions
         _displayCache = State(
-            initialValue: TrackTableDisplayCache(tracks: tracks, revision: tracksRevision)
+            initialValue: TrackTableDisplayCache(tracks: tracks.tracks, revision: tracks.revision)
         )
     }
 
@@ -166,18 +162,18 @@ struct TrackTable: View {
         .accessibilityLabel("Tracks")
         .onChange(of: displayInputs, initial: true) { oldInputs, newInputs in
             _ = displayCache.update(
-                tracks: tracks,
+                tracks: tracks.tracks,
                 revision: newInputs.revision,
                 sortOrder: newInputs.sortOrder
             )
             if oldInputs.revision != newInputs.revision {
-                selection = TrackTableDisplayCache.prunedSelection(selection, from: tracks)
+                selection = TrackTableDisplayCache.prunedSelection(selection, from: tracks.tracks)
             }
         }
     }
 
     private var displayInputs: TrackTableDisplayInputs {
-        TrackTableDisplayInputs(revision: tracksRevision, sortOrder: sortOrder)
+        TrackTableDisplayInputs(revision: tracks.revision, sortOrder: sortOrder)
     }
 
     private func isCurrent(_ track: CatalogTrack) -> Bool {

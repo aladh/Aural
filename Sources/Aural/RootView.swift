@@ -127,8 +127,7 @@ struct RootView: View {
                 subtitle: catalogPlayback.isConnected
                     ? "Saved to your Spotify library"
                     : "Connect Spotify to load your saved tracks",
-                tracks: catalog.homeLibrary.likedTracks,
-                tracksRevision: catalog.homeLibrary.likedTracksRevision,
+                tracks: catalog.homeLibrary.likedTrackCollection,
                 metadata: catalog.metadata,
                 playback: catalogPlayback,
                 reloadError: catalog.homeLibrary.error(for: .likedTracks),
