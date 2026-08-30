@@ -41,17 +41,18 @@ func runCatalogPlaybackAccessSourceContractChecks(_ check: CheckRunner) {
         check.equal(
             "stored action closures are reported",
             CatalogPlaybackAccessSourceContract.storedActionClosureLines(
-                in: "    let connect: @MainActor () -> Void\n    let playURI: () -> Void"
+                in: "    let connect: @MainActor () -> Void\n    let playURI: () -> Void\n    let addToQueue = { uris in }"
             ),
             [
                 "let connect: @MainActor () -> Void",
                 "let playURI: () -> Void",
+                "let addToQueue = { uris in }",
             ]
         )
         check.equal(
             "methods are not stored action closures",
             CatalogPlaybackAccessSourceContract.storedActionClosureLines(
-                in: "    func connect() {\n        player.connect()\n    }"
+                in: "    func connect() {\n        player.connect()\n    }\n    @MainActor func playURI(_ uri: String) -> Void { }"
             ),
             []
         )

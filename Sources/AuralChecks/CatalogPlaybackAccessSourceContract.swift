@@ -31,10 +31,16 @@ enum CatalogPlaybackAccessSourceContract {
 
     static func storedActionClosureLines(in source: String) -> [String] {
         significantLines(in: source).filter { line in
-            if line.hasPrefix("func ") || line.hasPrefix("static func ") { return false }
-            return line.contains("-> Void")
-                || line.contains(": @MainActor (")
-                || line.contains(": @MainActor(")
+            if line.contains("func ") { return false }
+            let isTypedClosureProperty = (line.hasPrefix("let ") || line.hasPrefix("var "))
+                && (
+                    line.contains("-> Void")
+                        || line.contains(": @MainActor (")
+                        || line.contains(": @MainActor(")
+                )
+            let isInferredClosureProperty = (line.hasPrefix("let ") || line.hasPrefix("var "))
+                && line.contains("= {")
+            return isTypedClosureProperty || isInferredClosureProperty
         }
     }
 
