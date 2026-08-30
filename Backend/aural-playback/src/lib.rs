@@ -59,6 +59,8 @@ pub(crate) use tokio::sync::mpsc;
 #[cfg(test)]
 mod connect_cluster_apply_tests;
 #[cfg(test)]
+mod json_contract_tests;
+#[cfg(test)]
 mod lifecycle_serialization_tests;
 #[cfg(test)]
 mod queue_tests;

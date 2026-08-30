@@ -1,0 +1,36 @@
+{
+  "devices": [
+    {
+      "disable_volume": false,
+      "id": "fixture-mac",
+      "is_active": true,
+      "is_private_session": false,
+      "is_restricted": false,
+      "name": "Fixture Mac",
+      "type": "Computer",
+      "volume_percent": 50
+    },
+    {
+      "disable_volume": true,
+      "id": "fixture-speaker",
+      "is_active": false,
+      "is_private_session": false,
+      "is_restricted": false,
+      "name": "Fixture Speaker",
+      "type": "Speaker",
+      "volume_percent": null
+    },
+    {
+      "disable_volume": false,
+      "id": "fixture-unknown",
+      "is_active": false,
+      "is_private_session": false,
+      "is_restricted": true,
+      "name": "Fixture Unknown",
+      "type": "TOASTER",
+      "volume_percent": 0
+    }
+  ],
+  "revision": 15,
+  "session_generation": 6
+}
