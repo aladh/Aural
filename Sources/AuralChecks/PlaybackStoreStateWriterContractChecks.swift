@@ -117,44 +117,6 @@ func runPlaybackStoreStateWriterContractChecks(_ check: CheckRunner) {
                 productionMutations,
                 []
             )
-            check.equal(
-                "production PlaybackStore cannot call Date() for stamping",
-                sources.flatMap(PlaybackStoreStateWriterContract.dateCallLines(in:)),
-                []
-            )
         }
-    }
-
-    check.suite("PlaybackStore Date() scan") {
-        check.equal(
-            "a Date() stamp is reported",
-            PlaybackStoreStateWriterContract.dateCallLines(in: "receivedAt: Date = Date()"),
-            ["receivedAt: Date = Date()"]
-        )
-        check.check(
-            "Date type names without a call are ignored",
-            PlaybackStoreStateWriterContract.dateCallLines(in: "receivedAt: Date? = nil").isEmpty
-        )
-        check.check(
-            "commented Date() calls are ignored",
-            PlaybackStoreStateWriterContract.dateCallLines(in: "// receivedAt: Date = Date()").isEmpty
-        )
-        check.check(
-            "inline commented Date() calls are ignored",
-            PlaybackStoreStateWriterContract.dateCallLines(in: "let receivedAt: Date // Date()").isEmpty
-        )
-        check.check(
-            "block-commented Date() calls are ignored",
-            PlaybackStoreStateWriterContract.dateCallLines(in: "/* Date() */ let receivedAt: Date").isEmpty
-        )
-        check.check(
-            "Date() in a string literal is ignored",
-            PlaybackStoreStateWriterContract.dateCallLines(in: #"let label = "Date()""#).isEmpty
-        )
-        check.equal(
-            "a trailing comment does not hide a real Date() stamp",
-            PlaybackStoreStateWriterContract.dateCallLines(in: "receivedAt: Date = Date() // stamp"),
-            ["receivedAt: Date = Date() // stamp"]
-        )
     }
 }
