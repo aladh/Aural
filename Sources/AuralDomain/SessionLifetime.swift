@@ -80,7 +80,7 @@ public struct AccountScopedRequestIdentity: Equatable, Sendable {
     }
 }
 
-/// Catalog request cancellation is inert: it must not publish results or user-facing errors.
+/// Account-scoped request cancellation is inert: it must not publish results or user-facing errors.
 public func isCancellation(_ error: Error) -> Bool {
     if error is CancellationError { return true }
     return (error as? URLError)?.code == .cancelled

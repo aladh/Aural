@@ -179,6 +179,45 @@ func runHomeLibraryStoreChecks(_ runner: CheckRunner) async {
         runner.check("the newest flight clears loading", !store.isLoading(.playlists))
     }
 
+    await runner.suite("Home library non-force joins an in-flight forced refresh") {
+        let provider = GatedPlaylistCatalog()
+        let session = CatalogSessionAvailability(accountEpoch: 1, isAvailable: true)
+        let store = makeStore(provider: provider, session: session)
+
+        let initial = Task { await store.loadPlaylists() }
+        runner.check(
+            "the initial playlist request parks",
+            await waitUntil { await provider.requestCount == 1 }
+        )
+        await provider.completeNext(.playlists([first]))
+        await initial.value
+        runner.equal("the section is loaded before the forced refresh", store.playlists.map(\.uri), ["spotify:playlist:first"])
+
+        let forced = Task { await store.loadPlaylists(force: true) }
+        runner.check(
+            "force refreshes an already-loaded section",
+            await waitUntil { await provider.requestCount == 2 }
+        )
+        let follower = Task { await store.loadPlaylists() }
+        for _ in 0..<32 { await Task.yield() }
+        runner.equal(
+            "a non-forced caller joins the in-flight forced refresh",
+            await provider.requestCount,
+            2
+        )
+        runner.check("the forced refresh keeps loading while the follower waits", store.isLoading(.playlists))
+
+        await provider.completeNext(.playlists([second]))
+        await forced.value
+        await follower.value
+        runner.equal(
+            "joined callers observe the forced refresh",
+            store.playlists.map(\.uri),
+            ["spotify:playlist:second"]
+        )
+        runner.check("the joined forced refresh finishes loading", !store.isLoading(.playlists))
+    }
+
     await runner.suite("Home library stale failure and cancellation stay inert") {
         let provider = GatedPlaylistCatalog()
         let session = CatalogSessionAvailability(accountEpoch: 1, isAvailable: true)

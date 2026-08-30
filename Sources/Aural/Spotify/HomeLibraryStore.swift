@@ -183,7 +183,6 @@ final class HomeLibraryStore {
     ) async {
         let currentSession = session.snapshot
         guard currentSession.isAvailable else { return }
-        if !force, loadedSections.contains(section) { return }
         if let task = sectionTasks[section],
            !force,
            sectionSessionSnapshots[section] == currentSession
@@ -191,6 +190,7 @@ final class HomeLibraryStore {
             await task.value
             return
         }
+        if !force, loadedSections.contains(section) { return }
 
         nextRequestID &+= 1
         let requestID = nextRequestID
