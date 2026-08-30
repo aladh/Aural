@@ -204,13 +204,36 @@ func runConnectMetadataTransportChecks(_ check: CheckRunner) async {
         check.equal("empty title is one GET", emptyTitle.methods, ["GET"])
 
         let rejected = RecordingConnectTransport(steps: [
-            .http(status: 502, body: Data(privacySentinel.utf8)),
+            .http(status: 400, body: Data(privacySentinel.utf8)),
         ])
         do {
             _ = try await connectAPI(transport: rejected.send).trackMetadata(for: fixtureURI)
+            check.check("HTTP 400 throws", false)
+        } catch let error as SpotifyConnectAPIError {
+            check.equal("HTTP 400 stays requestFailed", error, .requestFailed(400))
+            check.equal(
+                "HTTP 400 uses a stable category",
+                error.errorDescription ?? "",
+                "Spotify rejected the command (HTTP 400)"
+            )
+            check.check(
+                "HTTP 400 omits the response body",
+                error.errorDescription?.contains(privacySentinel) != true
+            )
+        } catch {
+            check.check("HTTP 400 throws SpotifyConnectAPIError, got \(error)", false)
+        }
+        check.equal("HTTP 400 is one GET", rejected.methods, ["GET"])
+
+        let budget = SpotifyTransientRetry.maximumAttempts
+        let exhausted = RecordingConnectTransport(
+            steps: Array(repeating: .http(status: 502, body: Data(privacySentinel.utf8)), count: budget)
+        )
+        do {
+            _ = try await connectAPI(transport: exhausted.send).trackMetadata(for: fixtureURI)
             check.check("HTTP 502 throws", false)
         } catch let error as SpotifyConnectAPIError {
-            check.equal("HTTP 502 stays requestFailed", error, .requestFailed(502))
+            check.equal("HTTP 502 stays requestFailed after the budget", error, .requestFailed(502))
             check.equal(
                 "HTTP 502 uses a stable category",
                 error.errorDescription ?? "",
@@ -223,7 +246,11 @@ func runConnectMetadataTransportChecks(_ check: CheckRunner) async {
         } catch {
             check.check("HTTP 502 throws SpotifyConnectAPIError, got \(error)", false)
         }
-        check.equal("HTTP 502 is one GET", rejected.methods, ["GET"])
+        check.equal(
+            "HTTP 502 exhausts the safe-read budget as repeated GETs",
+            exhausted.methods,
+            Array(repeating: "GET", count: budget)
+        )
     }
 
     await check.suite("Connect commands stay a single POST") {
