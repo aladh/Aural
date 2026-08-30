@@ -176,6 +176,19 @@ func runPlaybackPanelChecks(_ check: CheckRunner) {
 
     check.suite("Play history") {
         let now = Date(timeIntervalSince1970: 1_000_000)
+        let store = PlaybackHistoryStore()
+        store.notePlayed(uri: "spotify:track:a", title: "A", artist: "X", artworkURL: nil, playedAt: now)
+        check.equal("history store records the injected playedAt", store.entries.first?.playedAt, now)
+        store.notePlayed(
+            uri: "spotify:track:a",
+            title: "A",
+            artist: "X",
+            artworkURL: nil,
+            playedAt: now.addingTimeInterval(60)
+        )
+        check.equal("history store replay keeps a single row", store.entries.count, 1)
+        check.equal("history store replay uses the later injected timestamp", store.entries.first?.playedAt, now.addingTimeInterval(60))
+
         var entries = PlaybackHistory.updated([], afterPlaying: "spotify:track:a", title: "A", artist: "X", artworkURLString: nil, playedAt: now)
         check.equal("newest entry lands first", entries.first?.uri, "spotify:track:a")
 

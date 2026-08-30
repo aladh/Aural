@@ -14,6 +14,7 @@ enum AuralChecksMain {
         runSpotifyTransientRetryChecks(runner)
         runPlaybackProjectionContractChecks(runner)
         runPlaybackStoreStateWriterContractChecks(runner)
+        runPlaybackStoreClockStampingContractChecks(runner)
         runPlaybackReducerChecks(runner)
         runPlaybackCommandPresentationChecks(runner)
         runPlaybackCommandLifecycleChecks(runner)

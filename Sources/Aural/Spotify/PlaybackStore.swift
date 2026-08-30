@@ -319,7 +319,8 @@ final class PlaybackStore {
     /// `PlaybackReducer` rejects stale results. Unstamped events use `accountEpoch` (the
     /// `AccountStore.epoch` projection) and `engineGeneration`, which mirrors `state.engineEpoch`
     /// after `reduce`. Reducer-owned `state.accountEpoch` is accepted snapshot state, not a
-    /// second imperative lifecycle owner.
+    /// second imperative lifecycle owner. Omitted `receivedAt` is the orchestration clock;
+    /// engine intake passes the fan-out receipt time, which stays distinct from source revisions.
     @discardableResult
     func send(
         _ event: PlaybackEvent,
@@ -327,7 +328,7 @@ final class PlaybackStore {
         revision: UInt64? = nil,
         engineEpoch: UInt64? = nil,
         accountEpoch: UInt64? = nil,
-        receivedAt: Date = Date()
+        receivedAt: Date? = nil
     ) -> Bool {
         let stampedAccountEpoch = accountEpoch ?? self.accountEpoch
         let stampedEngineEpoch = engineEpoch ?? engineGeneration
@@ -339,7 +340,7 @@ final class PlaybackStore {
                 engineEpoch: stampedEngineEpoch,
                 source: source,
                 revision: revision,
-                receivedAt: receivedAt,
+                receivedAt: receivedAt ?? environment.clock.now(),
                 event: event
             )
         )
@@ -421,12 +422,16 @@ final class PlaybackStore {
     func setTiming(
         position: TimeInterval,
         duration: TimeInterval? = nil,
-        anchoredAt: Date = Date(),
+        anchoredAt: Date? = nil,
         accountEpoch: UInt64? = nil,
         engineEpoch: UInt64? = nil
     ) -> Bool {
         send(
-            .timing(position: position, duration: duration ?? self.duration, anchoredAt: anchoredAt),
+            .timing(
+                position: position,
+                duration: duration ?? self.duration,
+                anchoredAt: anchoredAt ?? environment.clock.now()
+            ),
             source: .user,
             engineEpoch: engineEpoch,
             accountEpoch: accountEpoch

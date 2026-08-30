@@ -35,7 +35,7 @@ func playbackSnapshotPosition(
     durationMilliseconds: Int64,
     timestampMilliseconds: Int64?,
     isPlaying: Bool,
-    now: Date = Date()
+    now: Date
 ) -> TimeInterval {
     AuralDomain.playbackSnapshotPosition(
         positionMilliseconds: positionMilliseconds,
@@ -67,7 +67,7 @@ func connectCommandRoute(
 final class PlaybackHistoryStore {
     private(set) var entries: [HistoryEntry] = []
 
-    func notePlayed(uri: String, title: String, artist: String, artworkURL: URL?) {
+    func notePlayed(uri: String, title: String, artist: String, artworkURL: URL?, playedAt: Date) {
         guard uri.hasPrefix("spotify:track:") else { return }
         entries = PlaybackHistory.updated(
             entries,
@@ -75,7 +75,7 @@ final class PlaybackHistoryStore {
             title: title.isEmpty ? fallbackTitle(for: uri) : title,
             artist: artist,
             artworkURLString: artworkURL?.absoluteString,
-            playedAt: Date()
+            playedAt: playedAt
         )
     }
 

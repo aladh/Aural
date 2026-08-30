@@ -869,4 +869,57 @@ func runPlaybackEventOutcomeChecks(_ runner: CheckRunner) async {
         runner.nil_("teardown does not record last-remote from a discarded snapshot", teardown.lastRemoteDeviceID)
         await teardown.shutdownForTermination()
     }
+
+    runner.suite("Orchestration clock stamps send, timing, and history") {
+        let clockNow = Date(timeIntervalSince1970: 1_800_000_000)
+        let receipt = Date(timeIntervalSince1970: 1_800_000_050)
+        let player = playbackStore(outcomeEnvironment(remote: ImmediateMetadataRemote()))
+        seedReadyLocalPlayback(player, uri: "spotify:track:clocked")
+
+        _ = player.setTiming(position: 12)
+        runner.equal("setTiming without an anchor uses the injected clock", player.state.timing.anchoredAt, clockNow)
+        runner.equal("setTiming preserves the commanded position", player.state.timing.position, 12)
+
+        _ = player.setTiming(position: 40, anchoredAt: receipt)
+        runner.equal("an explicit timing anchor is not replaced by clock.now()", player.state.timing.anchoredAt, receipt)
+
+        player.hasReceivedPlaybackSnapshot = true
+        player.receive(
+            RustPlaybackState(
+                revision: 2,
+                sessionGeneration: nil,
+                isPlaying: true,
+                isPaused: false,
+                trackURI: "spotify:track:clocked",
+                positionMS: 40_000,
+                durationMS: 200_000,
+                timestampMS: nil,
+                shuffle: false,
+                repeatTrack: false,
+                repeatContext: false
+            ),
+            revision: 2,
+            receivedAt: receipt
+        )
+        runner.equal(
+            "engine intake anchors from receipt time, not the later orchestration clock",
+            player.state.timing.anchoredAt,
+            receipt
+        )
+        runner.equal("engine playback records the backend revision, not receipt time", player.state.sourceRevisions[.enginePlayback], 2)
+        runner.equal(
+            "playing snapshots still interpolate from receipt time",
+            player.displayedPosition(at: receipt.addingTimeInterval(0.25)),
+            40.25
+        )
+
+        player.recordPlayed("spotify:track:clocked")
+        runner.equal("played history uses the injected orchestration clock", player.history.entries.first?.playedAt, clockNow)
+        runner.equal(
+            "shuffle history uses the same orchestration clock instant",
+            player.playbackHistory()["spotify:track:clocked"],
+            clockNow.timeIntervalSince1970
+        )
+        await player.shutdownForTermination()
+    }
 }

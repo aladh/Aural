@@ -28,7 +28,7 @@ nonisolated final class RustPlaybackEngine: LocalPlaybackEngine, @unchecked Send
     static let shared = RustPlaybackEngine()
 
     private let lock = NSLock()
-    private let fanout = EngineEventFanout()
+    private let fanout = EngineEventFanout(clock: SystemPlaybackClock())
     private var callbacksRegistered = false
 
     private init() {}

@@ -12,7 +12,8 @@ import OSLog
 extension PlaybackStore {
     func recordPlayed(_ uri: String) {
         guard !uri.isEmpty else { return }
-        let now = environment.clock.now().timeIntervalSince1970
+        let playedAt = environment.clock.now()
+        let now = playedAt.timeIntervalSince1970
         var history = playbackHistory()
         history[uri] = now
         history = ShufflePolicy.pruned(history, now: now)
@@ -26,7 +27,8 @@ extension PlaybackStore {
             uri: uri,
             title: track?.title ?? info.title,
             artist: track?.artist ?? info.artist,
-            artworkURL: track?.artworkURL
+            artworkURL: track?.artworkURL,
+            playedAt: playedAt
         )
     }
 
