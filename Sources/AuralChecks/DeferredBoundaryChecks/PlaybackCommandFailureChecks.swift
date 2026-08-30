@@ -43,9 +43,16 @@ private final class GatedLocalEngine: LocalPlaybackEngine, @unchecked Sendable {
     private let condition = NSCondition()
     private var allowed = false
     private var result: PlaybackEngineResult
+    private var storedEnteredCount = 0
 
     init(result: PlaybackEngineResult = .error) {
         self.result = result
+    }
+
+    var enteredCount: Int {
+        condition.lock()
+        defer { condition.unlock() }
+        return storedEnteredCount
     }
 
     func events() -> AsyncStream<RustPlaybackEventEnvelope> {
@@ -56,6 +63,7 @@ private final class GatedLocalEngine: LocalPlaybackEngine, @unchecked Sendable {
     func initialize() -> PlaybackEngineResult { .ok }
     func execute(_: LocalPlaybackOperation) -> PlaybackEngineResult {
         condition.lock()
+        storedEnteredCount += 1
         while !allowed {
             condition.wait()
         }
@@ -514,12 +522,14 @@ func runPlaybackCommandFailureChecks(_ runner: CheckRunner) async {
         ) { cancelCompletions.append($0) }
         let pendingReady = await waitUntil { cancelStore.state.pendingCommands[.transport] != nil }
         runner.check("remote command is pending before cancellation", pendingReady)
+        let cancelReached = await waitUntil { await sleeping.sendCount == 1 }
+        runner.check("cancelled remote command still reaches the fixture", cancelReached)
         if let commandID = cancelStore.state.pendingCommands[.transport]?.id {
             cancelStore.effects.cancel(.command(commandID))
         }
-        _ = await waitUntil { await sleeping.sendCount == 1 }
-        try? await Task.sleep(nanoseconds: 20_000_000)
-        runner.check("cancelled remote command reports no completion", cancelCompletions.isEmpty)
+        let cancelSettled = await waitUntil { cancelStore.state.pendingCommands[.transport] == nil && !cancelCompletions.isEmpty }
+        runner.check("cancelled remote command settles", cancelSettled)
+        runner.equal("cancelled remote command reports failure once", cancelCompletions, [false])
         runner.nil_("cancelled remote command has no notice", cancelStore.transientCommandError)
         await cancelStore.shutdownForTermination()
     }
@@ -727,18 +737,16 @@ func runPlaybackCommandFailureChecks(_ runner: CheckRunner) async {
         cancelStore.togglePlayback()
         let pausePending = await waitUntil { cancelStore.state.pendingCommands[.transport] != nil }
         runner.check("remote pause is pending before cancellation", pausePending)
-        let optimisticCancel = cancelStore.state
+        let pauseReached = await waitUntil { await cancelRemote.sendCount == 1 }
+        runner.check("cancelled remote pause still reaches the fixture", pauseReached)
         if let commandID = cancelStore.state.pendingCommands[.transport]?.id {
             cancelStore.effects.cancel(.command(commandID))
         }
-        _ = await waitUntil { await cancelRemote.sendCount == 1 }
-        runner.equal("cancellation does not roll back optimistic pause", cancelStore.state.transport, optimisticCancel.transport)
-        runner.equal("cancellation does not roll back frozen timing", cancelStore.state.timing, optimisticCancel.timing)
-        runner.equal(
-            "cancellation leaves the pending command until teardown",
-            cancelStore.state.pendingCommands[.transport]?.id,
-            optimisticCancel.pendingCommands[.transport]?.id
-        )
+        let cancelSettled = await waitUntil { cancelStore.state.pendingCommands[.transport] == nil }
+        runner.check("cancellation settles the pending pause", cancelSettled)
+        runner.equal("cancellation restores playing transport", cancelStore.state.transport, .playing)
+        runner.equal("cancellation restores the captured timing", cancelStore.state.timing, priorPlayingTiming)
+        runner.nil_("cancellation clears the pending command", cancelStore.state.pendingCommands[.transport])
         runner.nil_("cancellation does not surface a command notice", cancelStore.transientCommandError)
         await cancelStore.shutdownForTermination()
 
@@ -1089,13 +1097,15 @@ func runPlaybackCommandFailureChecks(_ runner: CheckRunner) async {
         cancelStore.play(track: trackB)
         let cancelPending = await waitUntil { cancelStore.state.pendingCommands[.transport] != nil }
         runner.check("remote play is pending before cancellation", cancelPending)
-        let optimisticCancel = cancelStore.state
+        let playReached = await waitUntil { await cancelRemote.sendCount == 1 }
+        runner.check("cancelled remote play still reaches the fixture", playReached)
         if let commandID = cancelStore.state.pendingCommands[.transport]?.id {
             cancelStore.effects.cancel(.command(commandID))
         }
-        _ = await waitUntil { await cancelRemote.sendCount == 1 }
-        runner.equal("cancellation keeps optimistic B", cancelStore.state.currentTrack, optimisticCancel.currentTrack)
-        runner.equal("cancellation leaves the pending play until teardown", cancelStore.state.pendingCommands[.transport]?.id, optimisticCancel.pendingCommands[.transport]?.id)
+        let cancelSettled = await waitUntil { cancelStore.state.pendingCommands[.transport] == nil }
+        runner.check("cancellation settles the pending play", cancelSettled)
+        runner.equal("cancellation restores the captured track", cancelStore.state.currentTrack?.uri, "spotify:track:a")
+        runner.nil_("cancellation clears the pending play", cancelStore.state.pendingCommands[.transport])
         runner.check("cancellation does not record B", cancelStore.history.entries.isEmpty)
         await cancelStore.shutdownForTermination()
 
@@ -1457,13 +1467,15 @@ func runPlaybackCommandFailureChecks(_ runner: CheckRunner) async {
         cancelStore.toggleShuffle()
         let cancelPending = await waitUntil { cancelStore.state.pendingCommands[.options] != nil }
         runner.check("remote shuffle is pending before cancellation", cancelPending)
-        let optimisticCancel = cancelStore.state
+        let shuffleReached = await waitUntil { await cancelRemote.sendCount == 1 }
+        runner.check("cancelled remote shuffle still reaches the fixture", shuffleReached)
         if let commandID = cancelStore.state.pendingCommands[.options]?.id {
             cancelStore.effects.cancel(.command(commandID))
         }
-        _ = await waitUntil { await cancelRemote.sendCount == 1 }
-        runner.equal("cancellation keeps optimistic off", cancelStore.state.options.shuffle, optimisticCancel.options.shuffle)
-        runner.equal("cancellation leaves the pending shuffle until teardown", cancelStore.state.pendingCommands[.options]?.id, optimisticCancel.pendingCommands[.options]?.id)
+        let cancelSettled = await waitUntil { cancelStore.state.pendingCommands[.options] == nil }
+        runner.check("cancellation settles the pending shuffle", cancelSettled)
+        runner.equal("cancellation restores the captured shuffle", cancelStore.state.options.shuffle, true)
+        runner.nil_("cancellation clears the pending shuffle", cancelStore.state.pendingCommands[.options])
         runner.check("cancellation does not persist shuffle", await cancelPrefs.shuffleWrites.isEmpty)
         await cancelStore.shutdownForTermination()
 
@@ -1817,16 +1829,16 @@ func runPlaybackCommandFailureChecks(_ runner: CheckRunner) async {
         cancelStore.transferPlayback(to: speakerB)
         let cancelPending = await waitUntil { cancelStore.state.pendingCommands[.transfer] != nil }
         runner.check("remote transfer is pending before cancellation", cancelPending)
-        let optimisticCancel = cancelStore.state
+        let transferReached = await waitUntil { cancelGate.enteredCount == 1 }
+        runner.check("cancelled transfer still reaches the local fixture", transferReached)
         if let commandID = cancelStore.state.pendingCommands[.transfer]?.id {
             cancelStore.effects.cancel(.command(commandID))
         }
-        runner.equal("cancellation keeps optimistic B", cancelStore.state.owner, optimisticCancel.owner)
-        runner.equal(
-            "cancellation leaves the pending transfer until teardown",
-            cancelStore.state.pendingCommands[.transfer]?.id,
-            optimisticCancel.pendingCommands[.transfer]?.id
-        )
+        let cancelSettled = await waitUntil { cancelStore.state.pendingCommands[.transfer] == nil }
+        runner.check("cancellation settles the pending transfer", cancelSettled)
+        runner.equal("cancellation restores the captured owner", cancelStore.state.owner, ownerA)
+        runner.nil_("cancellation clears the pending transfer", cancelStore.state.pendingCommands[.transfer])
+        cancelGate.finish(with: .error)
         await cancelStore.shutdownForTermination()
 
         let staleStore = playbackStore(

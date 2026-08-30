@@ -662,6 +662,7 @@ func runPlaybackCommandLifecycleParityChecks(_ runner: CheckRunner) async {
                     lifecycleEnvironment(local: cancelLocal, remote: cancelRemote)
                 )
                 seedRoute(cancelled, route)
+                let prior = cancelled.state
                 var cancelCompletions: [Bool] = []
                 startLifecycleCommand(cancelled, kind: kind) { cancelCompletions.append($0) }
                 let cancelPending = await waitUntil { cancelled.state.pendingCommands[kind.commandKind] != nil }
@@ -671,22 +672,143 @@ func runPlaybackCommandLifecycleParityChecks(_ runner: CheckRunner) async {
                     return await cancelRemote.sendCount >= 1
                 }
                 runner.check("\(label) cancelled command still reaches the fixture", cancelReached)
-                if let commandID = cancelled.state.pendingCommands[kind.commandKind]?.id {
+                let cancelledID = cancelled.state.pendingCommands[kind.commandKind]?.id
+                runner.notNil("\(label) cancelled command has an id", cancelledID)
+                if let commandID = cancelledID {
                     cancelled.effects.cancel(.command(commandID))
                 }
+                let cancelSettled = await waitUntil {
+                    cancelled.state.pendingCommands[kind.commandKind] == nil && !cancelCompletions.isEmpty
+                }
+                runner.check("\(label) ordinary cancellation settles", cancelSettled)
+                runner.equal("\(label) ordinary cancellation reports failure once", cancelCompletions, [false])
+                runner.nil_("\(label) ordinary cancellation clears the pending command", cancelled.state.pendingCommands[kind.commandKind])
+                runner.nil_("\(label) ordinary cancellation has no command notice", cancelled.transientCommandError)
+                runner.equal("\(label) ordinary cancellation restores captured transport", cancelled.state.transport, prior.transport)
+                runner.equal("\(label) ordinary cancellation restores captured timing", cancelled.state.timing, prior.timing)
+                runner.equal("\(label) ordinary cancellation restores captured track", cancelled.state.currentTrack, prior.currentTrack)
+                runner.equal("\(label) ordinary cancellation restores captured options", cancelled.state.options, prior.options)
+                runner.equal("\(label) ordinary cancellation restores captured owner", cancelled.state.owner, prior.owner)
                 if route == .local {
                     cancelLocal.finish(with: .ok)
                 } else {
                     await cancelRemote.finish(success: true)
                 }
-                let cancelSettled = await waitUntil {
-                    if route == .local { return cancelLocal.executeCount == 1 }
-                    return await cancelRemote.completedCount >= 1
+
+                var nextCompletions: [Bool] = []
+                startLifecycleCommand(cancelled, kind: kind) { nextCompletions.append($0) }
+                let nextPending = await waitUntil { cancelled.state.pendingCommands[kind.commandKind] != nil }
+                runner.check("\(label) same-kind command is admitted after cancellation", nextPending)
+                runner.check(
+                    "\(label) the later command is a new id",
+                    cancelled.state.pendingCommands[kind.commandKind]?.id != cancelledID
+                )
+                if route == .local {
+                    cancelLocal.finish(with: .ok)
+                } else {
+                    await cancelRemote.finish(success: true)
                 }
-                runner.check("\(label) cancelled command settles after finish", cancelSettled)
-                runner.check("\(label) cancelled command reports no completion", cancelCompletions.isEmpty)
-                runner.notNil("\(label) cancellation leaves the pending command", cancelled.state.pendingCommands[kind.commandKind])
+                let nextFinished = await waitUntil { !nextCompletions.isEmpty }
+                runner.check("\(label) later command after cancellation finishes", nextFinished)
+                runner.equal("\(label) later command after cancellation succeeds", nextCompletions, [true])
                 await cancelled.shutdownForTermination()
+
+                let confirmCancelLocal = LifecycleLocalEngine(result: .ok, gated: true)
+                let confirmCancelRemote = LifecycleRemoteClient(.gated)
+                let confirmCancelled = lifecycleStore(
+                    lifecycleEnvironment(local: confirmCancelLocal, remote: confirmCancelRemote)
+                )
+                seedRoute(confirmCancelled, route)
+                var confirmCancelCompletions: [Bool] = []
+                startLifecycleCommand(confirmCancelled, kind: kind) { confirmCancelCompletions.append($0) }
+                let confirmCancelPending = await waitUntil { confirmCancelled.state.pendingCommands[kind.commandKind] != nil }
+                runner.check("\(label) command is pending before confirmed cancellation", confirmCancelPending)
+                let confirmCancelID = confirmCancelled.state.pendingCommands[kind.commandKind]?.id
+                confirm(confirmCancelled, kind: kind, revision: 1)
+                runner.nil_("\(label) confirmation clears the pending command before cancel", confirmCancelled.state.pendingCommands[kind.commandKind])
+                if let commandID = confirmCancelID {
+                    confirmCancelled.effects.cancel(.command(commandID))
+                }
+                runner.check("\(label) confirmed cancellation reports no completion", confirmCancelCompletions.isEmpty)
+                runner.nil_("\(label) confirmed cancellation has no notice", confirmCancelled.transientCommandError)
+                if kind == .transport {
+                    runner.equal("\(label) confirmed cancellation keeps the target track", confirmCancelled.state.currentTrack?.uri, lifecycleTrackB.uri)
+                }
+                if kind == .options {
+                    runner.equal("\(label) confirmed cancellation keeps context repeat", confirmCancelled.state.options.repeatMode, RepeatMode.context)
+                }
+                if kind == .transfer {
+                    runner.equal("\(label) confirmed cancellation keeps the target owner", confirmCancelled.state.owner, lifecycleRemoteB)
+                }
+                if route == .local {
+                    confirmCancelLocal.finish(with: .ok)
+                } else {
+                    await confirmCancelRemote.finish(success: true)
+                }
+                await confirmCancelled.shutdownForTermination()
+
+                let supersedeCancelLocal = LifecycleLocalEngine(result: .ok, gated: true)
+                let supersedeCancelRemote = LifecycleRemoteClient(.gated)
+                let supersedeCancelled = lifecycleStore(
+                    lifecycleEnvironment(local: supersedeCancelLocal, remote: supersedeCancelRemote)
+                )
+                seedRoute(supersedeCancelled, route)
+                var supersedeCancelCompletions: [Bool] = []
+                startLifecycleCommand(supersedeCancelled, kind: kind) { supersedeCancelCompletions.append($0) }
+                let supersedeCancelPending = await waitUntil { supersedeCancelled.state.pendingCommands[kind.commandKind] != nil }
+                runner.check("\(label) command is pending before superseded cancellation", supersedeCancelPending)
+                let supersedeCancelID = supersedeCancelled.state.pendingCommands[kind.commandKind]?.id
+                supersede(supersedeCancelled, kind: kind, revision: 1)
+                runner.nil_("\(label) supersession clears the pending command before cancel", supersedeCancelled.state.pendingCommands[kind.commandKind])
+                if let commandID = supersedeCancelID {
+                    supersedeCancelled.effects.cancel(.command(commandID))
+                }
+                runner.check("\(label) superseded cancellation reports no completion", supersedeCancelCompletions.isEmpty)
+                runner.nil_("\(label) superseded cancellation has no notice", supersedeCancelled.transientCommandError)
+                if kind == .transport {
+                    runner.equal("\(label) superseded cancellation keeps the unrelated track", supersedeCancelled.state.currentTrack?.uri, lifecycleTrackC.uri)
+                }
+                if kind == .options {
+                    runner.equal("\(label) superseded cancellation keeps track repeat", supersedeCancelled.state.options.repeatMode, RepeatMode.track)
+                }
+                if kind == .transfer {
+                    runner.equal("\(label) superseded cancellation keeps the unrelated owner", supersedeCancelled.state.owner, lifecycleOwnerC)
+                }
+                if route == .local {
+                    supersedeCancelLocal.finish(with: .ok)
+                } else {
+                    await supersedeCancelRemote.finish(success: true)
+                }
+                await supersedeCancelled.shutdownForTermination()
+
+                let staleCancelLocal = LifecycleLocalEngine(result: .ok, gated: true)
+                let staleCancelRemote = LifecycleRemoteClient(.gated)
+                let staleCancelled = lifecycleStore(
+                    lifecycleEnvironment(local: staleCancelLocal, remote: staleCancelRemote)
+                )
+                seedRoute(staleCancelled, route)
+                var staleCancelCompletions: [Bool] = []
+                startLifecycleCommand(staleCancelled, kind: kind) { staleCancelCompletions.append($0) }
+                let staleCancelPending = await waitUntil { staleCancelled.state.pendingCommands[kind.commandKind] != nil }
+                runner.check("\(label) command is pending before stale cancellation", staleCancelPending)
+                let staleCancelID = staleCancelled.state.pendingCommands[kind.commandKind]?.id
+                _ = staleCancelled.send(
+                    .engineConnection(EngineConnectionSnapshot(session: .recovering, owner: .none, localDeviceID: nil)),
+                    source: .engineConnection,
+                    revision: 1,
+                    engineEpoch: staleCancelled.engineGeneration + 1
+                )
+                runner.nil_("\(label) engine-epoch bump drops the pending command before cancel", staleCancelled.state.pendingCommands[kind.commandKind])
+                if let commandID = staleCancelID {
+                    staleCancelled.effects.cancel(.command(commandID))
+                }
+                runner.check("\(label) stale cancellation reports no completion", staleCancelCompletions.isEmpty)
+                if route == .local {
+                    staleCancelLocal.finish(with: .ok)
+                } else {
+                    await staleCancelRemote.finish(success: true)
+                }
+                await staleCancelled.shutdownForTermination()
 
                 let teardownLocal = LifecycleLocalEngine(result: .ok, gated: true)
                 let teardownRemote = LifecycleRemoteClient(.gated)
@@ -698,12 +820,19 @@ func runPlaybackCommandLifecycleParityChecks(_ runner: CheckRunner) async {
                 startLifecycleCommand(teardown, kind: kind) { teardownCompletions.append($0) }
                 let teardownPending = await waitUntil { teardown.state.pendingCommands[kind.commandKind] != nil }
                 runner.check("\(label) command is pending before teardown", teardownPending)
-                await teardown.shutdownForTermination()
+                let teardownReached = await waitUntil {
+                    if route == .local { return teardownLocal.enteredCount == 1 }
+                    return await teardownRemote.sendCount >= 1
+                }
+                runner.check("\(label) teardown command still reaches the fixture", teardownReached)
+                // Local execute is a blocking coordinator call. Shutdown awaits
+                // shutdownEngine on that same actor, so the fixture must be released first.
                 if route == .local {
                     teardownLocal.finish(with: .ok)
                 } else {
                     await teardownRemote.finish(success: true)
                 }
+                await teardown.shutdownForTermination()
                 for _ in 0..<50 { await Task.yield() }
                 runner.check("\(label) teardown reports no completion", teardownCompletions.isEmpty)
                 runner.nil_("\(label) teardown leaves no pending command", teardown.state.pendingCommands[kind.commandKind])

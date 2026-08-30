@@ -35,13 +35,18 @@ Transport commands today share one store kernel, `performAdmittedPlaybackCommand
 
 1. Refuse a second command of the same `PlaybackCommandKind` while one is pending.
 2. `send(.commandStarted)` for an optimistic transport when requested.
-3. `effects.replace(.command(commandID), …)` with a unique UUID token.
+3. `effects.replace(.command(commandID), …)` with a unique UUID token. Replacing that token
+   runs any previous `onCancel` and then cancels the superseded task. `complete` is keyed by
+   the registration object from that replace.
 4. Await the caller-supplied local or remote operation. Route selection, route refusal, and
    waiting for local Connect identity stay outside the kernel so they cannot create pending
    commands.
-5. Exit if the task was cancelled, the account epoch changed, or teardown began.
-6. `send(.commandFinished)` and, until this change, run reconnect / completion / extra notices
-   even when that send was rejected.
+5. After the operation, ordinary same-lifetime cancellation of that exact command token
+   settles through the reducer: restore the captured prior optimistic state, clear pending
+   ownership, and report `completion(false)` with no notice or reconnect. Confirmed,
+   superseded, teardown, and epoch-invalidated cancellation stay inert.
+6. Otherwise `send(.commandFinished)` and run reconnect / completion / extra notices only
+   through `playbackCommandFollowUp`.
 
 The representative workflow is **local pause**: optimistic pause, success, remote-style failure
 rollback, local reconnect-required, cancel-in-flight, account-epoch invalidation, a finish that
@@ -185,10 +190,16 @@ In `PlaybackStore+Commands`, local and remote live routes share `performAdmitted
 - A rejected finish on the same account/engine lifetime with no pending *transport* command and
   no captured resolution is already-reconciled success (matching snapshot). Target confirmation and
   supersession are keyed by command id so a later pause/resume cannot recycle the nil catch-all.
-- Unknown ids stay reducer-rejected and inert. Epoch changes, teardown, cancellation,
-  non-transport kinds, and superseded ids stay inert even if a confirmation was captured.
+- Unknown ids stay reducer-rejected and inert. Epoch changes, teardown, non-transport
+  kinds, and superseded ids stay inert even if a confirmation was captured.
+- Ordinary same-lifetime cancellation of the exact pending command id restores reducer-owned
+  rollback via `commandFinished(accepted: false, notice: nil)`, clears that ownership, and
+  reports `completion(false)` once. It does not show a command notice or reconnect.
+  Cancellation after confirmation or supersession, and cancellation after an account or
+  engine identity change, stay inert and notice-free.
 
-Successful `commandFinished` does not clear `notice`. Command errors keep the existing
+Successful `commandFinished` does not clear `notice`. A rejected finish with a nil notice
+restores rollback without replacing an existing notice. Command errors keep the existing
 `.commandError` lifetime.
 
 `togglePlayback` and `seek` pass their optimistic transport and/or timing on `commandStarted`.

@@ -786,7 +786,11 @@ public enum PlaybackReducer {
                     if let rollbackOwner = pair.value.rollbackOwner {
                         candidate.owner = rollbackOwner
                     }
-                    candidate.notice = notice
+                    // A rejected finish with no notice restores rollback without replacing an
+                    // unrelated existing notice. Cancellation is one caller of that rule.
+                    if let notice {
+                        candidate.notice = notice
+                    }
                 } else {
                     if let expectedShuffle = pair.value.expectedShuffle {
                         candidate.options.shuffle = expectedShuffle
