@@ -10,7 +10,7 @@ private struct RegisteredCheckSuite {
 enum AuralChecksMain {
     static var suiteNames: [String] { registeredSuites().map(\.name) }
 
-    static func registeredSuites() -> [RegisteredCheckSuite] {
+    private static func registeredSuites() -> [RegisteredCheckSuite] {
         [
             RegisteredCheckSuite(name: "protobuf") { runProtobufChecks($0) },
             RegisteredCheckSuite(name: "shuffle-policy") { runShufflePolicyChecks($0) },

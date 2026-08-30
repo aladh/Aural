@@ -11,7 +11,7 @@ private struct RegisteredCheckSuite {
 enum BoundaryChecksMain {
     static var suiteNames: [String] { registeredSuites().map(\.name) }
 
-    static func registeredSuites() -> [RegisteredCheckSuite] {
+    private static func registeredSuites() -> [RegisteredCheckSuite] {
         [
             RegisteredCheckSuite(name: "auth-flow") { runAuthFlowChecks($0) },
             RegisteredCheckSuite(name: "keymaster-persistence") { runKeymasterPersistenceChecks($0) },
