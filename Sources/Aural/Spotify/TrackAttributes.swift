@@ -23,6 +23,14 @@ nonisolated struct TrackAttributes: Equatable, Sendable {
     let key: String?
 }
 
+extension CatalogMetadataRepository {
+    var trackTableSortValues: [String: TrackTableSortValues] {
+        trackAttributes.mapValues {
+            TrackTableSortValues(popularity: $0.popularity, bpm: $0.bpm, key: $0.key)
+        }
+    }
+}
+
 /// The batched extended-metadata endpoint the desktop client uses for its BPM
 /// and Key columns.
 ///

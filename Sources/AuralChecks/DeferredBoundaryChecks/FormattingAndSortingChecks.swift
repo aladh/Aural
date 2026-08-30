@@ -3,6 +3,7 @@
 //  Aural
 //
 
+import AuralDomain
 import Foundation
 @testable import AuralCore
 
@@ -49,23 +50,28 @@ func runFormattingChecks(_ check: CheckRunner) {
         )
     }
 
-    func attributes(
+    func sortValues(
         popularity: Int? = nil,
         bpm: Int? = nil,
         key: String? = nil
-    ) -> TrackAttributes {
-        TrackAttributes(popularity: popularity, bpm: bpm, key: key)
+    ) -> TrackTableSortValues {
+        TrackTableSortValues(popularity: popularity, bpm: bpm, key: key)
     }
 
     func sortedURIs(
         _ tracks: [CatalogTrack],
         using comparator: KeyPathComparator<TrackTableRow>,
-        attributes: [String: TrackAttributes] = [:],
+        sortValues: [String: TrackTableSortValues] = [:],
     ) -> [String] {
-        sortedTrackTableRows(
-            trackTableRows(tracks, attributes: attributes),
-            using: [comparator]
-        ).map(\.track.uri)
+        let collection = CatalogTrackCollection(tracks: tracks)
+        var cache = TrackTableDisplayCache(collection)
+        _ = cache.update(
+            collection,
+            sortValues: sortValues,
+            sortValuesRevision: 1,
+            sortOrder: [comparator]
+        )
+        return cache.rows.map(\.track.uri)
     }
 
     check.suite("Track table sorting") {
@@ -73,16 +79,16 @@ func runFormattingChecks(_ check: CheckRunner) {
         let long = track(uri: "long", duration: 240)
         let missing = track(uri: "missing")
         let values = [
-            "short": attributes(popularity: 10, bpm: 90, key: "2A"),
-            "long": attributes(popularity: 80, bpm: 130, key: "10A"),
+            "short": sortValues(popularity: 10, bpm: 90, key: "2A"),
+            "long": sortValues(popularity: 80, bpm: 130, key: "10A"),
         ]
 
         check.equal(
             "popularity sorts ascending from displayed enrichment",
             sortedURIs(
                 [long, short],
-                using: KeyPathComparator(\.popularitySortValue),
-                attributes: values
+                using: KeyPathComparator(\TrackTableRow.popularitySortValue),
+                sortValues: values
             ),
             ["short", "long"]
         )
@@ -90,8 +96,8 @@ func runFormattingChecks(_ check: CheckRunner) {
             "BPM reverses while missing enrichment stays last",
             sortedURIs(
                 [missing, short, long],
-                using: KeyPathComparator(\.bpmSortValue, order: .reverse),
-                attributes: values
+                using: KeyPathComparator(\TrackTableRow.bpmSortValue, order: .reverse),
+                sortValues: values
             ),
             ["long", "short", "missing"]
         )
@@ -99,29 +105,29 @@ func runFormattingChecks(_ check: CheckRunner) {
             "Camelot keys use numeric ordering",
             sortedURIs(
                 [long, short],
-                using: KeyPathComparator(\.keySortValue),
-                attributes: values
+                using: KeyPathComparator(\TrackTableRow.keySortValue),
+                sortValues: values
             ),
             ["short", "long"]
         )
         check.equal(
             "time sorts by numeric duration",
-            sortedURIs([long, short], using: KeyPathComparator(\.duration)),
+            sortedURIs([long, short], using: KeyPathComparator(\TrackTableRow.duration)),
             ["short", "long"]
         )
 
         let equalAttributes = [
-            "short": attributes(popularity: 50),
-            "long": attributes(popularity: 50),
+            "short": sortValues(popularity: 50),
+            "long": sortValues(popularity: 50),
         ]
         check.equal(
             "missing values sort deterministically and equal values keep source order",
             sortedURIs(
                 [missing, long, short],
-                using: KeyPathComparator(\.popularitySortValue),
-                attributes: equalAttributes
+                using: KeyPathComparator(\TrackTableRow.popularitySortValue),
+                sortValues: equalAttributes
             ),
-            ["missing", "long", "short"]
+            ["long", "short", "missing"]
         )
     }
 }
