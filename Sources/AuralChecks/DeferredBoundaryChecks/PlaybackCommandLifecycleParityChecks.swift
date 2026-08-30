@@ -732,7 +732,7 @@ func runPlaybackCommandLifecycleParityChecks(_ runner: CheckRunner) async {
                 runner.check("\(label) confirmed cancellation reports no completion", confirmCancelCompletions.isEmpty)
                 runner.nil_("\(label) confirmed cancellation has no notice", confirmCancelled.transientCommandError)
                 if kind == .transport {
-                    runner.equal("\(label) confirmed cancellation keeps the target track", confirmCancelled.state.currentTrack, lifecycleTrackB)
+                    runner.equal("\(label) confirmed cancellation keeps the target track", confirmCancelled.state.currentTrack?.uri, lifecycleTrackB.uri)
                 }
                 if kind == .options {
                     runner.equal("\(label) confirmed cancellation keeps context repeat", confirmCancelled.state.options.repeatMode, RepeatMode.context)
@@ -766,7 +766,7 @@ func runPlaybackCommandLifecycleParityChecks(_ runner: CheckRunner) async {
                 runner.check("\(label) superseded cancellation reports no completion", supersedeCancelCompletions.isEmpty)
                 runner.nil_("\(label) superseded cancellation has no notice", supersedeCancelled.transientCommandError)
                 if kind == .transport {
-                    runner.equal("\(label) superseded cancellation keeps the unrelated track", supersedeCancelled.state.currentTrack, lifecycleTrackC)
+                    runner.equal("\(label) superseded cancellation keeps the unrelated track", supersedeCancelled.state.currentTrack?.uri, lifecycleTrackC.uri)
                 }
                 if kind == .options {
                     runner.equal("\(label) superseded cancellation keeps track repeat", supersedeCancelled.state.options.repeatMode, RepeatMode.track)
