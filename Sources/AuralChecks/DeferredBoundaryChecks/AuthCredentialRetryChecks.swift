@@ -463,8 +463,16 @@ func runAuthCredentialRetryChecks(_ check: CheckRunner) async {
         check.equal("the rejected client token is still named", await invalidatedClient.values, ["client-a"])
         check.equal("the newer bearer survives named invalidation", await currentAccess.value(), "access-b")
         check.equal("the newer client token survives named invalidation", await currentClient.value(), "client-b")
-        check.equal("retry carries the live replacement pair", transport.authorizationTokens, ["access-a", "access-b"])
-        check.equal("retry carries the live replacement client token", transport.clientTokens, ["client-a", "client-b"])
+        check.equal(
+            "retry carries the live replacement pair",
+            transport.authorizationTokens,
+            ["access-a", "access-b"]
+        )
+        check.equal(
+            "retry carries the live replacement client token",
+            transport.clientTokens,
+            ["client-a", "client-b"]
+        )
         check.equal("the sequenced rejected pair is fetched once", tokens.callCount, 1)
         check.equal("the transport is attempted twice", transport.callCount, 2)
     }

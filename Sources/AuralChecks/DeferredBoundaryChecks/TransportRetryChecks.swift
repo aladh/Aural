@@ -473,8 +473,15 @@ func runTransportRetryChecks(_ check: CheckRunner) async {
         } catch {
             check.check("terminal invalidation cancellation stays CancellationError, got \(error)", false)
         }
-        check.check("cancellation during terminal invalidation surfaces CancellationError", cancelledDuringInvalidation)
-        check.equal("cancellation during terminal invalidation does not add a request", parked.callCount, 3)
+        check.check(
+            "cancellation during terminal invalidation surfaces CancellationError",
+            cancelledDuringInvalidation
+        )
+        check.equal(
+            "cancellation during terminal invalidation does not add a request",
+            parked.callCount,
+            3
+        )
         check.equal("cancellation still named the final bearer", await parkedAccess.values, ["park-c"])
         check.equal("cancellation does not fetch another credential", parkedTokens.callCount, 3)
     }
