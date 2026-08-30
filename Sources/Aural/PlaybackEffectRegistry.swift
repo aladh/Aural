@@ -38,8 +38,6 @@ enum PlaybackEffectID: Hashable {
 /// multi-add is not cancelled. Authoritative Connect `set_queue` replacement uses one
 /// `.queueReplacement` lifetime plus a MainActor request token: a second removal is refused while
 /// one is in flight, because cancellation cannot undo a `set_queue` Spotify already accepted.
-/// `settlement(of:)` is observation-only: it copies the currently registered task identity so a
-/// check can await that same task after cancel, complete, or replace removes the dictionary entry.
 /// See `docs/ADR-003-playback-command-effects.md`.
 final class PlaybackEffectRegistration {}
 
