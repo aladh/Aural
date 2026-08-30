@@ -11,7 +11,7 @@ import AuralDomain
 nonisolated enum PartnerAPIError: Error, LocalizedError, Equatable {
     case requestFailed(Int)
     case persistedQueryNotFound(String)
-    case graphQLErrors
+    case graphQLErrors(String)
     case emptyPayload
     /// A write Spotify answered with HTTP 200 and a failure `__typename`.
     case mutationRejected(String)
@@ -26,8 +26,8 @@ nonisolated enum PartnerAPIError: Error, LocalizedError, Equatable {
             "Spotify no longer recognises the stored query for \(operation)"
         case let .mutationRejected(operation):
             "Spotify rejected \(operation)"
-        case .graphQLErrors:
-            "Spotify returned a GraphQL error"
+        case let .graphQLErrors(operation):
+            "Spotify returned a GraphQL error for \(operation)"
         case .emptyPayload:
             "Spotify returned no data"
         case let .pagination(failure):
@@ -780,7 +780,7 @@ nonisolated struct PartnerAPI: Sendable {
             if retired {
                 throw PartnerAPIError.persistedQueryNotFound(operation.name)
             }
-            throw PartnerAPIError.graphQLErrors
+            throw PartnerAPIError.graphQLErrors(operation.name)
         }
 
         return try JSONDecoder().decode(Envelope.self, from: data)
