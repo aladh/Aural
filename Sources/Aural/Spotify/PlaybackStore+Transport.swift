@@ -247,7 +247,7 @@ extension PlaybackStore {
             kind: .transfer
         ) { [weak self] accepted in
             if accepted {
-                self?.showTransientCommandError("Playing on \(device.name)")
+                self?.feedback.success("Playing on \(device.name)")
             }
         }
     }

@@ -1776,7 +1776,14 @@ func runPlaybackCommandFailureChecks(_ runner: CheckRunner) async {
         _ = await waitUntil { localAccepted.state.pendingCommands[.transfer] == nil }
         runner.equal("accepted local transfer keeps admitted B", localAccepted.state.owner, expectedB)
         runner.equal(
-            "accepted local transfer announces success", localAccepted.transientCommandError, "Playing on Speaker B")
+            "accepted local transfer announces success through mutation feedback",
+            localAccepted.feedback.message,
+            TransientFeedbackMessage(id: 1, kind: .success, text: "Playing on Speaker B")
+        )
+        runner.nil_(
+            "accepted local transfer does not use the command-error notice",
+            localAccepted.transientCommandError
+        )
         let transferredDevice: String?
         switch localAcceptedEngine.operations.first {
         case let .transferToDevice(id):
@@ -1839,12 +1846,18 @@ func runPlaybackCommandFailureChecks(_ runner: CheckRunner) async {
         confirmGate.finish(with: .error)
         _ = await waitUntil {
             confirmStore.state.transportCommandResolutions.isEmpty
-                && confirmStore.transientCommandError == "Playing on Speaker B"
+                && confirmStore.feedback.message?.text == "Playing on Speaker B"
         }
         runner.equal("confirmed B then failure keeps B", confirmStore.state.owner, remoteB)
         runner.equal(
-            "confirmed B then failure announces success once", confirmStore.transientCommandError,
-            "Playing on Speaker B")
+            "confirmed B then failure announces success once",
+            confirmStore.feedback.message,
+            TransientFeedbackMessage(id: 1, kind: .success, text: "Playing on Speaker B")
+        )
+        runner.nil_(
+            "confirmed transfer success does not use the command-error notice",
+            confirmStore.transientCommandError
+        )
         runner.check(
             "confirmed B then failure consumes the resolution entry",
             confirmStore.state.transportCommandResolutions.isEmpty)
@@ -1864,6 +1877,7 @@ func runPlaybackCommandFailureChecks(_ runner: CheckRunner) async {
         _ = await waitUntil { supersedeStore.state.transportCommandResolutions.isEmpty }
         runner.equal("unrelated C then late failure keeps C", supersedeStore.state.owner, ownerC)
         runner.nil_("unrelated C then late failure does not announce success", supersedeStore.transientCommandError)
+        runner.nil_("unrelated C then late failure presents no success feedback", supersedeStore.feedback.message)
         await supersedeStore.shutdownForTermination()
 
         let noneGate = GatedLocalEngine()
@@ -1879,6 +1893,7 @@ func runPlaybackCommandFailureChecks(_ runner: CheckRunner) async {
         _ = await waitUntil { noneStore.state.transportCommandResolutions.isEmpty }
         runner.equal("accepted completion after empty supersession keeps none", noneStore.state.owner, .none)
         runner.nil_("unrelated empty supersession does not announce success", noneStore.transientCommandError)
+        runner.nil_("unrelated empty supersession presents no success feedback", noneStore.feedback.message)
         await noneStore.shutdownForTermination()
 
         let joining = playbackStore(
@@ -1932,6 +1947,7 @@ func runPlaybackCommandFailureChecks(_ runner: CheckRunner) async {
         runner.check("cancellation settles the pending transfer", cancelSettled)
         runner.equal("cancellation restores the captured owner", cancelStore.state.owner, ownerA)
         runner.nil_("cancellation clears the pending transfer", cancelStore.state.pendingCommands[.transfer])
+        runner.nil_("cancelled transfer presents no success feedback", cancelStore.feedback.message)
         cancelGate.finish(with: .error)
         await cancelStore.shutdownForTermination()
 
@@ -1957,6 +1973,7 @@ func runPlaybackCommandFailureChecks(_ runner: CheckRunner) async {
             "an engine-epoch bump clears transfer confirmation state",
             staleStore.state.transportCommandResolutions.isEmpty)
         runner.equal("an engine-epoch bump applies the new connection owner", staleStore.state.owner, .none)
+        runner.nil_("engine-stale transfer presents no success feedback", staleStore.feedback.message)
         await staleStore.shutdownForTermination()
 
         let localMacStore = playbackStore(
