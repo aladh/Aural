@@ -69,6 +69,7 @@ func runPlaybackCommandLifecycleChecks(_ check: CheckRunner) {
                 event: .commandStarted(PendingPlaybackCommand(
                     id: optionsID,
                     kind: .options,
+                    expectedTransport: nil,
                     expectedShuffle: false,
                     expectedRepeatFlags: repeatFlags,
                     startedAt: lifecycleDate
@@ -85,6 +86,7 @@ func runPlaybackCommandLifecycleChecks(_ check: CheckRunner) {
                 event: .commandStarted(PendingPlaybackCommand(
                     id: transferID,
                     kind: .transfer,
+                    expectedTransport: nil,
                     expectedOwner: owner,
                     startedAt: lifecycleDate
                 ))
