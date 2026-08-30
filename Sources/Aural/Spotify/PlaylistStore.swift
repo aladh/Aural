@@ -82,8 +82,12 @@ final class PlaylistStore {
             description = ""
             ownerURI = item.ownerURI
             metadata.replaceTracks([], from: .playlist)
+            error = nil
+        } else if !force {
+            error = nil
         }
-        error = nil
+        // Same-playlist force reloads keep `error` until a current load succeeds so a
+        // cancelled or superseded retry cannot hide stale rows.
         isLoading = true
         defer {
             if requestID == requestScope {
@@ -125,6 +129,7 @@ final class PlaylistStore {
         do {
             let playlist = try await provider.playlist(id: id)
             guard isCurrent(identity, uri: item.uri) else { return }
+            error = nil
             description = PlaylistDescription.plainText(from: playlist.description ?? "")
             ownerURI = CatalogMapping.ownerURI(from: playlist) ?? item.ownerURI
             let entries = playlist.content.flatMap(\.items) ?? []
