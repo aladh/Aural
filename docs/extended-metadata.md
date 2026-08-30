@@ -19,8 +19,10 @@ and `com.spotify.extendedmetadata.*`) and show playlist requests using
 
 Use `Content-Type: application/x-protobuf` and the same keymaster bearer, client token, and desktop
 client headers as other private requests (see `SpotifyCredentials.sign`). A 401 means one of those
-credentials may be stale; invalidate the exact bearer and client token that request carried, and
-retry once. This POST is a metadata read, so HTTP 429, 500, 502, 503, and 504 plus interrupt-class
+credentials may be stale; invalidate the exact bearer and client token that request carried, then
+retry once if the shared attempt budget still allows it. A 401 that arrives after the budget is
+spent, or after that named replay was already used, still invalidates the sent pair and then
+returns. This POST is a metadata read, so HTTP 429, 500, 502, 503, and 504 plus interrupt-class
 network errors also retry through the shared `SpotifyCredentials` policy. Those retries share a
 three-attempt budget with the 401 retry, so earlier transients can consume the budget before a
 later 401.

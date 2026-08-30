@@ -191,8 +191,10 @@ nonisolated struct SpotifyCredentials: Sendable {
     /// A 401 can be either credential. The client token is cached for the fortnight Spotify
     /// says it is good for; the bearer is cached until five minutes before expiry. Either can
     /// be revoked mid-validity, and retrying without naming the sent values would keep sending
-    /// the same dead pair. A second 401 is returned as-is so this cannot loop. That 401 retry
-    /// counts toward `SpotifyTransientRetry.maximumAttempts` and happens at most once.
+    /// the same dead pair. Invalidating the exact sent pair is independent of retry permission:
+    /// a second 401 or a budget-final 401 still drops those credentials, then returns so this
+    /// cannot loop. The one named 401 replay counts toward
+    /// `SpotifyTransientRetry.maximumAttempts` and happens at most once.
     ///
     /// The tokens the request actually carried are named, not just "the current ones" —
     /// concurrent requests share a pair, so one dead pair is refused several times over and the
@@ -231,17 +233,19 @@ nonisolated struct SpotifyCredentials: Sendable {
             do {
                 let sent = try await attempt()
                 if sent.status == 401 {
-                    if didInvalidateCredentials || completedAttempts >= SpotifyTransientRetry.maximumAttempts {
-                        return (sent.body, sent.status)
-                    }
                     // Client-token drop is non-throwing. Do it first so a throwing bearer refresh
                     // (grantRevoked, noGrant, or a superseded spend) cannot leave a dead client cached
-                    // for the rest of its fortnight.
+                    // for the rest of its fortnight. The exact sent pair is named even when this
+                    // 401 will not be retried — a budget-final or already-replayed 401 must still
+                    // make that rejection authoritative.
                     if let rejected = sent.clientToken {
                         await invalidateClientToken?(rejected)
                     }
                     if let rejected = sent.accessToken {
                         try await invalidateAccessToken(rejected)
+                    }
+                    if didInvalidateCredentials || completedAttempts >= SpotifyTransientRetry.maximumAttempts {
+                        return (sent.body, sent.status)
                     }
                     didInvalidateCredentials = true
                     continue
