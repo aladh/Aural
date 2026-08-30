@@ -171,7 +171,7 @@ func runEnginePayloadContractChecks(_ check: CheckRunner) {
             ).devices
             check.equal(
                 "active device without local identity waits",
-                connectCommandRoute(
+                AuralDomain.connectCommandRoute(
                     isLocalActive: state.isActiveDevice,
                     localDeviceID: state.deviceID,
                     devices: devices
@@ -212,7 +212,7 @@ func runEnginePayloadContractChecks(_ check: CheckRunner) {
             )
             check.equal(
                 "local ownership routes locally",
-                connectCommandRoute(owner: owner, localDeviceID: state.deviceID),
+                AuralDomain.connectCommandRoute(owner: owner, localDeviceID: state.deviceID),
                 .local
             )
 
@@ -249,7 +249,7 @@ func runEnginePayloadContractChecks(_ check: CheckRunner) {
 
             check.equal(
                 "active local device routes locally",
-                connectCommandRoute(
+                AuralDomain.connectCommandRoute(
                     isLocalActive: mac.isActive,
                     localDeviceID: mac.id,
                     devices: state.devices
@@ -258,7 +258,7 @@ func runEnginePayloadContractChecks(_ check: CheckRunner) {
             )
             check.equal(
                 "inactive speaker stays remotely addressable by identity",
-                connectCommandRoute(
+                AuralDomain.connectCommandRoute(
                     isLocalActive: false,
                     localDeviceID: mac.id,
                     devices: state.devices,
@@ -286,7 +286,7 @@ private func enginePlaybackSnapshot(
         transport: transport,
         trackURI: state.trackURI.isEmpty ? nil : state.trackURI,
         timing: PlaybackTiming(
-            position: playbackSnapshotPosition(
+            position: AuralDomain.playbackSnapshotPosition(
                 positionMilliseconds: state.positionMS,
                 durationMilliseconds: state.durationMS,
                 timestampMilliseconds: state.timestampMS,
