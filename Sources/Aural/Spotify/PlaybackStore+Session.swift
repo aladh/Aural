@@ -15,6 +15,7 @@ extension PlaybackStore {
         let queueServiceBootstrap = effects.settlement(of: .queueServiceBootstrap)
         let preferencesRestore = effects.settlement(of: .preferencesRestore)
         await queueServiceBootstrap?.wait()
+        guard terminationGate.allowsCommands else { return }
         await accountStore.restore()
         await preferencesRestore?.wait()
     }

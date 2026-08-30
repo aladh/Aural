@@ -887,6 +887,46 @@ func runWorkflowChecks(_ runner: CheckRunner) async {
         runner.equal("termination cancels the grant-revocation subscription", account.activeSubscriptionCount, 0)
         runner.equal("termination cancels the lifecycle subscription", lifecycle.activeSubscriptionCount, 0)
     }
+
+    await runner.suite("Termination wins during playback-store startup") {
+        let engine = WorkflowEngine()
+        let account = WorkflowAccount()
+        let lifecycle = WorkflowLifecycle()
+        let hook = QueueServiceTestHook()
+        await hook.parkNextReset()
+        let environment = PlaybackEnvironment(
+            remote: RecordingRemoteClient(),
+            local: engine,
+            webQueue: UnavailableWebQueue(),
+            account: account,
+            audioOutput: WorkflowAudio(),
+            preferences: WorkflowPreferences(),
+            lifecycle: lifecycle,
+            clock: WorkflowClock(),
+            catalog: WorkflowCatalog(),
+            playlistMutations: UnavailablePlaylistMutations(),
+            trackAttributes: WorkflowAttributes(),
+            queueServiceHook: hook
+        )
+        let player = PlaybackStore(
+            environment: environment,
+            feedback: TransientFeedbackPresenter(clock: environment.clock)
+        )
+
+        let restore = Task { await player.restore() }
+        runner.check("queue bootstrap parks before engine restore", await waitUntil { await hook.resetIsParked() })
+        await player.shutdownForTermination()
+        await restore.value
+
+        runner.equal("termination during bootstrap prevents engine initialization", engine.count("initialize"), 0)
+        runner.equal("termination during bootstrap shuts down once", engine.count("shutdown"), 1)
+        runner.equal("termination during bootstrap leaves the store signed out", player.phase, .signedOut)
+        runner.equal(
+            "cancelled bootstrap leaves no active engine subscription", engine.count("activeEventSubscriptions"), 0)
+        runner.equal("cancelled bootstrap leaves no active revocation subscription", account.activeSubscriptionCount, 0)
+        runner.equal(
+            "cancelled bootstrap leaves no active lifecycle subscription", lifecycle.activeSubscriptionCount, 0)
+    }
 }
 
 private func workflowTrack(_ uri: String) -> CatalogTrack {
