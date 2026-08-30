@@ -8,9 +8,7 @@ private final class AccessLocalEngine: LocalPlaybackEngine, @unchecked Sendable 
     private var storedOperations: [LocalPlaybackOperation] = []
 
     var operations: [LocalPlaybackOperation] {
-        lock.lock()
-        defer { lock.unlock() }
-        return storedOperations
+        lock.withLock { storedOperations }
     }
 
     func events() -> AsyncStream<RustPlaybackEventEnvelope> {
@@ -20,9 +18,7 @@ private final class AccessLocalEngine: LocalPlaybackEngine, @unchecked Sendable 
     func authorizeStreaming(with _: String) -> Int32 { 0 }
     func initialize() -> PlaybackEngineResult { .ok }
     func execute(_ operation: LocalPlaybackOperation) -> PlaybackEngineResult {
-        lock.lock()
-        storedOperations.append(operation)
-        lock.unlock()
+        lock.withLock { storedOperations.append(operation) }
         return .ok
     }
     func positionMilliseconds() -> UInt32 { 0 }
@@ -53,15 +49,11 @@ private final class RecordingAccessAccount: AccountSession, @unchecked Sendable 
     private var storedInteractiveCount = 0
 
     var interactiveCount: Int {
-        lock.lock()
-        defer { lock.unlock() }
-        return storedInteractiveCount
+        lock.withLock { storedInteractiveCount }
     }
 
     func authorizeInteractively() async throws -> KeymasterTokens {
-        lock.lock()
-        storedInteractiveCount += 1
-        lock.unlock()
+        lock.withLock { storedInteractiveCount += 1 }
         throw CancellationError()
     }
 
@@ -211,7 +203,6 @@ func runCatalogPlaybackAccessChecks(_ runner: CheckRunner) async {
             )),
             source: .user
         )
-        _ = player.send(.owner(.local), source: .command)
         player.setTransport(.paused)
 
         runner.check(
