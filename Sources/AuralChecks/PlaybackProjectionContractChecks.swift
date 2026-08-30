@@ -54,18 +54,56 @@ func runPlaybackProjectionContractChecks(_ check: CheckRunner) {
     check.suite("CurrentTrackRow accessibility contract") {
         let expectedLabel =
             ".accessibilityLabel(\"Now playing \\(player.displayedTrackTitle) by \\(player.displayedArtistName)\")"
-        let commentedBesideWrongLabel = """
-            .accessibilityLabel("Now playing \\(player.trackTitle) by \\(player.artistName)") // \(expectedLabel)
-            """
+        let expectedTitle =
+            "var displayedTrackTitle: String { catalogCurrentTrack?.title ?? trackTitle }"
+        let expectedArtist =
+            "var displayedArtistName: String { catalogCurrentTrack?.artist ?? artistName }"
+
         check.check(
-            "a commented expected label does not satisfy the check",
-            !PlaybackStoreProjectionContract.uncommentedSource(commentedBesideWrongLabel)
-                .contains(expectedLabel)
+            "a line-commented expected label does not satisfy the check",
+            !PlaybackStoreProjectionContract.containsUncommented(
+                ".accessibilityLabel(\"Now playing \\(player.trackTitle) by \\(player.artistName)\") // \(expectedLabel)",
+                expectedLabel
+            )
+        )
+        check.check(
+            "a block-commented expected label does not satisfy the check",
+            !PlaybackStoreProjectionContract.containsUncommented(
+                ".accessibilityLabel(\"Now playing \\(player.trackTitle) by \\(player.artistName)\")\n/* \(expectedLabel) */",
+                expectedLabel
+            )
         )
         check.check(
             "an active expected label satisfies the check",
-            PlaybackStoreProjectionContract.uncommentedSource("        \(expectedLabel)\n")
-                .contains(expectedLabel)
+            PlaybackStoreProjectionContract.containsUncommented("        \(expectedLabel)\n", expectedLabel)
+        )
+        check.check(
+            "a line-commented displayedTrackTitle does not satisfy the check",
+            !PlaybackStoreProjectionContract.containsUncommented(
+                "var displayedTrackTitle: String { trackTitle } // \(expectedTitle)",
+                expectedTitle
+            )
+        )
+        check.check(
+            "a block-commented displayedTrackTitle does not satisfy the check",
+            !PlaybackStoreProjectionContract.containsUncommented(
+                "var displayedTrackTitle: String { trackTitle }\n/* \(expectedTitle) */",
+                expectedTitle
+            )
+        )
+        check.check(
+            "a line-commented displayedArtistName does not satisfy the check",
+            !PlaybackStoreProjectionContract.containsUncommented(
+                "var displayedArtistName: String { artistName } // \(expectedArtist)",
+                expectedArtist
+            )
+        )
+        check.check(
+            "a block-commented displayedArtistName does not satisfy the check",
+            !PlaybackStoreProjectionContract.containsUncommented(
+                "var displayedArtistName: String { artistName }\n/* \(expectedArtist) */",
+                expectedArtist
+            )
         )
 
         check.noThrow("production CurrentTrackRow VoiceOver uses displayed projections") {
@@ -76,27 +114,21 @@ func runPlaybackProjectionContractChecks(_ check: CheckRunner) {
                 contentsOf: sources.appending(path: "Aural/Views/SidePanelView.swift"),
                 encoding: .utf8
             )
-            let projections = PlaybackStoreProjectionContract.uncommentedSource(
-                try String(
-                    contentsOf: sources.appending(path: "Aural/Spotify/PlaybackStore+Projections.swift"),
-                    encoding: .utf8
-                )
+            let projections = try String(
+                contentsOf: sources.appending(path: "Aural/Spotify/PlaybackStore+Projections.swift"),
+                encoding: .utf8
             )
             check.check(
                 "production VoiceOver label uses displayedTrackTitle and displayedArtistName",
-                PlaybackStoreProjectionContract.uncommentedSource(panel).contains(expectedLabel)
+                PlaybackStoreProjectionContract.containsUncommented(panel, expectedLabel)
             )
             check.check(
                 "displayedTrackTitle prefers catalog then engine fallback",
-                projections.contains(
-                    "var displayedTrackTitle: String { catalogCurrentTrack?.title ?? trackTitle }"
-                )
+                PlaybackStoreProjectionContract.containsUncommented(projections, expectedTitle)
             )
             check.check(
                 "displayedArtistName prefers catalog then engine fallback",
-                projections.contains(
-                    "var displayedArtistName: String { catalogCurrentTrack?.artist ?? artistName }"
-                )
+                PlaybackStoreProjectionContract.containsUncommented(projections, expectedArtist)
             )
         }
     }

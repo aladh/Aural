@@ -22,13 +22,55 @@ enum PlaybackStoreProjectionContract {
     }
 
     static func uncommentedSource(_ source: String) -> String {
-        source
-            .split(separator: "\n", omittingEmptySubsequences: false)
-            .map { line in
-                let text = String(line)
-                guard let comment = text.range(of: "//") else { return text }
-                return String(text[..<comment.lowerBound])
+        var result = ""
+        var index = source.startIndex
+        var blockDepth = 0
+        var inLineComment = false
+        while index < source.endIndex {
+            let next = source.index(after: index)
+            let startsPair = next < source.endIndex
+            let pair = startsPair ? String(source[index...next]) : ""
+
+            if inLineComment {
+                if source[index] == "\n" {
+                    inLineComment = false
+                    result.append("\n")
+                }
+                index = next
+                continue
             }
-            .joined(separator: "\n")
+
+            if blockDepth > 0 {
+                if pair == "/*" {
+                    blockDepth += 1
+                    index = source.index(after: next)
+                } else if pair == "*/" {
+                    blockDepth -= 1
+                    index = source.index(after: next)
+                } else {
+                    index = next
+                }
+                continue
+            }
+
+            if pair == "/*" {
+                blockDepth = 1
+                index = source.index(after: next)
+                continue
+            }
+            if pair == "//" {
+                inLineComment = true
+                index = source.index(after: next)
+                continue
+            }
+
+            result.append(source[index])
+            index = next
+        }
+        return result
+    }
+
+    static func containsUncommented(_ source: String, _ token: String) -> Bool {
+        uncommentedSource(source).contains(token)
     }
 }
