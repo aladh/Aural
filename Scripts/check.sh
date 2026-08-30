@@ -335,7 +335,7 @@ if ! rg -U -q --fixed-strings $'          path: |\n            .build/*\n       
     print -u2 "CI SwiftPM cache must include repository .build products and exclude signing material"
     exit 1
 fi
-if ! rg -q --fixed-strings $'          key: macos-swiftpm-${{ runner.os }}-${{ runner.arch }}-${{ env.SWIFT_TOOLCHAIN_KEY }}-${{ hashFiles(\'Package.swift\', \'Package.resolved\') }}' "$ci_workflow"; then
+if ! rg -q --fixed-strings $'          key: macos-swiftpm-${{ runner.os }}-${{ runner.arch }}-${{ env.SWIFT_TOOLCHAIN_KEY }}-${{ hashFiles(\'Package.swift\', \'Package.resolved\') }}-${{ github.sha }}' "$ci_workflow"; then
     print -u2 "CI SwiftPM cache key must include OS, architecture, Swift toolchain, and package manifests"
     exit 1
 fi

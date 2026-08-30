@@ -65,10 +65,12 @@ runs both non-shipping Swift check products:
 - `AuralBoundaryChecks` exercises concrete codecs, fixtures, and injected coordinator/queue flows.
 
 GitHub's macos-15 debug quality gate caches the repository `.build` tree, including the module cache
-`check.sh` already redirects there. The cache key includes runner OS, architecture, the Swift
-toolchain, `Package.swift`, and `Package.resolved` when that lockfile exists. Compatible hits reuse
-incremental products; a toolchain or architecture mismatch misses and rebuilds cleanly. Signing
-material, Cargo's target directory, and paths outside the checkout are not part of that cache.
+`check.sh` already redirects there. The primary cache key includes runner OS, architecture, the Swift
+toolchain, `Package.swift`, `Package.resolved` when that lockfile exists, and the commit SHA so each
+successful run can save updated products. Restore-keys keep the OS/arch/toolchain prefix so a later
+commit or pull request can reuse the nearest compatible tree and compile incrementally. A toolchain
+or architecture mismatch misses and rebuilds cleanly. Signing material, Cargo's target directory, and
+paths outside the checkout are not part of that cache.
 
 `AuralChecks` depends only on `AuralDomain` and the tiny `AuralCheckSelection` helper. It does not
 link `AuralCore` or the Rust playback archive. Domain-only iteration can use SwiftPM directly:
