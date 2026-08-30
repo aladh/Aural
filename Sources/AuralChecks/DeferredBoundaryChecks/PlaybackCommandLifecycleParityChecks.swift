@@ -94,6 +94,7 @@ private actor LifecycleRemoteClient: RemotePlaybackClient {
 
     private let behavior: Behavior
     private var continuation: CheckedContinuation<Void, Error>?
+    private var pendingResult: Result<Void, Error>?
     private(set) var sendCount = 0
 
     init(_ behavior: Behavior) {
@@ -108,17 +109,25 @@ private actor LifecycleRemoteClient: RemotePlaybackClient {
         case .fail:
             throw LifecycleRemoteFailure.boom
         case .gated:
+            if let pendingResult {
+                self.pendingResult = nil
+                try pendingResult.get()
+                return
+            }
             try await withCheckedThrowingContinuation { continuation = $0 }
         }
     }
 
     func finish(success: Bool) {
-        if success {
-            continuation?.resume()
+        let result: Result<Void, Error> = success
+            ? .success(())
+            : .failure(LifecycleRemoteFailure.boom)
+        if let waiting = continuation {
+            continuation = nil
+            waiting.resume(with: result)
         } else {
-            continuation?.resume(throwing: LifecycleRemoteFailure.boom)
+            pendingResult = result
         }
-        continuation = nil
     }
 
     func trackMetadata(for uri: String) async throws -> SpotifyConnectTrackMetadata {
@@ -483,7 +492,8 @@ func runPlaybackCommandLifecycleParityChecks(_ runner: CheckRunner) async {
                 seedRoute(success, route)
                 var successCompletions: [Bool] = []
                 startLifecycleCommand(success, kind: kind) { successCompletions.append($0) }
-                _ = await waitUntil { !successCompletions.isEmpty }
+                let successFinished = await waitUntil { !successCompletions.isEmpty }
+                runner.check("\(label) success finishes", successFinished)
                 runner.equal("\(label) confirmation-free success completion", successCompletions, [true])
                 runner.nil_("\(label) success has no command notice", success.transientCommandError)
                 runner.equal("\(label) success does not reconnect", successAccount.authorizeCount, 0)
@@ -499,7 +509,8 @@ func runPlaybackCommandLifecycleParityChecks(_ runner: CheckRunner) async {
                 seedRoute(rejected, route)
                 var rejectedCompletions: [Bool] = []
                 startLifecycleCommand(rejected, kind: kind) { rejectedCompletions.append($0) }
-                _ = await waitUntil { !rejectedCompletions.isEmpty }
+                let rejectedFinished = await waitUntil { !rejectedCompletions.isEmpty }
+                runner.check("\(label) rejection finishes", rejectedFinished)
                 runner.equal("\(label) rejection completion", rejectedCompletions, [false])
                 runner.equal("\(label) rejection uses the action notice", rejected.transientCommandError, kind.action)
                 runner.nil_("\(label) rejection leaves no pending command", rejected.state.pendingCommands[kind.commandKind])
@@ -548,7 +559,8 @@ func runPlaybackCommandLifecycleParityChecks(_ runner: CheckRunner) async {
                 } else {
                     await duplicateRemote.finish(success: true)
                 }
-                _ = await waitUntil { !firstCompletions.isEmpty }
+                let duplicateFinished = await waitUntil { !firstCompletions.isEmpty }
+                runner.check("\(label) first command finishes after the duplicate refusal", duplicateFinished)
                 await duplicate.shutdownForTermination()
 
                 let confirmLocal = LifecycleLocalEngine(result: .error, gated: true)
@@ -559,7 +571,8 @@ func runPlaybackCommandLifecycleParityChecks(_ runner: CheckRunner) async {
                 seedRoute(confirmed, route)
                 var confirmedCompletions: [Bool] = []
                 startLifecycleCommand(confirmed, kind: kind) { confirmedCompletions.append($0) }
-                _ = await waitUntil { confirmed.state.pendingCommands[kind.commandKind] != nil }
+                let confirmPending = await waitUntil { confirmed.state.pendingCommands[kind.commandKind] != nil }
+                runner.check("\(label) command is pending before confirmation", confirmPending)
                 let confirmedID = confirmed.state.pendingCommands[kind.commandKind]?.id
                 confirm(confirmed, kind: kind, revision: 1)
                 runner.nil_("\(label) authoritative snapshot confirms the command", confirmed.state.pendingCommands[kind.commandKind])
@@ -573,7 +586,8 @@ func runPlaybackCommandLifecycleParityChecks(_ runner: CheckRunner) async {
                 } else {
                     await confirmRemote.finish(success: false)
                 }
-                _ = await waitUntil { !confirmedCompletions.isEmpty }
+                let confirmFinished = await waitUntil { !confirmedCompletions.isEmpty }
+                runner.check("\(label) confirmed command still finishes", confirmFinished)
                 runner.equal("\(label) confirmed then coordinator failure reports success", confirmedCompletions, [true])
                 await confirmed.shutdownForTermination()
 
@@ -585,15 +599,18 @@ func runPlaybackCommandLifecycleParityChecks(_ runner: CheckRunner) async {
                 seedRoute(superseded, route)
                 var supersededCompletions: [Bool] = []
                 startLifecycleCommand(superseded, kind: kind) { supersededCompletions.append($0) }
-                _ = await waitUntil { superseded.state.pendingCommands[kind.commandKind] != nil }
+                let supersedePending = await waitUntil { superseded.state.pendingCommands[kind.commandKind] != nil }
+                runner.check("\(label) command is pending before supersession", supersedePending)
                 supersede(superseded, kind: kind, revision: 1)
                 runner.nil_("\(label) unrelated snapshot clears the pending command", superseded.state.pendingCommands[kind.commandKind])
                 if route == .local {
                     supersedeLocal.finish(with: .error)
-                    _ = await waitUntil { supersedeLocal.executeCount == 1 }
+                    let supersedeReached = await waitUntil { supersedeLocal.executeCount == 1 }
+                    runner.check("\(label) superseded command still reaches the local fixture", supersedeReached)
                 } else {
                     await supersedeRemote.finish(success: false)
-                    _ = await waitUntil { await supersedeRemote.sendCount >= 1 }
+                    let supersedeReached = await waitUntil { await supersedeRemote.sendCount >= 1 }
+                    runner.check("\(label) superseded command still reaches the remote fixture", supersedeReached)
                 }
                 runner.check("\(label) superseded then coordinator failure reports no completion", supersededCompletions.isEmpty)
                 runner.nil_("\(label) superseded then coordinator failure has no notice", superseded.transientCommandError)
@@ -607,7 +624,8 @@ func runPlaybackCommandLifecycleParityChecks(_ runner: CheckRunner) async {
                 seedRoute(stale, route)
                 var staleCompletions: [Bool] = []
                 startLifecycleCommand(stale, kind: kind) { staleCompletions.append($0) }
-                _ = await waitUntil { stale.state.pendingCommands[kind.commandKind] != nil }
+                let stalePending = await waitUntil { stale.state.pendingCommands[kind.commandKind] != nil }
+                runner.check("\(label) command is pending before an engine-epoch bump", stalePending)
                 _ = stale.send(
                     .engineConnection(EngineConnectionSnapshot(session: .recovering, owner: .none, localDeviceID: nil)),
                     source: .engineConnection,
@@ -617,10 +635,12 @@ func runPlaybackCommandLifecycleParityChecks(_ runner: CheckRunner) async {
                 runner.nil_("\(label) engine-epoch bump drops the pending command", stale.state.pendingCommands[kind.commandKind])
                 if route == .local {
                     staleLocal.finish(with: .ok)
-                    _ = await waitUntil { staleLocal.executeCount == 1 }
+                    let staleReached = await waitUntil { staleLocal.executeCount == 1 }
+                    runner.check("\(label) stale command still reaches the local fixture", staleReached)
                 } else {
                     await staleRemote.finish(success: true)
-                    _ = await waitUntil { await staleRemote.sendCount >= 1 }
+                    let staleReached = await waitUntil { await staleRemote.sendCount >= 1 }
+                    runner.check("\(label) stale command still reaches the remote fixture", staleReached)
                 }
                 runner.check("\(label) stale finish reports no completion", staleCompletions.isEmpty)
                 await stale.shutdownForTermination()
@@ -633,7 +653,8 @@ func runPlaybackCommandLifecycleParityChecks(_ runner: CheckRunner) async {
                 seedRoute(cancelled, route)
                 var cancelCompletions: [Bool] = []
                 startLifecycleCommand(cancelled, kind: kind) { cancelCompletions.append($0) }
-                _ = await waitUntil { cancelled.state.pendingCommands[kind.commandKind] != nil }
+                let cancelPending = await waitUntil { cancelled.state.pendingCommands[kind.commandKind] != nil }
+                runner.check("\(label) command is pending before cancellation", cancelPending)
                 if let commandID = cancelled.state.pendingCommands[kind.commandKind]?.id {
                     cancelled.effects.cancel(.command(commandID))
                 }
@@ -642,10 +663,11 @@ func runPlaybackCommandLifecycleParityChecks(_ runner: CheckRunner) async {
                 } else {
                     await cancelRemote.finish(success: true)
                 }
-                _ = await waitUntil {
+                let cancelReached = await waitUntil {
                     if route == .local { return cancelLocal.executeCount == 1 }
                     return await cancelRemote.sendCount >= 1
                 }
+                runner.check("\(label) cancelled command still reaches the fixture", cancelReached)
                 runner.check("\(label) cancelled command reports no completion", cancelCompletions.isEmpty)
                 runner.notNil("\(label) cancellation leaves the pending command", cancelled.state.pendingCommands[kind.commandKind])
                 await cancelled.shutdownForTermination()
@@ -658,15 +680,15 @@ func runPlaybackCommandLifecycleParityChecks(_ runner: CheckRunner) async {
                 seedRoute(teardown, route)
                 var teardownCompletions: [Bool] = []
                 startLifecycleCommand(teardown, kind: kind) { teardownCompletions.append($0) }
-                _ = await waitUntil { teardown.state.pendingCommands[kind.commandKind] != nil }
+                let teardownPending = await waitUntil { teardown.state.pendingCommands[kind.commandKind] != nil }
+                runner.check("\(label) command is pending before teardown", teardownPending)
                 await teardown.shutdownForTermination()
                 if route == .local {
                     teardownLocal.finish(with: .ok)
-                    _ = await waitUntil { teardownLocal.executeCount == 1 }
                 } else {
                     await teardownRemote.finish(success: true)
-                    _ = await waitUntil { await teardownRemote.sendCount >= 1 }
                 }
+                for _ in 0..<50 { await Task.yield() }
                 runner.check("\(label) teardown reports no completion", teardownCompletions.isEmpty)
                 runner.nil_("\(label) teardown leaves no pending command", teardown.state.pendingCommands[kind.commandKind])
             }

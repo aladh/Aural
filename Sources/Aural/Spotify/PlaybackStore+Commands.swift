@@ -22,6 +22,7 @@ extension PlaybackStore {
         kind: PlaybackCommandKind = .transport,
         completion: @escaping @MainActor (Bool) -> Void = { _ in }
     ) {
+        let coordinator = coordinator
         performAdmittedPlaybackCommand(
             action,
             kind: kind,
@@ -101,6 +102,7 @@ extension PlaybackStore {
             AuralLog.commands.info(
                 "Routing \(String(describing: kind), privacy: .public) command remotely; source=\(from, privacy: .private(mask: .hash)); target=\(to, privacy: .private(mask: .hash))"
             )
+            let coordinator = coordinator
             performAdmittedPlaybackCommand(
                 action,
                 kind: kind,
