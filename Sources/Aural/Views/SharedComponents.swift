@@ -35,9 +35,7 @@ struct TrackTable: View {
         self.playback = playback
         self.showsDateAdded = showsDateAdded
         self.playlistActions = playlistActions
-        _displayCache = State(
-            initialValue: TrackTableDisplayCache(tracks: tracks.tracks, revision: tracks.revision)
-        )
+        _displayCache = State(initialValue: TrackTableDisplayCache(tracks))
     }
 
     var body: some View {
@@ -161,19 +159,15 @@ struct TrackTable: View {
         }
         .accessibilityLabel("Tracks")
         .onChange(of: displayInputs, initial: true) { oldInputs, newInputs in
-            _ = displayCache.update(
-                tracks: tracks.tracks,
-                revision: newInputs.revision,
-                sortOrder: newInputs.sortOrder
-            )
-            if oldInputs.revision != newInputs.revision {
+            _ = displayCache.update(tracks, sortOrder: newInputs.sortOrder)
+            if oldInputs.sourceID != newInputs.sourceID || oldInputs.revision != newInputs.revision {
                 selection = TrackTableDisplayCache.prunedSelection(selection, from: tracks.tracks)
             }
         }
     }
 
     private var displayInputs: TrackTableDisplayInputs {
-        TrackTableDisplayInputs(revision: tracks.revision, sortOrder: sortOrder)
+        TrackTableDisplayInputs(sourceID: tracks.id, revision: tracks.revision, sortOrder: sortOrder)
     }
 
     private func isCurrent(_ track: CatalogTrack) -> Bool {
@@ -198,6 +192,7 @@ struct TrackTable: View {
 }
 
 private struct TrackTableDisplayInputs: Equatable {
+    var sourceID: UUID
     var revision: UInt64
     var sortOrder: [KeyPathComparator<CatalogTrack>]
 }
