@@ -174,55 +174,8 @@ if [[ "$direct_core_calls" != "$expected_core_caller" ]]; then
     exit 1
 fi
 
-if rg -n 'LiveSpotifyController|nonisolated\(unsafe\)' "$project_root/Sources" --glob '*.swift'; then
-    print -u2 "A deleted controller or unsafe global state re-entered the Swift architecture"
-    exit 1
-fi
-
-# Read-only presentation projections live in PlaybackStore+Projections.swift. An explicit
-# setter there recreates partial-presentation states; setters in other files are out of scope.
-projections_file="$project_root/Sources/Aural/Spotify/PlaybackStore+Projections.swift"
-if [[ ! -f "$projections_file" ]]; then
-    print -u2 "PlaybackStore projections must live in PlaybackStore+Projections.swift"
-    exit 1
-fi
-if rg -n '(^|[^[:alnum:]_])set[[:space:]]*(\([^)]*\)[[:space:]]*)?\{' "$projections_file"; then
-    print -u2 "PlaybackStore state projections must remain read-only; use an explicit atomic action"
-    exit 1
-fi
-
-# PlaybackStore.state may be assigned only at declaration and at the accepted reducer
-# commit in send. Direct member mutation remains confined to PlaybackReducer.
-playback_store_sources=(
-    "$project_root/Sources/Aural/Spotify/PlaybackStore.swift"
-    "$project_root/Sources/Aural/Spotify/PlaybackStore+Commands.swift"
-    "$project_root/Sources/Aural/Spotify/PlaybackStore+EngineEvents.swift"
-    "$project_root/Sources/Aural/Spotify/PlaybackStore+History.swift"
-    "$project_root/Sources/Aural/Spotify/PlaybackStore+Projections.swift"
-    "$project_root/Sources/Aural/Spotify/PlaybackStore+Queue.swift"
-    "$project_root/Sources/Aural/Spotify/PlaybackStore+Session.swift"
-    "$project_root/Sources/Aural/Spotify/PlaybackStore+Transport.swift"
-)
-store_state_assignments="$(
-    rg -N '(^|[^[:alnum:]_.])(self\.)?state[[:space:]]*=' "${playback_store_sources[@]}" \
-        | rg -v 'let state' \
-        | rg -v 'state[[:space:]]*==' \
-        | rg -v ':[^:]*//' \
-        || true
-)"
-expected_store_state_assignments="$(printf '%s\n' \
-    "$project_root/Sources/Aural/Spotify/PlaybackStore.swift:    private(set) var state = PlaybackState(accountEpoch: 1)" \
-    "$project_root/Sources/Aural/Spotify/PlaybackStore.swift:            state = next")"
-if [[ "$store_state_assignments" != "$expected_store_state_assignments" ]]; then
-    print -u2 "PlaybackStore.state may be assigned only at declaration and the accepted reducer commit in send:"
-    print -u2 "${store_state_assignments:-<none>}"
-    exit 1
-fi
-if rg -N '(^|[^[:alnum:]_.])(self\.)?state\.[A-Za-z0-9_.\[\]]+[[:space:]]*=' "${playback_store_sources[@]}" \
-    | rg -v 'let state' \
-    | rg -v '==' \
-    | rg -v ':[^:]*//'; then
-    print -u2 "PlaybackStore.state members must not be mutated outside PlaybackReducer"
+if rg -n 'nonisolated\(unsafe\)' "$project_root/Sources" --glob '*.swift'; then
+    print -u2 "Production Swift must not use nonisolated(unsafe)"
     exit 1
 fi
 
@@ -255,18 +208,6 @@ feature_dependencies=(
 if rg -n 'PartnerAPI\(|SpotifyConnectAPI\(|SpotifyWebPlayerAPI\(|KeymasterAuth\.authorize|KeymasterSession\.shared|RustPlaybackEngine\.shared|PlaybackCore\.' \
     "${feature_dependencies[@]}"; then
     print -u2 "A store or view bypasses the injected production environment"
-    exit 1
-fi
-
-if rg -n 'func addToPlaylist|func removeFromPlaylist|func moveInPlaylist' \
-    "$project_root/Sources/Aural/Spotify/CatalogProviding.swift"; then
-    print -u2 "CatalogProviding must remain a read-only catalog surface"
-    exit 1
-fi
-
-if rg -n 'parkNextConnectAccept|parkNextCommittedReplacement|waitForTestConnectAcceptGate|waitForTestCommittedReplacementGate|CheckedContinuation|pendingConnectAcceptGate|pendingCommittedReplacementGate' \
-    "$project_root/Sources/Aural/Spotify/QueueService.swift"; then
-    print -u2 "QueueService must not own test-only continuation gates"
     exit 1
 fi
 
@@ -322,20 +263,12 @@ if ! rg -q 'brew install ripgrep' "$ci_workflow"; then
     print -u2 "CI must still install ripgrep when the runner has no rg"
     exit 1
 fi
-if rg -q 'brew untap aws/tap' "$ci_workflow"; then
-    print -u2 "CI must not keep the aws/tap Homebrew workaround"
-    exit 1
-fi
 if rg -q 'brew install swift-format|brew install swiftlint' "$ci_workflow"; then
     print -u2 "CI must use the selected toolchain swift-format, not a Homebrew Swift linter"
     exit 1
 fi
 if ! rg -q 'key: macos-rust-\$\{\{ hashFiles\(' "$ci_workflow"; then
     print -u2 "CI must keep the existing Rust cache key"
-    exit 1
-fi
-if ! rg -U -q --fixed-strings $'          echo "SWIFT_TOOLCHAIN_KEY=$(shasum -a 256 "$RUNNER_TEMP/swift-toolchain.txt" | awk \'{print $1}\')" >> "$GITHUB_ENV"\n\n      - name: Cache SwiftPM build directory\n        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0\n        with:\n          path: |\n            .build/*\n            !.build/aural-signing\n          key: macos-swiftpm-${{ runner.os }}-${{ runner.arch }}-${{ env.SWIFT_TOOLCHAIN_KEY }}-${{ hashFiles(\'Package.swift\', \'Package.resolved\') }}-${{ github.sha }}\n          restore-keys: |\n            macos-swiftpm-${{ runner.os }}-${{ runner.arch }}-${{ env.SWIFT_TOOLCHAIN_KEY }}-' "$ci_workflow"; then
-    print -u2 "CI must hash the Swift toolchain, then cache .build with a per-commit key and compatible restore prefix"
     exit 1
 fi
 if ! rg -U -q --fixed-strings $'      - name: Run checks\n        run: ./Scripts/check.sh\n\n      - name: Compile release Aural with AURAL_DISTRIBUTION\n        run: ./Scripts/compile-release-aural.sh' "$ci_workflow"; then

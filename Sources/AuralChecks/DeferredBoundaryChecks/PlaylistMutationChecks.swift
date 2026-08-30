@@ -740,6 +740,7 @@ func runPlaylistMutationChecks(_ runner: CheckRunner) async {
                 "CatalogProviding stays a read-only catalog surface",
                 !containsToken(providing, "func addToPlaylist")
                     && !containsToken(providing, "func removeFromPlaylist")
+                    && !containsToken(providing, "func moveInPlaylist")
                     && containsToken(mutating, "protocol PlaylistMutating")
             )
             runner.check(
