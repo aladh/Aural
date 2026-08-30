@@ -1822,6 +1822,7 @@ func runPlaybackCommandFailureChecks(_ runner: CheckRunner) async {
         }
         runner.equal("cancellation restores the captured owner", cancelStore.state.owner, ownerA)
         runner.nil_("cancellation clears the pending transfer", cancelStore.state.pendingCommands[.transfer])
+        cancelGate.finish(with: .error)
         await cancelStore.shutdownForTermination()
 
         let staleStore = playbackStore(

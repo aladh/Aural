@@ -820,12 +820,19 @@ func runPlaybackCommandLifecycleParityChecks(_ runner: CheckRunner) async {
                 startLifecycleCommand(teardown, kind: kind) { teardownCompletions.append($0) }
                 let teardownPending = await waitUntil { teardown.state.pendingCommands[kind.commandKind] != nil }
                 runner.check("\(label) command is pending before teardown", teardownPending)
-                await teardown.shutdownForTermination()
+                let teardownReached = await waitUntil {
+                    if route == .local { return teardownLocal.enteredCount == 1 }
+                    return await teardownRemote.sendCount >= 1
+                }
+                runner.check("\(label) teardown command still reaches the fixture", teardownReached)
+                // Local execute is a blocking coordinator call. Shutdown awaits
+                // shutdownEngine on that same actor, so the fixture must be released first.
                 if route == .local {
                     teardownLocal.finish(with: .ok)
                 } else {
                     await teardownRemote.finish(success: true)
                 }
+                await teardown.shutdownForTermination()
                 for _ in 0..<50 { await Task.yield() }
                 runner.check("\(label) teardown reports no completion", teardownCompletions.isEmpty)
                 runner.nil_("\(label) teardown leaves no pending command", teardown.state.pendingCommands[kind.commandKind])
