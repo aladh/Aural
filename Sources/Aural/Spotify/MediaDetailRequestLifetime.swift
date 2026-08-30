@@ -7,6 +7,7 @@
 
 import AuralDomain
 import Foundation
+import os
 
 /// Internal single-flight owner for one media-detail selection. Presentation state stays on
 /// `AlbumDetailStore` and `ArtistDetailStore`; this type does not publish UI.
@@ -24,11 +25,15 @@ final class MediaDetailRequestLifetime {
         case start(Handle)
     }
 
+    private struct JoinFlight: Sendable {
+        let task: Task<Void, Never>
+        let uri: String
+        let session: CatalogSessionSnapshot
+    }
+
     private let session: CatalogSessionAvailability
     private var requestID: UInt64 = 0
-    private var task: Task<Void, Never>?
-    private var inFlightURI: String?
-    private var inFlightSession: CatalogSessionSnapshot?
+    private let joinFlight = OSAllocatedUnfairLock<JoinFlight?>(initialState: nil)
     private var loadedURI: String?
     private var loadedSession: CatalogSessionSnapshot?
 
@@ -38,10 +43,7 @@ final class MediaDetailRequestLifetime {
 
     func reset() {
         requestID &+= 1
-        task?.cancel()
-        task = nil
-        inFlightURI = nil
-        inFlightSession = nil
+        cancelJoinFlight()
         loadedURI = nil
         loadedSession = nil
     }
@@ -52,20 +54,27 @@ final class MediaDetailRequestLifetime {
         if loadedURI == uri, loadedSession == currentSession {
             return .skip
         }
-        // A cancelled owner (SwiftUI `.task` teardown) must not be joined: the view can
-        // remount the same URI/session before `complete` runs.
-        if let task, !task.isCancelled, inFlightURI == uri, inFlightSession == currentSession {
-            return .join(task)
+        // Join only while the lock still holds a live flight. Cancellation clears that
+        // box before `Task.cancel()`, so admit cannot join a flight already tearing down.
+        let joined = joinFlight.withLock { current -> Task<Void, Never>? in
+            guard let current,
+                  current.uri == uri,
+                  current.session == currentSession,
+                  !current.task.isCancelled
+            else {
+                return nil
+            }
+            return current.task
+        }
+        if let joined {
+            return .join(joined)
         }
 
         requestID &+= 1
         let identity = session.requestIdentity(requestID: requestID)
-        task?.cancel()
-        task = nil
+        cancelJoinFlight()
         loadedURI = nil
         loadedSession = nil
-        inFlightURI = uri
-        inFlightSession = currentSession
         return .start(
             Handle(identity: identity, sessionSnapshot: currentSession, uri: uri)
         )
@@ -76,18 +85,28 @@ final class MediaDetailRequestLifetime {
             await operation()
             self?.complete(handle)
         }
-        task = newTask
+        joinFlight.withLock {
+            $0 = JoinFlight(task: newTask, uri: handle.uri, session: handle.sessionSnapshot)
+        }
         await withTaskCancellationHandler {
             await newTask.value
-        } onCancel: {
+        } onCancel: { [joinFlight] in
+            joinFlight.withLock { current in
+                if current?.task == newTask {
+                    current = nil
+                }
+            }
             newTask.cancel()
         }
     }
 
     func abandonUnstarted(_ handle: Handle) {
         guard owns(handle) else { return }
-        inFlightURI = nil
-        inFlightSession = nil
+        joinFlight.withLock { current in
+            if current?.uri == handle.uri, current?.session == handle.sessionSnapshot {
+                current = nil
+            }
+        }
     }
 
     func isCurrent(_ handle: Handle, selectedURI: String?) -> Bool {
@@ -112,8 +131,19 @@ final class MediaDetailRequestLifetime {
 
     private func complete(_ handle: Handle) {
         guard owns(handle) else { return }
-        task = nil
-        inFlightURI = nil
-        inFlightSession = nil
+        joinFlight.withLock { current in
+            if current?.uri == handle.uri, current?.session == handle.sessionSnapshot {
+                current = nil
+            }
+        }
+    }
+
+    private func cancelJoinFlight() {
+        let stale = joinFlight.withLock { current -> Task<Void, Never>? in
+            let task = current?.task
+            current = nil
+            return task
+        }
+        stale?.cancel()
     }
 }
