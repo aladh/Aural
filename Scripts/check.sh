@@ -114,6 +114,8 @@ swift build "${swift_arguments[@]}"
 
 # Pure domain and deterministic scenario checks are a separate product so the
 # assertion harness and fixtures never ship in the application executable.
+# The gate always runs every registered suite. Suite-name arguments exist for
+# local iteration only and are not passed here.
 check_arguments=(
     --disable-sandbox
     --package-path "$project_root"

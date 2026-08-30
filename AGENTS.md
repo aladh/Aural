@@ -324,7 +324,7 @@ Minimum verification by change:
 | Change | Required verification |
 | --- | --- |
 | Documentation only | Check links/commands, `git diff --check`, and inspect rendered Markdown when layout matters. |
-| Pure domain/policy/parsing | Add/update `AuralChecks`; run `./Scripts/check.sh`. |
+| Pure domain/policy/parsing | Add/update `AuralChecks`. Iterate with `swift run --disable-sandbox --product AuralChecks` (optional suite names after `--`); that product does not build Rust or `AuralCore`. Run `./Scripts/check.sh` before a PR. |
 | Swift UI/store/API/boundary | Add the closest deterministic or boundary check; run `./Scripts/check.sh`; perform only authorized manual acceptance. |
 | Rust/session/queue/FFI | Add Rust coverage, run `./Scripts/check-clean.sh`, and inspect C ownership/export parity. |
 | Dependencies/build/signing/packaging/release | Run `./Scripts/check-clean.sh` plus the relevant package/validation path. Never publish merely to test. |

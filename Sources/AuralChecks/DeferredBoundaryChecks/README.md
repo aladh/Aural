@@ -20,3 +20,18 @@ in the application executable.
 
 These checks intentionally use the custom runner rather than XCTest/Swift Testing so the complete
 verification path remains available with the supported Command Line Tools installation.
+
+Both executables accept optional suite-name arguments after `--`. `--list` prints the registered
+names. `--help` prints usage. No arguments still run every registered suite in the current order.
+Unknown or empty names fail before checks run.
+
+`AuralChecks` is the Rust-free path. It depends on `AuralDomain` and `AuralCheckSelection` only:
+
+```bash
+swift run --disable-sandbox --product AuralChecks
+swift run --disable-sandbox --product AuralChecks -- --list
+swift run --disable-sandbox --product AuralChecks -- protobuf playback-reducer
+```
+
+`AuralBoundaryChecks` uses the same selection flags but still links `AuralCore`. The full gate in
+`Scripts/check.sh` runs both products with no suite filter.

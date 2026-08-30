@@ -1,44 +1,82 @@
+import AuralCheckSelection
 import Foundation
+
+private struct RegisteredCheckSuite {
+    let name: String
+    let run: @MainActor (CheckRunner) async -> Void
+}
 
 @MainActor
 @main
 enum BoundaryChecksMain {
-    static func main() async {
-        let runner = CheckRunner()
+    static var suiteNames: [String] { suites.map(\.name) }
 
-        runAuthFlowChecks(runner)
-        runKeymasterPersistenceChecks(runner)
-        runKeymasterPersistenceSourceContractChecks(runner)
-        runPaginationChecks(runner)
-        runPlaybackPanelChecks(runner)
-        runLoopbackParsingChecks(runner)
-        await runLoopbackServerChecks(runner)
-        await runAuthCookieCleanupChecks(runner)
-        await runKeymasterSessionPersistenceChecks(runner)
-        await runAuthCredentialRetryChecks(runner)
-        await runTransportRetryChecks(runner)
-        await runConnectMetadataTransportChecks(runner)
-        runURIChecks(runner)
-        runFormattingChecks(runner)
-        runTrackAttributeChecks(runner)
-        runFixtureContractChecks(runner)
-        runEnginePayloadContractChecks(runner)
-        runPCMWriteSpaceChecks(runner)
-        runEngineEventFanoutChecks(runner)
-        await runPrivacySanitizationChecks(runner)
-        await runPaginationWalkChecks(runner)
-        await runWorkflowChecks(runner)
-        await runHomeLibraryStoreChecks(runner)
-        await runMediaDetailStoreChecks(runner)
-        await runAccountEpochOwnershipChecks(runner)
-        await runCommandEffectRegistryChecks(runner)
-        await runPlaybackCommandFailureChecks(runner)
-        await runPlaybackCommandLifecycleParityChecks(runner)
-        await runRepeatTransitionChecks(runner)
-        await runPlaybackEventOutcomeChecks(runner)
-        await runPlaylistMutationChecks(runner)
-        await runQueueManagementChecks(runner)
-        await runTransientFeedbackChecks(runner)
+    private static let suites: [RegisteredCheckSuite] = [
+        RegisteredCheckSuite(name: "auth-flow") { runAuthFlowChecks($0) },
+        RegisteredCheckSuite(name: "keymaster-persistence") { runKeymasterPersistenceChecks($0) },
+        RegisteredCheckSuite(name: "keymaster-persistence-source-contract") {
+            runKeymasterPersistenceSourceContractChecks($0)
+        },
+        RegisteredCheckSuite(name: "pagination") { runPaginationChecks($0) },
+        RegisteredCheckSuite(name: "playback-panel") { runPlaybackPanelChecks($0) },
+        RegisteredCheckSuite(name: "loopback-parsing") { runLoopbackParsingChecks($0) },
+        RegisteredCheckSuite(name: "loopback-server") { await runLoopbackServerChecks($0) },
+        RegisteredCheckSuite(name: "auth-cookie-cleanup") { await runAuthCookieCleanupChecks($0) },
+        RegisteredCheckSuite(name: "keymaster-session-persistence") {
+            await runKeymasterSessionPersistenceChecks($0)
+        },
+        RegisteredCheckSuite(name: "auth-credential-retry") { await runAuthCredentialRetryChecks($0) },
+        RegisteredCheckSuite(name: "transport-retry") { await runTransportRetryChecks($0) },
+        RegisteredCheckSuite(name: "connect-metadata-transport") { await runConnectMetadataTransportChecks($0) },
+        RegisteredCheckSuite(name: "uri") { runURIChecks($0) },
+        RegisteredCheckSuite(name: "formatting") { runFormattingChecks($0) },
+        RegisteredCheckSuite(name: "track-attribute") { runTrackAttributeChecks($0) },
+        RegisteredCheckSuite(name: "fixture-contract") { runFixtureContractChecks($0) },
+        RegisteredCheckSuite(name: "engine-payload-contract") { runEnginePayloadContractChecks($0) },
+        RegisteredCheckSuite(name: "pcm-write-space") { runPCMWriteSpaceChecks($0) },
+        RegisteredCheckSuite(name: "engine-event-fanout") { runEngineEventFanoutChecks($0) },
+        RegisteredCheckSuite(name: "privacy-sanitization") { await runPrivacySanitizationChecks($0) },
+        RegisteredCheckSuite(name: "pagination-walk") { await runPaginationWalkChecks($0) },
+        RegisteredCheckSuite(name: "workflow") { await runWorkflowChecks($0) },
+        RegisteredCheckSuite(name: "home-library-store") { await runHomeLibraryStoreChecks($0) },
+        RegisteredCheckSuite(name: "account-epoch-ownership") { await runAccountEpochOwnershipChecks($0) },
+        RegisteredCheckSuite(name: "command-effect-registry") { await runCommandEffectRegistryChecks($0) },
+        RegisteredCheckSuite(name: "playback-command-failure") { await runPlaybackCommandFailureChecks($0) },
+        RegisteredCheckSuite(name: "playback-command-lifecycle-parity") {
+            await runPlaybackCommandLifecycleParityChecks($0)
+        },
+        RegisteredCheckSuite(name: "repeat-transition") { await runRepeatTransitionChecks($0) },
+        RegisteredCheckSuite(name: "playback-event-outcome") { await runPlaybackEventOutcomeChecks($0) },
+        RegisteredCheckSuite(name: "playlist-mutation") { await runPlaylistMutationChecks($0) },
+        RegisteredCheckSuite(name: "queue-management") { await runQueueManagementChecks($0) },
+        RegisteredCheckSuite(name: "transient-feedback") { await runTransientFeedbackChecks($0) },
+        RegisteredCheckSuite(name: "check-suite-selection") { runner in
+            runCheckSuiteSelectionChecks(runner, catalog: BoundaryChecksMain.suiteNames)
+        },
+    ]
+
+    static func main() async {
+        let catalog = suiteNames
+        let launch = CheckSuiteLaunch.interpret(
+            arguments: Array(CommandLine.arguments.dropFirst()),
+            catalog: catalog,
+            executableName: "AuralBoundaryChecks",
+            printOutput: { print($0) },
+            printError: writeCheckSelectionError
+        )
+        guard let namesToRun = launch.suiteNames else {
+            exit(launch.failed ? 2 : 0)
+        }
+
+        let runner = CheckRunner()
+        let runs = Dictionary(uniqueKeysWithValues: Self.suites.map { ($0.name, $0.run) })
+        for name in namesToRun {
+            guard let run = runs[name] else {
+                writeCheckSelectionError("Check suite \(name) was selected but not registered.")
+                exit(2)
+            }
+            await run(runner)
+        }
 
         if !runner.succeeded {
             print(runner.failures.joined(separator: "\n"))

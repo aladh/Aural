@@ -64,6 +64,29 @@ runs both non-shipping Swift check products:
 - `AuralChecks` exercises pure domain state, policies, parsing, and deterministic playback traces.
 - `AuralBoundaryChecks` exercises concrete codecs, fixtures, and injected coordinator/queue flows.
 
+`AuralChecks` depends only on `AuralDomain` and the tiny `AuralCheckSelection` helper. It does not
+link `AuralCore` or the Rust playback archive. Domain-only iteration can use SwiftPM directly:
+
+```bash
+swift build --disable-sandbox --product AuralChecks
+swift run --disable-sandbox --product AuralChecks
+swift run --disable-sandbox --product AuralChecks -- --help
+swift run --disable-sandbox --product AuralChecks -- --list
+swift run --disable-sandbox --product AuralChecks -- protobuf playback-reducer
+```
+
+`--list` prints stable suite names in registration order. Unknown or empty names exit nonzero
+before any check runs. Repeated names run once, in the first requested order. No-argument
+invocation still runs every registered suite. `./Scripts/check.sh` does not pass suite filters.
+
+`AuralBoundaryChecks` accepts the same `--help`, `--list`, and suite-name arguments, but it still
+compiles against `AuralCore` and is not a Rust-free path:
+
+```bash
+swift run --disable-sandbox --product AuralBoundaryChecks -- --list
+swift run --disable-sandbox --product AuralBoundaryChecks -- auth-flow workflow
+```
+
 For changes to build, packaging, dependency, FFI, or release behavior, also run the clean gate:
 
 ```bash
