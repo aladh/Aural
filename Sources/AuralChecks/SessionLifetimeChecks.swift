@@ -154,6 +154,41 @@ func runSessionLifetimeChecks(_ check: CheckRunner) {
         )
     }
 
+    check.suite("Playback command admission") {
+        check.check(
+            "an idle live session admits a command",
+            playbackCommandShouldAdmit(
+                isTearingDown: false,
+                allowsCommands: true,
+                hasPendingCommandForKind: false
+            )
+        )
+        check.check(
+            "teardown refuses admission",
+            !playbackCommandShouldAdmit(
+                isTearingDown: true,
+                allowsCommands: true,
+                hasPendingCommandForKind: false
+            )
+        )
+        check.check(
+            "a started termination gate refuses admission",
+            !playbackCommandShouldAdmit(
+                isTearingDown: false,
+                allowsCommands: false,
+                hasPendingCommandForKind: false
+            )
+        )
+        check.check(
+            "a pending command of the same kind refuses admission",
+            !playbackCommandShouldAdmit(
+                isTearingDown: false,
+                allowsCommands: true,
+                hasPendingCommandForKind: true
+            )
+        )
+    }
+
     check.suite("Playback command finish follow-up") {
         let other = UUID(uuidString: "00000000-0000-0000-0000-000000000032")!
         func followUp(
@@ -334,6 +369,16 @@ func runSessionLifetimeChecks(_ check: CheckRunner) {
                 tearingDown: true
             ),
             .inert
+        )
+        check.equal(
+            "options reconnect-required after an accepted finish reports reconnect",
+            followUp(finishAccepted: true, succeeded: false, reconnect: true, kind: .options),
+            .reportFailure(reconnect: true)
+        )
+        check.equal(
+            "transfer reconnect-required after an accepted finish reports reconnect",
+            followUp(finishAccepted: true, succeeded: false, reconnect: true, kind: .transfer),
+            .reportFailure(reconnect: true)
         )
         check.equal(
             "a confirmed shuffle still reports success after a late failure",

@@ -128,11 +128,11 @@ private final class RegistryRuntime {
 
     @discardableResult
     func requestPause() -> Bool {
-        guard !session.isTearingDown else {
-            session.completions.append(false)
-            return false
-        }
-        guard session.state.pendingCommands[.transport] == nil else {
+        guard playbackCommandShouldAdmit(
+            isTearingDown: session.isTearingDown,
+            allowsCommands: true,
+            hasPendingCommandForKind: session.state.pendingCommands[.transport] != nil
+        ) else {
             session.completions.append(false)
             return false
         }
