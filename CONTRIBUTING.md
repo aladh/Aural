@@ -174,8 +174,6 @@ that contains credentials, OAuth redirects, raw API responses or payloads, or pr
 - Update public docs when requirements, supported behavior, storage, permissions, or release steps
   change.
 - Do not use real Spotify payloads as fixtures. Reduce them to synthetic, non-identifying examples.
-  Engine control-payload JSON under `Sources/AuralChecks/DeferredBoundaryChecks/Fixtures/engine`
-  is serialized from the pinned Rust structs and must not be hand-authored only on the Swift side.
 - State what you tested manually. Maintainers can perform account-backed acceptance testing when a
   contributor cannot safely do so.
 - Do not use GitHub issue-closing keywords such as `Closes`, `Fixes`, or `Resolves` in commit
