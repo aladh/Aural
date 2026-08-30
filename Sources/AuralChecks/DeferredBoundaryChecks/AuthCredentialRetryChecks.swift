@@ -362,9 +362,9 @@ func runAuthCredentialRetryChecks(_ check: CheckRunner) async {
         }
         check.equal("a second 401 is returned rather than retried again", status, 401)
         check.equal(
-            "credentials are invalidated only after the first 401", await invalidatedAccess.values, ["access-a"])
+            "both sent bearers are invalidated", await invalidatedAccess.values, ["access-a", "access-b"])
         check.equal(
-            "client token is invalidated only after the first 401", await invalidatedClient.values, ["client-a"])
+            "both sent client tokens are invalidated", await invalidatedClient.values, ["client-a", "client-b"])
         check.equal("the transport stops after the retry", transport.callCount, 2)
         check.equal("a third credential is never fetched", tokens.callCount, 2)
     }
@@ -415,9 +415,82 @@ func runAuthCredentialRetryChecks(_ check: CheckRunner) async {
             check.check("second queue 401 stays SpotifyWebPlayerAPIError, got \(error)", false)
         }
         check.equal("a second queue 401 is returned rather than retried again", status, 401)
-        check.equal("queue invalidates only the first sent bearer", await invalidated.values, ["queue-a"])
+        check.equal("queue invalidates both sent bearers", await invalidated.values, ["queue-a", "queue-b"])
+        check.equal("queue never sends a client token", transport.clientTokens, [])
         check.equal("queue stops after the retry", transport.callCount, 2)
         check.equal("queue never fetches a third bearer", tokens.callCount, 2)
+    }
+
+    await check.suite("Named invalidation does not discard a newer replacement") {
+        let currentAccess = SharedToken("access-b")
+        let currentClient = SharedToken("client-b")
+        let invalidatedAccess = RecordingInvalidator()
+        let invalidatedClient = RecordingInvalidator()
+        let tokens = CredentialSequence(values: ["access-a"])
+        let clients = CredentialSequence(values: ["client-a"])
+        let transport = ScriptedTransport(responses: [
+            (401, Data()),
+            (200, profileBody),
+        ])
+        let api = PartnerAPI(
+            accessToken: {
+                if tokens.callCount == 0 {
+                    return tokens.next()
+                }
+                return await currentAccess.value()
+            },
+            clientToken: {
+                if clients.callCount == 0 {
+                    return clients.next()
+                }
+                return await currentClient.value()
+            },
+            invalidateAccessToken: { rejected in
+                await invalidatedAccess.record(rejected)
+                await currentAccess.replace(rejected, with: "erased-access")
+            },
+            invalidateClientToken: { rejected in
+                await invalidatedClient.record(rejected)
+                await currentClient.replace(rejected, with: "erased-client")
+            },
+            transport: transport.send,
+            retryTiming: .immediate
+        )
+
+        let profile = try? await api.profile()
+        check.equal("retry succeeds with the live replacement", profile?.name, "Listener")
+        check.equal("the rejected bearer is still named", await invalidatedAccess.values, ["access-a"])
+        check.equal("the rejected client token is still named", await invalidatedClient.values, ["client-a"])
+        check.equal("the newer bearer survives named invalidation", await currentAccess.value(), "access-b")
+        check.equal("the newer client token survives named invalidation", await currentClient.value(), "client-b")
+        check.equal(
+            "retry carries the live replacement pair",
+            transport.authorizationTokens,
+            ["access-a", "access-b"]
+        )
+        check.equal(
+            "retry carries the live replacement client token",
+            transport.clientTokens,
+            ["client-a", "client-b"]
+        )
+        check.equal("the sequenced rejected pair is fetched once", tokens.callCount, 1)
+        check.equal("the transport is attempted twice", transport.callCount, 2)
+    }
+}
+
+private actor SharedToken {
+    private var current: String
+
+    init(_ value: String) {
+        current = value
+    }
+
+    func value() -> String { current }
+
+    func replace(_ rejected: String, with replacement: String) {
+        if current == rejected {
+            current = replacement
+        }
     }
 }
 
