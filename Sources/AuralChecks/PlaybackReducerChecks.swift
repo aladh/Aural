@@ -20,9 +20,14 @@ private func envelope(
     )
 }
 
-private func item(_ suffix: String, occurrence: Int = 0, provider: String = "web-api") -> PlaybackQueueItem {
+private func item(
+    _ suffix: String,
+    occurrence: Int = 0,
+    provider: String = "web-api",
+    uid: String = ""
+) -> PlaybackQueueItem {
     let uri = "spotify:track:\(suffix)"
-    return PlaybackQueueItem(id: "\(occurrence)-\(provider)-\(uri)", uri: uri, provider: provider)
+    return PlaybackQueueItem(uri: uri, provider: provider, occurrence: occurrence, uid: uid)
 }
 
 private func queue(
@@ -1175,7 +1180,11 @@ func runPlaybackReducerChecks(_ check: CheckRunner) {
         check.equal("a later provisional empty cannot erase an exact queue", state.queue, exact)
 
         let connectQueue = queue(
-            [item("connect", provider: "queue")], source: .connect, completeness: .complete, revision: 2)
+            [item("connect", occurrence: 4, provider: "queue", uid: "occ-connect")],
+            source: .connect,
+            completeness: .complete,
+            revision: 2
+        )
         _ = PlaybackReducer.reduce(
             &state, envelope: envelope(source: .engineQueue, revision: 4, event: .queue(connectQueue)))
         check.equal(
@@ -1184,6 +1193,8 @@ func runPlaybackReducerChecks(_ check: CheckRunner) {
             connectQueue.entries.map(\.uri)
         )
         check.equal("Connect remains the ordering source", state.queue.source, .connect)
+        check.equal("Connect keeps its typed occurrence", state.queue.entries.first?.occurrence, 4)
+        check.equal("Connect keeps its occurrence uid", state.queue.entries.first?.uid, "occ-connect")
 
         let webReorder = queue(
             [item("c"), item("a")],
@@ -1199,6 +1210,9 @@ func runPlaybackReducerChecks(_ check: CheckRunner) {
             connectQueue.entries.map(\.uri)
         )
         check.equal("Web refresh does not take ownership of Connect order", state.queue.source, .connect)
+        check.equal("Web refresh does not replace Connect typed occurrence", state.queue.entries.first?.occurrence, 4)
+        check.equal(
+            "Web refresh does not replace Connect occurrence uid", state.queue.entries.first?.uid, "occ-connect")
         check.equal(
             "a high-revision Web refresh does not overwrite the Connect ordering revision",
             state.queue.revision,
@@ -1236,7 +1250,7 @@ func runPlaybackReducerChecks(_ check: CheckRunner) {
         let duplicates = queue(
             [
                 item("same", occurrence: 0, provider: "queue"), item("same", occurrence: 1, provider: "queue"),
-                item("tail", provider: "queue"),
+                item("tail", occurrence: 2, provider: "queue"),
             ],
             source: .connect,
             completeness: .complete,
@@ -1248,6 +1262,8 @@ func runPlaybackReducerChecks(_ check: CheckRunner) {
             "duplicate queue uris preserve source order", state.queue.entries.map(\.uri),
             ["spotify:track:same", "spotify:track:same", "spotify:track:tail"])
         check.equal("the later Connect occurrence list keeps its own revision", state.queue.revision, 3)
+        check.equal(
+            "duplicate queue rows retain typed occurrence order", state.queue.entries.map(\.occurrence), [0, 1, 2])
         let duplicateIDs = state.queue.entries.map(\.id)
         check.check(
             "duplicate queue occurrences retain distinct identities",

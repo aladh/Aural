@@ -48,7 +48,7 @@ nonisolated func mergeQueueSnapshots(
             QueueEntry(
                 uri: item.uri,
                 provider: item.provider,
-                occurrence: queueOccurrence(item.id),
+                occurrence: item.occurrence,
                 uid: preservedQueueOccurrenceUID(incoming: item, index: index, current: current)
             )
         },
@@ -84,10 +84,6 @@ private extension ProvenanceQueueSnapshot {
             contextURI: contextURI
         )
     }
-}
-
-private nonisolated func queueOccurrence(_ id: String) -> Int {
-    id.split(separator: "-", maxSplits: 1).first.flatMap { Int($0) } ?? 0
 }
 
 nonisolated struct AcceptedConnectQueue: Sendable {

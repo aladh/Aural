@@ -578,6 +578,8 @@ func runQueueManagementChecks(_ runner: CheckRunner) async {
         await seedAuthoritativeQueue(player)
         let secondDuplicate = player.queueNextEntries[1].id
         let before = player.queueNextEntries
+        runner.equal("projection keeps typed upcoming occurrences", before.map(\.occurrence), [0, 1, 2])
+        runner.equal("projection keeps occurrence uids", before.map(\.uid), ["q0", "q1", "q2"])
         player.removeUpcomingQueueOccurrences(selectedIDs: [secondDuplicate])
         runner.check("set_queue was sent", await waitUntil { await remote.sendCount == 1 })
         let command = await remote.commands.first
@@ -1273,6 +1275,8 @@ func runQueueManagementChecks(_ runner: CheckRunner) async {
             let engine = try auralSourceFile("Aural/Spotify/RustPlaybackEngine.swift")
             let control = try auralSourceFile("Aural/Spotify/PlaybackCore.swift")
             let engineEvents = try auralSourceFile("Aural/Spotify/PlaybackStore+EngineEvents.swift")
+            let queueService = try auralSourceFile("Aural/Spotify/QueueService.swift")
+            let projections = try auralSourceFile("Aural/Spotify/PlaybackStore+Projections.swift")
             let models = try auralSourceFile("AuralDomain/PlaybackPanelModels.swift")
             runner.check(
                 "Connect intake binds occurrence uids into selectable identity",
@@ -1326,6 +1330,15 @@ func runQueueManagementChecks(_ runner: CheckRunner) async {
                 containsToken(
                     engineEvents, "receive(state, revision: state.revision, engineEpoch: state.sessionGeneration)")
                     && containsToken(engineEvents, "capturedEngineEpoch ?? state.sessionGeneration ?? engineGeneration")
+            )
+            runner.check(
+                "typed occurrence crosses queue merge and presentation without reparsing identity",
+                containsToken(queueService, "occurrence: item.occurrence")
+                    && containsToken(projections, "occurrence: $0.occurrence")
+                    && !containsToken(queueService, "queueOccurrence(")
+                    && !containsToken(projections, "queueOccurrence(")
+                    && !containsToken(queueService, "split(separator: \"-\"")
+                    && !containsToken(projections, "split(separator: \"-\"")
             )
             runner.check(
                 "local engine still has no set_queue operation",

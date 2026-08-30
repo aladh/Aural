@@ -213,6 +213,24 @@ func runPlaybackSupportChecks(_ check: CheckRunner) {
             QueueEntry(uri: "spotify:track:a", provider: "queue", occurrence: 1),
         ]
         check.check("duplicate queue tracks have distinct row identities", repeated[0].id != repeated[1].id)
+        check.equal("duplicate queue tracks keep typed occurrences", repeated.map(\.occurrence), [0, 1])
+        let uidBacked = QueueEntry(
+            uri: "spotify:track:a", provider: "queue", occurrence: 7, uid: "occurrence-uid"
+        )
+        let queueItem = PlaybackQueueItem(uidBacked)
+        check.equal("queue-item conversion keeps the typed occurrence", queueItem.occurrence, 7)
+        check.equal("queue-item conversion keeps UID-aware identity", queueItem.id, uidBacked.id)
+        check.equal("queue-item conversion keeps the occurrence uid", queueItem.uid, "occurrence-uid")
+        check.equal(
+            "an empty uid stays out of selectable identity",
+            repeated[1].id,
+            QueueEntry.identity(
+                occurrence: repeated[1].occurrence,
+                provider: repeated[1].provider,
+                uri: repeated[1].uri,
+                uid: ""
+            )
+        )
 
         let local = ConnectDevice(id: "local", name: "Aural", type: "computer", isActive: false)
         let remote = ConnectDevice(id: "phone", name: "Phone", type: "smartphone", isActive: true)
