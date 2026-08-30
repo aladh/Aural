@@ -1424,7 +1424,7 @@ func runQueueManagementChecks(_ runner: CheckRunner) async {
             )
             runner.check(
                 "the queue hook is an environment dependency, not a store sidecar",
-                containsToken(environment, "queueServiceHook: (any QueueServiceHook)?")
+                containsToken(environment, "queueServiceHook: (any QueueServiceHook)? = nil")
                     && containsToken(store, "hook: environment.queueServiceHook")
                     && !containsToken(store, "queueServiceHook: any QueueServiceHook")
             )

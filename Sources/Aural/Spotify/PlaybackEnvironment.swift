@@ -274,7 +274,35 @@ nonisolated struct PlaybackEnvironment: Sendable {
     let catalog: any CatalogProviding
     let playlistMutations: any PlaylistMutating
     let trackAttributes: any TrackAttributesProviding
-    let queueServiceHook: (any QueueServiceHook)? = nil
+    let queueServiceHook: (any QueueServiceHook)?
+
+    init(
+        remote: any RemotePlaybackClient,
+        local: any LocalPlaybackEngine,
+        webQueue: any WebQueueClient,
+        account: any AccountSession,
+        audioOutput: any AudioOutputPreparing,
+        preferences: any PlaybackPreferences,
+        lifecycle: any SystemLifecycleEvents,
+        clock: any PlaybackClock,
+        catalog: any CatalogProviding,
+        playlistMutations: any PlaylistMutating,
+        trackAttributes: any TrackAttributesProviding,
+        queueServiceHook: (any QueueServiceHook)? = nil
+    ) {
+        self.remote = remote
+        self.local = local
+        self.webQueue = webQueue
+        self.account = account
+        self.audioOutput = audioOutput
+        self.preferences = preferences
+        self.lifecycle = lifecycle
+        self.clock = clock
+        self.catalog = catalog
+        self.playlistMutations = playlistMutations
+        self.trackAttributes = trackAttributes
+        self.queueServiceHook = queueServiceHook
+    }
 
     static let live: PlaybackEnvironment = {
         let partnerAPI = PartnerAPI()
