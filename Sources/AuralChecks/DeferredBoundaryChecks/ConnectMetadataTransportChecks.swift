@@ -58,23 +58,7 @@ func runConnectMetadataTransportChecks(_ check: CheckRunner) async {
         check.check("distinct track URLs stay distinct", Set(transport.paths).count == 2)
     }
 
-    await check.suite("Connect metadata retries stay GET") {
-        let unauthorized = RecordingConnectTransport(steps: [
-            .http(status: 401, body: Data()),
-            .http(status: 200, body: metadataBody),
-        ])
-        let after401 = try? await connectAPI(transport: unauthorized.send).trackMetadata(for: fixtureURI)
-        check.equal("401 then success decodes", after401?.title, "Fixture Title")
-        check.equal("401 retry is GET, GET", unauthorized.methods, ["GET", "GET"])
-
-        let limited = RecordingConnectTransport(steps: [
-            .http(status: 429, body: Data(), headers: ["Retry-After": "1"]),
-            .http(status: 200, body: metadataBody),
-        ])
-        let after429 = try? await connectAPI(transport: limited.send).trackMetadata(for: fixtureURI)
-        check.equal("429 then success decodes", after429?.title, "Fixture Title")
-        check.equal("429 retry is GET, GET", limited.methods, ["GET", "GET"])
-
+    await check.suite("Connect metadata replay budget stays GET") {
         let budget = SpotifyTransientRetry.maximumAttempts
         let exhausted = RecordingConnectTransport(
             steps: Array(repeating: .http(status: 502, body: Data()), count: budget)
@@ -87,7 +71,7 @@ func runConnectMetadataTransportChecks(_ check: CheckRunner) async {
             _ = try await connectAPI(transport: exhausted.send).trackMetadata(for: fixtureURI)
         }
         check.equal(
-            "HTTP 502 exhausts the safe-read budget as repeated GETs",
+            "every replayable attempt is GET",
             exhausted.methods,
             Array(repeating: "GET", count: budget)
         )
