@@ -72,6 +72,11 @@ commit or pull request can reuse the nearest compatible tree and compile increme
 or architecture mismatch misses and rebuilds cleanly. Signing material, Cargo's target directory, and
 paths outside the checkout are not part of that cache.
 
+The same macos-15 job then compiles shipping `Aural` in release with `-DAURAL_DISTRIBUTION`, reusing
+the playback archive and `.build` cache. That step does not rerun Rust tests or Swift checks, and it
+does not package or sign. `./Scripts/compile-release-aural.sh` is the local compile-only command.
+`./Scripts/check-clean.sh` is still the clean-room Debug and Release full gate.
+
 `AuralChecks` depends only on `AuralDomain` and the tiny `AuralCheckSelection` helper. It does not
 link `AuralCore` or the Rust playback archive. Domain-only iteration can use SwiftPM directly:
 
