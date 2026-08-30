@@ -33,6 +33,7 @@ struct AlbumDetailView: View {
             } else {
                 TrackTable(
                     tracks: store.tracks,
+                    tracksRevision: store.tracksRevision,
                     metadata: metadata,
                     playback: playback,
                     playlistActions: playlistActions

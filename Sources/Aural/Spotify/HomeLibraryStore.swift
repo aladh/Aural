@@ -28,7 +28,8 @@ final class HomeLibraryStore {
     var playlists: [CatalogItem] = []
     var albums: [CatalogItem] = []
     var artists: [CatalogItem] = []
-    var likedTracks: [CatalogTrack] = []
+    private(set) var likedTracks: [CatalogTrack] = []
+    private(set) var likedTracksRevision: UInt64 = 0
     private(set) var loadingSections: Set<Section> = []
     private(set) var loadedSections: Set<Section> = []
     private(set) var errors: [Section: String] = [:]
@@ -77,7 +78,7 @@ final class HomeLibraryStore {
         playlists = []
         albums = []
         artists = []
-        likedTracks = []
+        replaceCatalogTracks(&likedTracks, revision: &likedTracksRevision, with: [])
         loadingSections = []
         loadedSections = []
         errors = [:]
@@ -210,7 +211,7 @@ final class HomeLibraryStore {
                     if section == .artists { self.artists = items }
                     self.updateLibraryItemCache()
                 case let .tracks(tracks):
-                    self.likedTracks = tracks
+                    replaceCatalogTracks(&likedTracks, revision: &likedTracksRevision, with: tracks)
                     self.metadata.replaceTracks(tracks, from: .library)
                     self.metadata.loadTrackAttributes(for: tracks)
                 }

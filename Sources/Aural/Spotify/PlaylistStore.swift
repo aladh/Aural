@@ -11,7 +11,8 @@ import Foundation
 @MainActor
 @Observable
 final class PlaylistStore {
-    var tracks: [CatalogTrack] = []
+    private(set) var tracks: [CatalogTrack] = []
+    private(set) var tracksRevision: UInt64 = 0
     var dateSort: PlaylistDateSort = .playlistOrder {
         didSet {
             guard oldValue != dateSort else { return }
@@ -47,8 +48,7 @@ final class PlaylistStore {
         loadTask?.cancel()
         loadTask = nil
         loadSessionSnapshot = nil
-        tracks = []
-        sortedTracks = []
+        replaceTracks([])
         dateSort = .playlistOrder
         description = ""
         loadedURI = nil
@@ -61,8 +61,7 @@ final class PlaylistStore {
     /// Keeps `loadedURI` and `tracks` paired. Production loading still goes through `load(_:)`.
     func replaceLoadedPlaylist(uri: String, tracks: [CatalogTrack]) {
         loadedURI = uri
-        self.tracks = tracks
-        resortTracks()
+        replaceTracks(tracks)
     }
 
     func load(_ item: CatalogItem, force: Bool = false) async {
@@ -86,8 +85,7 @@ final class PlaylistStore {
         let isNewPlaylist = loadedURI != item.uri
         loadedURI = item.uri
         if isNewPlaylist {
-            tracks = []
-            sortedTracks = []
+            replaceTracks([])
             description = ""
             ownerURI = item.ownerURI
             metadata.replaceTracks([], from: .playlist)
@@ -140,8 +138,7 @@ final class PlaylistStore {
                 dateSort = .playlistOrder
             }
             let entries = playlist.content.flatMap(\.items) ?? []
-            tracks = entries.compactMap(CatalogMapping.playlistTrack(from:))
-            resortTracks()
+            replaceTracks(entries.compactMap(CatalogMapping.playlistTrack(from:)))
             metadata.replaceTracks(tracks, from: .playlist)
             metadata.loadTrackAttributes(for: tracks)
         } catch is CancellationError {
@@ -152,6 +149,11 @@ final class PlaylistStore {
             guard isCurrent(identity, uri: item.uri) else { return }
             self.error = error.localizedDescription
         }
+    }
+
+    private func replaceTracks(_ newTracks: [CatalogTrack]) {
+        replaceCatalogTracks(&tracks, revision: &tracksRevision, with: newTracks)
+        resortTracks()
     }
 
     private func isCurrent(

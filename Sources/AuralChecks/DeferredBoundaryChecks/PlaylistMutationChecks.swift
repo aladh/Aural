@@ -466,12 +466,46 @@ func runPlaylistMutationChecks(_ runner: CheckRunner) async {
         feedback.dismiss()
     }
 
+    runner.suite("Playlist track collection revision") {
+        let services = ScriptedPlaylistServices()
+        let session = CatalogSessionAvailability(accountEpoch: 1, isAvailable: true)
+        let feedback = TransientFeedbackPresenter(clock: HoldingClock())
+        let catalog = makeCatalog(services: services, session: session, feedback: feedback)
+        let first = fixtureTrack(id: "uid-a", uri: "spotify:track:a")
+        let second = fixtureTrack(id: "uid-b", uri: "spotify:track:b")
+        catalog.playlistStore.replaceLoadedPlaylist(uri: "spotify:playlist:owned", tracks: [first, second])
+        let loadedRevision = catalog.playlistStore.tracksRevision
+        runner.check("loading tracks bumps the collection revision", loadedRevision > 0)
+        catalog.playlistStore.replaceLoadedPlaylist(
+            uri: "spotify:playlist:owned",
+            tracks: [first, fixtureTrack(id: "uid-mid", uri: "spotify:track:mid"), second]
+        )
+        runner.equal(
+            "same-count middle replacement bumps again",
+            catalog.playlistStore.tracksRevision,
+            loadedRevision &+ 1
+        )
+        runner.equal(
+            "authoritative rows follow the replacement",
+            catalog.playlistStore.tracks.map(\.id),
+            ["uid-a", "uid-mid", "uid-b"]
+        )
+    }
+
     runner.suite("Playlist mutation UI contract and drag prototype") {
         runner.noThrow("playlist mutation sources are readable") {
             let table = try auralSourceFile("Aural/Views/SharedComponents.swift")
             let providing = try auralSourceFile("Aural/Spotify/CatalogProviding.swift")
             let mutating = try auralSourceFile("Aural/Spotify/PlaylistMutating.swift")
             let controller = try auralSourceFile("Aural/Spotify/PlaylistMutationController.swift")
+            let playlistStore = try auralSourceFile("Aural/Spotify/PlaylistStore.swift")
+            let searchStore = try auralSourceFile("Aural/Spotify/SearchStore.swift")
+            let albumStore = try auralSourceFile("Aural/Spotify/MediaDetailStores.swift")
+            let homeLibrary = try auralSourceFile("Aural/Spotify/HomeLibraryStore.swift")
+            let playlistDetail = try auralSourceFile("Aural/Views/PlaylistDetailView.swift")
+            let mediaDetail = try auralSourceFile("Aural/Views/MediaDetailViews.swift")
+            let libraryViews = try auralSourceFile("Aural/Views/LibraryViews.swift")
+            let root = try auralSourceFile("Aural/RootView.swift")
             let contractURL = URL(fileURLWithPath: #filePath)
                 .deletingLastPathComponent()
                 .deletingLastPathComponent()
@@ -492,6 +526,31 @@ func runPlaylistMutationChecks(_ runner: CheckRunner) async {
                     && containsToken(table, "Menu(\"Add to Playlist\")")
                     && containsToken(table, "onDeleteCommand")
                     && containsToken(table, "Remove from Playlist")
+            )
+            runner.check(
+                "TrackTable projects rows from an owner revision instead of comparing tracks",
+                containsToken(table, "TrackTableDisplayCache")
+                    && containsToken(table, "let tracksRevision: UInt64")
+                    && containsToken(table, "onChange(of: displayInputs")
+                    && !containsToken(table, "onChange(of: tracks")
+                    && !containsToken(table, "displayedTracks")
+                    && !containsToken(table, "updateDisplayedTracks")
+            )
+            runner.check(
+                "every TrackTable owner passes a collection revision",
+                containsToken(playlistDetail, "tracksRevision: store.tracksRevision")
+                    && containsToken(mediaDetail, "tracksRevision: store.tracksRevision")
+                    && containsToken(libraryViews, "tracksRevision: store.tracksRevision")
+                    && containsToken(libraryViews, "tracksRevision: tracksRevision")
+                    && containsToken(root, "tracksRevision: catalog.homeLibrary.likedTracksRevision")
+            )
+            runner.check(
+                "catalog track lists bump the collection revision on assignment",
+                containsToken(playlistStore, "replaceCatalogTracks(&tracks, revision: &tracksRevision")
+                    && containsToken(searchStore, "replaceCatalogTracks(&tracks, revision: &tracksRevision")
+                    && containsToken(albumStore, "replaceCatalogTracks(")
+                    && containsToken(albumStore, "revision: &tracksRevision")
+                    && containsToken(homeLibrary, "replaceCatalogTracks(&likedTracks, revision: &likedTracksRevision")
             )
             runner.check(
                 "Remove from Playlist and Delete pass only occurrence UIDs",

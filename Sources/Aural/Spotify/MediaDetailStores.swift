@@ -13,6 +13,7 @@ import Foundation
 final class AlbumDetailStore {
     private(set) var item: CatalogItem?
     private(set) var tracks: [CatalogTrack] = []
+    private(set) var tracksRevision: UInt64 = 0
     private(set) var releaseDate = ""
     private(set) var isLoading = false
     private(set) var error: String?
@@ -36,7 +37,7 @@ final class AlbumDetailStore {
         task = nil
         loadedSession = nil
         item = nil
-        tracks = []
+        replaceCatalogTracks(&tracks, revision: &tracksRevision, with: [])
         releaseDate = ""
         isLoading = false
         error = nil
@@ -53,7 +54,7 @@ final class AlbumDetailStore {
         task = nil
         loadedSession = nil
         item = selected
-        tracks = []
+        replaceCatalogTracks(&tracks, revision: &tracksRevision, with: [])
         releaseDate = ""
         error = nil
         isLoading = true
@@ -67,7 +68,11 @@ final class AlbumDetailStore {
             do {
                 let album = try await provider.album(id: id)
                 guard self.isCurrent(identity, uri: selected.uri) else { return }
-                tracks = album.tracks.compactMap { CatalogMapping.albumTrack(from: $0, album: album) }
+                replaceCatalogTracks(
+                    &tracks,
+                    revision: &tracksRevision,
+                    with: album.tracks.compactMap { CatalogMapping.albumTrack(from: $0, album: album) }
+                )
                 releaseDate = album.date?.day ?? ""
                 loadedSession = currentSession
                 metadata.replaceTracks(tracks, from: .album)

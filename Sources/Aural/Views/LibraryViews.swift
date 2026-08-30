@@ -85,6 +85,7 @@ struct SearchView: View {
                                 Text("Tracks").font(.title2.bold())
                                 TrackTable(
                                     tracks: store.tracks,
+                                    tracksRevision: store.tracksRevision,
                                     metadata: metadata,
                                     playback: playback,
                                     playlistActions: playlistActions
@@ -203,6 +204,7 @@ struct TrackCollectionView: View {
     let title: String
     let subtitle: String
     let tracks: [CatalogTrack]
+    let tracksRevision: UInt64
     let metadata: CatalogMetadataRepository
     let playback: CatalogPlaybackAccess
     var reloadError: String? = nil
@@ -260,6 +262,7 @@ struct TrackCollectionView: View {
             } else {
                 TrackTable(
                     tracks: tracks,
+                    tracksRevision: tracksRevision,
                     metadata: metadata,
                     playback: playback,
                     playlistActions: playlistActions

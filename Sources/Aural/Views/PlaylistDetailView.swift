@@ -119,6 +119,7 @@ struct PlaylistDetailView: View {
         } else {
             TrackTable(
                 tracks: store.tracks,
+                tracksRevision: store.tracksRevision,
                 metadata: metadata,
                 playback: playback,
                 showsDateAdded: true,
