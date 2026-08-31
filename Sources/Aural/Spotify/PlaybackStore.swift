@@ -210,6 +210,9 @@ final class PlaybackStore {
     /// MainActor watermark for Connect *callback* identity. Distinct from
     /// `state.sourceRevisions[.engineQueue]`, which tracks provenance snapshots after merge.
     @ObservationIgnored var connectQueueCallback = ConnectQueueCallbackWatermark()
+    /// Inspector-facing version advanced only after a changed Connect URI ordering commits.
+    /// Refresh-produced queue projections must never write it or restart their own hydration.
+    var queueInspectorOrderingVersion: UInt64 = 0
     @ObservationIgnored var shuffleHistoryCache: [String: TimeInterval] = [:]
     /// Connect protocol queue used for `set_queue`. This is a MainActor projection of
     /// `QueueService`'s mutation snapshot, updated only after accepted Connect intake or a

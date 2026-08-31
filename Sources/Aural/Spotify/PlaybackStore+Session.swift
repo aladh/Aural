@@ -67,6 +67,7 @@ extension PlaybackStore {
         )
         engineGeneration &+= 1
         connectQueueCallback.reset()
+        queueInspectorOrderingVersion = 0
         catalogSession.update(accountEpoch: accountEpoch, isAvailable: false)
         effects.cancelAccountScoped()
         hasReceivedPlaybackSnapshot = false
@@ -133,6 +134,7 @@ extension PlaybackStore {
         let staleConnectionTask = accountStore.prepareShutdownForTermination()
         engineGeneration &+= 1
         connectQueueCallback.reset()
+        queueInspectorOrderingVersion = 0
         catalogSession.update(accountEpoch: accountEpoch, isAvailable: false)
         effects.cancelAccountScoped()
         effects.cancel(.engineEvents)

@@ -140,16 +140,26 @@ func runPlaybackPanelChecks(_ check: CheckRunner) {
         let queueWaitingForOrdering = SidePanelQueueRefreshIdentity(
             isConnected: true,
             currentTrackURI: "spotify:track:current",
-            queueURIs: []
+            connectOrderingVersion: 0
         )
         let queueWithOrdering = SidePanelQueueRefreshIdentity(
             isConnected: true,
             currentTrackURI: "spotify:track:current",
-            queueURIs: ["spotify:track:next"]
+            connectOrderingVersion: 1
         )
         check.check(
             "launch-time queue ordering restarts metadata hydration",
             queueWaitingForOrdering != queueWithOrdering
+        )
+        let queueAfterHydration = SidePanelQueueRefreshIdentity(
+            isConnected: true,
+            currentTrackURI: "spotify:track:current",
+            connectOrderingVersion: queueWithOrdering.connectOrderingVersion
+        )
+        check.equal(
+            "queue hydration does not schedule a second refresh",
+            queueAfterHydration,
+            queueWithOrdering
         )
     }
 
