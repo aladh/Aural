@@ -2018,10 +2018,18 @@ func runPlaybackCommandFailureChecks(_ runner: CheckRunner) async {
             "accepted transfer-to-this-Mac does not use the command-error notice",
             acceptedLocalMacStore.transientCommandError
         )
+        let acceptedLocalOperation: Bool
+        switch acceptedLocalMacEngine.operations.first {
+        case .transferToLocal:
+            acceptedLocalOperation = true
+        default:
+            acceptedLocalOperation = false
+        }
+        runner.check("accepted transfer-to-this-Mac uses the local transfer operation", acceptedLocalOperation)
         runner.equal(
             "accepted transfer-to-this-Mac sends one local operation",
-            acceptedLocalMacEngine.operations,
-            [.transferToLocal]
+            acceptedLocalMacEngine.operations.count,
+            1
         )
         await acceptedLocalMacStore.shutdownForTermination()
     }
