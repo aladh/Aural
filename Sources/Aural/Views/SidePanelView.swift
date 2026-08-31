@@ -192,8 +192,11 @@ private struct QueueUpcomingRow: View {
     let metadata: CatalogMetadataRepository
 
     var body: some View {
+        let displayInfo = metadata.displayInfo(for: entry.uri)
+        let subtitle = displayInfo.title == "Unknown track" ? entry.sourceLabel : displayInfo.artist
+
         VStack(alignment: .leading, spacing: 1) {
-            Text(title)
+            Text(displayInfo.title)
                 .font(.callout)
                 .lineLimit(1)
             Text(subtitle)
@@ -203,16 +206,7 @@ private struct QueueUpcomingRow: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.vertical, 2)
-        .accessibilityLabel("\(title), \(subtitle)")
-    }
-
-    private var title: String {
-        metadata.displayInfo(for: entry.uri).title
-    }
-
-    private var subtitle: String {
-        let artist = metadata.displayInfo(for: entry.uri).artist
-        return title == "Unknown track" ? entry.sourceLabel : artist
+        .accessibilityLabel("\(displayInfo.title), \(subtitle)")
     }
 }
 
