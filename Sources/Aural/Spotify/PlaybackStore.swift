@@ -313,10 +313,27 @@ final class PlaybackStore {
             with: Task { [weak self, environment] in
                 guard let self else { return }
                 let epoch = self.accountEpoch
-                self.setShuffleEnabled(await environment.preferences.shuffleEnabled())
-                guard !Task.isCancelled, self.accountEpoch == epoch else { return }
-                self.lastRemoteDeviceID = await environment.preferences.lastRemoteDeviceID()
-                self.shuffleHistoryCache = await environment.preferences.shuffleHistory()
+                let shuffleEnabled = await environment.preferences.shuffleEnabled()
+                guard
+                    !Task.isCancelled,
+                    self.terminationGate.allowsCommands,
+                    self.accountEpoch == epoch
+                else { return }
+                self.setShuffleEnabled(shuffleEnabled)
+                let lastRemoteDeviceID = await environment.preferences.lastRemoteDeviceID()
+                guard
+                    !Task.isCancelled,
+                    self.terminationGate.allowsCommands,
+                    self.accountEpoch == epoch
+                else { return }
+                self.lastRemoteDeviceID = lastRemoteDeviceID
+                let shuffleHistory = await environment.preferences.shuffleHistory()
+                guard
+                    !Task.isCancelled,
+                    self.terminationGate.allowsCommands,
+                    self.accountEpoch == epoch
+                else { return }
+                self.shuffleHistoryCache = shuffleHistory
             })
     }
 

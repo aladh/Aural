@@ -348,6 +348,34 @@ private actor WorkflowPreferences: PlaybackPreferences {
     func setShuffleHistory(_ value: [String: TimeInterval]) { history = value }
 }
 
+/// A dependency that deliberately ignores task cancellation until the check releases it. This
+/// proves PlaybackStore revalidates process/account identity after each preference suspension.
+private actor ParkedWorkflowPreferences: PlaybackPreferences {
+    private var shuffleContinuation: CheckedContinuation<Bool, Never>?
+    private var shuffleReadStarted = false
+
+    func shuffleEnabled() async -> Bool {
+        shuffleReadStarted = true
+        return await withCheckedContinuation { continuation in
+            shuffleContinuation = continuation
+        }
+    }
+
+    func shuffleIsParked() -> Bool { shuffleReadStarted && shuffleContinuation != nil }
+
+    func resumeShuffle() {
+        let continuation = shuffleContinuation
+        shuffleContinuation = nil
+        continuation?.resume(returning: true)
+    }
+
+    func setShuffleEnabled(_: Bool) {}
+    func lastRemoteDeviceID() -> String? { "spotify:device:stale" }
+    func setLastRemoteDeviceID(_: String?) {}
+    func shuffleHistory() -> [String: TimeInterval] { ["spotify:track:stale": 1] }
+    func setShuffleHistory(_: [String: TimeInterval]) {}
+}
+
 private struct WorkflowAudio: AudioOutputPreparing { func prepareForPlayback() throws {} }
 private struct WorkflowClock: PlaybackClock {
     func now() -> Date { Date(timeIntervalSince1970: 1_800_000_000) }
@@ -926,6 +954,44 @@ func runWorkflowChecks(_ runner: CheckRunner) async {
         runner.equal("cancelled bootstrap leaves no active revocation subscription", account.activeSubscriptionCount, 0)
         runner.equal(
             "cancelled bootstrap leaves no active lifecycle subscription", lifecycle.activeSubscriptionCount, 0)
+    }
+
+    await runner.suite("Termination wins during preference restoration") {
+        let engine = WorkflowEngine()
+        let account = WorkflowAccount()
+        let lifecycle = WorkflowLifecycle()
+        let preferences = ParkedWorkflowPreferences()
+        let environment = PlaybackEnvironment(
+            remote: RecordingRemoteClient(),
+            local: engine,
+            webQueue: UnavailableWebQueue(),
+            account: account,
+            audioOutput: WorkflowAudio(),
+            preferences: preferences,
+            lifecycle: lifecycle,
+            clock: WorkflowClock(),
+            catalog: WorkflowCatalog(),
+            playlistMutations: UnavailablePlaylistMutations(),
+            trackAttributes: WorkflowAttributes()
+        )
+        let player = PlaybackStore(
+            environment: environment,
+            feedback: TransientFeedbackPresenter(clock: environment.clock)
+        )
+
+        let restore = Task { await player.restore() }
+        runner.check(
+            "preference read parks while account restoration proceeds",
+            await waitUntil { await preferences.shuffleIsParked() && engine.count("initialize") == 1 }
+        )
+        await player.shutdownForTermination()
+        await preferences.resumeShuffle()
+        await restore.value
+
+        runner.equal("late preference read cannot restore shuffle", player.state.options.shuffle, false)
+        runner.nil_("late preference read cannot restore a remote device", player.lastRemoteDeviceID)
+        runner.equal("late preference read cannot restore shuffle history", player.shuffleHistoryCache, [:])
+        runner.equal("termination after account restore shuts down once", engine.count("shutdown"), 1)
     }
 }
 
