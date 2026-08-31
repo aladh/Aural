@@ -853,9 +853,13 @@ func runWorkflowChecks(_ runner: CheckRunner) async {
             feedback: TransientFeedbackPresenter(clock: environment.clock)
         )
         await player.restore()
-        while engine.count("eventSubscriptions") == 0 || account.subscriptionCount == 0
-            || lifecycle.subscriptionCount == 0
-        { await Task.yield() }
+        runner.check(
+            "restore installs every process subscription",
+            await waitUntil {
+                engine.count("eventSubscriptions") != 0 && account.subscriptionCount != 0
+                    && lifecycle.subscriptionCount != 0
+            }
+        )
         runner.equal("stored grant restores the real store", player.phase, .ready)
         runner.equal("engine initializes once", engine.count("initialize"), 1)
         runner.equal("restore starts one engine-event subscription", engine.count("eventSubscriptions"), 1)
@@ -907,9 +911,13 @@ func runWorkflowChecks(_ runner: CheckRunner) async {
 
         await player.shutdownForTermination()
         await player.shutdownForTermination()
-        while engine.count("activeEventSubscriptions") != 0 || account.activeSubscriptionCount != 0
-            || lifecycle.activeSubscriptionCount != 0
-        { await Task.yield() }
+        runner.check(
+            "termination settles every process subscription",
+            await waitUntil {
+                engine.count("activeEventSubscriptions") == 0 && account.activeSubscriptionCount == 0
+                    && lifecycle.activeSubscriptionCount == 0
+            }
+        )
         runner.equal("termination shutdown is idempotent", engine.count("shutdown"), 2)
         runner.equal("termination cancels the engine-event subscription", engine.count("activeEventSubscriptions"), 0)
         runner.equal("termination cancels the grant-revocation subscription", account.activeSubscriptionCount, 0)
