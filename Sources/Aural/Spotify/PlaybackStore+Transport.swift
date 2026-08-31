@@ -226,11 +226,18 @@ extension PlaybackStore {
     func transferPlayback(to device: ConnectDevice) {
         guard canStartPlayback else { return }
         guard device.isActive == false, device.id != activeRemoteDevice?.id else { return }
+        let successTargetName = device.id == localDeviceID ? "This Mac" : device.name
+        let announceSuccess: @MainActor (Bool) -> Void = { [weak self] accepted in
+            if accepted {
+                self?.feedback.success("Playing on \(successTargetName)")
+            }
+        }
         if device.id == localDeviceID {
             performCommand(
                 "Could not move playback to this Mac",
                 operation: .transferToLocal,
-                kind: .transfer
+                kind: .transfer,
+                completion: announceSuccess
             )
             return
         }
@@ -244,12 +251,9 @@ extension PlaybackStore {
                     isActive: false
                 )),
             operation: .transferToDevice(device.id),
-            kind: .transfer
-        ) { [weak self] accepted in
-            if accepted {
-                self?.showTransientCommandError("Playing on \(device.name)")
-            }
-        }
+            kind: .transfer,
+            completion: announceSuccess
+        )
     }
 
 }
