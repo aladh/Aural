@@ -840,6 +840,94 @@ func runQueueManagementChecks(_ runner: CheckRunner) async {
         await player.shutdownForTermination()
     }
 
+    await runner.suite("Queue inspector refresh follows applied Connect ordering") {
+        let remote = QueueRemoteClient(.succeed)
+        let feedback = TransientFeedbackPresenter(clock: SystemPlaybackClock(), duration: 4)
+        let hook = QueueServiceTestHook()
+        let player = PlaybackStore(
+            environment: queueEnvironment(remote: remote, queueServiceHook: hook),
+            feedback: feedback
+        )
+        seedRemoteOwner(player)
+        await player.queueService.reset(accountEpoch: player.accountEpoch)
+        await hook.parkNextConnectAccept()
+        player.receive(
+            connectQueueEnvelope(
+                sequence: 1,
+                revision: 2,
+                sessionGeneration: player.engineGeneration
+            )
+        )
+        runner.check(
+            "Connect accept is parked after callback admission",
+            await waitUntil { await hook.connectAcceptIsParked() }
+        )
+        runner.equal("callback admission records its dedupe watermark", player.connectQueueCallback.revision, 2)
+        runner.equal(
+            "callback admission does not restart inspector hydration",
+            player.queueInspectorOrderingVersion,
+            0
+        )
+
+        let staleEntry = QueueEntry(uri: "spotify:track:stale", provider: "queue", occurrence: 0)
+        let staleTrack = CatalogTrack(
+            id: staleEntry.uri,
+            uri: staleEntry.uri,
+            title: "Stale",
+            artist: "Artist",
+            album: "",
+            duration: 180,
+            artworkURL: nil,
+            addedAt: nil
+        )
+        let fallback = await player.queueService.refresh(
+            fallbackEntries: [staleEntry],
+            cachedTracks: [staleTrack],
+            currentTrackURI: player.trackURI,
+            accountEpoch: player.accountEpoch
+        )
+        if let fallback {
+            player.apply(fallback, engineEpoch: player.engineGeneration)
+        }
+        runner.equal(
+            "parked fallback publishes its stale ordering", player.queueNextEntries.map(\.uri), [staleEntry.uri])
+        runner.equal(
+            "fallback projection does not restart inspector hydration",
+            player.queueInspectorOrderingVersion,
+            0
+        )
+
+        await hook.resumeConnectAccept()
+        runner.check(
+            "accepted Connect ordering advances the inspector token",
+            await waitUntil { player.queueInspectorOrderingVersion == 1 }
+        )
+        runner.equal(
+            "accepted Connect ordering replaces the earlier fallback",
+            player.queueNextEntries.map(\.uri),
+            ["spotify:track:dup", "spotify:track:other"]
+        )
+
+        let acceptedVersion = player.queueInspectorOrderingVersion
+        player.receive(
+            connectQueueEnvelope(
+                sequence: 2,
+                revision: 3,
+                sessionGeneration: player.engineGeneration
+            )
+        )
+        runner.check(
+            "same-ordering Connect redelivery is applied",
+            await waitUntil { player.queueMutation?.sourceRevision == 3 }
+        )
+        runner.equal(
+            "same accepted ordering does not restart inspector hydration",
+            player.queueInspectorOrderingVersion,
+            acceptedVersion
+        )
+        await player.shutdownForTermination()
+    }
+
     await runner.suite("Connect queue stamps payload session generation") {
         let remote = QueueRemoteClient(.succeed)
         let feedback = TransientFeedbackPresenter(clock: SystemPlaybackClock(), duration: 4)

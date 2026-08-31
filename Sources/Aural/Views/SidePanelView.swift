@@ -9,12 +9,12 @@ import AuralDomain
 import SwiftUI
 
 /// Restarts queue hydration when launch-time Connect ordering arrives after the account becomes
-/// ready. Metadata-only repository updates deliberately do not change this identity, avoiding a
-/// refresh loop while individual track names fill in.
+/// ready. Queue snapshots produced by that hydration deliberately do not change this identity,
+/// avoiding a redundant second refresh while ordering and metadata converge.
 struct SidePanelQueueRefreshIdentity: Equatable {
     let isConnected: Bool
     let currentTrackURI: String
-    let queueURIs: [String]
+    let connectOrderingVersion: UInt64
 }
 
 struct SidePanelView: View {
@@ -56,7 +56,7 @@ struct SidePanelView: View {
         SidePanelQueueRefreshIdentity(
             isConnected: player.isConnected,
             currentTrackURI: player.trackURI,
-            queueURIs: player.queueNextEntries.map(\.uri)
+            connectOrderingVersion: player.queueInspectorOrderingVersion
         )
     }
 

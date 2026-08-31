@@ -310,7 +310,8 @@ extension PlaybackStore {
         effects.cancel(.queueSnapshot)
     }
 
-    func apply(_ snapshot: ProvenanceQueueSnapshot, engineEpoch: UInt64) {
+    @discardableResult
+    func apply(_ snapshot: ProvenanceQueueSnapshot, engineEpoch: UInt64) -> Bool {
         let accepted = send(
             .queue(
                 PlaybackQueueSnapshot(
@@ -329,11 +330,12 @@ extension PlaybackStore {
             accountEpoch: snapshot.accountEpoch,
             receivedAt: snapshot.receivedAt
         )
-        guard accepted else { return }
+        guard accepted else { return false }
         var retainedURIs = Set(snapshot.entries.map(\.uri))
         if let contextURI = snapshot.contextURI { retainedURIs.insert(contextURI) }
         catalog.metadata.retainTracks(from: .queue, for: retainedURIs)
         catalog.metadata.replaceTracks(snapshot.tracks, from: .queue)
+        return true
     }
 
 }

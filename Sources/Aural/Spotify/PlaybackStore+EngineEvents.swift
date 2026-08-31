@@ -166,8 +166,12 @@ extension PlaybackStore {
                 guard !Task.isCancelled, !self.isTearingDown else { return }
                 guard self.accountEpoch == epoch, self.engineGeneration <= engineEpoch else { return }
                 guard let accepted else { return }
+                let previousOrdering = self.state.queue.entries.map(\.uri)
                 self.queueMutation = accepted.mutation
-                self.apply(accepted.snapshot, engineEpoch: engineEpoch)
+                guard self.apply(accepted.snapshot, engineEpoch: engineEpoch) else { return }
+                if self.state.queue.entries.map(\.uri) != previousOrdering {
+                    self.queueInspectorOrderingVersion &+= 1
+                }
             })
 
         guard let track = state.track else { return }
