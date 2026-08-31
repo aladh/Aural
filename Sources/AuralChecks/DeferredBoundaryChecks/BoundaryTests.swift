@@ -37,6 +37,9 @@ enum BoundaryChecksMain {
             RegisteredCheckSuite(name: "engine-payload-contract") { runEnginePayloadContractChecks($0) },
             RegisteredCheckSuite(name: "pcm-write-space") { runPCMWriteSpaceChecks($0) },
             RegisteredCheckSuite(name: "engine-event-fanout") { runEngineEventFanoutChecks($0) },
+            RegisteredCheckSuite(name: "audio-renderer-ownership") {
+                runAudioRendererOwnershipChecks($0)
+            },
             RegisteredCheckSuite(name: "privacy-sanitization") { await runPrivacySanitizationChecks($0) },
             RegisteredCheckSuite(name: "pagination-walk") { await runPaginationWalkChecks($0) },
             RegisteredCheckSuite(name: "workflow") { await runWorkflowChecks($0) },
