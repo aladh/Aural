@@ -226,9 +226,10 @@ extension PlaybackStore {
     func transferPlayback(to device: ConnectDevice) {
         guard canStartPlayback else { return }
         guard device.isActive == false, device.id != activeRemoteDevice?.id else { return }
+        let successTargetName = device.id == localDeviceID ? "This Mac" : device.name
         let announceSuccess: @MainActor (Bool) -> Void = { [weak self] accepted in
             if accepted {
-                self?.feedback.success("Playing on \(device.name)")
+                self?.feedback.success("Playing on \(successTargetName)")
             }
         }
         if device.id == localDeviceID {
