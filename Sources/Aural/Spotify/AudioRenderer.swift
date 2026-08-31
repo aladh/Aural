@@ -284,9 +284,15 @@ final nonisolated class AudioRenderer: @unchecked Sendable {
                 return
             }
 
-            // Allocate temporary buffer for this chunk
+            // Allocate through the same allocator Core Media will use to release the block.
             let chunkSize = toRead * Self.bytesPerSample
-            let chunk = UnsafeMutableRawPointer.allocate(byteCount: chunkSize, alignment: Self.bytesPerSample)
+            guard let chunk = CFAllocatorAllocate(kCFAllocatorDefault, chunkSize, 0) else {
+                isRequestingData = false
+                bufferLock.unlock()
+                renderer.stopRequestingMediaData()
+                debugLog("AudioRenderer", "Failed to allocate audio chunk")
+                return
+            }
 
             // Copy with wrap-around
             let firstChunk = min(toRead, Self.ringBufferCapacity - cursor.readIndex)
@@ -319,7 +325,7 @@ final nonisolated class AudioRenderer: @unchecked Sendable {
             )
 
             guard status == kCMBlockBufferNoErr, let block = blockBuffer else {
-                chunk.deallocate()
+                CFAllocatorDeallocate(kCFAllocatorDefault, chunk)
                 debugLog("AudioRenderer", "Failed to create CMBlockBuffer: \(status)")
                 return
             }
