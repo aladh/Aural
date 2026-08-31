@@ -10,7 +10,14 @@ import Foundation
 
 extension PlaybackStore {
     func restore() async {
+        guard terminationGate.allowsCommands else { return }
+        startLifetimeEffectsIfNeeded()
+        let queueServiceBootstrap = effects.settlement(of: .queueServiceBootstrap)
+        let preferencesRestore = effects.settlement(of: .preferencesRestore)
+        await queueServiceBootstrap?.wait()
+        guard terminationGate.allowsCommands else { return }
         await accountStore.restore()
+        await preferencesRestore?.wait()
     }
 
     func connect() {
@@ -128,6 +135,9 @@ extension PlaybackStore {
         connectQueueCallback.reset()
         catalogSession.update(accountEpoch: accountEpoch, isAvailable: false)
         effects.cancelAccountScoped()
+        effects.cancel(.engineEvents)
+        effects.cancel(.grantRevocations)
+        effects.cancel(.lifecycle)
         send(.reset(session: .signedOut), source: .account)
         await accountStore.completeShutdownForTermination(staleConnectionTask: staleConnectionTask)
     }

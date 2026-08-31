@@ -91,9 +91,10 @@ nonisolated struct AcceptedConnectQueue: Sendable {
     let mutation: QueueMutationSnapshot
 }
 
-/// Optional suspension points around `acceptConnect` and `recordCommittedReplacement`.
+/// Optional suspension points around reset, `acceptConnect`, and `recordCommittedReplacement`.
 /// Production stores `nil` and does not `await`. Checks inject `QueueServiceTestHook`.
 nonisolated protocol QueueServiceHook: Sendable {
+    func beforeReset() async
     func beforeAcceptConnect() async
     func beforeRecordCommittedReplacement() async
 }
@@ -131,6 +132,10 @@ actor QueueService {
     }
 
     func reset(accountEpoch: UInt64) async {
+        if let hook {
+            await hook.beforeReset()
+        }
+        guard !Task.isCancelled else { return }
         self.accountEpoch = accountEpoch
         revision = 0
         lastConnectSourceRevision = 0

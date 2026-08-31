@@ -225,7 +225,17 @@ private final class WorkflowEngine: LocalPlaybackEngine, @unchecked Sendable {
 
     func events() -> AsyncStream<RustPlaybackEventEnvelope> {
         AsyncStream { continuation in
-            lock.lock(); self.continuation = continuation; lock.unlock()
+            lock.lock()
+            storage["eventSubscriptions", default: 0] += 1
+            storage["activeEventSubscriptions", default: 0] += 1
+            self.continuation = continuation
+            lock.unlock()
+            continuation.onTermination = { [weak self] _ in
+                self?.record("eventTerminations")
+                self?.lock.withLock {
+                    self?.storage["activeEventSubscriptions", default: 0] -= 1
+                }
+            }
         }
     }
 
@@ -260,12 +270,16 @@ private final class WorkflowAccount: AccountSession, @unchecked Sendable {
     private let lock = NSLock()
     private var continuation: AsyncStream<Void>.Continuation?
     private var clearStorage = 0
+    private var subscriptionStorage = 0
+    private var activeSubscriptionStorage = 0
     var hasStoredGrant = true
 
     var clearCount: Int {
         lock.lock(); defer { lock.unlock() }
         return clearStorage
     }
+    var subscriptionCount: Int { lock.withLock { subscriptionStorage } }
+    var activeSubscriptionCount: Int { lock.withLock { activeSubscriptionStorage } }
 
     func authorizeInteractively() async throws -> KeymasterTokens {
         KeymasterTokens(
@@ -281,7 +295,14 @@ private final class WorkflowAccount: AccountSession, @unchecked Sendable {
     func clear() async { lock.withLock { clearStorage += 1 } }
     func revocations() -> AsyncStream<Void> {
         AsyncStream { continuation in
-            lock.lock(); self.continuation = continuation; lock.unlock()
+            lock.withLock {
+                subscriptionStorage += 1
+                activeSubscriptionStorage += 1
+                self.continuation = continuation
+            }
+            continuation.onTermination = { [weak self] _ in
+                self?.lock.withLock { self?.activeSubscriptionStorage -= 1 }
+            }
         }
     }
     func revoke() {
@@ -293,9 +314,20 @@ private final class WorkflowAccount: AccountSession, @unchecked Sendable {
 private final class WorkflowLifecycle: SystemLifecycleEvents, @unchecked Sendable {
     private let lock = NSLock()
     private var continuation: AsyncStream<SystemLifecycleEvent>.Continuation?
+    private var subscriptionStorage = 0
+    private var activeSubscriptionStorage = 0
+    var subscriptionCount: Int { lock.withLock { subscriptionStorage } }
+    var activeSubscriptionCount: Int { lock.withLock { activeSubscriptionStorage } }
     func events() -> AsyncStream<SystemLifecycleEvent> {
         AsyncStream { continuation in
-            lock.lock(); self.continuation = continuation; lock.unlock()
+            lock.withLock {
+                subscriptionStorage += 1
+                activeSubscriptionStorage += 1
+                self.continuation = continuation
+            }
+            continuation.onTermination = { [weak self] _ in
+                self?.lock.withLock { self?.activeSubscriptionStorage -= 1 }
+            }
         }
     }
     func emit(_ event: SystemLifecycleEvent) {
@@ -314,6 +346,34 @@ private actor WorkflowPreferences: PlaybackPreferences {
     func setLastRemoteDeviceID(_ id: String?) { remoteID = id }
     func shuffleHistory() -> [String: TimeInterval] { history }
     func setShuffleHistory(_ value: [String: TimeInterval]) { history = value }
+}
+
+/// A dependency that deliberately ignores task cancellation until the check releases it. This
+/// proves PlaybackStore revalidates process/account identity after each preference suspension.
+private actor ParkedWorkflowPreferences: PlaybackPreferences {
+    private var shuffleContinuation: CheckedContinuation<Bool, Never>?
+    private var shuffleReadStarted = false
+
+    func shuffleEnabled() async -> Bool {
+        shuffleReadStarted = true
+        return await withCheckedContinuation { continuation in
+            shuffleContinuation = continuation
+        }
+    }
+
+    func shuffleIsParked() -> Bool { shuffleReadStarted && shuffleContinuation != nil }
+
+    func resumeShuffle() {
+        let continuation = shuffleContinuation
+        shuffleContinuation = nil
+        continuation?.resume(returning: true)
+    }
+
+    func setShuffleEnabled(_: Bool) {}
+    func lastRemoteDeviceID() -> String? { "spotify:device:stale" }
+    func setLastRemoteDeviceID(_: String?) {}
+    func shuffleHistory() -> [String: TimeInterval] { ["spotify:track:stale": 1] }
+    func setShuffleHistory(_: [String: TimeInterval]) {}
 }
 
 private struct WorkflowAudio: AudioOutputPreparing { func prepareForPlayback() throws {} }
@@ -778,13 +838,40 @@ func runWorkflowChecks(_ runner: CheckRunner) async {
             playlistMutations: UnavailablePlaylistMutations(),
             trackAttributes: WorkflowAttributes()
         )
+        let speculative = PlaybackStore(
+            environment: environment,
+            feedback: TransientFeedbackPresenter(clock: environment.clock)
+        )
+        _ = speculative
+        await Task.yield()
+        runner.equal("initialization does not subscribe to engine events", engine.count("eventSubscriptions"), 0)
+        runner.equal("initialization does not subscribe to grant revocations", account.subscriptionCount, 0)
+        runner.equal("initialization does not subscribe to lifecycle events", lifecycle.subscriptionCount, 0)
+
         let player = PlaybackStore(
             environment: environment,
             feedback: TransientFeedbackPresenter(clock: environment.clock)
         )
         await player.restore()
+        runner.check(
+            "restore installs every process subscription",
+            await waitUntil {
+                engine.count("eventSubscriptions") != 0 && account.subscriptionCount != 0
+                    && lifecycle.subscriptionCount != 0
+            }
+        )
         runner.equal("stored grant restores the real store", player.phase, .ready)
         runner.equal("engine initializes once", engine.count("initialize"), 1)
+        runner.equal("restore starts one engine-event subscription", engine.count("eventSubscriptions"), 1)
+        runner.equal("restore starts one grant-revocation subscription", account.subscriptionCount, 1)
+        runner.equal("restore starts one lifecycle subscription", lifecycle.subscriptionCount, 1)
+
+        await player.restore()
+        runner.equal(
+            "repeated restore does not replace the engine-event subscription", engine.count("eventSubscriptions"), 1)
+        runner.equal(
+            "repeated restore does not replace the grant-revocation subscription", account.subscriptionCount, 1)
+        runner.equal("repeated restore does not replace the lifecycle subscription", lifecycle.subscriptionCount, 1)
 
         lifecycle.emit(.willSleep)
         while engine.count("disconnect") == 0 { await Task.yield() }
@@ -824,7 +911,95 @@ func runWorkflowChecks(_ runner: CheckRunner) async {
 
         await player.shutdownForTermination()
         await player.shutdownForTermination()
+        runner.check(
+            "termination settles every process subscription",
+            await waitUntil {
+                engine.count("activeEventSubscriptions") == 0 && account.activeSubscriptionCount == 0
+                    && lifecycle.activeSubscriptionCount == 0
+            }
+        )
         runner.equal("termination shutdown is idempotent", engine.count("shutdown"), 2)
+        runner.equal("termination cancels the engine-event subscription", engine.count("activeEventSubscriptions"), 0)
+        runner.equal("termination cancels the grant-revocation subscription", account.activeSubscriptionCount, 0)
+        runner.equal("termination cancels the lifecycle subscription", lifecycle.activeSubscriptionCount, 0)
+    }
+
+    await runner.suite("Termination wins during playback-store startup") {
+        let engine = WorkflowEngine()
+        let account = WorkflowAccount()
+        let lifecycle = WorkflowLifecycle()
+        let hook = QueueServiceTestHook()
+        await hook.parkNextReset()
+        let environment = PlaybackEnvironment(
+            remote: RecordingRemoteClient(),
+            local: engine,
+            webQueue: UnavailableWebQueue(),
+            account: account,
+            audioOutput: WorkflowAudio(),
+            preferences: WorkflowPreferences(),
+            lifecycle: lifecycle,
+            clock: WorkflowClock(),
+            catalog: WorkflowCatalog(),
+            playlistMutations: UnavailablePlaylistMutations(),
+            trackAttributes: WorkflowAttributes(),
+            queueServiceHook: hook
+        )
+        let player = PlaybackStore(
+            environment: environment,
+            feedback: TransientFeedbackPresenter(clock: environment.clock)
+        )
+
+        let restore = Task { await player.restore() }
+        runner.check("queue bootstrap parks before engine restore", await waitUntil { await hook.resetIsParked() })
+        await player.shutdownForTermination()
+        await restore.value
+
+        runner.equal("termination during bootstrap prevents engine initialization", engine.count("initialize"), 0)
+        runner.equal("termination during bootstrap shuts down once", engine.count("shutdown"), 1)
+        runner.equal("termination during bootstrap leaves the store signed out", player.phase, .signedOut)
+        runner.equal(
+            "cancelled bootstrap leaves no active engine subscription", engine.count("activeEventSubscriptions"), 0)
+        runner.equal("cancelled bootstrap leaves no active revocation subscription", account.activeSubscriptionCount, 0)
+        runner.equal(
+            "cancelled bootstrap leaves no active lifecycle subscription", lifecycle.activeSubscriptionCount, 0)
+    }
+
+    await runner.suite("Termination wins during preference restoration") {
+        let engine = WorkflowEngine()
+        let account = WorkflowAccount()
+        let lifecycle = WorkflowLifecycle()
+        let preferences = ParkedWorkflowPreferences()
+        let environment = PlaybackEnvironment(
+            remote: RecordingRemoteClient(),
+            local: engine,
+            webQueue: UnavailableWebQueue(),
+            account: account,
+            audioOutput: WorkflowAudio(),
+            preferences: preferences,
+            lifecycle: lifecycle,
+            clock: WorkflowClock(),
+            catalog: WorkflowCatalog(),
+            playlistMutations: UnavailablePlaylistMutations(),
+            trackAttributes: WorkflowAttributes()
+        )
+        let player = PlaybackStore(
+            environment: environment,
+            feedback: TransientFeedbackPresenter(clock: environment.clock)
+        )
+
+        let restore = Task { await player.restore() }
+        runner.check(
+            "preference read parks while account restoration proceeds",
+            await waitUntil { await preferences.shuffleIsParked() && engine.count("initialize") == 1 }
+        )
+        await player.shutdownForTermination()
+        await preferences.resumeShuffle()
+        await restore.value
+
+        runner.equal("late preference read cannot restore shuffle", player.state.options.shuffle, false)
+        runner.nil_("late preference read cannot restore a remote device", player.lastRemoteDeviceID)
+        runner.equal("late preference read cannot restore shuffle history", player.shuffleHistoryCache, [:])
+        runner.equal("termination after account restore shuts down once", engine.count("shutdown"), 1)
     }
 }
 

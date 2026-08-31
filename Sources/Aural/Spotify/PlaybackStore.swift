@@ -197,6 +197,9 @@ final class PlaybackStore {
     @ObservationIgnored var teardown = SessionTeardownCoalescer()
     @ObservationIgnored var teardownTask: Task<Void, Never>?
     @ObservationIgnored var terminationGate = PlaybackTerminationGate()
+    /// Process-lifetime subscriptions start only after SwiftUI reaches the durable restore
+    /// boundary. `AuralApp` values may be initialized speculatively, so `init` must not subscribe.
+    @ObservationIgnored var hasStartedLifetimeEffects = false
     @ObservationIgnored var lastEngineEventSequence: UInt64 = 0
     @ObservationIgnored var engineGeneration: UInt64 = 0
     /// One immutable stamp for playback-scoped work. This projects the two existing
@@ -247,42 +250,6 @@ final class PlaybackStore {
             clock: environment.clock,
             feedback: feedback
         )
-        effects.replace(
-            .engineEvents,
-            with: Task { [weak self] in
-                for await envelope in environment.local.events() {
-                    guard !Task.isCancelled, let self else { return }
-                    self.receive(envelope)
-                }
-            })
-        effects.replace(
-            .grantRevocations,
-            with: Task { [weak self] in
-                for await _ in environment.account.revocations() {
-                    guard !Task.isCancelled else { return }
-                    await self?.handleGrantRevocation()
-                }
-            })
-        effects.replace(
-            .lifecycle,
-            with: Task { [weak self] in
-                for await event in environment.lifecycle.events() {
-                    guard !Task.isCancelled, let self else { return }
-                    await self.receive(event)
-                }
-            })
-        effects.replace(
-            .preferencesRestore,
-            with: Task { [weak self] in
-                guard let self else { return }
-                let epoch = self.accountEpoch
-                await self.queueService.reset(accountEpoch: self.accountEpoch)
-                guard !Task.isCancelled, self.accountEpoch == epoch else { return }
-                self.setShuffleEnabled(await environment.preferences.shuffleEnabled())
-                guard !Task.isCancelled, self.accountEpoch == epoch else { return }
-                self.lastRemoteDeviceID = await environment.preferences.lastRemoteDeviceID()
-                self.shuffleHistoryCache = await environment.preferences.shuffleHistory()
-            })
         accountStore.onPhaseChange = { [weak self] phase in
             guard let self else { return }
             self.catalogSession.update(
@@ -301,6 +268,73 @@ final class PlaybackStore {
                     await self.catalog.homeLibrary.load()
                 })
         }
+    }
+
+    func startLifetimeEffectsIfNeeded() {
+        guard !hasStartedLifetimeEffects else { return }
+        hasStartedLifetimeEffects = true
+        // Create each stream before account restoration can initialize the engine. The
+        // subscription is therefore installed synchronously even though consumption is a task.
+        let engineEvents = environment.local.events()
+        let grantRevocations = environment.account.revocations()
+        let lifecycleEvents = environment.lifecycle.events()
+        effects.replace(
+            .engineEvents,
+            with: Task { [weak self] in
+                for await envelope in engineEvents {
+                    guard !Task.isCancelled, let self else { return }
+                    self.receive(envelope)
+                }
+            })
+        effects.replace(
+            .grantRevocations,
+            with: Task { [weak self] in
+                for await _ in grantRevocations {
+                    guard !Task.isCancelled else { return }
+                    await self?.handleGrantRevocation()
+                }
+            })
+        effects.replace(
+            .lifecycle,
+            with: Task { [weak self] in
+                for await event in lifecycleEvents {
+                    guard !Task.isCancelled, let self else { return }
+                    await self.receive(event)
+                }
+            })
+        effects.replace(
+            .queueServiceBootstrap,
+            with: Task { [weak self] in
+                guard let self else { return }
+                await self.queueService.reset(accountEpoch: self.accountEpoch)
+            })
+        effects.replace(
+            .preferencesRestore,
+            with: Task { [weak self, environment] in
+                guard let self else { return }
+                let epoch = self.accountEpoch
+                let shuffleEnabled = await environment.preferences.shuffleEnabled()
+                guard
+                    !Task.isCancelled,
+                    self.terminationGate.allowsCommands,
+                    self.accountEpoch == epoch
+                else { return }
+                self.setShuffleEnabled(shuffleEnabled)
+                let lastRemoteDeviceID = await environment.preferences.lastRemoteDeviceID()
+                guard
+                    !Task.isCancelled,
+                    self.terminationGate.allowsCommands,
+                    self.accountEpoch == epoch
+                else { return }
+                self.lastRemoteDeviceID = lastRemoteDeviceID
+                let shuffleHistory = await environment.preferences.shuffleHistory()
+                guard
+                    !Task.isCancelled,
+                    self.terminationGate.allowsCommands,
+                    self.accountEpoch == epoch
+                else { return }
+                self.shuffleHistoryCache = shuffleHistory
+            })
     }
 
     /// macOS suspends the process on sleep and sockets die underneath it; without this the

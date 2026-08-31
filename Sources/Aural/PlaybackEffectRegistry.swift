@@ -4,6 +4,7 @@ enum PlaybackEffectID: Hashable {
     case engineEvents
     case grantRevocations
     case lifecycle
+    case queueServiceBootstrap
     case preferencesRestore
     case catalogLoad
     case positionRefresh

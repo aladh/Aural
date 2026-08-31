@@ -111,8 +111,13 @@ private final class ParkedGate: @unchecked Sendable {
 
 /// Check-only scheduler that parks `QueueService` at the injected hook points.
 actor QueueServiceTestHook: QueueServiceHook {
+    private let reset = ParkedGate()
     private let accept = ParkedGate()
     private let replacement = ParkedGate()
+
+    func parkNextReset() { reset.parkNext() }
+    func resetIsParked() -> Bool { reset.isParked() }
+    func resumeReset() { reset.resume() }
 
     func parkNextConnectAccept() { accept.parkNext() }
     func connectAcceptIsParked() -> Bool { accept.isParked() }
@@ -122,6 +127,7 @@ actor QueueServiceTestHook: QueueServiceHook {
     func committedReplacementIsParked() -> Bool { replacement.isParked() }
     func resumeCommittedReplacement() { replacement.resume() }
 
+    func beforeReset() async { await reset.waitIfPending() }
     func beforeAcceptConnect() async { await accept.waitIfPending() }
     func beforeRecordCommittedReplacement() async { await replacement.waitIfPending() }
 }

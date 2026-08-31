@@ -844,6 +844,7 @@ func runQueueManagementChecks(_ runner: CheckRunner) async {
         let remote = QueueRemoteClient(.succeed)
         let feedback = TransientFeedbackPresenter(clock: SystemPlaybackClock(), duration: 4)
         let player = PlaybackStore(environment: queueEnvironment(remote: remote), feedback: feedback)
+        await player.restore()
         seedRemoteOwner(player)
         let mirroredGeneration = player.engineGeneration
         let payloadGeneration = mirroredGeneration + 1
@@ -913,6 +914,7 @@ func runQueueManagementChecks(_ runner: CheckRunner) async {
 
         let teardownFeedback = TransientFeedbackPresenter(clock: SystemPlaybackClock(), duration: 4)
         let teardown = PlaybackStore(environment: queueEnvironment(remote: remote), feedback: teardownFeedback)
+        await teardown.restore()
         seedRemoteOwner(teardown)
         let teardownMirror = teardown.engineGeneration
         teardown.isTearingDown = true
