@@ -15,8 +15,7 @@ private enum CommandWorkResult: Equatable {
 
 private struct InFlightCommand: Equatable {
     var id: UUID
-    var accountEpoch: UInt64
-    var engineEpoch: UInt64
+    var lifetime: PlaybackLifetime
     var cancelled: Bool
 }
 
@@ -68,7 +67,7 @@ private final class CommandSession {
         return accepted
     }
 
-    func applyFinish(commandID: UUID, capturedAccount: UInt64, capturedEngine: UInt64, result: CommandWorkResult) {
+    func applyFinish(commandID: UUID, capturedLifetime: PlaybackLifetime, result: CommandWorkResult) {
         let succeeded = result == .succeeded
         let finished = send(
             .commandFinished(
@@ -76,8 +75,8 @@ private final class CommandSession {
                 accepted: succeeded,
                 notice: succeeded ? nil : PlaybackNotice(id: pauseNoticeID, message: "Pause was rejected")
             ),
-            engineEpoch: capturedEngine,
-            accountEpoch: capturedAccount
+            engineEpoch: capturedLifetime.engineGeneration,
+            accountEpoch: capturedLifetime.accountEpoch
         )
         switch playbackCommandFollowUp(
             finishAccepted: finished,
@@ -85,10 +84,11 @@ private final class CommandSession {
             requiresReconnect: result == .reconnectRequired,
             commandKind: .transport,
             pendingCommandID: state.pendingCommands[.transport]?.id,
-            capturedAccountEpoch: capturedAccount,
-            capturedEngineEpoch: capturedEngine,
-            currentAccountEpoch: accountEpoch,
-            currentEngineEpoch: engineGeneration,
+            capturedLifetime: capturedLifetime,
+            currentLifetime: PlaybackLifetime(
+                accountEpoch: accountEpoch,
+                engineGeneration: engineGeneration
+            ),
             isTearingDown: isTearingDown
         ) {
         case .reportSuccess:
@@ -154,8 +154,10 @@ private final class RegistryRuntime {
         }
         inflight = InFlightCommand(
             id: commandID,
-            accountEpoch: session.accountEpoch,
-            engineEpoch: session.engineGeneration,
+            lifetime: PlaybackLifetime(
+                accountEpoch: session.accountEpoch,
+                engineGeneration: session.engineGeneration
+            ),
             cancelled: false
         )
         return true
@@ -167,8 +169,7 @@ private final class RegistryRuntime {
         guard !command.cancelled else { return }
         session.applyFinish(
             commandID: command.id,
-            capturedAccount: command.accountEpoch,
-            capturedEngine: command.engineEpoch,
+            capturedLifetime: command.lifetime,
             result: result
         )
     }
@@ -180,17 +181,18 @@ private final class RegistryRuntime {
             playbackCommandShouldSettleOrdinaryCancellation(
                 pendingCommandID: session.state.pendingCommands[.transport]?.id,
                 cancelledCommandID: command.id,
-                capturedAccountEpoch: command.accountEpoch,
-                capturedEngineEpoch: command.engineEpoch,
-                currentAccountEpoch: session.accountEpoch,
-                currentEngineEpoch: session.engineGeneration,
+                capturedLifetime: command.lifetime,
+                currentLifetime: PlaybackLifetime(
+                    accountEpoch: session.accountEpoch,
+                    engineGeneration: session.engineGeneration
+                ),
                 isTearingDown: session.isTearingDown
             )
         else { return }
         let finished = session.send(
             .commandFinished(id: command.id, accepted: false, notice: nil),
-            engineEpoch: command.engineEpoch,
-            accountEpoch: command.accountEpoch
+            engineEpoch: command.lifetime.engineGeneration,
+            accountEpoch: command.lifetime.accountEpoch
         )
         if finished {
             session.completions.append(false)

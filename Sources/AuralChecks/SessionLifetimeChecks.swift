@@ -222,10 +222,14 @@ func runSessionLifetimeChecks(_ check: CheckRunner) {
                 commandKind: kind,
                 pendingCommandID: pending,
                 finishedCommandResolution: resolution,
-                capturedAccountEpoch: account,
-                capturedEngineEpoch: engine,
-                currentAccountEpoch: currentAccount,
-                currentEngineEpoch: currentEngine,
+                capturedLifetime: PlaybackLifetime(
+                    accountEpoch: account,
+                    engineGeneration: engine
+                ),
+                currentLifetime: PlaybackLifetime(
+                    accountEpoch: currentAccount,
+                    engineGeneration: currentEngine
+                ),
                 isTearingDown: tearingDown
             )
         }
@@ -449,10 +453,14 @@ func runSessionLifetimeChecks(_ check: CheckRunner) {
             playbackCommandShouldSettleOrdinaryCancellation(
                 pendingCommandID: pending,
                 cancelledCommandID: cancelled,
-                capturedAccountEpoch: account,
-                capturedEngineEpoch: engine,
-                currentAccountEpoch: currentAccount,
-                currentEngineEpoch: currentEngine,
+                capturedLifetime: PlaybackLifetime(
+                    accountEpoch: account,
+                    engineGeneration: engine
+                ),
+                currentLifetime: PlaybackLifetime(
+                    accountEpoch: currentAccount,
+                    engineGeneration: currentEngine
+                ),
                 isTearingDown: tearingDown
             )
         }

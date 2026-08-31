@@ -147,8 +147,7 @@ extension PlaybackStore {
             return
         }
         let commandID = UUID()
-        let epoch = accountEpoch
-        let engineEpoch = engineGeneration
+        let lifetime = playbackLifetime
         let started = send(
             .commandStarted(
                 PendingPlaybackCommand(
@@ -162,7 +161,8 @@ extension PlaybackStore {
                     expectedOwner: expectedOwner,
                     startedAt: environment.clock.now()
                 )),
-            source: .command
+            source: .command,
+            playbackLifetime: lifetime
         )
         guard started else {
             completion(false)
@@ -177,12 +177,19 @@ extension PlaybackStore {
                 guard let self else { return }
                 do {
                     let outcome = try await operation()
-                    guard !Task.isCancelled, self.accountEpoch == epoch, !self.isTearingDown else { return }
+                    // Account replacement and teardown make every outcome inert here. Engine
+                    // replacement is intentionally resolved by the lifetime-stamped reducer
+                    // finish and shared follow-up: an authoritative engine sample may confirm
+                    // or supersede a command while its coordinator operation is suspended.
+                    guard
+                        !Task.isCancelled,
+                        lifetime.accountEpoch == self.accountEpoch,
+                        !self.isTearingDown
+                    else { return }
                     self.applyCommandOutcome(
                         commandID: commandID,
                         kind: kind,
-                        capturedAccountEpoch: epoch,
-                        capturedEngineEpoch: engineEpoch,
+                        capturedLifetime: lifetime,
                         outcome: outcome,
                         action: action,
                         completion: completion
@@ -198,8 +205,7 @@ extension PlaybackStore {
                 self?.settleCancelledPlaybackCommand(
                     commandID: commandID,
                     kind: kind,
-                    capturedAccountEpoch: epoch,
-                    capturedEngineEpoch: engineEpoch,
+                    capturedLifetime: lifetime,
                     completion: completion
                 )
             }
@@ -213,26 +219,22 @@ extension PlaybackStore {
     private func settleCancelledPlaybackCommand(
         commandID: UUID,
         kind: PlaybackCommandKind,
-        capturedAccountEpoch: UInt64,
-        capturedEngineEpoch: UInt64,
+        capturedLifetime: PlaybackLifetime,
         completion: @escaping @MainActor (Bool) -> Void
     ) {
         guard
             playbackCommandShouldSettleOrdinaryCancellation(
                 pendingCommandID: state.pendingCommands[kind]?.id,
                 cancelledCommandID: commandID,
-                capturedAccountEpoch: capturedAccountEpoch,
-                capturedEngineEpoch: capturedEngineEpoch,
-                currentAccountEpoch: accountEpoch,
-                currentEngineEpoch: engineGeneration,
+                capturedLifetime: capturedLifetime,
+                currentLifetime: playbackLifetime,
                 isTearingDown: isTearingDown
             )
         else { return }
         let finished = send(
             .commandFinished(id: commandID, accepted: false, notice: nil),
             source: .command,
-            engineEpoch: capturedEngineEpoch,
-            accountEpoch: capturedAccountEpoch
+            playbackLifetime: capturedLifetime
         )
         guard finished else { return }
         completion(false)
@@ -248,8 +250,7 @@ extension PlaybackStore {
     private func applyCommandOutcome(
         commandID: UUID,
         kind: PlaybackCommandKind,
-        capturedAccountEpoch: UInt64,
-        capturedEngineEpoch: UInt64,
+        capturedLifetime: PlaybackLifetime,
         outcome: Result<Void, PlaybackCommandFailure>,
         action: String,
         completion: @escaping @MainActor (Bool) -> Void
@@ -275,8 +276,7 @@ extension PlaybackStore {
                 notice: notice
             ),
             source: .command,
-            engineEpoch: capturedEngineEpoch,
-            accountEpoch: capturedAccountEpoch
+            playbackLifetime: capturedLifetime
         )
         switch playbackCommandFollowUp(
             finishAccepted: finished,
@@ -285,10 +285,8 @@ extension PlaybackStore {
             commandKind: kind,
             pendingCommandID: state.pendingCommands[kind]?.id,
             finishedCommandResolution: capturedResolution,
-            capturedAccountEpoch: capturedAccountEpoch,
-            capturedEngineEpoch: capturedEngineEpoch,
-            currentAccountEpoch: accountEpoch,
-            currentEngineEpoch: engineGeneration,
+            capturedLifetime: capturedLifetime,
+            currentLifetime: playbackLifetime,
             isTearingDown: isTearingDown
         ) {
         case .reportSuccess:

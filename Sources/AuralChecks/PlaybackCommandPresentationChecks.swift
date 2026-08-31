@@ -792,10 +792,8 @@ func runPlaybackCommandPresentationChecks(_ check: CheckRunner) {
                 commandKind: .transport,
                 pendingCommandID: confirmed.pendingCommands[.transport]?.id,
                 finishedCommandResolution: capturedConfirmation,
-                capturedAccountEpoch: 1,
-                capturedEngineEpoch: 1,
-                currentAccountEpoch: 1,
-                currentEngineEpoch: 1,
+                capturedLifetime: PlaybackLifetime(accountEpoch: 1, engineGeneration: 1),
+                currentLifetime: PlaybackLifetime(accountEpoch: 1, engineGeneration: 1),
                 isTearingDown: false
             ),
             .reportSuccess
@@ -862,10 +860,8 @@ func runPlaybackCommandPresentationChecks(_ check: CheckRunner) {
                 commandKind: .transport,
                 pendingCommandID: superseded.pendingCommands[.transport]?.id,
                 finishedCommandResolution: capturedSupersession,
-                capturedAccountEpoch: 1,
-                capturedEngineEpoch: 1,
-                currentAccountEpoch: 1,
-                currentEngineEpoch: 1,
+                capturedLifetime: PlaybackLifetime(accountEpoch: 1, engineGeneration: 1),
+                currentLifetime: PlaybackLifetime(accountEpoch: 1, engineGeneration: 1),
                 isTearingDown: false
             ),
             .inert
@@ -1088,10 +1084,8 @@ func runPlaybackCommandPresentationChecks(_ check: CheckRunner) {
                 commandKind: .transport,
                 pendingCommandID: supersededThenPause.pendingCommands[.transport]?.id,
                 finishedCommandResolution: capturedPauseSupersession,
-                capturedAccountEpoch: 1,
-                capturedEngineEpoch: 1,
-                currentAccountEpoch: 1,
-                currentEngineEpoch: 1,
+                capturedLifetime: PlaybackLifetime(accountEpoch: 1, engineGeneration: 1),
+                currentLifetime: PlaybackLifetime(accountEpoch: 1, engineGeneration: 1),
                 isTearingDown: false
             ),
             .inert
@@ -1313,10 +1307,8 @@ func runPlaybackCommandPresentationChecks(_ check: CheckRunner) {
                 commandKind: .options,
                 pendingCommandID: confirmed.pendingCommands[.options]?.id,
                 finishedCommandResolution: capturedConfirmation,
-                capturedAccountEpoch: 1,
-                capturedEngineEpoch: 1,
-                currentAccountEpoch: 1,
-                currentEngineEpoch: 1,
+                capturedLifetime: PlaybackLifetime(accountEpoch: 1, engineGeneration: 1),
+                currentLifetime: PlaybackLifetime(accountEpoch: 1, engineGeneration: 1),
                 isTearingDown: false
             ),
             .reportSuccess
@@ -1407,10 +1399,8 @@ func runPlaybackCommandPresentationChecks(_ check: CheckRunner) {
                 commandKind: .options,
                 pendingCommandID: laterOptions.pendingCommands[.options]?.id,
                 finishedCommandResolution: capturedLaterConfirmation,
-                capturedAccountEpoch: 1,
-                capturedEngineEpoch: 1,
-                currentAccountEpoch: 1,
-                currentEngineEpoch: 1,
+                capturedLifetime: PlaybackLifetime(accountEpoch: 1, engineGeneration: 1),
+                currentLifetime: PlaybackLifetime(accountEpoch: 1, engineGeneration: 1),
                 isTearingDown: false
             ),
             .reportSuccess
@@ -1703,10 +1693,8 @@ func runPlaybackCommandPresentationChecks(_ check: CheckRunner) {
                 commandKind: .options,
                 pendingCommandID: confirmed.pendingCommands[.options]?.id,
                 finishedCommandResolution: capturedConfirmation,
-                capturedAccountEpoch: 1,
-                capturedEngineEpoch: 1,
-                currentAccountEpoch: 1,
-                currentEngineEpoch: 1,
+                capturedLifetime: PlaybackLifetime(accountEpoch: 1, engineGeneration: 1),
+                currentLifetime: PlaybackLifetime(accountEpoch: 1, engineGeneration: 1),
                 isTearingDown: false
             ),
             .reportSuccess
@@ -1750,10 +1738,8 @@ func runPlaybackCommandPresentationChecks(_ check: CheckRunner) {
                 commandKind: .options,
                 pendingCommandID: superseded.pendingCommands[.options]?.id,
                 finishedCommandResolution: capturedSupersession,
-                capturedAccountEpoch: 1,
-                capturedEngineEpoch: 1,
-                currentAccountEpoch: 1,
-                currentEngineEpoch: 1,
+                capturedLifetime: PlaybackLifetime(accountEpoch: 1, engineGeneration: 1),
+                currentLifetime: PlaybackLifetime(accountEpoch: 1, engineGeneration: 1),
                 isTearingDown: false
             ),
             .inert
@@ -2050,10 +2036,8 @@ func runPlaybackCommandPresentationChecks(_ check: CheckRunner) {
                 commandKind: .transfer,
                 pendingCommandID: confirmed.pendingCommands[.transfer]?.id,
                 finishedCommandResolution: capturedConfirmation,
-                capturedAccountEpoch: 1,
-                capturedEngineEpoch: 1,
-                currentAccountEpoch: 1,
-                currentEngineEpoch: 1,
+                capturedLifetime: PlaybackLifetime(accountEpoch: 1, engineGeneration: 1),
+                currentLifetime: PlaybackLifetime(accountEpoch: 1, engineGeneration: 1),
                 isTearingDown: false
             ),
             .reportSuccess
@@ -2181,10 +2165,8 @@ func runPlaybackCommandPresentationChecks(_ check: CheckRunner) {
                 commandKind: .transfer,
                 pendingCommandID: superseded.pendingCommands[.transfer]?.id,
                 finishedCommandResolution: capturedSupersession,
-                capturedAccountEpoch: 1,
-                capturedEngineEpoch: 1,
-                currentAccountEpoch: 1,
-                currentEngineEpoch: 1,
+                capturedLifetime: PlaybackLifetime(accountEpoch: 1, engineGeneration: 1),
+                currentLifetime: PlaybackLifetime(accountEpoch: 1, engineGeneration: 1),
                 isTearingDown: false
             ),
             .inert
@@ -2198,10 +2180,8 @@ func runPlaybackCommandPresentationChecks(_ check: CheckRunner) {
                 commandKind: .transfer,
                 pendingCommandID: nil,
                 finishedCommandResolution: .superseded,
-                capturedAccountEpoch: 1,
-                capturedEngineEpoch: 1,
-                currentAccountEpoch: 1,
-                currentEngineEpoch: 1,
+                capturedLifetime: PlaybackLifetime(accountEpoch: 1, engineGeneration: 1),
+                currentLifetime: PlaybackLifetime(accountEpoch: 1, engineGeneration: 1),
                 isTearingDown: false
             ),
             .inert
@@ -2337,10 +2317,8 @@ func runPlaybackCommandPresentationChecks(_ check: CheckRunner) {
                 commandKind: .transfer,
                 pendingCommandID: laterTransfer.pendingCommands[.transfer]?.id,
                 finishedCommandResolution: capturedLaterConfirmation,
-                capturedAccountEpoch: 1,
-                capturedEngineEpoch: 1,
-                currentAccountEpoch: 1,
-                currentEngineEpoch: 1,
+                capturedLifetime: PlaybackLifetime(accountEpoch: 1, engineGeneration: 1),
+                currentLifetime: PlaybackLifetime(accountEpoch: 1, engineGeneration: 1),
                 isTearingDown: false
             ),
             .reportSuccess
