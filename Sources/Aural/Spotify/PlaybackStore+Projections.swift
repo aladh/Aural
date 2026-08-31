@@ -26,7 +26,7 @@ extension PlaybackStore {
     var positionAnchorDate: Date { state.timing.anchoredAt }
     var queueNextEntries: [QueueEntry] {
         state.queue.entries.map {
-            QueueEntry(uri: $0.uri, provider: $0.provider, occurrence: queueOccurrence($0.id), uid: $0.uid)
+            QueueEntry(uri: $0.uri, provider: $0.provider, occurrence: $0.occurrence, uid: $0.uid)
         }
     }
     var connectDevices: [ConnectDevice] {
@@ -111,9 +111,5 @@ extension PlaybackStore {
 
     var commandRoute: ConnectCommandRoute {
         connectCommandRoute(owner: state.owner, localDeviceID: localDeviceID)
-    }
-
-    private func queueOccurrence(_ id: String) -> Int {
-        id.split(separator: "-", maxSplits: 1).first.flatMap { Int($0) } ?? 0
     }
 }

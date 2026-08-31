@@ -451,6 +451,7 @@ func runWorkflowChecks(_ runner: CheckRunner) async {
             revision: 4,
             contextURI: "spotify:track:same",
             entryURI: "spotify:track:same",
+            occurrence: 4,
             uid: "occ-4"
         )
         let webLabels = workflowQueueSnapshot(
@@ -484,6 +485,11 @@ func runWorkflowChecks(_ runner: CheckRunner) async {
             keptOrder.entries.first?.uid ?? "",
             "occ-4"
         )
+        runner.equal(
+            "same-context Web refresh keeps the typed Connect occurrence",
+            keptOrder.entries.first?.occurrence,
+            4
+        )
         runner.equal("same-context Web refresh stays Connect-owned", keptOrder.source, .connect)
         runner.equal(
             "same-context Web refresh does not copy the Web revision onto Connect order",
@@ -499,6 +505,7 @@ func runWorkflowChecks(_ runner: CheckRunner) async {
             revision: 6,
             contextURI: "spotify:track:changed",
             entryURI: "spotify:track:changed",
+            occurrence: 7,
             source: .webAPI,
             provider: "web-api"
         )
@@ -516,6 +523,11 @@ func runWorkflowChecks(_ runner: CheckRunner) async {
             "changed-URI Web merge keeps Web provenance",
             mergeQueueSnapshots(current: connectUID, incoming: changedURI).source,
             .webAPI
+        )
+        runner.equal(
+            "changed-context Web merge keeps its typed occurrence",
+            mergeQueueSnapshots(current: connectUID, incoming: changedURI).entries.first?.occurrence,
+            7
         )
 
         let orderedService = QueueService(
@@ -546,6 +558,7 @@ func runWorkflowChecks(_ runner: CheckRunner) async {
             refreshed?.entries.first?.uid ?? "",
             "occ-4"
         )
+        runner.equal("QueueService Web refresh keeps typed occurrence", refreshed?.entries.first?.occurrence, 0)
         runner.equal("QueueService Web refresh stays Connect-owned", refreshed?.source, .connect)
         runner.equal("QueueService Web refresh keeps the Connect ordering revision", refreshed?.revision, 1)
         runner.equal(
@@ -577,6 +590,11 @@ func runWorkflowChecks(_ runner: CheckRunner) async {
             "later Connect occurrences keep distinct uids",
             laterConnect?.snapshot.entries.map(\.uid),
             ["occ-a", "occ-b", "occ-c"]
+        )
+        runner.equal(
+            "later Connect occurrences keep typed positions",
+            laterConnect?.snapshot.entries.map(\.occurrence),
+            [0, 1, 2]
         )
         runner.equal(
             "a later Connect revision updates mutation metadata after a Web refresh",
@@ -827,6 +845,7 @@ private func workflowQueueSnapshot(
     revision: UInt64,
     contextURI: String,
     entryURI: String,
+    occurrence: Int = 0,
     source: QueueSnapshotSource = .connect,
     uid: String = "",
     provider: String = "connect"
@@ -838,7 +857,7 @@ private func workflowQueueSnapshot(
         completeness: .complete,
         receivedAt: Date(timeIntervalSince1970: TimeInterval(revision)),
         contextURI: contextURI,
-        entries: [QueueEntry(uri: entryURI, provider: provider, occurrence: 0, uid: uid)],
+        entries: [QueueEntry(uri: entryURI, provider: provider, occurrence: occurrence, uid: uid)],
         tracks: [workflowTrack(entryURI)]
     )
 }

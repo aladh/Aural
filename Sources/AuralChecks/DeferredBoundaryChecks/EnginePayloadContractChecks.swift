@@ -100,6 +100,8 @@ func runEnginePayloadContractChecks(_ check: CheckRunner) {
             check.equal("duplicate URI still matches", duplicate.uri, first.uri)
             check.equal("first occurrence uid", first.uid, "occ-a")
             check.equal("second occurrence uid", duplicate.uid, "occ-b")
+            check.equal("first occurrence is typed", first.occurrence, 0)
+            check.equal("second occurrence is typed", duplicate.occurrence, 1)
             check.check("duplicate occurrences stay distinct rows", first.id != duplicate.id)
             check.equal("unknown provider is preserved", next[2].provider, "unavailable")
             check.equal("prev provider is context", state.prevTracks?.first?.provider, "context")

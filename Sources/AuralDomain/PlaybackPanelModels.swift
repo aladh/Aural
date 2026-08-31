@@ -171,6 +171,7 @@ public struct QueueEntry: Identifiable, Equatable, Sendable {
     public let id: String
     public let uri: String
     public let provider: String
+    public let occurrence: Int
     /// Connect occurrence uid when the authoritative snapshot supplied one.
     /// Empty for Web/non-authoritative presentation that has not bound a uid.
     public let uid: String
@@ -179,6 +180,7 @@ public struct QueueEntry: Identifiable, Equatable, Sendable {
         id = Self.identity(occurrence: occurrence, provider: provider, uri: uri, uid: uid)
         self.uri = uri
         self.provider = provider
+        self.occurrence = occurrence
         self.uid = uid
     }
 
