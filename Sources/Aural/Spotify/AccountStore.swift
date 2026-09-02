@@ -20,6 +20,9 @@ final class AccountStore {
             onPhaseChange?(phase)
         }
     }
+    /// Sole writable account-epoch owner. `PlaybackStore.accountEpoch` projects this value;
+    /// `PlaybackState.accountEpoch` is reducer-owned accepted snapshot state, not a second
+    /// imperative counter.
     private(set) var epoch: UInt64 = 1
 
     @ObservationIgnored private let environment: PlaybackEnvironment
@@ -91,17 +94,14 @@ final class AccountStore {
         let requested = SessionTeardownIntent(clearGrant: clearGrant, finalPhase: finalPhase)
         let shouldStart = teardown.request(requested)
         let cumulative = teardown.intent ?? requested
-        phase = cumulative.finalPhase
 
         if !shouldStart, let teardownTask {
+            phase = cumulative.finalPhase
             return teardownTask
         }
 
-        epoch &+= 1
-        connectionGeneration &+= 1
-        let staleTask = connectionTask
-        connectionTask = nil
-        staleTask?.cancel()
+        let staleTask = invalidateAccountIdentity()
+        phase = cumulative.finalPhase
 
         let task = Task { [weak self] in
             guard let self else { return cumulative }
@@ -164,15 +164,35 @@ final class AccountStore {
         return completed
     }
 
-    /// Stops the process-owned engine without clearing the reusable streaming credential cache.
-    func shutdownForTermination() async {
-        phase = .signedOut
+    /// The only mutation of `epoch`. A new account lifetime starts here so in-flight work
+    /// stamped with the previous value is rejected.
+    func advanceEpoch() {
         epoch &+= 1
+    }
+
+    /// Advances account identity and cancels in-flight connection work. Returns the cancelled
+    /// connection task so the caller can await it after presentation teardown.
+    @discardableResult
+    func invalidateAccountIdentity() -> Task<Void, Never>? {
+        advanceEpoch()
         connectionGeneration &+= 1
         let staleTask = connectionTask
         connectionTask = nil
         staleTask?.cancel()
-        if let staleTask { await staleTask.value }
+        return staleTask
+    }
+
+    /// Invalidates account identity without waiting for engine shutdown so presentation
+    /// teardown can observe the new epoch first. Streaming credentials stay intact.
+    @discardableResult
+    func prepareShutdownForTermination() -> Task<Void, Never>? {
+        let staleTask = invalidateAccountIdentity()
+        phase = .signedOut
+        return staleTask
+    }
+
+    func completeShutdownForTermination(staleConnectionTask: Task<Void, Never>?) async {
+        if let staleConnectionTask { await staleConnectionTask.value }
         _ = await coordinator.shutdownEngine()
         await coordinator.cleanupEngine()
         phase = .signedOut

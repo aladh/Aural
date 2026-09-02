@@ -56,13 +56,62 @@ Run the normal gate before opening a pull request:
 ./Scripts/check.sh
 ```
 
-`check.sh` verifies Rust formatting, warning-clean Clippy, the locked Rust unit suite, the generated
-C ABI, Swift builds, architecture constraints, and packaging metadata. It rebuilds a missing or
-stale playback archive, compares the checked-in C header with the archive's exported symbols, and
-runs both non-shipping Swift check products:
+`check.sh` verifies Git-tracked Swift formatting, Rust formatting, warning-clean Clippy, the locked
+Rust unit suite, the generated C ABI, Swift builds with Aural-owned compiler warnings as errors,
+architecture constraints, and packaging metadata. It rebuilds a missing or stale playback archive,
+compares the checked-in C header with the archive's exported symbols, and runs both non-shipping
+Swift check products:
 
 - `AuralChecks` exercises pure domain state, policies, parsing, and deterministic playback traces.
 - `AuralBoundaryChecks` exercises concrete codecs, fixtures, and injected coordinator/queue flows.
+
+Swift formatting uses the selected Swift 6.1+ toolchain's bundled `swift-format`. Check or rewrite
+the same Git-tracked `*.swift` set, including `Package.swift`, `Sources/`, and checked-in
+`Scripts/*.swift`:
+
+```bash
+./Scripts/format-swift.sh --check
+./Scripts/format-swift.sh --write
+```
+
+`check.sh` runs `Scripts/format-swift-self-test.sh` then `--check` so wrapper discovery and failure
+behavior cannot drift from the documented commands.
+
+GitHub's macos-15 debug quality gate caches the repository `.build` tree, including the module cache
+`check.sh` already redirects there. The primary cache key includes runner OS, architecture, the Swift
+toolchain, `Package.swift`, `Package.resolved` when that lockfile exists, and the commit SHA so each
+successful run can save updated products. Restore-keys keep the OS/arch/toolchain prefix so a later
+commit or pull request can reuse the nearest compatible tree and compile incrementally. A toolchain
+or architecture mismatch misses and rebuilds cleanly. Signing material, Cargo's target directory, and
+paths outside the checkout are not part of that cache.
+
+The same macos-15 job then compiles shipping `Aural` in release with `-DAURAL_DISTRIBUTION`, reusing
+the playback archive and `.build` cache. That step does not rerun Rust tests or Swift checks, and it
+does not package or sign. `./Scripts/compile-release-aural.sh` is the local compile-only command.
+`./Scripts/check-clean.sh` is still the clean-room Debug and Release full gate.
+
+`AuralChecks` depends only on `AuralDomain` and the tiny `AuralCheckSelection` helper. It does not
+link `AuralCore` or the Rust playback archive. Domain-only iteration can use SwiftPM directly:
+
+```bash
+swift build --disable-sandbox --product AuralChecks
+swift run --disable-sandbox --product AuralChecks
+swift run --disable-sandbox --product AuralChecks -- --help
+swift run --disable-sandbox --product AuralChecks -- --list
+swift run --disable-sandbox --product AuralChecks -- protobuf playback-reducer
+```
+
+`--list` prints stable suite names in registration order. Unknown or empty names exit nonzero
+before any check runs. Repeated names run once, in the first requested order. No-argument
+invocation still runs every registered suite. `./Scripts/check.sh` does not pass suite filters.
+
+`AuralBoundaryChecks` accepts the same `--help`, `--list`, and suite-name arguments, but it still
+compiles against `AuralCore` and is not a Rust-free path:
+
+```bash
+swift run --disable-sandbox --product AuralBoundaryChecks -- --list
+swift run --disable-sandbox --product AuralBoundaryChecks -- auth-flow workflow
+```
 
 For changes to build, packaging, dependency, FFI, or release behavior, also run the clean gate:
 
@@ -93,6 +142,8 @@ canonical list of accepted decisions:
 - Swift owns windows, navigation, presentation, OAuth, catalog access, metadata, shuffle policy,
   progress interpolation, and native AVFoundation audio output.
 - Rust/librespot owns the streaming session, Spotify Connect, decoding, reconnects, and queue truth.
+  Build, reconnect cleanup+build, and exported cleanup serialize through one async lifecycle mutex
+  so those operations cannot interleave writes to the engine globals.
 - `AuralDomain` owns atomic playback state, the reducer, queue precedence, and pure policies.
 - `AuralCore` owns the app implementation behind the thin shipping `AuralApp` executable.
 - `PlaybackStore` publishes reducer state, `PlaybackCoordinator` serializes effects, and

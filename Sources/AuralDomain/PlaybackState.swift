@@ -30,9 +30,13 @@ public enum PlaybackOwner: Equatable, Sendable {
     case uncertain(PlaybackDevice?)
 }
 
-/// Resolves a connection callback without making metadata availability part of playback
-/// ownership. A URI is sufficient evidence that playback exists; labels and artwork may arrive
-/// later without changing where transport commands must be routed.
+/// Single owner-resolution policy for connection callbacks and device snapshots.
+/// Metadata availability is not ownership: a URI is sufficient evidence that playback exists,
+/// so labels and artwork may arrive later without changing where transport commands route.
+/// `lastRemoteDeviceID` is immutable event context, never read from store preferences here.
+/// A matching remembered remote remains an uncertain candidate so paused Connect playback stays
+/// remote-routable; a missing, stale, or local identity fallback stays `uncertain(nil)` and
+/// never becomes local.
 public func connectionPlaybackOwner(
     isLocalActive: Bool,
     localDeviceID: String?,
@@ -43,7 +47,8 @@ public func connectionPlaybackOwner(
     lastRemoteDeviceID: String?
 ) -> PlaybackOwner {
     if isLocalActive {
-        let local = devices.first { $0.id == localDeviceID }
+        let local =
+            devices.first { $0.id == localDeviceID }
             ?? PlaybackDevice(
                 id: localDeviceID ?? "",
                 name: localDeviceName,
@@ -57,12 +62,16 @@ public func connectionPlaybackOwner(
     }
     guard currentTrackURI?.isEmpty == false else { return .none }
 
-    let candidate: PlaybackDevice? = switch previousOwner {
-    case let .remote(device), let .uncertain(.some(device)):
-        device
-    default:
-        lastRemoteDeviceID.flatMap { id in devices.first { $0.id == id } }
-    }
+    let candidate: PlaybackDevice? =
+        switch previousOwner {
+        case let .remote(device), let .uncertain(.some(device)):
+            devices.first { $0.id == device.id } ?? device
+        default:
+            lastRemoteDeviceID.flatMap { id in
+                guard id != localDeviceID else { return nil }
+                return devices.first { $0.id == id }
+            }
+        }
     return .uncertain(candidate)
 }
 
@@ -74,7 +83,8 @@ public func queueBootstrapMetadataURI(
     currentTrackURI: String?
 ) -> String? {
     guard let snapshotTrackURI, !snapshotTrackURI.isEmpty,
-          snapshotTrackURI == currentTrackURI else { return nil }
+        snapshotTrackURI == currentTrackURI
+    else { return nil }
     return snapshotTrackURI
 }
 
@@ -262,17 +272,19 @@ public struct PlaybackQueueItem: Identifiable, Equatable, Sendable {
     public let id: String
     public let uri: String
     public let provider: String
+    public let occurrence: Int
     public let uid: String
 
-    public init(id: String, uri: String, provider: String, uid: String = "") {
-        self.id = id
+    public init(uri: String, provider: String, occurrence: Int = 0, uid: String = "") {
+        id = QueueEntry.identity(occurrence: occurrence, provider: provider, uri: uri, uid: uid)
         self.uri = uri
         self.provider = provider
+        self.occurrence = occurrence
         self.uid = uid
     }
 
     public init(_ entry: QueueEntry) {
-        self.init(id: entry.id, uri: entry.uri, provider: entry.provider, uid: entry.uid)
+        self.init(uri: entry.uri, provider: entry.provider, occurrence: entry.occurrence, uid: entry.uid)
     }
 }
 
@@ -326,11 +338,20 @@ public struct PlaybackDeviceSnapshot: Equatable, Sendable {
     public var devices: [PlaybackDevice]
     public var localDeviceID: String?
     public var revision: UInt64
+    /// Remembered remote device stamped by the store at event intake. The reducer uses this
+    /// only as payload; it does not read preferences.
+    public var lastRemoteDeviceID: String?
 
-    public init(devices: [PlaybackDevice] = [], localDeviceID: String? = nil, revision: UInt64 = 0) {
+    public init(
+        devices: [PlaybackDevice] = [],
+        localDeviceID: String? = nil,
+        revision: UInt64 = 0,
+        lastRemoteDeviceID: String? = nil
+    ) {
         self.devices = devices
         self.localDeviceID = localDeviceID
         self.revision = revision
+        self.lastRemoteDeviceID = lastRemoteDeviceID
     }
 }
 
@@ -348,6 +369,24 @@ public struct PendingPlaybackCommand: Equatable, Sendable {
     public let kind: PlaybackCommandKind
     public let expectedTransport: PlaybackTransportState?
     public let rollbackTransport: PlaybackTransportState?
+    public let expectedTiming: PlaybackTiming?
+    public let rollbackTiming: PlaybackTiming?
+    /// Concrete play target when the caller already knows the track to present.
+    public let expectedTrack: CurrentTrack?
+    /// Exact presentation captured at `commandStarted` for a known play target.
+    public let rollbackPresentation: PlaybackPresentationSnapshot?
+    /// Requested shuffle value for a live options command. Repeat commands leave this nil.
+    public let expectedShuffle: Bool?
+    /// Exact pre-command shuffle captured at `commandStarted` for a live shuffle command.
+    public let rollbackShuffle: Bool?
+    /// Requested canonical repeat flags for a live options command. Shuffle commands leave this nil.
+    public let expectedRepeatFlags: RepeatFlags?
+    /// Exact pre-command raw repeat flags captured at `commandStarted` for a live repeat command.
+    public let rollbackRepeatFlags: RepeatFlags?
+    /// Requested remote-transfer owner. Transfer-to-this-Mac leaves this nil.
+    public let expectedOwner: PlaybackOwner?
+    /// Exact pre-command owner captured at `commandStarted` for a remote transfer.
+    public let rollbackOwner: PlaybackOwner?
     public let startedAt: Date
 
     public init(
@@ -355,14 +394,43 @@ public struct PendingPlaybackCommand: Equatable, Sendable {
         kind: PlaybackCommandKind,
         expectedTransport: PlaybackTransportState?,
         rollbackTransport: PlaybackTransportState? = nil,
+        expectedTiming: PlaybackTiming? = nil,
+        rollbackTiming: PlaybackTiming? = nil,
+        expectedTrack: CurrentTrack? = nil,
+        rollbackPresentation: PlaybackPresentationSnapshot? = nil,
+        expectedShuffle: Bool? = nil,
+        rollbackShuffle: Bool? = nil,
+        expectedRepeatFlags: RepeatFlags? = nil,
+        rollbackRepeatFlags: RepeatFlags? = nil,
+        expectedOwner: PlaybackOwner? = nil,
+        rollbackOwner: PlaybackOwner? = nil,
         startedAt: Date
     ) {
         self.id = id
         self.kind = kind
         self.expectedTransport = expectedTransport
         self.rollbackTransport = rollbackTransport
+        self.expectedTiming = expectedTiming
+        self.rollbackTiming = rollbackTiming
+        self.expectedTrack = expectedTrack
+        self.rollbackPresentation = rollbackPresentation
+        self.expectedShuffle = expectedShuffle
+        self.rollbackShuffle = rollbackShuffle
+        self.expectedRepeatFlags = expectedRepeatFlags
+        self.rollbackRepeatFlags = rollbackRepeatFlags
+        self.expectedOwner = expectedOwner
+        self.rollbackOwner = rollbackOwner
         self.startedAt = startedAt
     }
+}
+
+/// How a known-target transport, shuffle, repeat, or remote-transfer command left `pendingCommands`
+/// without `commandFinished`. Stored per command id so a later pause/resume cannot recycle
+/// the nil catch-all. `commandFinished` consumes a matching entry (pending rollback or
+/// consume-only) so the map does not grow for the process/session lifetime.
+public enum PlaybackTransportCommandResolution: Equatable, Sendable {
+    case confirmed
+    case superseded
 }
 
 public struct PlaybackNotice: Equatable, Sendable {
@@ -444,6 +512,7 @@ public struct PlaybackState: Equatable, Sendable {
     public var pendingCommands: [PlaybackCommandKind: PendingPlaybackCommand]
     public var notice: PlaybackNotice?
     public var sourceRevisions: [PlaybackEventSource: UInt64]
+    public var transportCommandResolutions: [UUID: PlaybackTransportCommandResolution]
 
     public init(
         accountEpoch: UInt64 = 0,
@@ -458,7 +527,8 @@ public struct PlaybackState: Equatable, Sendable {
         devices: PlaybackDeviceSnapshot = PlaybackDeviceSnapshot(),
         pendingCommands: [PlaybackCommandKind: PendingPlaybackCommand] = [:],
         notice: PlaybackNotice? = nil,
-        sourceRevisions: [PlaybackEventSource: UInt64] = [:]
+        sourceRevisions: [PlaybackEventSource: UInt64] = [:],
+        transportCommandResolutions: [UUID: PlaybackTransportCommandResolution] = [:]
     ) {
         self.accountEpoch = accountEpoch
         self.engineEpoch = engineEpoch
@@ -473,6 +543,7 @@ public struct PlaybackState: Equatable, Sendable {
         self.pendingCommands = pendingCommands
         self.notice = notice
         self.sourceRevisions = sourceRevisions
+        self.transportCommandResolutions = transportCommandResolutions
     }
 }
 
@@ -503,13 +574,15 @@ public enum PlaybackReducer {
         // Reduce into a candidate so a rejected event is genuinely inert. In particular, an
         // unknown command acknowledgement must not consume its source revision and prevent the
         // matching acknowledgement from arriving later.
-        guard var candidate = adopting(
-            state,
-            accountEpoch: envelope.accountEpoch,
-            engineEpoch: envelope.engineEpoch,
-            source: envelope.source,
-            revision: envelope.revision
-        ) else { return false }
+        guard
+            var candidate = adopting(
+                state,
+                accountEpoch: envelope.accountEpoch,
+                engineEpoch: envelope.engineEpoch,
+                source: envelope.source,
+                revision: envelope.revision
+            )
+        else { return false }
 
         switch envelope.event {
         case let .reset(session):
@@ -521,36 +594,57 @@ public enum PlaybackReducer {
         case let .session(session):
             candidate.session = session
         case let .owner(owner):
-            candidate.owner = owner
+            reconcileOwner(owner, source: envelope.source, in: &candidate)
         case let .transport(transport):
-            reconcileTransport(transport, in: &candidate)
+            reconcileTransport(transport, incomingTrackURI: nil, in: &candidate)
         case let .enginePlayback(snapshot):
-            if let uri = snapshot.trackURI, !uri.isEmpty {
-                if candidate.currentTrack?.uri != uri {
-                    candidate.currentTrack = CurrentTrack(uri: uri)
-                }
+            let incomingURI = playbackTrackURI(snapshot.trackURI)
+            if shouldHoldOptimisticPlayTarget(incomingURI: incomingURI, in: candidate) {
+                applyEnginePlaybackOptions(snapshot, in: &candidate)
             } else {
-                candidate.currentTrack = nil
+                supersedeOptimisticPlayTargetIfNeeded(incomingURI: incomingURI, in: &candidate)
+                let previousURI = candidate.currentTrack?.uri
+                reconcileSeekTiming(snapshot.timing, incomingTrackURI: incomingURI, in: &candidate)
+                if let uri = incomingURI {
+                    if candidate.currentTrack?.uri != uri {
+                        candidate.currentTrack = CurrentTrack(uri: uri)
+                    }
+                } else {
+                    candidate.currentTrack = nil
+                }
+                adoptOwnerAfterTrackURIChange(
+                    previousURI: previousURI,
+                    incomingURI: incomingURI,
+                    source: envelope.source,
+                    in: &candidate
+                )
+                applyEnginePlaybackOptions(snapshot, in: &candidate)
+                reconcileTransport(
+                    candidate.currentTrack == nil ? .stopped : snapshot.transport,
+                    incomingTrackURI: incomingURI,
+                    in: &candidate
+                )
             }
-            candidate.timing = snapshot.timing
-            if let shuffle = snapshot.shuffle { candidate.options.shuffle = shuffle }
-            if snapshot.repeatMode != nil || snapshot.repeatFlags != nil {
-                let flags = snapshot.repeatFlags
-                    ?? snapshot.repeatMode?.flags
-                    ?? candidate.options.repeatFlags
-                candidate.options.repeatFlags = flags
-                candidate.options.repeatMode = snapshot.repeatMode
-                    ?? RepeatMode(context: flags.context, track: flags.track)
-            }
-            reconcileTransport(candidate.currentTrack == nil ? .stopped : snapshot.transport, in: &candidate)
         case let .engineConnection(snapshot):
             if let session = snapshot.session { candidate.session = session }
-            candidate.owner = snapshot.owner
+            reconcileOwner(snapshot.owner, source: envelope.source, in: &candidate)
             candidate.devices.localDeviceID = snapshot.localDeviceID
         case let .presentation(presentation):
-            candidate.currentTrack = presentation.currentTrack
-            candidate.timing = presentation.timing
-            reconcileTransport(presentation.transport, in: &candidate)
+            let incomingURI = playbackTrackURI(presentation.currentTrack?.uri)
+            if !shouldHoldOptimisticPlayTarget(incomingURI: incomingURI, in: candidate) {
+                supersedeOptimisticPlayTargetIfNeeded(incomingURI: incomingURI, in: &candidate)
+                reconcileSeekTiming(
+                    presentation.timing,
+                    incomingTrackURI: presentation.currentTrack?.uri,
+                    in: &candidate
+                )
+                candidate.currentTrack = presentation.currentTrack
+                reconcileTransport(
+                    presentation.transport,
+                    incomingTrackURI: incomingURI,
+                    in: &candidate
+                )
+            }
         case let .trackMetadata(metadata):
             guard var track = candidate.currentTrack, track.uri == metadata.uri else { return false }
             track.title = metadata.title
@@ -563,19 +657,46 @@ public enum PlaybackReducer {
                 candidate.timing.duration = metadata.duration
             }
         case let .currentTrack(track):
+            let incomingURI = playbackTrackURI(track?.uri)
+            if shouldHoldOptimisticPlayTarget(incomingURI: incomingURI, in: candidate) {
+                break
+            }
+            supersedeOptimisticPlayTargetIfNeeded(incomingURI: incomingURI, in: &candidate)
+            let previousURI = candidate.currentTrack?.uri
+            if candidate.pendingCommands[.seek] != nil,
+                incomingURI == nil || playbackTrackURI(candidate.currentTrack?.uri) != incomingURI
+            {
+                candidate.pendingCommands[.seek] = nil
+            }
             candidate.currentTrack = track
+            adoptOwnerAfterTrackURIChange(
+                previousURI: previousURI,
+                incomingURI: incomingURI,
+                source: envelope.source,
+                in: &candidate
+            )
             if track == nil {
                 candidate.transport = .stopped
                 candidate.timing = PlaybackTiming(anchoredAt: envelope.receivedAt)
             }
         case let .timing(position, duration, anchoredAt):
-            candidate.timing = PlaybackTiming(
-                position: max(0, position),
-                duration: max(0, duration),
-                anchoredAt: anchoredAt
+            reconcileSeekTiming(
+                PlaybackTiming(
+                    position: max(0, position),
+                    duration: max(0, duration),
+                    anchoredAt: anchoredAt
+                ),
+                incomingTrackURI: candidate.currentTrack?.uri,
+                in: &candidate
             )
         case let .options(options):
-            candidate.options = options
+            reconcileRepeat(
+                flags: options.repeatFlags,
+                mode: options.repeatMode,
+                source: envelope.source,
+                in: &candidate
+            )
+            reconcileShuffle(options.shuffle, source: envelope.source, in: &candidate)
         case let .queue(incoming):
             candidate.queue = mergePlaybackQueueSnapshots(
                 current: candidate.queue,
@@ -584,44 +705,107 @@ public enum PlaybackReducer {
         case let .devices(devices):
             guard devices.revision >= candidate.devices.revision else { return false }
             candidate.devices = devices
-            if let active = devices.devices.first(where: \.isActive) {
-                candidate.owner = active.id == devices.localDeviceID ? .local(active) : .remote(active)
-            } else if candidate.currentTrack == nil {
-                candidate.owner = .none
-            } else {
-                let previousCandidate: PlaybackDevice? = switch candidate.owner {
-                case let .remote(device), let .uncertain(.some(device)): device
-                default: nil
-                }
-                let refreshed = previousCandidate.flatMap { prior in
-                    devices.devices.first { $0.id == prior.id }
-                } ?? previousCandidate
-                candidate.owner = .uncertain(refreshed)
-            }
+            applyConnectionPlaybackOwner(&candidate, source: envelope.source)
         case let .commandStarted(command):
+            // Capture current presentation before applying the caller's target. The store must
+            // not mutate transport, timing, track, shuffle, repeat, or owner first, or rollback
+            // records the optimistic values. Do not clear other commands' resolutions: a later
+            // pause must not recycle the already-reconciled-success path for a superseded play.
             let prepared = PendingPlaybackCommand(
                 id: command.id,
                 kind: command.kind,
                 expectedTransport: command.expectedTransport,
-                rollbackTransport: command.rollbackTransport ?? (
-                    command.expectedTransport == nil ? nil : candidate.transport
-                ),
+                rollbackTransport: command.rollbackTransport
+                    ?? (command.expectedTransport == nil && command.expectedTrack == nil ? nil : candidate.transport),
+                expectedTiming: command.expectedTiming,
+                rollbackTiming: command.rollbackTiming
+                    ?? (command.expectedTiming == nil && command.expectedTrack == nil ? nil : candidate.timing),
+                expectedTrack: command.expectedTrack,
+                rollbackPresentation: command.rollbackPresentation
+                    ?? (command.expectedTrack == nil
+                        ? nil
+                        : PlaybackPresentationSnapshot(
+                            currentTrack: candidate.currentTrack,
+                            transport: candidate.transport,
+                            timing: candidate.timing
+                        )),
+                expectedShuffle: command.expectedShuffle,
+                rollbackShuffle: command.rollbackShuffle
+                    ?? (command.expectedShuffle == nil ? nil : candidate.options.shuffle),
+                expectedRepeatFlags: command.expectedRepeatFlags,
+                rollbackRepeatFlags: command.rollbackRepeatFlags
+                    ?? (command.expectedRepeatFlags == nil ? nil : candidate.options.repeatFlags),
+                expectedOwner: command.expectedOwner,
+                rollbackOwner: command.rollbackOwner ?? (command.expectedOwner == nil ? nil : candidate.owner),
                 startedAt: command.startedAt
             )
             candidate.pendingCommands[command.kind] = prepared
+            if let expectedTrack = command.expectedTrack {
+                if playbackTrackURI(candidate.currentTrack?.uri) != playbackTrackURI(expectedTrack.uri) {
+                    candidate.pendingCommands[.seek] = nil
+                }
+                candidate.currentTrack = expectedTrack
+            }
             if let expected = command.expectedTransport {
                 candidate.transport = expected
             }
-        case let .commandFinished(id, accepted, notice):
-            guard let pair = candidate.pendingCommands.first(where: { $0.value.id == id }) else {
-                return false
+            if let expected = command.expectedTiming {
+                candidate.timing = expected
             }
-            candidate.pendingCommands[pair.key] = nil
-            if !accepted {
-                if pair.key == .transport, let rollback = pair.value.rollbackTransport {
-                    candidate.transport = rollback
+            if let expectedShuffle = command.expectedShuffle {
+                candidate.options.shuffle = expectedShuffle
+            }
+            if let expectedRepeat = command.expectedRepeatFlags {
+                applyRepeatFlags(expectedRepeat, to: &candidate)
+            }
+            if let expectedOwner = command.expectedOwner {
+                candidate.owner = expectedOwner
+            }
+        case let .commandFinished(id, accepted, notice):
+            if let pair = candidate.pendingCommands.first(where: { $0.value.id == id }) {
+                candidate.pendingCommands[pair.key] = nil
+                candidate.transportCommandResolutions[id] = nil
+                if !accepted {
+                    if let rollback = pair.value.rollbackPresentation {
+                        candidate.pendingCommands[.seek] = nil
+                        candidate.currentTrack = rollback.currentTrack
+                        candidate.transport = rollback.transport
+                        candidate.timing = rollback.timing
+                    } else {
+                        if let rollback = pair.value.rollbackTransport {
+                            candidate.transport = rollback
+                        }
+                        if let rollback = pair.value.rollbackTiming {
+                            candidate.timing = rollback
+                        }
+                    }
+                    if let rollbackShuffle = pair.value.rollbackShuffle {
+                        candidate.options.shuffle = rollbackShuffle
+                    }
+                    if let rollbackRepeat = pair.value.rollbackRepeatFlags {
+                        applyRepeatFlags(rollbackRepeat, to: &candidate)
+                    }
+                    if let rollbackOwner = pair.value.rollbackOwner {
+                        candidate.owner = rollbackOwner
+                    }
+                    // A rejected finish with no notice restores rollback without replacing an
+                    // unrelated existing notice. Cancellation is one caller of that rule.
+                    if let notice {
+                        candidate.notice = notice
+                    }
+                } else {
+                    if let expectedShuffle = pair.value.expectedShuffle {
+                        candidate.options.shuffle = expectedShuffle
+                    }
+                    if let expectedRepeat = pair.value.expectedRepeatFlags {
+                        applyRepeatFlags(expectedRepeat, to: &candidate)
+                    }
                 }
-                candidate.notice = notice
+            } else if candidate.transportCommandResolutions[id] != nil {
+                // Consume a confirmed/superseded entry without touching presentation.
+                candidate.transportCommandResolutions[id] = nil
+            } else {
+                return false
             }
         case let .notice(notice):
             candidate.notice = notice
@@ -661,6 +845,7 @@ public enum PlaybackReducer {
             candidate.engineEpoch = engineEpoch
             candidate.sourceRevisions = [:]
             candidate.pendingCommands = [:]
+            candidate.transportCommandResolutions = [:]
             candidate.devices.revision = 0
         }
 
@@ -674,11 +859,31 @@ public enum PlaybackReducer {
 
     private static func reconcileTransport(
         _ transport: PlaybackTransportState,
+        incomingTrackURI: String?,
         in state: inout PlaybackState
     ) {
         if let pending = state.pendingCommands[.transport],
-           let expected = pending.expectedTransport,
-           transport != expected
+            let targetURI = playbackTrackURI(pending.expectedTrack?.uri)
+        {
+            let incoming = playbackTrackURI(incomingTrackURI)
+            if incoming != targetURI {
+                state.transport = pending.expectedTransport ?? transport
+                return
+            }
+            if let expected = pending.expectedTransport, transport != expected {
+                state.transport = expected
+            } else {
+                state.transport = transport
+                if pending.expectedTransport == nil || pending.expectedTransport == transport {
+                    state.transportCommandResolutions[pending.id] = .confirmed
+                    state.pendingCommands[.transport] = nil
+                }
+            }
+            return
+        }
+        if let pending = state.pendingCommands[.transport],
+            let expected = pending.expectedTransport,
+            transport != expected
         {
             state.transport = expected
         } else {
@@ -687,6 +892,293 @@ public enum PlaybackReducer {
                 state.pendingCommands[.transport] = nil
             }
         }
+    }
+
+    /// Lagging snapshots of the pre-command track must not confirm or replace a known play target.
+    private static func shouldHoldOptimisticPlayTarget(
+        incomingURI: String?,
+        in state: PlaybackState
+    ) -> Bool {
+        guard let pending = state.pendingCommands[.transport],
+            let targetURI = playbackTrackURI(pending.expectedTrack?.uri)
+        else { return false }
+        let incoming = playbackTrackURI(incomingURI)
+        let rollbackURI = playbackTrackURI(pending.rollbackPresentation?.currentTrack?.uri)
+        return incoming != nil && incoming != targetURI && incoming == rollbackURI
+    }
+
+    private static func supersedeOptimisticPlayTargetIfNeeded(
+        incomingURI: String?,
+        in state: inout PlaybackState
+    ) {
+        guard let pending = state.pendingCommands[.transport],
+            let targetURI = playbackTrackURI(pending.expectedTrack?.uri)
+        else { return }
+        let incoming = playbackTrackURI(incomingURI)
+        let rollbackURI = playbackTrackURI(pending.rollbackPresentation?.currentTrack?.uri)
+        if incoming == targetURI { return }
+        if incoming != nil, incoming == rollbackURI { return }
+        state.pendingCommands[.transport] = nil
+        state.transportCommandResolutions[pending.id] = .superseded
+    }
+
+    private static func applyEnginePlaybackOptions(
+        _ snapshot: EnginePlaybackSnapshot,
+        in candidate: inout PlaybackState
+    ) {
+        reconcileShuffle(snapshot.shuffle, source: .enginePlayback, in: &candidate)
+        if snapshot.repeatMode != nil || snapshot.repeatFlags != nil {
+            let flags =
+                snapshot.repeatFlags
+                ?? snapshot.repeatMode?.flags
+                ?? candidate.options.repeatFlags
+            let mode =
+                snapshot.repeatMode
+                ?? RepeatMode(context: flags.context, track: flags.track)
+            reconcileRepeat(flags: flags, mode: mode, source: .enginePlayback, in: &candidate)
+        }
+    }
+
+    /// A lagging pre-command shuffle sample must not undo the pending target. Only an
+    /// authoritative engine-playback sample matching the requested value confirms the command
+    /// so a late coordinator failure cannot restore the prior Boolean. User/preference
+    /// `.options` events, including setRepeat copies of the optimistic Boolean, hold the
+    /// pending target and cannot record confirmation. Repeat options commands have no
+    /// expected shuffle and keep current adoption.
+    private static func reconcileShuffle(
+        _ incoming: Bool?,
+        source: PlaybackEventSource,
+        in state: inout PlaybackState
+    ) {
+        guard let incoming else { return }
+        guard let pending = state.pendingCommands[.options],
+            let expected = pending.expectedShuffle
+        else {
+            state.options.shuffle = incoming
+            return
+        }
+        if incoming == expected {
+            state.options.shuffle = incoming
+            if source == .enginePlayback {
+                state.pendingCommands[.options] = nil
+                state.transportCommandResolutions[pending.id] = .confirmed
+            }
+            return
+        }
+    }
+
+    /// Repeat options optimism is reducer-owned. Matching authoritative engine flags confirm
+    /// so a late coordinator failure cannot restore the prior pair. Exact prior flags are
+    /// lagging and must not confirm or replace the target. The known two-step intermediate
+    /// is applied for honest Connect/FFI sequencing but stays pending so compensation can
+    /// still restore the captured previous pair. Unrelated authoritative flags supersede.
+    /// User/preference `.options` events cannot confirm or supersede.
+    private static func reconcileRepeat(
+        flags: RepeatFlags,
+        mode: RepeatMode,
+        source: PlaybackEventSource,
+        in state: inout PlaybackState
+    ) {
+        guard let pending = state.pendingCommands[.options],
+            let expected = pending.expectedRepeatFlags
+        else {
+            state.options.repeatFlags = flags
+            state.options.repeatMode = mode
+            return
+        }
+        if flags == expected {
+            applyRepeatFlags(expected, to: &state)
+            if source == .enginePlayback {
+                state.pendingCommands[.options] = nil
+                state.transportCommandResolutions[pending.id] = .confirmed
+            }
+            return
+        }
+        if flags == pending.rollbackRepeatFlags {
+            return
+        }
+        if let previous = pending.rollbackRepeatFlags,
+            isRepeatTransitionIntermediate(previous: previous, target: expected, incoming: flags)
+        {
+            state.options.repeatFlags = flags
+            state.options.repeatMode = mode
+            return
+        }
+        if source == .enginePlayback {
+            state.options.repeatFlags = flags
+            state.options.repeatMode = mode
+            state.pendingCommands[.options] = nil
+            state.transportCommandResolutions[pending.id] = .superseded
+        }
+    }
+
+    private static func isRepeatTransitionIntermediate(
+        previous: RepeatFlags,
+        target: RepeatFlags,
+        incoming: RepeatFlags
+    ) -> Bool {
+        let plan = RepeatTransitionPlan.planning(from: previous, to: target)
+        guard let first = plan.mutations.first, plan.mutations.count > 1 else { return false }
+        return previous.applying(first) == incoming
+    }
+
+    private static func applyRepeatFlags(_ flags: RepeatFlags, to state: inout PlaybackState) {
+        state.options.repeatFlags = flags
+        state.options.repeatMode = RepeatMode(context: flags.context, track: flags.track)
+    }
+
+    /// A lagging snapshot of the pre-command owner must not undo a pending remote-transfer
+    /// target. Identity is the stable device id, never name or type. An authoritative
+    /// connection or devices snapshot whose identified local/remote owner matches the
+    /// target confirms the command so a late coordinator failure cannot restore the
+    /// prior owner. An unrelated identified owner, or a genuine empty owner that is
+    /// not the exact prior emptiness, supersedes: rollback is cleared and a later
+    /// finish stays inert. Uncertain copies of the target keep the pending command.
+    private static func reconcileOwner(
+        _ incoming: PlaybackOwner,
+        source: PlaybackEventSource,
+        in state: inout PlaybackState
+    ) {
+        guard let pending = state.pendingCommands[.transfer],
+            let expected = pending.expectedOwner
+        else {
+            state.owner = incoming
+            return
+        }
+        let expectedID = playbackOwnerStableDeviceID(expected)
+        let incomingID = playbackOwnerStableDeviceID(incoming)
+        let rollbackID = pending.rollbackOwner.flatMap(playbackOwnerStableDeviceID)
+        if let expectedID, incomingID == expectedID {
+            state.owner = incoming
+            if isIdentifiedPlaybackOwner(incoming),
+                source == .engineConnection || source == .engineDevices
+            {
+                state.pendingCommands[.transfer] = nil
+                state.transportCommandResolutions[pending.id] = .confirmed
+            }
+            return
+        }
+        if incomingID == rollbackID {
+            return
+        }
+        state.owner = incoming
+        state.pendingCommands[.transfer] = nil
+        state.transportCommandResolutions[pending.id] = .superseded
+    }
+
+    private static func playbackOwnerStableDeviceID(_ owner: PlaybackOwner) -> String? {
+        let id: String?
+        switch owner {
+        case .none, .uncertain(nil):
+            id = nil
+        case let .local(device), let .remote(device), let .uncertain(.some(device)):
+            id = device.id
+        }
+        return id.flatMap { $0.isEmpty ? nil : $0 }
+    }
+
+    private static func isIdentifiedPlaybackOwner(_ owner: PlaybackOwner) -> Bool {
+        switch owner {
+        case .local, .remote:
+            return true
+        case .none, .uncertain:
+            return false
+        }
+    }
+
+    /// Holds optimistic seek timing until an incoming sample is at the expected millisecond
+    /// position on the same track. A different track or empty URI supersedes the old seek and
+    /// adopts the incoming timing so rollback cannot attach the previous track's position.
+    private static func reconcileSeekTiming(
+        _ timing: PlaybackTiming,
+        incomingTrackURI: String?,
+        in state: inout PlaybackState
+    ) {
+        let incomingURI = playbackTrackURI(incomingTrackURI)
+        if state.pendingCommands[.seek] != nil,
+            incomingURI == nil || playbackTrackURI(state.currentTrack?.uri) != incomingURI
+        {
+            state.pendingCommands[.seek] = nil
+            state.timing = timing
+            return
+        }
+        if let pending = state.pendingCommands[.seek],
+            let expected = pending.expectedTiming,
+            !matchesExpectedSeekPosition(timing, expected)
+        {
+            state.timing = expected
+        } else {
+            state.timing = timing
+            if let pending = state.pendingCommands[.seek],
+                let expected = pending.expectedTiming,
+                matchesExpectedSeekPosition(timing, expected)
+            {
+                state.pendingCommands[.seek] = nil
+            }
+        }
+    }
+
+    private static func applyConnectionPlaybackOwner(
+        _ candidate: inout PlaybackState,
+        source: PlaybackEventSource
+    ) {
+        let devices = candidate.devices
+        let isLocalActive = devices.devices.contains {
+            $0.isActive && $0.id == devices.localDeviceID
+        }
+        reconcileOwner(
+            connectionPlaybackOwner(
+                isLocalActive: isLocalActive,
+                localDeviceID: devices.localDeviceID,
+                localDeviceName: devices.devices.first { $0.id == devices.localDeviceID }?.name ?? "",
+                devices: devices.devices,
+                currentTrackURI: candidate.currentTrack?.uri,
+                previousOwner: candidate.owner,
+                lastRemoteDeviceID: devices.lastRemoteDeviceID
+            ),
+            source: source,
+            in: &candidate
+        )
+    }
+
+    /// Cluster delivery notifies devices before player state, so the first no-active snapshot
+    /// often has no URI yet and resolves to `.none`. When a URI later appears or clears, reuse
+    /// the stamped last-remote context instead of leaving `.none` locally routable.
+    /// Connection-authoritative `.local` / `.remote` / identified `.uncertain` owners stay put
+    /// until a devices snapshot re-resolves them.
+    private static func adoptOwnerAfterTrackURIChange(
+        previousURI: String?,
+        incomingURI: String?,
+        source: PlaybackEventSource,
+        in candidate: inout PlaybackState
+    ) {
+        let previous = playbackTrackURI(previousURI)
+        let incoming = playbackTrackURI(incomingURI)
+        guard previous != incoming else { return }
+        if incoming == nil {
+            if case .uncertain = candidate.owner {
+                applyConnectionPlaybackOwner(&candidate, source: source)
+            }
+            return
+        }
+        guard previous == nil else { return }
+        switch candidate.owner {
+        case .none, .uncertain(nil):
+            applyConnectionPlaybackOwner(&candidate, source: source)
+        default:
+            break
+        }
+    }
+
+    private static func playbackTrackURI(_ uri: String?) -> String? {
+        uri.flatMap { $0.isEmpty ? nil : $0 }
+    }
+
+    private static func matchesExpectedSeekPosition(
+        _ actual: PlaybackTiming,
+        _ expected: PlaybackTiming
+    ) -> Bool {
+        Int((actual.position * 1_000).rounded()) == Int((expected.position * 1_000).rounded())
     }
 
 }

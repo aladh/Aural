@@ -66,9 +66,14 @@ final class ArtworkCache {
                     (response as? HTTPURLResponse).map({ 200..<300 ~= $0.statusCode }) ?? true
                 else { return nil }
 
-                guard let decoded = await Task.detached(priority: .utility, operation: {
-                    Self.downsample(data, maxPixelSize: pixelSize)
-                }).value else { return nil }
+                guard
+                    let decoded = await Task.detached(
+                        priority: .utility,
+                        operation: {
+                            Self.downsample(data, maxPixelSize: pixelSize)
+                        }
+                    ).value
+                else { return nil }
 
                 return decoded
             } catch {

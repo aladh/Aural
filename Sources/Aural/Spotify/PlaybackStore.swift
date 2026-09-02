@@ -181,15 +181,14 @@ final class PlaybackStore {
     @ObservationIgnored let queueService: QueueService
     @ObservationIgnored let accountStore: AccountStore
     @ObservationIgnored let catalogSession: CatalogSessionAvailability
-    @ObservationIgnored var accountEpoch: UInt64 = 1
+    /// Read-only projection of `AccountStore.epoch`. Do not increment or assign this value.
+    var accountEpoch: UInt64 { accountStore.epoch }
     var thisDeviceName = "This Mac"
     @ObservationIgnored var lastRemoteDeviceID: String?
     /// The first Connect snapshot describes state that predates this process. It seeds the UI,
     /// but must not be counted as something the listener just played in this Aural session.
     @ObservationIgnored var hasReceivedPlaybackSnapshot = false
     @ObservationIgnored let effects = PlaybackEffectRegistry()
-    /// Nil until tried, true after a successful documented queue request, false after the
-    /// desktop grant is rejected by api.spotify.com for this session.
     /// True between `endSession` starting and the next `initializePlayer`. Backend events
     /// are delivered as detached tasks, so one queued just before a logout can land after
     /// the presentation was cleared; without this gate it would mark a signed-out
@@ -198,11 +197,22 @@ final class PlaybackStore {
     @ObservationIgnored var teardown = SessionTeardownCoalescer()
     @ObservationIgnored var teardownTask: Task<Void, Never>?
     @ObservationIgnored var terminationGate = PlaybackTerminationGate()
+    /// Process-lifetime subscriptions start only after SwiftUI reaches the durable restore
+    /// boundary. `AuralApp` values may be initialized speculatively, so `init` must not subscribe.
+    @ObservationIgnored var hasStartedLifetimeEffects = false
     @ObservationIgnored var lastEngineEventSequence: UInt64 = 0
     @ObservationIgnored var engineGeneration: UInt64 = 0
+    /// One immutable stamp for playback-scoped work. This projects the two existing
+    /// lifecycle owners without becoming a third writable counter.
+    var playbackLifetime: PlaybackLifetime {
+        PlaybackLifetime(accountEpoch: accountEpoch, engineGeneration: engineGeneration)
+    }
     /// MainActor watermark for Connect *callback* identity. Distinct from
     /// `state.sourceRevisions[.engineQueue]`, which tracks provenance snapshots after merge.
     @ObservationIgnored var connectQueueCallback = ConnectQueueCallbackWatermark()
+    /// Inspector-facing version advanced only after a changed Connect URI ordering commits.
+    /// Refresh-produced queue projections must never write it or restart their own hydration.
+    var queueInspectorOrderingVersion: UInt64 = 0
     @ObservationIgnored var shuffleHistoryCache: [String: TimeInterval] = [:]
     /// Connect protocol queue used for `set_queue`. This is a MainActor projection of
     /// `QueueService`'s mutation snapshot, updated only after accepted Connect intake or a
@@ -229,46 +239,20 @@ final class PlaybackStore {
         queueService = QueueService(
             webQueue: environment.webQueue,
             metadata: metadataService,
-            clock: environment.clock
+            clock: environment.clock,
+            hook: environment.queueServiceHook
         )
         accountStore = AccountStore(environment: environment, coordinator: coordinator)
-        let catalogSession = CatalogSessionAvailability(accountEpoch: accountEpoch, isAvailable: false)
+        let catalogSession = CatalogSessionAvailability(accountEpoch: accountStore.epoch, isAvailable: false)
         self.catalogSession = catalogSession
         catalog = CatalogStore(
             provider: environment.catalog,
             attributesProvider: environment.trackAttributes,
             playlistMutations: environment.playlistMutations,
             session: catalogSession,
+            clock: environment.clock,
             feedback: feedback
         )
-        effects.replace(.engineEvents, with: Task { [weak self] in
-            for await envelope in environment.local.events() {
-                guard !Task.isCancelled, let self else { return }
-                self.receive(envelope)
-            }
-        })
-        effects.replace(.grantRevocations, with: Task { [weak self] in
-            for await _ in environment.account.revocations() {
-                guard !Task.isCancelled else { return }
-                await self?.handleGrantRevocation()
-            }
-        })
-        effects.replace(.lifecycle, with: Task { [weak self] in
-            for await event in environment.lifecycle.events() {
-                guard !Task.isCancelled, let self else { return }
-                await self.receive(event)
-            }
-        })
-        effects.replace(.preferencesRestore, with: Task { [weak self] in
-            guard let self else { return }
-            let epoch = self.accountEpoch
-            await self.queueService.reset(accountEpoch: self.accountEpoch)
-            guard !Task.isCancelled, self.accountEpoch == epoch else { return }
-            self.setShuffleEnabled(await environment.preferences.shuffleEnabled())
-            guard !Task.isCancelled, self.accountEpoch == epoch else { return }
-            self.lastRemoteDeviceID = await environment.preferences.lastRemoteDeviceID()
-            self.shuffleHistoryCache = await environment.preferences.shuffleHistory()
-        })
         accountStore.onPhaseChange = { [weak self] phase in
             guard let self else { return }
             self.catalogSession.update(
@@ -280,11 +264,80 @@ final class PlaybackStore {
         accountStore.onReady = { [weak self] in
             guard let self else { return }
             let epoch = self.accountEpoch
-            self.effects.replace(.catalogLoad, with: Task { [weak self] in
-                guard let self, self.accountEpoch == epoch else { return }
-                await self.catalog.homeLibrary.load()
-            })
+            self.effects.replace(
+                .catalogLoad,
+                with: Task { [weak self] in
+                    guard let self, self.accountEpoch == epoch else { return }
+                    await self.catalog.homeLibrary.load()
+                })
         }
+    }
+
+    func startLifetimeEffectsIfNeeded() {
+        guard !hasStartedLifetimeEffects else { return }
+        hasStartedLifetimeEffects = true
+        // Create each stream before account restoration can initialize the engine. The
+        // subscription is therefore installed synchronously even though consumption is a task.
+        let engineEvents = environment.local.events()
+        let grantRevocations = environment.account.revocations()
+        let lifecycleEvents = environment.lifecycle.events()
+        effects.replace(
+            .engineEvents,
+            with: Task { [weak self] in
+                for await envelope in engineEvents {
+                    guard !Task.isCancelled, let self else { return }
+                    self.receive(envelope)
+                }
+            })
+        effects.replace(
+            .grantRevocations,
+            with: Task { [weak self] in
+                for await _ in grantRevocations {
+                    guard !Task.isCancelled else { return }
+                    await self?.handleGrantRevocation()
+                }
+            })
+        effects.replace(
+            .lifecycle,
+            with: Task { [weak self] in
+                for await event in lifecycleEvents {
+                    guard !Task.isCancelled, let self else { return }
+                    await self.receive(event)
+                }
+            })
+        effects.replace(
+            .queueServiceBootstrap,
+            with: Task { [weak self] in
+                guard let self else { return }
+                await self.queueService.reset(accountEpoch: self.accountEpoch)
+            })
+        effects.replace(
+            .preferencesRestore,
+            with: Task { [weak self, environment] in
+                guard let self else { return }
+                let epoch = self.accountEpoch
+                let shuffleEnabled = await environment.preferences.shuffleEnabled()
+                guard
+                    !Task.isCancelled,
+                    self.terminationGate.allowsCommands,
+                    self.accountEpoch == epoch
+                else { return }
+                self.setShuffleEnabled(shuffleEnabled)
+                let lastRemoteDeviceID = await environment.preferences.lastRemoteDeviceID()
+                guard
+                    !Task.isCancelled,
+                    self.terminationGate.allowsCommands,
+                    self.accountEpoch == epoch
+                else { return }
+                self.lastRemoteDeviceID = lastRemoteDeviceID
+                let shuffleHistory = await environment.preferences.shuffleHistory()
+                guard
+                    !Task.isCancelled,
+                    self.terminationGate.allowsCommands,
+                    self.accountEpoch == epoch
+                else { return }
+                self.shuffleHistoryCache = shuffleHistory
+            })
     }
 
     /// macOS suspends the process on sleep and sockets die underneath it; without this the
@@ -315,8 +368,11 @@ final class PlaybackStore {
     /// The only mutation entrance for the atomic playback snapshot.
     /// Engine callbacks pass their payload `sessionGeneration` as `engineEpoch`. Asynchronous
     /// outcomes pass the account and engine identity captured when the work started so
-    /// `PlaybackReducer` rejects stale results. Unstamped events use `accountEpoch` and
-    /// `engineGeneration`, which mirrors `state.engineEpoch` after `reduce`.
+    /// `PlaybackReducer` rejects stale results. Unstamped events use `accountEpoch` (the
+    /// `AccountStore.epoch` projection) and `engineGeneration`, which mirrors `state.engineEpoch`
+    /// after `reduce`. Reducer-owned `state.accountEpoch` is accepted snapshot state, not a
+    /// second imperative lifecycle owner. Omitted `receivedAt` is the orchestration clock;
+    /// engine intake passes the fan-out receipt time, which stays distinct from source revisions.
     @discardableResult
     func send(
         _ event: PlaybackEvent,
@@ -324,7 +380,7 @@ final class PlaybackStore {
         revision: UInt64? = nil,
         engineEpoch: UInt64? = nil,
         accountEpoch: UInt64? = nil,
-        receivedAt: Date = Date()
+        receivedAt: Date? = nil
     ) -> Bool {
         let stampedAccountEpoch = accountEpoch ?? self.accountEpoch
         let stampedEngineEpoch = engineEpoch ?? engineGeneration
@@ -336,7 +392,7 @@ final class PlaybackStore {
                 engineEpoch: stampedEngineEpoch,
                 source: source,
                 revision: revision,
-                receivedAt: receivedAt,
+                receivedAt: receivedAt ?? environment.clock.now(),
                 event: event
             )
         )
@@ -351,6 +407,27 @@ final class PlaybackStore {
         return false
     }
 
+    /// Stamps playback-scoped work with the exact lifetime captured before suspension.
+    /// The reducer envelope remains scalar because account and engine have independent
+    /// semantics there; command call sites cannot accidentally mix captures from two lifetimes.
+    @discardableResult
+    func send(
+        _ event: PlaybackEvent,
+        source: PlaybackEventSource,
+        revision: UInt64? = nil,
+        playbackLifetime: PlaybackLifetime,
+        receivedAt: Date? = nil
+    ) -> Bool {
+        send(
+            event,
+            source: source,
+            revision: revision,
+            engineEpoch: playbackLifetime.engineGeneration,
+            accountEpoch: playbackLifetime.accountEpoch,
+            receivedAt: receivedAt
+        )
+    }
+
     @discardableResult
     func setPresentation(
         track: CurrentTrack?,
@@ -361,11 +438,12 @@ final class PlaybackStore {
         engineEpoch: UInt64? = nil
     ) -> Bool {
         send(
-            .presentation(PlaybackPresentationSnapshot(
-                currentTrack: track,
-                transport: transport ?? state.transport,
-                timing: timing ?? state.timing
-            )),
+            .presentation(
+                PlaybackPresentationSnapshot(
+                    currentTrack: track,
+                    transport: transport ?? state.transport,
+                    timing: timing ?? state.timing
+                )),
             source: source,
             engineEpoch: engineEpoch,
             accountEpoch: accountEpoch
@@ -384,14 +462,15 @@ final class PlaybackStore {
         engineEpoch: UInt64? = nil
     ) -> Bool {
         send(
-            .trackMetadata(PlaybackTrackMetadata(
-                uri: uri,
-                title: title,
-                artist: artist,
-                artworkURL: artworkURL,
-                duration: duration,
-                source: provenance
-            )),
+            .trackMetadata(
+                PlaybackTrackMetadata(
+                    uri: uri,
+                    title: title,
+                    artist: artist,
+                    artworkURL: artworkURL,
+                    duration: duration,
+                    source: provenance
+                )),
             source: .metadata,
             engineEpoch: engineEpoch,
             accountEpoch: accountEpoch
@@ -418,12 +497,16 @@ final class PlaybackStore {
     func setTiming(
         position: TimeInterval,
         duration: TimeInterval? = nil,
-        anchoredAt: Date = Date(),
+        anchoredAt: Date? = nil,
         accountEpoch: UInt64? = nil,
         engineEpoch: UInt64? = nil
     ) -> Bool {
         send(
-            .timing(position: position, duration: duration ?? self.duration, anchoredAt: anchoredAt),
+            .timing(
+                position: position,
+                duration: duration ?? self.duration,
+                anchoredAt: anchoredAt ?? environment.clock.now()
+            ),
             source: .user,
             engineEpoch: engineEpoch,
             accountEpoch: accountEpoch

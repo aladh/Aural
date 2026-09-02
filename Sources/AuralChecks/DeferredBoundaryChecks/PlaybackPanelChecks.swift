@@ -89,29 +89,33 @@ func runPlaybackPanelChecks(_ check: CheckRunner) {
             attributesProvider: TrackAttributesAPI(),
             session: session
         )
-        metadata.replaceTracks([
-            CatalogTrack(
-                id: "a", uri: "spotify:track:liked", title: "Liked One", artist: "Artist L",
-                album: "Album", duration: 200, artworkURL: nil, addedAt: nil
-            ),
-        ], from: .library)
-        metadata.replaceTracks([
-            CatalogTrack(
-                id: "b", uri: "spotify:track:searched", title: "Searched One", artist: "Artist S",
-                album: "Album S", duration: 180, artworkURL: URL(string: "https://example/s.jpg"), addedAt: nil
-            ),
-        ], from: .search)
-        metadata.replaceTracks([
-            CatalogTrack(
-                id: "c", uri: "spotify:track:pl", title: "Playlist One", artist: "Artist P",
-                album: "Album P", duration: 150, artworkURL: nil, addedAt: nil
-            ),
-        ], from: .playlist)
+        metadata.replaceTracks(
+            [
+                CatalogTrack(
+                    id: "a", uri: "spotify:track:liked", title: "Liked One", artist: "Artist L",
+                    album: "Album", duration: 200, artworkURL: nil, addedAt: nil
+                )
+            ], from: .library)
+        metadata.replaceTracks(
+            [
+                CatalogTrack(
+                    id: "b", uri: "spotify:track:searched", title: "Searched One", artist: "Artist S",
+                    album: "Album S", duration: 180, artworkURL: URL(string: "https://example/s.jpg"), addedAt: nil
+                )
+            ], from: .search)
+        metadata.replaceTracks(
+            [
+                CatalogTrack(
+                    id: "c", uri: "spotify:track:pl", title: "Playlist One", artist: "Artist P",
+                    album: "Album P", duration: 150, artworkURL: nil, addedAt: nil
+                )
+            ], from: .playlist)
 
         let liked = metadata.knownTrack(for: "spotify:track:liked")
         check.equal("liked list resolves", liked?.title, "Liked One")
         let searched = metadata.knownTrack(for: "spotify:track:searched")
-        check.equal("search results resolve with artwork", searched?.artworkURL?.absoluteString, "https://example/s.jpg")
+        check.equal(
+            "search results resolve with artwork", searched?.artworkURL?.absoluteString, "https://example/s.jpg")
 
         let info = metadata.displayInfo(for: "spotify:track:pl")
         check.equal("display info resolves the title", info.title, "Playlist One")
@@ -129,21 +133,33 @@ func runPlaybackPanelChecks(_ check: CheckRunner) {
             kind: .playlist
         )
         metadata.replaceItems([homePlaylist], from: .home)
-        check.equal("home item lookup stays lazy and resolves", metadata.knownItem(for: homePlaylist.uri)?.title, "Home Playlist")
+        check.equal(
+            "home item lookup stays lazy and resolves", metadata.knownItem(for: homePlaylist.uri)?.title,
+            "Home Playlist")
 
         let queueWaitingForOrdering = SidePanelQueueRefreshIdentity(
             isConnected: true,
             currentTrackURI: "spotify:track:current",
-            queueURIs: []
+            connectOrderingVersion: 0
         )
         let queueWithOrdering = SidePanelQueueRefreshIdentity(
             isConnected: true,
             currentTrackURI: "spotify:track:current",
-            queueURIs: ["spotify:track:next"]
+            connectOrderingVersion: 1
         )
         check.check(
             "launch-time queue ordering restarts metadata hydration",
             queueWaitingForOrdering != queueWithOrdering
+        )
+        let queueAfterHydration = SidePanelQueueRefreshIdentity(
+            isConnected: true,
+            currentTrackURI: "spotify:track:current",
+            connectOrderingVersion: queueWithOrdering.connectOrderingVersion
+        )
+        check.equal(
+            "queue hydration does not schedule a second refresh",
+            queueAfterHydration,
+            queueWithOrdering
         )
     }
 
@@ -176,7 +192,23 @@ func runPlaybackPanelChecks(_ check: CheckRunner) {
 
     check.suite("Play history") {
         let now = Date(timeIntervalSince1970: 1_000_000)
-        var entries = PlaybackHistory.updated([], afterPlaying: "spotify:track:a", title: "A", artist: "X", artworkURLString: nil, playedAt: now)
+        let store = PlaybackHistoryStore()
+        store.notePlayed(uri: "spotify:track:a", title: "A", artist: "X", artworkURL: nil, playedAt: now)
+        check.equal("history store records the injected playedAt", store.entries.first?.playedAt, now)
+        store.notePlayed(
+            uri: "spotify:track:a",
+            title: "A",
+            artist: "X",
+            artworkURL: nil,
+            playedAt: now.addingTimeInterval(60)
+        )
+        check.equal("history store replay keeps a single row", store.entries.count, 1)
+        check.equal(
+            "history store replay uses the later injected timestamp", store.entries.first?.playedAt,
+            now.addingTimeInterval(60))
+
+        var entries = PlaybackHistory.updated(
+            [], afterPlaying: "spotify:track:a", title: "A", artist: "X", artworkURLString: nil, playedAt: now)
         check.equal("newest entry lands first", entries.first?.uri, "spotify:track:a")
 
         // Replaying the same track moves it rather than duplicating it.
@@ -265,7 +297,7 @@ func runPlaybackPanelChecks(_ check: CheckRunner) {
 
         // Metadata aimed at one uri must leave every other entry untouched.
         let untouched = [
-            HistoryEntry(uri: "spotify:track:kept", title: "Kept", artist: "K", artworkURLString: nil, playedAt: now),
+            HistoryEntry(uri: "spotify:track:kept", title: "Kept", artist: "K", artworkURLString: nil, playedAt: now)
         ]
         let afterMiss = PlaybackHistory.withMetadata(
             untouched,
@@ -281,7 +313,7 @@ func runPlaybackPanelChecks(_ check: CheckRunner) {
             HistoryEntry(
                 uri: "spotify:track:a", title: "A", artist: "X",
                 artworkURLString: "https://example/old.jpg", playedAt: now
-            ),
+            )
         ]
         let enriched = PlaybackHistory.withMetadata(
             owned,
@@ -298,12 +330,12 @@ func runPlaybackPanelChecks(_ check: CheckRunner) {
         // The backend's current-track entries carry full metadata; queue rows carry
         // only a uri and what fed it.
         let queueJSON = """
-        {"track":{"uri":"spotify:track:now","provider":"context","name":"Now","artist":"A",
-                  "image_url":"https://example/now.jpg","duration_ms":200000},
-         "next_tracks":[
-          {"uri":"spotify:track:next1","provider":"queue"},
-          {"uri":"spotify:delimiter","provider":"autoplay"}]}
-        """
+            {"track":{"uri":"spotify:track:now","provider":"context","name":"Now","artist":"A",
+                      "image_url":"https://example/now.jpg","duration_ms":200000},
+             "next_tracks":[
+              {"uri":"spotify:track:next1","provider":"queue"},
+              {"uri":"spotify:delimiter","provider":"autoplay"}]}
+            """
         do {
             let decoded = try JSONDecoder().decode(RustQueueState.self, from: Data(queueJSON.utf8))
             check.equal("current track keeps metadata", decoded.track?.uri, "spotify:track:now")
@@ -317,9 +349,9 @@ func runPlaybackPanelChecks(_ check: CheckRunner) {
             check.check("queue state decodes: \(error)", false)
         }
         let pausedPlaybackJSON = """
-        {"is_playing":true,"is_paused":true,"track_uri":"spotify:track:abc",
-         "position_ms":42000,"duration_ms":180000,"timestamp_ms":1000000}
-        """
+            {"is_playing":true,"is_paused":true,"track_uri":"spotify:track:abc",
+             "position_ms":42000,"duration_ms":180000,"timestamp_ms":1000000}
+            """
         do {
             let state = try JSONDecoder().decode(RustPlaybackState.self, from: Data(pausedPlaybackJSON.utf8))
             check.check("remote paused bit decodes", state.isPlaying && state.isPaused == true)
@@ -329,11 +361,11 @@ func runPlaybackPanelChecks(_ check: CheckRunner) {
         }
 
         let devicesJSON = """
-        [{"id":"abc123","name":"Living Room","type":"speaker","is_active":false,
-          "is_private_session":false,"is_restricted":false,"volume_percent":40,"disable_volume":false},
-         {"id":"def456","name":"Mac","type":"Computer","is_active":true,
-          "is_private_session":false,"is_restricted":false,"volume_percent":null,"disable_volume":false}]
-        """
+            [{"id":"abc123","name":"Living Room","type":"speaker","is_active":false,
+              "is_private_session":false,"is_restricted":false,"volume_percent":40,"disable_volume":false},
+             {"id":"def456","name":"Mac","type":"Computer","is_active":true,
+              "is_private_session":false,"is_restricted":false,"volume_percent":null,"disable_volume":false}]
+            """
         do {
             let devices = try JSONDecoder().decode([ConnectDevice].self, from: Data(devicesJSON.utf8))
             check.equal("device list decodes", devices.count, 2)
@@ -345,9 +377,9 @@ func runPlaybackPanelChecks(_ check: CheckRunner) {
 
         // Spotify spells device types in mixed case; icon lookup must not.
         let casedTypesJSON = """
-        [{"id":"t1","name":"Den","type":"TV","is_active":false},
-         {"id":"t2","name":"Phone","type":"SMARTPHONE","is_active":false}]
-        """
+            [{"id":"t1","name":"Den","type":"TV","is_active":false},
+             {"id":"t2","name":"Phone","type":"SMARTPHONE","is_active":false}]
+            """
         do {
             let cased = try JSONDecoder().decode([ConnectDevice].self, from: Data(casedTypesJSON.utf8))
             check.equal("tv type maps regardless of case", cased.first?.symbolName, "tv")
@@ -378,8 +410,12 @@ func runPlaybackPanelChecks(_ check: CheckRunner) {
 
         let local = ConnectDevice(id: "local", name: "Aural", type: "computer", isActive: false)
         let remote = ConnectDevice(id: "phone", name: "Phone", type: "smartphone", isActive: true)
-        check.equal("local device is identified even while inactive", local.displayName(localDeviceID: "local"), "Aural (This Mac)")
-        check.equal("active remote device is identified as playing", remote.displayName(localDeviceID: "local"), "Phone (Playing)")
+        check.equal(
+            "local device is identified even while inactive", local.displayName(localDeviceID: "local"),
+            "Aural (This Mac)")
+        check.equal(
+            "active remote device is identified as playing", remote.displayName(localDeviceID: "local"),
+            "Phone (Playing)")
         check.equal(
             "transport routes to the active remote device",
             connectCommandRoute(isLocalActive: false, localDeviceID: "local", devices: [local, remote]),
@@ -400,12 +436,15 @@ func runPlaybackPanelChecks(_ check: CheckRunner) {
             connectCommandRoute(
                 isLocalActive: false,
                 localDeviceID: "local",
-                devices: [local, ConnectDevice(
-                    id: "phone",
-                    name: "Phone",
-                    type: "smartphone",
-                    isActive: false
-                )],
+                devices: [
+                    local,
+                    ConnectDevice(
+                        id: "phone",
+                        name: "Phone",
+                        type: "smartphone",
+                        isActive: false
+                    ),
+                ],
                 fallbackRemoteDeviceID: "phone"
             ),
             .remote(from: "local", to: "phone")
@@ -414,22 +453,24 @@ func runPlaybackPanelChecks(_ check: CheckRunner) {
 
     check.suite("Documented queue response") {
         let json = """
-        {"currently_playing":null,"queue":[
-          {"id":"track-id","uri":"spotify:track:track-id","name":"First Track",
-           "duration_ms":123000,"artists":[{"name":"First Artist"}],
-           "album":{"name":"First Album","images":[
-             {"url":"https://example.com/small.jpg","width":64,"height":64},
-             {"url":"https://example.com/large.jpg","width":640,"height":640}
-           ]}},
-          {"id":"episode-id","uri":"spotify:episode:episode-id","name":"An Episode",
-           "duration_ms":456000,"show":{"name":"A Show","publisher":"A Publisher","images":[]}}
-        ]}
-        """
+            {"currently_playing":null,"queue":[
+              {"id":"track-id","uri":"spotify:track:track-id","name":"First Track",
+               "duration_ms":123000,"artists":[{"name":"First Artist"}],
+               "album":{"name":"First Album","images":[
+                 {"url":"https://example.com/small.jpg","width":64,"height":64},
+                 {"url":"https://example.com/large.jpg","width":640,"height":640}
+               ]}},
+              {"id":"episode-id","uri":"spotify:episode:episode-id","name":"An Episode",
+               "duration_ms":456000,"show":{"name":"A Show","publisher":"A Publisher","images":[]}}
+            ]}
+            """
         do {
             let tracks = try SpotifyWebPlayerAPI.decodeQueue(Data(json.utf8))
-            check.equal("documented queue preserves order", tracks.map(\.uri), [
-                "spotify:track:track-id", "spotify:episode:episode-id",
-            ])
+            check.equal(
+                "documented queue preserves order", tracks.map(\.uri),
+                [
+                    "spotify:track:track-id", "spotify:episode:episode-id",
+                ])
             check.equal("queue track decodes its artist", tracks.first?.artist, "First Artist")
             check.equal("queue track decodes its album", tracks.first?.album, "First Album")
             check.equal(

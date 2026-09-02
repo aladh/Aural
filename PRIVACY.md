@@ -16,9 +16,10 @@ playback services, plus artwork hosts returned by Spotify. It has no Aural-opera
 
 ## Local storage
 
-- Developer ID builds store Spotify OAuth credentials in macOS Keychain.
-- Repeatedly rebuilt self-signed development builds store the same grant in the app's local
-  preferences because their changing signatures cannot retain a stable Keychain access policy.
+- Spotify OAuth credentials are stored in macOS Keychain in every build. Local development
+  packaging reuses a stable project-local signing identity so Keychain access policy survives
+  rebuilds. Older development builds that wrote the grant to local preferences are migrated
+  one way: the leftover value is read, then deleted, and is never written again.
 - Local preferences also retain a random installation/device identifier, UI preferences, shuffle
   history, and playback preferences.
 - Artwork is held in a bounded ephemeral URL cache and in-memory image cache; the app purges its

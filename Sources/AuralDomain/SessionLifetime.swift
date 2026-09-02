@@ -80,6 +80,28 @@ public struct AccountScopedRequestIdentity: Equatable, Sendable {
     }
 }
 
+/// Immutable stamp for one playback-scoped async lifetime.
+///
+/// Account epoch and engine generation intentionally remain distinct values, but command work
+/// carries and stamps them as one unit. This is not a writable lifecycle owner, counter,
+/// revision, or watermark.
+public struct PlaybackLifetime: Equatable, Sendable {
+    public let accountEpoch: UInt64
+    public let engineGeneration: UInt64
+
+    public init(accountEpoch: UInt64, engineGeneration: UInt64) {
+        self.accountEpoch = accountEpoch
+        self.engineGeneration = engineGeneration
+    }
+
+}
+
+/// Account-scoped request cancellation is inert: it must not publish results or user-facing errors.
+public func isCancellation(_ error: Error) -> Bool {
+    if error is CancellationError { return true }
+    return (error as? URLError)?.code == .cancelled
+}
+
 /// Connect queue *callback* watermark. Distinct from provenance-snapshot revisions
 /// recorded on `PlaybackEventSource.engineQueue`. `engineEpoch` is only a stale-engine floor:
 /// adopting that epoch elsewhere must not clear a newer callback generation.
@@ -120,14 +142,49 @@ public struct ConnectQueueCallbackWatermark: Equatable, Sendable {
     }
 }
 
+/// Pre-reducer store admission for a playback command.
+///
+/// Route selection, route refusal, and waiting for local Connect identity never consult this,
+/// so those paths cannot create pending commands. Duplicate-kind refusal here is the store
+/// gate; the reducer also rejects a second `commandStarted` for the same kind.
+public func playbackCommandShouldAdmit(
+    isTearingDown: Bool,
+    allowsCommands: Bool,
+    hasPendingCommandForKind: Bool
+) -> Bool {
+    !isTearingDown && allowsCommands && !hasPendingCommandForKind
+}
+
 /// Dependent work after `PlaybackStore.send(.commandFinished)`.
 ///
-/// `PlaybackReducer.reconcileTransport` drops a pending *transport* command when an engine
-/// snapshot already matches `expectedTransport`. The later `commandFinished` is then rejected.
-/// On the same account/engine lifetime that is already-reconciled success, even if the
-/// coordinator later reports failure: the backend has confirmed the optimistic transport.
-/// Showing an error or calling `completion(false)` would roll back that confirmed state.
-/// Account/engine invalidation, teardown, non-transport kinds, and a newer pending id stay inert.
+/// Same-lifetime is the first gate: epoch invalidation and teardown stay inert even when a
+/// confirmation was captured. `applyCommandOutcome` snapshots the finished command's
+/// resolution before `commandFinished`; the reducer consumes that map entry.
+/// Follow-up then evaluates the captured resolution before `finishAccepted`: confirmed
+/// reports success, superseded stays inert, so consume-only acceptance cannot turn a
+/// coordinator failure into `reportFailure`. Shuffle and repeat options confirmation use
+/// the same per-command-id map. A matching engine shuffle sample records `.confirmed` so a
+/// late rejection cannot restore the prior Boolean or rewrite preference. Matching
+/// authoritative repeat flags confirm the same way; unrelated authoritative flags
+/// supersede; lagging prior flags and non-engine option events do not confirm.
+/// `PlaybackReducer.reconcileTransport` may also drop a pending *transport* command when an
+/// engine snapshot already matches `expectedTransport` without recording a resolution. A
+/// later rejected finish on that same lifetime with no pending transport command is then
+/// already-reconciled success.
+/// A known play target is confirmed only by that target's identity, not by a lagging prior
+/// track that happens to already be `.playing`. An unrelated or empty track supersedes the
+/// optimistic target: rollback is cleared and a later finish stays inert.
+/// Remote transfer confirmation uses the same per-command-id map. A lagging snapshot of the
+/// exact prior owner cannot undo the target. An authoritative connection or devices snapshot
+/// whose stable device identity matches the remote target records `.confirmed` so a late
+/// rejection cannot restore the prior owner. An unrelated owner, including local/none when that
+/// emptiness is not the captured prior owner, records `.superseded` and stays inert.
+/// Seek confirmation and track-switch supersession both clear pending `.seek`, so a later
+/// finish stays inert: `pendingCommandID == nil` cannot tell those cases apart, and seek
+/// completions have no success side effect.
+/// Options commands without a captured resolution keep the non-transport inert path when
+/// the pending command is already gone. A newer pending id stays inert unless a captured
+/// confirmation for the finished id reports success.
 public enum PlaybackCommandFollowUp: Equatable, Sendable {
     case reportSuccess
     case reportFailure(reconnect: Bool)
@@ -140,21 +197,45 @@ public func playbackCommandFollowUp(
     requiresReconnect: Bool,
     commandKind: PlaybackCommandKind,
     pendingCommandID: UUID?,
-    capturedAccountEpoch: UInt64,
-    capturedEngineEpoch: UInt64,
-    currentAccountEpoch: UInt64,
-    currentEngineEpoch: UInt64,
+    finishedCommandResolution: PlaybackTransportCommandResolution? = nil,
+    capturedLifetime: PlaybackLifetime,
+    currentLifetime: PlaybackLifetime,
     isTearingDown: Bool
 ) -> PlaybackCommandFollowUp {
+    guard !isTearingDown, capturedLifetime == currentLifetime else {
+        return .inert
+    }
+    switch finishedCommandResolution {
+    case .confirmed:
+        return .reportSuccess
+    case .superseded:
+        return .inert
+    case nil:
+        break
+    }
     if finishAccepted {
         return operationSucceeded ? .reportSuccess : .reportFailure(reconnect: requiresReconnect)
     }
-    let sameLifetime =
-        !isTearingDown
-        && capturedAccountEpoch == currentAccountEpoch
-        && capturedEngineEpoch == currentEngineEpoch
-    if sameLifetime, pendingCommandID == nil, commandKind == .transport {
+    if pendingCommandID == nil, commandKind == .transport {
         return .reportSuccess
     }
     return .inert
+}
+
+/// Ordinary same-lifetime cancellation of one in-flight command token.
+///
+/// Teardown, account-epoch changes, engine-generation changes, and a missing or
+/// different pending id stay inert: confirmation, supersession, a newer command, and
+/// lifetime ownership already cleared the slot. Matching pending identity is the
+/// once-gate; a second cancel cannot restore or complete again.
+public func playbackCommandShouldSettleOrdinaryCancellation(
+    pendingCommandID: UUID?,
+    cancelledCommandID: UUID,
+    capturedLifetime: PlaybackLifetime,
+    currentLifetime: PlaybackLifetime,
+    isTearingDown: Bool
+) -> Bool {
+    !isTearingDown
+        && capturedLifetime == currentLifetime
+        && pendingCommandID == cancelledCommandID
 }

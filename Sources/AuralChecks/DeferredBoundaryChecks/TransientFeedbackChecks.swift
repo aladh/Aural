@@ -129,7 +129,9 @@ private struct IdleFeedbackAttributes: TrackAttributesProviding {
 private enum FeedbackCheckFailure: Error { case unavailable }
 
 private struct IdleFeedbackCatalog: CatalogProviding {
-    func searchTracks(_: String, limit _: Int) async throws -> [PathfinderTrack] { throw FeedbackCheckFailure.unavailable }
+    func searchTracks(_: String, limit _: Int) async throws -> [PathfinderTrack] {
+        throw FeedbackCheckFailure.unavailable
+    }
     func home() async throws -> PathfinderHome { throw FeedbackCheckFailure.unavailable }
     func libraryPlaylists() async throws -> [PathfinderPlaylist] { throw FeedbackCheckFailure.unavailable }
     func libraryAlbums() async throws -> [PathfinderAlbum] { throw FeedbackCheckFailure.unavailable }
@@ -177,44 +179,6 @@ private final class UncooperativeParkedClock: PlaybackClock, @unchecked Sendable
     }
 }
 
-/// Sleeps until `releaseAll()`, and throws `CancellationError` if the waiting task is cancelled.
-private final class CooperativeParkedClock: PlaybackClock, @unchecked Sendable {
-    private let lock = NSLock()
-    private var waiters: [UUID: CheckedContinuation<Void, Error>] = [:]
-
-    func now() -> Date { Date(timeIntervalSince1970: 1_800_000_000) }
-
-    func sleep(seconds _: TimeInterval) async throws {
-        let id = UUID()
-        try await withTaskCancellationHandler {
-            try await withCheckedThrowingContinuation { continuation in
-                lock.lock()
-                waiters[id] = continuation
-                lock.unlock()
-            }
-        } onCancel: {
-            lock.lock()
-            let continuation = waiters.removeValue(forKey: id)
-            lock.unlock()
-            continuation?.resume(throwing: CancellationError())
-        }
-    }
-
-    func releaseAll() {
-        lock.lock()
-        let pending = Array(waiters.values)
-        waiters.removeAll()
-        lock.unlock()
-        pending.forEach { $0.resume() }
-    }
-
-    var waiterCount: Int {
-        lock.lock()
-        defer { lock.unlock() }
-        return waiters.count
-    }
-}
-
 private func feedbackEnvironment(
     local: any LocalPlaybackEngine = FeedbackLocalEngine(),
     remote: any RemotePlaybackClient = FeedbackRemoteClient(.succeed),
@@ -243,18 +207,6 @@ private func yieldPasses(_ count: Int = 200) async {
 }
 
 @MainActor
-private func waitUntil(_ condition: @MainActor () async -> Bool) async -> Bool {
-    let clock = ContinuousClock()
-    let deadline = clock.now + .seconds(2)
-    while clock.now < deadline {
-        if Task.isCancelled { return false }
-        if await condition() { return true }
-        await Task.yield()
-    }
-    return false
-}
-
-@MainActor
 private func seedReady(_ player: PlaybackStore) {
     _ = player.send(.session(.ready), source: .account)
 }
@@ -263,14 +215,15 @@ private func seedReady(_ player: PlaybackStore) {
 private func seedRemoteOwner(_ player: PlaybackStore) {
     seedReady(player)
     _ = player.send(
-        .devices(PlaybackDeviceSnapshot(
-            devices: [
-                PlaybackDevice(id: "mac", name: "Mac", type: "computer", isActive: false),
-                PlaybackDevice(id: "speaker", name: "Speaker", type: "speaker", isActive: true),
-            ],
-            localDeviceID: "mac",
-            revision: 1
-        )),
+        .devices(
+            PlaybackDeviceSnapshot(
+                devices: [
+                    PlaybackDevice(id: "mac", name: "Mac", type: "computer", isActive: false),
+                    PlaybackDevice(id: "speaker", name: "Speaker", type: "speaker", isActive: true),
+                ],
+                localDeviceID: "mac",
+                revision: 1
+            )),
         source: .engineDevices,
         revision: 1
     )
@@ -497,7 +450,7 @@ func runTransientFeedbackChecks(_ runner: CheckRunner) async {
             "stale-account add started the remote command",
             await waitUntil { await staleRemote.sendCount == 1 }
         )
-        staleAccount.accountEpoch &+= 1
+        staleAccount.accountStore.advanceEpoch()
         await staleRemote.completePark(success: true)
         await yieldPasses()
         runner.nil_("stale-account add reports no mutation feedback", staleFeedback.message)

@@ -7,6 +7,7 @@
 //
 
 import Foundation
+import AuralDomain
 
 /// Popularity, tempo, and musical key for one track.
 ///
@@ -20,6 +21,14 @@ nonisolated struct TrackAttributes: Equatable, Sendable {
     /// Musical key label — a Camelot value ("8B") when Spotify supplies one,
     /// otherwise "F# Major"/"F# Minor" from the key name and mode.
     let key: String?
+}
+
+extension CatalogMetadataRepository {
+    var trackTableSortValues: [String: TrackTableSortValues] {
+        trackAttributes.mapValues {
+            TrackTableSortValues(popularity: $0.popularity, bpm: $0.bpm, key: $0.key)
+        }
+    }
 }
 
 /// The batched extended-metadata endpoint the desktop client uses for its BPM
@@ -48,18 +57,26 @@ nonisolated struct TrackAttributesAPI: Sendable {
         clientToken: @escaping @Sendable () async throws -> String = {
             try await ClientTokenProvider.shared.token()
         },
+        invalidateAccessToken: @escaping @Sendable (String) async throws -> Void = SpotifyCredentials
+            .invalidateSharedAccess,
         invalidateClientToken: @escaping @Sendable (String) async -> Void = SpotifyCredentials.invalidateShared,
         transport: @escaping Transport = { try await URLSession.shared.data(for: $0) },
+        retryTiming: SpotifyTransientRetry.Timing = .production,
     ) {
         credentials = SpotifyCredentials(
             accessToken: accessToken,
             clientToken: clientToken,
+            invalidateAccessToken: invalidateAccessToken,
             invalidateClientToken: invalidateClientToken,
             transport: transport,
+            retryTiming: retryTiming,
         )
     }
 
     /// Attributes for one batch of track uris, keyed by uri.
+    ///
+    /// This POST is a metadata read: the body names uris to look up and does not write
+    /// library or playback state, so the shared replay-safe retry applies.
     ///
     /// Tracks Spotify answered for but has no attributes for are absent rather
     /// than mapped to empty values, so a caller cannot cache an absence that a
@@ -67,7 +84,7 @@ nonisolated struct TrackAttributesAPI: Sendable {
     func attributes(for uris: [String]) async throws -> [String: TrackAttributes] {
         guard !uris.isEmpty else { return [:] }
 
-        let sent = try await credentials.retryingRefusedToken {
+        let sent = try await credentials.retryingRefusedToken(replay: .safe) {
             try await send(uris)
         }
 
@@ -96,7 +113,7 @@ nonisolated struct TrackAttributesAPI: Sendable {
             throw TrackAttributesAPIError.emptyResponse
         }
 
-        return (data, http.statusCode, request.value(forHTTPHeaderField: "Client-Token"))
+        return SpotifyCredentials.Attempt(body: data, http: http, request: request)
     }
 
     // MARK: - Request encoding

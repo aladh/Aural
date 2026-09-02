@@ -50,8 +50,10 @@ keychain is first created. Grant the packaging script as a unit instead of appro
 `security` commands. Later builds reuse the project-local keychain until `.build/` is deleted; no
 login-keychain password is part of the workflow.
 
-On first launch, choose Connect and complete Spotify authorization in the browser. Authentication
-state is machine-local and intentionally not stored in Git. Follow the
+On first launch, choose Connect and complete Spotify authorization in the browser. The grant is
+stored in the macOS Keychain; leftover plaintext from older development builds is migrated once
+and then deleted. Authentication state is machine-local and intentionally not stored in Git.
+Follow the
 [product and acceptance contract](product-and-acceptance-contract.md) before exercising a live
 Spotify account; playback is opt-in during acceptance testing.
 
@@ -68,6 +70,15 @@ git pull --ff-only
 Useful build modes are documented in [CONTRIBUTING.md](../CONTRIBUTING.md#build-and-run). The Codex
 environment also tracks a **Run** action in `.codex/environments/environment.toml` that invokes the
 normal build and launch script.
+
+Plain `swift build` is not a complete build path for products that link `AuralCore`, notably `Aural`
+and `AuralBoundaryChecks`. SwiftPM links `Backend/lib/libaural_playback.a` into those products, but
+the generated archive is outside its dependency graph: a missing archive produces a linker error,
+and Rust source changes do not rebuild it or necessarily relink an already-built Swift product.
+Prefer `./Scripts/check.sh` or the build/package scripts, which handle the archive. For deliberate
+direct SwiftPM iteration, run `./Backend/aural-playback/build.sh` after changing Rust sources or
+dependencies, then run `swift package clean` before rebuilding so an existing Swift product cannot
+retain the older linked archive.
 
 Before a pull request, inspect the staged changes and run:
 

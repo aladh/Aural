@@ -6,6 +6,10 @@ pub(crate) static PLAYER: Lazy<Mutex<Option<Arc<Player>>>> = Lazy::new(|| Mutex:
 pub(crate) static SESSION: Lazy<Mutex<Option<Session>>> = Lazy::new(|| Mutex::new(None));
 pub(crate) static MIXER: Lazy<Mutex<Option<Arc<SoftMixer>>>> = Lazy::new(|| Mutex::new(None));
 pub(crate) static SPIRC: Lazy<Mutex<Option<Arc<Spirc>>>> = Lazy::new(|| Mutex::new(None));
+/// Local playing flag. `true` only after `PlayerEvent::Playing`. `Spirc::load`
+/// `Ok` means the command was queued, not that audio started, so the play
+/// commands must not store `true` here: `resume_playback` returns success
+/// without issuing play or its fallback whenever this flag is already set.
 pub(crate) static IS_PLAYING: AtomicBool = AtomicBool::new(false);
 pub(crate) static PLAYING_EVENT_SEQ: AtomicU64 = AtomicU64::new(0);
 
@@ -43,13 +47,6 @@ pub(crate) type JsonCallback = extern "C" fn(*const c_char);
 pub(crate) struct ControlCallbacks {
     pub(crate) queue: Mutex<Option<JsonCallback>>,
     pub(crate) playback_state: Mutex<Option<JsonCallback>>,
-    pub(crate) volume: Mutex<Option<extern "C" fn(u16)>>,
-    pub(crate) loading: Mutex<Option<JsonCallback>>,
-    pub(crate) became_inactive: Mutex<Option<extern "C" fn()>>,
-    pub(crate) became_active: Mutex<Option<extern "C" fn()>>,
-    pub(crate) session_client_changed: Mutex<Option<JsonCallback>>,
-    pub(crate) set_queue: Mutex<Option<JsonCallback>>,
-    pub(crate) active_device: Mutex<Option<JsonCallback>>,
     pub(crate) devices: Mutex<Option<JsonCallback>>,
     pub(crate) connection_state: Mutex<Option<JsonCallback>>,
 }
@@ -61,8 +58,6 @@ pub(crate) static LAST_DEVICES_JSON: Lazy<Mutex<String>> = Lazy::new(|| Mutex::n
 /// The last queue the cluster described, so Swift can ask again rather than re-deriving it
 /// from the Web API. See `aural_playback_get_queue_snapshot`.
 pub(crate) static LAST_QUEUE_JSON: Lazy<Mutex<Option<String>>> = Lazy::new(|| Mutex::new(None));
-pub(crate) static LAST_ACTIVE_DEVICE_ID: Lazy<Mutex<String>> =
-    Lazy::new(|| Mutex::new(String::new()));
 /// Serializes snapshot building so a revision always orders snapshots by the state they
 /// actually saw. Held only across the build, never across delivery into Swift.
 pub(crate) static SNAPSHOT_REVISION: Mutex<u64> = Mutex::new(0);
@@ -89,7 +84,6 @@ pub(crate) fn stamped_snapshot<T>(build: impl FnOnce(SnapshotStamp) -> T) -> T {
         session_generation: SESSION_GENERATION.load(Ordering::SeqCst),
     })
 }
-pub(crate) static LAST_VOLUME: AtomicU16 = AtomicU16::new(0);
 pub(crate) static SHUFFLE_STATE: AtomicBool = AtomicBool::new(false);
 pub(crate) static REPEAT_TRACK_STATE: AtomicBool = AtomicBool::new(false);
 pub(crate) static REPEAT_CONTEXT_STATE: AtomicBool = AtomicBool::new(false);
@@ -160,6 +154,7 @@ pub(crate) fn should_recover_after_deactivation(
 /// the deactivation handler clears the active flag, a `Stopped` event clears `IS_PLAYING`,
 /// and a final cluster update can clear both — so reading it late made "does an outage
 /// resume playback" depend on event ordering rather than on what was actually playing.
+/// The recovering session generation is captured the same way; see `start_reconnect_loop`.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) struct RecoveryIntent {
     pub(crate) was_playing: bool,
@@ -385,12 +380,6 @@ pub(crate) static SESSION_GENERATION: AtomicU64 = AtomicU64::new(0);
 /// credentials it had just written.
 pub(crate) static LOGOUT_GENERATION: AtomicU64 = AtomicU64::new(0);
 
-/// The Spotify account the last successful streaming grant authenticated as.
-///
-/// The browser may be signed into a different account than the Web API half, and nothing
-/// else would notice: the app would browse one account while playing from another. Swift
-/// compares this against `/me` before accepting the grant.
-pub(crate) static LAST_GRANT_ACCOUNT: Lazy<Mutex<Option<String>>> = Lazy::new(|| Mutex::new(None));
 /// Generation created by the most recent `build_player_async`. Lets the reconnect loop adopt
 /// the generation its own attempt made rather than whatever the counter reads afterwards,
 /// which may belong to a logout and the login that followed it.
@@ -474,30 +463,6 @@ pub(crate) struct PlaybackStateUpdate {
 }
 
 #[derive(Serialize)]
-pub(crate) struct LoadingNotification {
-    pub(crate) revision: u64,
-    pub(crate) session_generation: u64,
-    pub(crate) track_uri: String,
-    pub(crate) position_ms: u32,
-}
-
-#[derive(Serialize)]
-pub(crate) struct SetQueueNotification {
-    pub(crate) revision: u64,
-    pub(crate) session_generation: u64,
-    pub(crate) context_uri: String,
-    pub(crate) current_track: Option<QueueTrackInfo>,
-    pub(crate) next_tracks: Vec<QueueTrackInfo>,
-    pub(crate) prev_tracks: Vec<QueueTrackInfo>,
-}
-
-#[derive(Serialize)]
-pub(crate) struct QueueTrackInfo {
-    pub(crate) uri: String,
-    pub(crate) provider: String,
-}
-
-#[derive(Serialize)]
 pub(crate) struct ConnectionStateInfo {
     /// Monotonic, assigned while the snapshot is built. Lets Swift discard a snapshot that
     /// reaches the main actor after a newer one — see `handleConnectionStateCallback`.
@@ -545,14 +510,6 @@ pub(crate) struct DevicesState {
     pub(crate) revision: u64,
     pub(crate) session_generation: u64,
     pub(crate) devices: Vec<ConnectDeviceInfo>,
-}
-
-#[derive(Serialize)]
-pub(crate) struct SessionClientInfo {
-    pub(crate) client_id: String,
-    pub(crate) client_name: String,
-    pub(crate) client_brand_name: String,
-    pub(crate) client_model_name: String,
 }
 
 /// Get current timestamp in milliseconds since UNIX epoch

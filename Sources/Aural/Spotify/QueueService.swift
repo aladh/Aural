@@ -48,7 +48,7 @@ nonisolated func mergeQueueSnapshots(
             QueueEntry(
                 uri: item.uri,
                 provider: item.provider,
-                occurrence: queueOccurrence(item.id),
+                occurrence: item.occurrence,
                 uid: preservedQueueOccurrenceUID(incoming: item, index: index, current: current)
             )
         },
@@ -66,7 +66,7 @@ private nonisolated func preservedQueueOccurrenceUID(
 ) -> String {
     if !incoming.uid.isEmpty { return incoming.uid }
     guard current.entries.indices.contains(index),
-          current.entries[index].uri == incoming.uri
+        current.entries[index].uri == incoming.uri
     else {
         return ""
     }
@@ -86,13 +86,17 @@ private extension ProvenanceQueueSnapshot {
     }
 }
 
-private nonisolated func queueOccurrence(_ id: String) -> Int {
-    id.split(separator: "-", maxSplits: 1).first.flatMap { Int($0) } ?? 0
-}
-
 nonisolated struct AcceptedConnectQueue: Sendable {
     let snapshot: ProvenanceQueueSnapshot
     let mutation: QueueMutationSnapshot
+}
+
+/// Optional suspension points around reset, `acceptConnect`, and `recordCommittedReplacement`.
+/// Production stores `nil` and does not `await`. Checks inject `QueueServiceTestHook`.
+nonisolated protocol QueueServiceHook: Sendable {
+    func beforeReset() async
+    func beforeAcceptConnect() async
+    func beforeRecordCommittedReplacement() async
 }
 
 actor QueueService {
@@ -105,7 +109,8 @@ actor QueueService {
     private let webQueue: any WebQueueClient
     private let metadata: TrackMetadataService
     private let clock: any PlaybackClock
-    private var accountEpoch: UInt64 = 0
+    private let hook: (any QueueServiceHook)?
+    private(set) var accountEpoch: UInt64 = 0
     private var revision: UInt64 = 0
     private var lastConnectSourceRevision: UInt64 = 0
     private var contextURI: String?
@@ -113,24 +118,24 @@ actor QueueService {
     private var webRetryNotBefore: Date?
     private var snapshot: ProvenanceQueueSnapshot?
     private var mutation: QueueMutationSnapshot?
-    private var pendingConnectAcceptGate = false
-    private var connectAcceptGate: CheckedContinuation<Void, Never>?
-    private var connectAcceptGateID: UInt64 = 0
-    private var pendingCommittedReplacementGate = false
-    private var committedReplacementGate: CheckedContinuation<Void, Never>?
-    private var committedReplacementGateID: UInt64 = 0
 
     init(
         webQueue: any WebQueueClient,
         metadata: TrackMetadataService,
-        clock: any PlaybackClock = SystemPlaybackClock()
+        clock: any PlaybackClock = SystemPlaybackClock(),
+        hook: (any QueueServiceHook)? = nil
     ) {
         self.webQueue = webQueue
         self.metadata = metadata
         self.clock = clock
+        self.hook = hook
     }
 
     func reset(accountEpoch: UInt64) async {
+        if let hook {
+            await hook.beforeReset()
+        }
+        guard !Task.isCancelled else { return }
         self.accountEpoch = accountEpoch
         revision = 0
         lastConnectSourceRevision = 0
@@ -139,43 +144,20 @@ actor QueueService {
         webRetryNotBefore = nil
         snapshot = nil
         mutation = nil
-        pendingConnectAcceptGate = false
-        resumeConnectAccept()
-        pendingCommittedReplacementGate = false
-        resumeCommittedReplacement()
         await metadata.reset()
     }
 
     func mutationSnapshot() -> QueueMutationSnapshot? { mutation }
-
-    func parkNextConnectAccept() {
-        pendingConnectAcceptGate = true
-    }
-
-    func connectAcceptIsParked() -> Bool { connectAcceptGate != nil }
-
-    func resumeConnectAccept() {
-        connectAcceptGate?.resume()
-        connectAcceptGate = nil
-    }
-
-    func parkNextCommittedReplacement() {
-        pendingCommittedReplacementGate = true
-    }
-
-    func committedReplacementIsParked() -> Bool { committedReplacementGate != nil }
-
-    func resumeCommittedReplacement() {
-        committedReplacementGate?.resume()
-        committedReplacementGate = nil
-    }
 
     func recordCommittedReplacement(
         _ replacement: QueueReplacement,
         accountEpoch requestedEpoch: UInt64,
         engineEpoch: UInt64
     ) async -> QueueMutationSnapshot? {
-        await waitForTestCommittedReplacementGate()
+        if let hook {
+            // Production stores nil, so this await is check-only and does not hop the live actor.
+            await hook.beforeRecordCommittedReplacement()
+        }
         guard !Task.isCancelled else { return nil }
         guard requestedEpoch == accountEpoch else { return nil }
         guard var current = mutation, current.engineEpoch == engineEpoch else { return nil }
@@ -199,7 +181,10 @@ actor QueueService {
         disallowSetQueue: Bool = false,
         disallowRemovingFromNextTracks: Bool = false
     ) async -> AcceptedConnectQueue? {
-        await waitForTestConnectAcceptGate()
+        if let hook {
+            // Production stores nil, so this await is check-only and does not hop the live actor.
+            await hook.beforeAcceptConnect()
+        }
         guard !Task.isCancelled else { return nil }
         guard requestedEpoch == accountEpoch else { return nil }
         if let sourceRevision {
@@ -303,13 +288,15 @@ actor QueueService {
             cachedTracks.lazy.filter { wantedSet.contains($0.uri) }.map { ($0.uri, $0) },
             uniquingKeysWith: { _, newer in newer }
         )
-        guard let initial = updateFallbackSnapshot(
-            entries: fallbackEntries,
-            tracks: Array(hydrated.values),
-            wantedCount: wantedURIs.count,
-            requestedEpoch: requestedEpoch,
-            requestedContext: requestedContext
-        ) else { return nil }
+        guard
+            let initial = updateFallbackSnapshot(
+                entries: fallbackEntries,
+                tracks: Array(hydrated.values),
+                wantedCount: wantedURIs.count,
+                requestedEpoch: requestedEpoch,
+                requestedContext: requestedContext
+            )
+        else { return nil }
         AuralLog.queue.info(
             "Queue fallback started; entries=\(fallbackEntries.count, privacy: .public); cached=\(hydrated.count, privacy: .public); epoch=\(requestedEpoch, privacy: .public)"
         )
@@ -322,15 +309,15 @@ actor QueueService {
         let maximumConcurrentRequests = 8
         await withTaskGroup(of: SpotifyConnectTrackMetadata?.self) { group in
             var iterator = missing.makeIterator()
-            for _ in 0 ..< min(maximumConcurrentRequests, missing.count) {
+            for _ in 0..<min(maximumConcurrentRequests, missing.count) {
                 guard let uri = iterator.next() else { break }
                 group.addTask { [metadata] in try? await metadata.metadata(for: uri) }
             }
 
             while let value = await group.next() {
                 guard !Task.isCancelled,
-                      requestedEpoch == accountEpoch,
-                      requestedContext == contextURI
+                    requestedEpoch == accountEpoch,
+                    requestedContext == contextURI
                 else {
                     group.cancelAll()
                     return
@@ -361,44 +348,6 @@ actor QueueService {
     private func acceptedQueue() -> AcceptedConnectQueue? {
         guard let snapshot, let mutation else { return nil }
         return AcceptedConnectQueue(snapshot: snapshot, mutation: mutation)
-    }
-
-    private func waitForTestConnectAcceptGate() async {
-        guard pendingConnectAcceptGate else { return }
-        pendingConnectAcceptGate = false
-        connectAcceptGateID &+= 1
-        let id = connectAcceptGateID
-        await withTaskCancellationHandler {
-            await withCheckedContinuation { continuation in
-                connectAcceptGate = continuation
-            }
-        } onCancel: {
-            Task { await self.resumeConnectAcceptIfCurrent(id) }
-        }
-    }
-
-    private func resumeConnectAcceptIfCurrent(_ id: UInt64) {
-        guard id == connectAcceptGateID else { return }
-        resumeConnectAccept()
-    }
-
-    private func waitForTestCommittedReplacementGate() async {
-        guard pendingCommittedReplacementGate else { return }
-        pendingCommittedReplacementGate = false
-        committedReplacementGateID &+= 1
-        let id = committedReplacementGateID
-        await withTaskCancellationHandler {
-            await withCheckedContinuation { continuation in
-                committedReplacementGate = continuation
-            }
-        } onCancel: {
-            Task { await self.resumeCommittedReplacementIfCurrent(id) }
-        }
-    }
-
-    private func resumeCommittedReplacementIfCurrent(_ id: UInt64) {
-        guard id == committedReplacementGateID else { return }
-        resumeCommittedReplacement()
     }
 
     private func uniqueTrackURIs(in entries: [QueueEntry]) -> [String] {

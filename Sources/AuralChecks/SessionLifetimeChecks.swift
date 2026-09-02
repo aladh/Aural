@@ -92,6 +92,17 @@ func runSessionLifetimeChecks(_ check: CheckRunner) {
         )
     }
 
+    check.suite("Catalog request cancellation classification") {
+        check.check("CancellationError is cancellation", isCancellation(CancellationError()))
+        check.check("URLError.cancelled is cancellation", isCancellation(URLError(.cancelled)))
+        check.check(
+            "a failed catalog transport is not cancellation",
+            !isCancellation(URLError(.badServerResponse))
+        )
+        enum CatalogCheckFailure: Error { case unavailable }
+        check.check("an ordinary error is not cancellation", !isCancellation(CatalogCheckFailure.unavailable))
+    }
+
     check.suite("Connect queue callback watermark") {
         var watermark = ConnectQueueCallbackWatermark()
         check.check(
@@ -154,6 +165,41 @@ func runSessionLifetimeChecks(_ check: CheckRunner) {
         )
     }
 
+    check.suite("Playback command admission") {
+        check.check(
+            "an idle live session admits a command",
+            playbackCommandShouldAdmit(
+                isTearingDown: false,
+                allowsCommands: true,
+                hasPendingCommandForKind: false
+            )
+        )
+        check.check(
+            "teardown refuses admission",
+            !playbackCommandShouldAdmit(
+                isTearingDown: true,
+                allowsCommands: true,
+                hasPendingCommandForKind: false
+            )
+        )
+        check.check(
+            "a started termination gate refuses admission",
+            !playbackCommandShouldAdmit(
+                isTearingDown: false,
+                allowsCommands: false,
+                hasPendingCommandForKind: false
+            )
+        )
+        check.check(
+            "a pending command of the same kind refuses admission",
+            !playbackCommandShouldAdmit(
+                isTearingDown: false,
+                allowsCommands: true,
+                hasPendingCommandForKind: true
+            )
+        )
+    }
+
     check.suite("Playback command finish follow-up") {
         let other = UUID(uuidString: "00000000-0000-0000-0000-000000000032")!
         func followUp(
@@ -162,6 +208,7 @@ func runSessionLifetimeChecks(_ check: CheckRunner) {
             reconnect: Bool = false,
             kind: PlaybackCommandKind = .transport,
             pending: UUID? = nil,
+            resolution: PlaybackTransportCommandResolution? = nil,
             account: UInt64 = 1,
             engine: UInt64 = 1,
             currentAccount: UInt64 = 1,
@@ -174,15 +221,21 @@ func runSessionLifetimeChecks(_ check: CheckRunner) {
                 requiresReconnect: reconnect,
                 commandKind: kind,
                 pendingCommandID: pending,
-                capturedAccountEpoch: account,
-                capturedEngineEpoch: engine,
-                currentAccountEpoch: currentAccount,
-                currentEngineEpoch: currentEngine,
+                finishedCommandResolution: resolution,
+                capturedLifetime: PlaybackLifetime(
+                    accountEpoch: account,
+                    engineGeneration: engine
+                ),
+                currentLifetime: PlaybackLifetime(
+                    accountEpoch: currentAccount,
+                    engineGeneration: currentEngine
+                ),
                 isTearingDown: tearingDown
             )
         }
 
-        check.equal("an accepted success reports success", followUp(finishAccepted: true, succeeded: true), .reportSuccess)
+        check.equal(
+            "an accepted success reports success", followUp(finishAccepted: true, succeeded: true), .reportSuccess)
         check.equal(
             "an accepted reconnect-required failure reports reconnect",
             followUp(finishAccepted: true, succeeded: false, reconnect: true),
@@ -209,6 +262,11 @@ func runSessionLifetimeChecks(_ check: CheckRunner) {
             .inert
         )
         check.equal(
+            "a late seek finish after pending was cleared stays inert",
+            followUp(finishAccepted: false, succeeded: false, reconnect: true, kind: .seek),
+            .inert
+        )
+        check.equal(
             "engine-epoch invalidation stays inert",
             followUp(finishAccepted: false, succeeded: true, reconnect: true, currentEngine: 2),
             .inert
@@ -228,5 +286,191 @@ func runSessionLifetimeChecks(_ check: CheckRunner) {
             followUp(finishAccepted: false, succeeded: true, tearingDown: true),
             .inert
         )
+        check.equal(
+            "a confirmed play target still reports success after a late failure",
+            followUp(
+                finishAccepted: true,
+                succeeded: false,
+                reconnect: true,
+                resolution: .confirmed
+            ),
+            .reportSuccess
+        )
+        check.equal(
+            "a superseded play target stays inert after a late failure",
+            followUp(
+                finishAccepted: true,
+                succeeded: false,
+                reconnect: true,
+                resolution: .superseded
+            ),
+            .inert
+        )
+        check.equal(
+            "a superseded play stays inert after a later pause is pending",
+            followUp(
+                finishAccepted: true,
+                succeeded: false,
+                reconnect: true,
+                pending: other,
+                resolution: .superseded
+            ),
+            .inert
+        )
+        check.equal(
+            "a superseded play stays inert after a later pause cleared pending",
+            followUp(
+                finishAccepted: true,
+                succeeded: false,
+                reconnect: true,
+                resolution: .superseded
+            ),
+            .inert
+        )
+        check.equal(
+            "a confirmed transfer still reports success after a late failure",
+            followUp(
+                finishAccepted: true,
+                succeeded: false,
+                reconnect: true,
+                kind: .transfer,
+                resolution: .confirmed
+            ),
+            .reportSuccess
+        )
+        check.equal(
+            "a superseded transfer stays inert after an accepted coordinator result",
+            followUp(
+                finishAccepted: true,
+                succeeded: true,
+                reconnect: true,
+                kind: .transfer,
+                resolution: .superseded
+            ),
+            .inert
+        )
+        check.equal(
+            "a confirmed play still reports success while a later pause is pending",
+            followUp(
+                finishAccepted: true,
+                succeeded: false,
+                reconnect: true,
+                pending: other,
+                resolution: .confirmed
+            ),
+            .reportSuccess
+        )
+        check.equal(
+            "consume-only acceptance without a captured resolution still reports failure",
+            followUp(finishAccepted: true, succeeded: false, reconnect: true),
+            .reportFailure(reconnect: true)
+        )
+        check.equal(
+            "a confirmed play is inert after an engine-epoch invalidation",
+            followUp(
+                finishAccepted: true,
+                succeeded: false,
+                reconnect: true,
+                resolution: .confirmed,
+                currentEngine: 2
+            ),
+            .inert
+        )
+        check.equal(
+            "a confirmed play is inert during teardown",
+            followUp(
+                finishAccepted: true,
+                succeeded: false,
+                resolution: .confirmed,
+                tearingDown: true
+            ),
+            .inert
+        )
+        check.equal(
+            "options reconnect-required after an accepted finish reports reconnect",
+            followUp(finishAccepted: true, succeeded: false, reconnect: true, kind: .options),
+            .reportFailure(reconnect: true)
+        )
+        check.equal(
+            "transfer reconnect-required after an accepted finish reports reconnect",
+            followUp(finishAccepted: true, succeeded: false, reconnect: true, kind: .transfer),
+            .reportFailure(reconnect: true)
+        )
+        check.equal(
+            "a confirmed shuffle still reports success after a late failure",
+            followUp(
+                finishAccepted: true,
+                succeeded: false,
+                reconnect: true,
+                kind: .options,
+                resolution: .confirmed
+            ),
+            .reportSuccess
+        )
+        check.equal(
+            "a confirmed shuffle still reports success while a later options command is pending",
+            followUp(
+                finishAccepted: true,
+                succeeded: false,
+                reconnect: true,
+                kind: .options,
+                pending: other,
+                resolution: .confirmed
+            ),
+            .reportSuccess
+        )
+        check.equal(
+            "a confirmed shuffle is inert after an engine-epoch invalidation",
+            followUp(
+                finishAccepted: true,
+                succeeded: false,
+                reconnect: true,
+                kind: .options,
+                resolution: .confirmed,
+                currentEngine: 2
+            ),
+            .inert
+        )
+        check.equal(
+            "an options finish without a captured resolution stays inert when pending is gone",
+            followUp(finishAccepted: false, succeeded: false, reconnect: true, kind: .options),
+            .inert
+        )
+    }
+
+    check.suite("Playback command ordinary cancellation") {
+        let commandID = UUID(uuidString: "00000000-0000-0000-0000-000000000099")!
+        let other = UUID(uuidString: "00000000-0000-0000-0000-00000000009A")!
+        func shouldSettle(
+            pending: UUID? = commandID,
+            cancelled: UUID = commandID,
+            account: UInt64 = 1,
+            engine: UInt64 = 1,
+            currentAccount: UInt64 = 1,
+            currentEngine: UInt64 = 1,
+            tearingDown: Bool = false
+        ) -> Bool {
+            playbackCommandShouldSettleOrdinaryCancellation(
+                pendingCommandID: pending,
+                cancelledCommandID: cancelled,
+                capturedLifetime: PlaybackLifetime(
+                    accountEpoch: account,
+                    engineGeneration: engine
+                ),
+                currentLifetime: PlaybackLifetime(
+                    accountEpoch: currentAccount,
+                    engineGeneration: currentEngine
+                ),
+                isTearingDown: tearingDown
+            )
+        }
+
+        check.check("a matching same-lifetime cancel settles", shouldSettle())
+        check.check("a missing pending command stays inert", !shouldSettle(pending: nil))
+        check.check("a newer pending command stays inert", !shouldSettle(pending: other))
+        check.check("a different cancelled id stays inert", !shouldSettle(cancelled: other))
+        check.check("engine-epoch invalidation stays inert", !shouldSettle(currentEngine: 2))
+        check.check("account-epoch invalidation stays inert", !shouldSettle(currentAccount: 2))
+        check.check("teardown stays inert", !shouldSettle(tearingDown: true))
     }
 }

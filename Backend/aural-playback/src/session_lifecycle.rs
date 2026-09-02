@@ -124,19 +124,6 @@ pub extern "C" fn aural_playback_clear_streaming_credentials() {
     })
 }
 
-/// The Spotify account id the last successful streaming grant authenticated as, or null.
-/// Free with `aural_playback_free_string`.
-#[no_mangle]
-pub extern "C" fn aural_playback_last_grant_account() -> *mut c_char {
-    ffi_owned_string("aural_playback_last_grant_account", || {
-        let account = LAST_GRANT_ACCOUNT
-            .lock()
-            .unwrap_or_else(|e| e.into_inner())
-            .clone();
-        account.map_or(std::ptr::null_mut(), into_owned_c_string)
-    })
-}
-
 /// Completes the one-time streaming authorization with a token Swift has already minted:
 /// connects once, and lets librespot persist the AP credentials every later init uses.
 ///
@@ -174,10 +161,6 @@ pub extern "C" fn aural_playback_authorize_streaming(access_token: *const c_char
                 .connect(credentials, true)
                 .await
                 .map_err(|e| format!("Connect failed: {:?}", e))?;
-            // Recorded before shutdown: this is the account the browser was signed into, which
-            // Swift compares against the Web API account before accepting the grant.
-            *LAST_GRANT_ACCOUNT.lock().unwrap_or_else(|e| e.into_inner()) =
-                Some(session.username().to_string());
             session.shutdown();
             Ok::<(), String>(())
         }) {
@@ -302,14 +285,17 @@ pub(crate) fn spawn_session_health_check(generation: u64) {
 /// Spawns the reconnection loop task.
 /// Uses exponential backoff and rebuilds from the cached streaming credentials.
 pub(crate) fn spawn_reconnection_loop(intent: RecoveryIntent) {
-    // Check if already reconnecting
-    if RECONNECTING.swap(true, Ordering::SeqCst) {
+    // Capture the generation at trigger time, before the task is scheduled. A rebuild
+    // that lands between here and the first poll would otherwise be adopted as "the
+    // thing being recovered" and torn down on attempt 0.
+    let Some(start) = start_reconnect_loop(intent, SESSION_GENERATION.load(Ordering::SeqCst))
+    else {
         debug!(
             "[WAKE +{}ms] Reconnection already in progress, skipping",
             elapsed_since_wake_ms()
         );
         return;
-    }
+    };
 
     debug!(
         "[WAKE +{}ms] spawn_reconnection_loop started",
@@ -326,7 +312,8 @@ pub(crate) fn spawn_reconnection_loop(intent: RecoveryIntent) {
         // Mutable on purpose: each rebuild attempt bumps SESSION_GENERATION itself, so the
         // loop adopts the value its own attempt produced. Without that it reads its own
         // work as a foreign supersede and gives up after a single failed attempt.
-        let mut recovering_generation = SESSION_GENERATION.load(Ordering::SeqCst);
+        let mut recovering_generation = start.recovering_generation;
+        let intent = start.intent;
 
         // Backoff that never gives up. This used to be a fixed schedule of ten attempts
         // totalling about three minutes, after which the loop exited — so an outage longer
@@ -394,12 +381,28 @@ pub(crate) fn spawn_reconnection_loop(intent: RecoveryIntent) {
             // play_request_id, the context-reload-after-reconnect blip, and a watchdog
             // that re-issued play commands when the audio key fetch on the dead session
             // silently timed out. A brief gap during an outage is the better trade.
-            do_reconnect_cleanup();
-
-            // Rehydration happens inside init_player_async, so that the session is fully
-            // settled before its readiness is published. See the note there.
-            match init_player_async(None, intent.was_active, intent.should_resume()).await {
-                Ok(_) => {
+            //
+            // Cleanup and build share the lifecycle lock with a final generation
+            // revalidation so a queued stale reconnect cannot tear down a newer session.
+            match run_reconnect_unit(
+                recovering_generation,
+                || SESSION_GENERATION.load(Ordering::SeqCst),
+                teardown_in_progress,
+                do_reconnect_cleanup,
+                init_player_async(None, intent.was_active, intent.should_resume()),
+            )
+            .await
+            {
+                ReconnectUnitOutcome::Abandoned => {
+                    debug!(
+                        "[WAKE +{}ms] Abandoning reconnect for generation {}: superseded or torn down",
+                        elapsed_since_wake_ms(),
+                        recovering_generation
+                    );
+                    RECONNECTING.store(false, Ordering::SeqCst);
+                    return;
+                }
+                ReconnectUnitOutcome::Ran(Ok(_)) => {
                     debug!(
                         "[WAKE +{}ms] Reconnect successful on attempt {}",
                         elapsed_since_wake_ms(),
@@ -408,7 +411,7 @@ pub(crate) fn spawn_reconnection_loop(intent: RecoveryIntent) {
                     RECONNECTING.store(false, Ordering::SeqCst);
                     return;
                 }
-                Err(e) => {
+                ReconnectUnitOutcome::Ran(Err(e)) => {
                     debug!(
                         "[WAKE +{}ms] Reconnect attempt {} failed: {}",
                         elapsed_since_wake_ms(),
@@ -488,6 +491,7 @@ pub extern "C" fn aural_playback_force_reconnect() -> i32 {
 /// to the Session's ChannelManager for decryption key requests.
 pub(crate) fn do_reconnect_cleanup() {
     debug!("do_reconnect_cleanup: full cleanup for reconnection");
+    let _store = enter_store_section();
 
     // Signal event listener to stop
     if let Some(tx) = PLAYER_EVENT_TX
@@ -557,13 +561,10 @@ pub extern "C" fn aural_playback_init_player(access_token: *const c_char) -> i32
         // Already-initialized remains the established no-op: drop teardown flags and return
         // success without `block_on`. Nested-runtime refusal does not apply here because
         // this path never entered the runtime before the barrier either.
-        {
-            let session_guard = SESSION.lock().unwrap_or_else(|e| e.into_inner());
-            if session_guard.is_some() {
-                SHUTTING_DOWN.store(false, Ordering::SeqCst);
-                SLEEPING.store(false, Ordering::SeqCst);
-                return 0;
-            }
+        if session_is_present() {
+            SHUTTING_DOWN.store(false, Ordering::SeqCst);
+            SLEEPING.store(false, Ordering::SeqCst);
+            return 0;
         }
 
         // Refuse before clearing teardown flags: a Tokio-owned call used to panic inside
@@ -577,7 +578,21 @@ pub extern "C" fn aural_playback_init_player(access_token: *const c_char) -> i32
         SLEEPING.store(false, Ordering::SeqCst);
 
         let result = match block_on_export(async {
-            init_player_async(token_str.as_deref(), false, false).await
+            // Recheck inside the serialization boundary: a reconnect may have stored a
+            // session while this call waited for the lock.
+            match run_serialized_init(
+                session_is_present,
+                init_player_async(token_str.as_deref(), false, false),
+            )
+            .await
+            {
+                SerializedInitOutcome::AlreadyInitialized => {
+                    SHUTTING_DOWN.store(false, Ordering::SeqCst);
+                    SLEEPING.store(false, Ordering::SeqCst);
+                    Ok(())
+                }
+                SerializedInitOutcome::Built(result) => result,
+            }
         }) {
             Ok(result) => result,
             Err(code) => return code,
@@ -638,11 +653,11 @@ pub(crate) fn create_new_player(session: &Session) -> Arc<Player> {
 
 /// Builds a session, and clears anything it left behind if a teardown began while it ran.
 ///
-/// `build_player_async` stores Session, Player, Mixer and Spirc in the globals well before
-/// it can decide whether it is still wanted, so every error path after those stores would
-/// leak them. Normally the next reconnect attempt tidies up on its way in — but during a
-/// logout there is no next attempt: the loop sees the teardown flag and exits, leaving a
-/// live session for an account that is gone.
+/// Must run while the caller holds the lifecycle lock. `build_player_async` stores Session,
+/// Player, Mixer and Spirc in the globals well before it can decide whether it is still wanted,
+/// so every error path after those stores would leak them. Normally the next reconnect attempt
+/// tidies up on its way in — but during a logout there is no next attempt: the loop sees the
+/// teardown flag and exits, leaving a live session for an account that is gone.
 pub(crate) async fn init_player_async(
     access_token: Option<&str>,
     activate_after_connect: bool,
@@ -672,8 +687,9 @@ pub(crate) async fn build_player_async(
     activate_after_connect: bool,
     resume_after_connect: bool,
 ) -> Result<(), String> {
-    // Increment session generation - this invalidates any old cluster listeners
-    let current_generation = SESSION_GENERATION.fetch_add(1, Ordering::SeqCst) + 1;
+    let current_generation = tokio::task::spawn_blocking(invalidate_cluster_generation)
+        .await
+        .map_err(|e| format!("cluster generation invalidation: {e}"))?;
     LAST_BUILD_GENERATION.store(current_generation, Ordering::SeqCst);
     debug!(
         "[WAKE +{}ms] init_player_async starting, generation={}",
@@ -685,6 +701,7 @@ pub(crate) async fn build_player_async(
     with_connection(|c| c.device_id = Some(device_id.clone()));
 
     let (session, credentials) = create_session(&device_id, access_token)?;
+    let _store = enter_store_section();
 
     // Create new mixer
     let mixer_config = MixerConfig::default();
@@ -793,9 +810,9 @@ pub(crate) async fn build_player_async(
                 //
                 // A supersede on its own is the opposite case — a newer generation owns the
                 // globals by now, and tearing them down would destroy its work, not ours.
-                // Teardown outranks that: `init_player_async` clears both teardown flags as
-                // it starts, so a flag that is set now means no newer generation began after
-                // it, whatever the counter says.
+                // Only teardown may clear globals. Teardown outranks a moved counter:
+                // `init_player_async` clears both teardown flags as it starts, so a flag
+                // that is set now means no newer generation began after it.
                 if tearing_down {
                     debug!(
                         "Generation {} finished during teardown — clearing what it built",

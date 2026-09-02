@@ -274,6 +274,38 @@ nonisolated struct PlaybackEnvironment: Sendable {
     let catalog: any CatalogProviding
     let playlistMutations: any PlaylistMutating
     let trackAttributes: any TrackAttributesProviding
+    let queueServiceHook: (any QueueServiceHook)?
+
+    /// Hand-written so checks can pass a hook. A defaulted stored property is
+    /// dropped from the synthesized memberwise initializer, which then rejects
+    /// `queueServiceHook:` as an extra argument.
+    init(
+        remote: any RemotePlaybackClient,
+        local: any LocalPlaybackEngine,
+        webQueue: any WebQueueClient,
+        account: any AccountSession,
+        audioOutput: any AudioOutputPreparing,
+        preferences: any PlaybackPreferences,
+        lifecycle: any SystemLifecycleEvents,
+        clock: any PlaybackClock,
+        catalog: any CatalogProviding,
+        playlistMutations: any PlaylistMutating,
+        trackAttributes: any TrackAttributesProviding,
+        queueServiceHook: (any QueueServiceHook)? = nil
+    ) {
+        self.remote = remote
+        self.local = local
+        self.webQueue = webQueue
+        self.account = account
+        self.audioOutput = audioOutput
+        self.preferences = preferences
+        self.lifecycle = lifecycle
+        self.clock = clock
+        self.catalog = catalog
+        self.playlistMutations = playlistMutations
+        self.trackAttributes = trackAttributes
+        self.queueServiceHook = queueServiceHook
+    }
 
     static let live: PlaybackEnvironment = {
         let partnerAPI = PartnerAPI()

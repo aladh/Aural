@@ -10,8 +10,9 @@ nonisolated enum RustPlaybackEvent: Sendable {
     case devices(RustDevicesState)
 }
 
-/// Process-local ordering assigned at callback intake. Backend revisions remain authoritative
-/// within a source; this sequence makes cross-callback delivery deterministic in Swift.
+/// Process-local ordering assigned at callback intake and delivered in that order.
+/// Backend revisions remain authoritative within a source; this sequence makes
+/// cross-callback delivery deterministic in Swift.
 nonisolated struct RustPlaybackEventEnvelope: Sendable {
     let sequence: UInt64
     let receivedAt: Date
@@ -27,9 +28,8 @@ nonisolated final class RustPlaybackEngine: LocalPlaybackEngine, @unchecked Send
     static let shared = RustPlaybackEngine()
 
     private let lock = NSLock()
-    private var continuations: [UUID: AsyncStream<RustPlaybackEventEnvelope>.Continuation] = [:]
+    private let fanout = EngineEventFanout(clock: SystemPlaybackClock())
     private var callbacksRegistered = false
-    private var sequence: UInt64 = 0
 
     private init() {}
 
@@ -88,14 +88,9 @@ nonisolated final class RustPlaybackEngine: LocalPlaybackEngine, @unchecked Send
     }
 
     func events() -> AsyncStream<RustPlaybackEventEnvelope> {
-        let id = UUID()
-        return AsyncStream(bufferingPolicy: .bufferingNewest(64)) { continuation in
-            lock.withLock { continuations[id] = continuation }
-            continuation.onTermination = { [weak self] _ in
-                self?.lock.withLock { self?.continuations[id] = nil }
-            }
-            // Install the continuation before registration. This closes the initial-event loss
-            // window if callback registration ever publishes a snapshot synchronously.
+        // Install the continuation before registration. This closes the initial-event loss
+        // window if callback registration ever publishes a snapshot synchronously.
+        fanout.events { [self] in
             registerCallbacksIfNeeded()
         }
     }
@@ -160,18 +155,7 @@ nonisolated final class RustPlaybackEngine: LocalPlaybackEngine, @unchecked Send
     }
 
     private func emit(_ event: RustPlaybackEvent) {
-        let (envelope, targets) = lock.withLock {
-            sequence &+= 1
-            let envelope = RustPlaybackEventEnvelope(
-                sequence: sequence,
-                receivedAt: Date(),
-                event: event
-            )
-            return (envelope, Array(continuations.values))
-        }
-        for continuation in targets {
-            continuation.yield(envelope)
-        }
+        fanout.emit(event)
     }
 }
 

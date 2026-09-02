@@ -185,10 +185,23 @@ private struct IdleRepeatAttributes: TrackAttributesProviding {
     func attributes(for _: [String]) async throws -> [String: TrackAttributes] { [:] }
 }
 
+private func auralSourceFile(_ relativePath: String) throws -> String {
+    let checksDirectory = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
+    let sources = checksDirectory.deletingLastPathComponent().deletingLastPathComponent()
+    let url = sources.appending(path: relativePath)
+    return try String(contentsOf: url, encoding: .utf8)
+}
+
+private func containsToken(_ source: String, _ token: String) -> Bool {
+    source.contains(token)
+}
+
 private enum RepeatCatalogFailure: Error { case unavailable }
 
 private struct IdleRepeatCatalog: CatalogProviding {
-    func searchTracks(_: String, limit _: Int) async throws -> [PathfinderTrack] { throw RepeatCatalogFailure.unavailable }
+    func searchTracks(_: String, limit _: Int) async throws -> [PathfinderTrack] {
+        throw RepeatCatalogFailure.unavailable
+    }
     func home() async throws -> PathfinderHome { throw RepeatCatalogFailure.unavailable }
     func libraryPlaylists() async throws -> [PathfinderPlaylist] { throw RepeatCatalogFailure.unavailable }
     func libraryAlbums() async throws -> [PathfinderAlbum] { throw RepeatCatalogFailure.unavailable }
@@ -196,18 +209,6 @@ private struct IdleRepeatCatalog: CatalogProviding {
     func libraryTracks() async throws -> [PathfinderLibraryTrackItem] { throw RepeatCatalogFailure.unavailable }
     func profile() async throws -> PathfinderProfile { throw RepeatCatalogFailure.unavailable }
     func playlist(id _: String) async throws -> PathfinderPlaylistUnion { throw RepeatCatalogFailure.unavailable }
-}
-
-@MainActor
-private func waitUntil(_ condition: @MainActor () async -> Bool) async -> Bool {
-    let clock = ContinuousClock()
-    let deadline = clock.now + .seconds(2)
-    while clock.now < deadline {
-        if Task.isCancelled { return false }
-        if await condition() { return true }
-        await Task.yield()
-    }
-    return false
 }
 
 private func repeatEnvironment(
@@ -241,14 +242,15 @@ private func playbackStore(_ environment: PlaybackEnvironment) -> PlaybackStore 
 private func seedReadyRemote(_ player: PlaybackStore) {
     _ = player.send(.session(.ready), source: .account)
     _ = player.send(
-        .devices(PlaybackDeviceSnapshot(
-            devices: [
-                PlaybackDevice(id: "mac", name: "Mac", type: "computer", isActive: false),
-                PlaybackDevice(id: "speaker", name: "Speaker", type: "speaker", isActive: true)
-            ],
-            localDeviceID: "mac",
-            revision: 1
-        )),
+        .devices(
+            PlaybackDeviceSnapshot(
+                devices: [
+                    PlaybackDevice(id: "mac", name: "Mac", type: "computer", isActive: false),
+                    PlaybackDevice(id: "speaker", name: "Speaker", type: "speaker", isActive: true),
+                ],
+                localDeviceID: "mac",
+                revision: 1
+            )),
         source: .engineDevices,
         revision: 1
     )
@@ -258,13 +260,14 @@ private func seedReadyRemote(_ player: PlaybackStore) {
 private func seedReadyLocal(_ player: PlaybackStore) {
     _ = player.send(.session(.ready), source: .account)
     _ = player.send(
-        .devices(PlaybackDeviceSnapshot(
-            devices: [
-                PlaybackDevice(id: "mac", name: "Mac", type: "computer", isActive: true)
-            ],
-            localDeviceID: "mac",
-            revision: 1
-        )),
+        .devices(
+            PlaybackDeviceSnapshot(
+                devices: [
+                    PlaybackDevice(id: "mac", name: "Mac", type: "computer", isActive: true)
+                ],
+                localDeviceID: "mac",
+                revision: 1
+            )),
         source: .engineDevices,
         revision: 1
     )
@@ -278,14 +281,15 @@ private func sendRepeatSnapshot(
     revision: UInt64
 ) {
     _ = player.send(
-        .enginePlayback(EnginePlaybackSnapshot(
-            transport: .paused,
-            trackURI: nil,
-            timing: PlaybackTiming(anchoredAt: Date(timeIntervalSince1970: 1_800_000_000)),
-            shuffle: false,
-            repeatMode: mode,
-            repeatFlags: flags ?? mode.flags
-        )),
+        .enginePlayback(
+            EnginePlaybackSnapshot(
+                transport: .paused,
+                trackURI: nil,
+                timing: PlaybackTiming(anchoredAt: Date(timeIntervalSince1970: 1_800_000_000)),
+                shuffle: false,
+                repeatMode: mode,
+                repeatFlags: flags ?? mode.flags
+            )),
         source: .enginePlayback,
         revision: revision
     )
@@ -436,7 +440,9 @@ func runRepeatTransitionChecks(_ runner: CheckRunner) async {
             [RepeatSend(endpoint: .repeatContext, enabled: true)]
         )
         runner.equal("first-step failure rolls back the optimistic mode", player.repeatMode, RepeatMode.off)
-        runner.equal("first-step failure reports Could not update repeat", player.transientCommandError, "Could not update repeat")
+        runner.equal(
+            "first-step failure reports Could not update repeat", player.transientCommandError,
+            "Could not update repeat")
         await player.shutdownForTermination()
     }
 
@@ -459,8 +465,11 @@ func runRepeatTransitionChecks(_ runner: CheckRunner) async {
                 RepeatSend(endpoint: .repeatContext, enabled: true),
             ]
         )
-        runner.equal("second-step failure rolls back to the captured previous mode", player.repeatMode, RepeatMode.context)
-        runner.equal("second-step failure reports Could not update repeat", player.transientCommandError, "Could not update repeat")
+        runner.equal(
+            "second-step failure rolls back to the captured previous mode", player.repeatMode, RepeatMode.context)
+        runner.equal(
+            "second-step failure reports Could not update repeat", player.transientCommandError,
+            "Could not update repeat")
         await player.shutdownForTermination()
     }
 
@@ -484,7 +493,9 @@ func runRepeatTransitionChecks(_ runner: CheckRunner) async {
             ]
         )
         runner.equal("compensation failure does not claim success", player.repeatMode, RepeatMode.context)
-        runner.equal("compensation failure reports Could not update repeat", player.transientCommandError, "Could not update repeat")
+        runner.equal(
+            "compensation failure reports Could not update repeat", player.transientCommandError,
+            "Could not update repeat")
         await player.shutdownForTermination()
     }
 
@@ -508,7 +519,9 @@ func runRepeatTransitionChecks(_ runner: CheckRunner) async {
             ]
         )
         runner.equal("local second-step failure rolls back the optimistic mode", player.repeatMode, RepeatMode.context)
-        runner.equal("local second-step failure reports Could not update repeat", player.transientCommandError, "Could not update repeat")
+        runner.equal(
+            "local second-step failure reports Could not update repeat", player.transientCommandError,
+            "Could not update repeat")
         await player.shutdownForTermination()
     }
 
@@ -527,8 +540,9 @@ func runRepeatTransitionChecks(_ runner: CheckRunner) async {
         await remote.releaseHold()
         let finished = await waitUntil { player.state.pendingCommands[.options] == nil }
         runner.check("stale failure completion arrives", finished)
-        runner.equal("a later failure does not clobber the engine repeat snapshot", player.repeatMode, RepeatMode.context)
-        runner.equal("the failed command still reports Could not update repeat", player.transientCommandError, "Could not update repeat")
+        runner.equal(
+            "a later failure does not clobber the engine repeat snapshot", player.repeatMode, RepeatMode.context)
+        runner.nil_("confirmed repeat then failure has no command notice", player.transientCommandError)
         await player.shutdownForTermination()
     }
 
@@ -605,13 +619,16 @@ func runRepeatTransitionChecks(_ runner: CheckRunner) async {
                 RepeatSend(endpoint: .repeatContext, enabled: true),
             ]
         )
-        runner.equal("intermediate off plus successful compensation restores context UI", player.repeatMode, RepeatMode.context)
+        runner.equal(
+            "intermediate off plus successful compensation restores context UI", player.repeatMode, RepeatMode.context)
         runner.equal(
             "restored context flags match the captured previous pair",
             player.state.options.repeatFlags,
             RepeatMode.context.flags
         )
-        runner.equal("the failed command still reports Could not update repeat", player.transientCommandError, "Could not update repeat")
+        runner.equal(
+            "the failed command still reports Could not update repeat", player.transientCommandError,
+            "Could not update repeat")
         await player.shutdownForTermination()
     }
 
@@ -660,7 +677,9 @@ func runRepeatTransitionChecks(_ runner: CheckRunner) async {
                 RepeatFlagMutation(flag: .track, enabled: false),
             ]
         )
-        runner.equal("the failed command still reports Could not update repeat", player.transientCommandError, "Could not update repeat")
+        runner.equal(
+            "the failed command still reports Could not update repeat", player.transientCommandError,
+            "Could not update repeat")
         await player.shutdownForTermination()
     }
 
@@ -679,6 +698,7 @@ func runRepeatTransitionChecks(_ runner: CheckRunner) async {
         let targetFinished = await waitUntil { targetPlayer.state.pendingCommands[.options] == nil }
         runner.check("target snapshot failure finishes", targetFinished)
         runner.equal("a later target track snapshot remains track", targetPlayer.repeatMode, RepeatMode.track)
+        runner.nil_("confirmed target repeat then failure has no command notice", targetPlayer.transientCommandError)
         await targetPlayer.shutdownForTermination()
 
         let unrelatedRemote = ScriptedRepeatRemote(failAtCounts: [1], holdAfterCount: 1)
@@ -693,7 +713,9 @@ func runRepeatTransitionChecks(_ runner: CheckRunner) async {
         await unrelatedRemote.releaseHold()
         let unrelatedFinished = await waitUntil { unrelatedPlayer.state.pendingCommands[.options] == nil }
         runner.check("unrelated snapshot failure finishes", unrelatedFinished)
-        runner.equal("unrelated newer authoritative track remains preserved", unrelatedPlayer.repeatMode, RepeatMode.track)
+        runner.equal(
+            "unrelated newer authoritative track remains preserved", unrelatedPlayer.repeatMode, RepeatMode.track)
+        runner.nil_("superseded repeat then failure stays inert", unrelatedPlayer.transientCommandError)
         await unrelatedPlayer.shutdownForTermination()
     }
 
@@ -710,9 +732,9 @@ func runRepeatTransitionChecks(_ runner: CheckRunner) async {
         if let commandID = cancelStore.state.pendingCommands[.options]?.id {
             cancelStore.effects.cancel(.command(commandID))
         }
-        let cancellationSettled = await waitUntil { await sleeping.completedSends == 1 }
-        runner.check("cancelled repeat transport exits", cancellationSettled)
-        runner.equal("cancelled repeat keeps the optimistic mode", cancelStore.repeatMode, RepeatMode.context)
+        let cancellationSettled = await waitUntil { cancelStore.state.pendingCommands[.options] == nil }
+        runner.check("cancelled repeat settles", cancellationSettled)
+        runner.equal("cancelled repeat restores the captured mode", cancelStore.repeatMode, RepeatMode.off)
         runner.nil_("cancelled repeat has no notice", cancelStore.transientCommandError)
         await cancelStore.shutdownForTermination()
 
@@ -730,5 +752,176 @@ func runRepeatTransitionChecks(_ runner: CheckRunner) async {
         runner.check("teardown repeat transport exits", teardownSettled)
         runner.nil_("teardown leaves no pending options command", teardownStore.state.pendingCommands[.options])
         runner.nil_("teardown repeat has no command notice", teardownStore.transientCommandError)
+    }
+
+    await runner.suite("Local store first-step failure and success") {
+        let failing = RepeatLocalEngine(failAtCount: 1)
+        let failed = playbackStore(
+            repeatEnvironment(local: failing, remote: ScriptedRepeatRemote())
+        )
+        seedReadyLocal(failed)
+        failed.cycleRepeat()
+        runner.equal("local off → context presents context before completion", failed.repeatMode, RepeatMode.context)
+        let failedFinished = await waitUntil { failed.state.pendingCommands[.options] == nil }
+        runner.check("local first-step failure finishes", failedFinished)
+        runner.equal(
+            "local first-step failure performs no compensation",
+            failing.mutations,
+            [RepeatFlagMutation(flag: .context, enabled: true)]
+        )
+        runner.equal("local first-step failure rolls back the optimistic mode", failed.repeatMode, RepeatMode.off)
+        runner.equal(
+            "local first-step failure reports Could not update repeat", failed.transientCommandError,
+            "Could not update repeat")
+        await failed.shutdownForTermination()
+
+        let succeeding = RepeatLocalEngine()
+        let accepted = playbackStore(
+            repeatEnvironment(local: succeeding, remote: ScriptedRepeatRemote())
+        )
+        seedReadyLocal(accepted)
+        accepted.cycleRepeat()
+        let acceptedFinished = await waitUntil { accepted.state.pendingCommands[.options] == nil }
+        runner.check("local off → context success finishes", acceptedFinished)
+        runner.equal(
+            "local off → context success sends only context on",
+            succeeding.mutations,
+            [RepeatFlagMutation(flag: .context, enabled: true)]
+        )
+        runner.equal("local off → context success keeps context", accepted.repeatMode, RepeatMode.context)
+        runner.nil_("local off → context success has no command notice", accepted.transientCommandError)
+        await accepted.shutdownForTermination()
+    }
+
+    await runner.suite("Lagging, non-authoritative, stale, and duplicate repeat stay correct") {
+        let laggingRemote = ScriptedRepeatRemote(failAtCounts: [1], holdAfterCount: 1)
+        let lagging = playbackStore(
+            repeatEnvironment(local: RepeatLocalEngine(), remote: laggingRemote)
+        )
+        seedReadyRemote(lagging)
+        lagging.cycleRepeat()
+        let lagHeld = await waitUntil { await laggingRemote.sends.count == 1 }
+        runner.check("lagging repeat send is held", lagHeld)
+        sendRepeatSnapshot(lagging, mode: .off, revision: 2)
+        runner.equal("a lagging off snapshot keeps optimistic context", lagging.repeatMode, RepeatMode.context)
+        runner.notNil("a lagging off snapshot keeps rollback ownership", lagging.state.pendingCommands[.options])
+        await laggingRemote.releaseHold()
+        let lagFinished = await waitUntil { lagging.state.pendingCommands[.options] == nil }
+        runner.check("lagging prior then rejection finishes", lagFinished)
+        runner.equal("lagging prior then rejection restores off", lagging.repeatMode, RepeatMode.off)
+        runner.equal(
+            "lagging prior then rejection reports Could not update repeat", lagging.transientCommandError,
+            "Could not update repeat")
+        await lagging.shutdownForTermination()
+
+        let userRemote = ScriptedRepeatRemote(failAtCounts: [1], holdAfterCount: 1)
+        let userStore = playbackStore(
+            repeatEnvironment(local: RepeatLocalEngine(), remote: userRemote)
+        )
+        seedReadyRemote(userStore)
+        userStore.cycleRepeat()
+        let userHeld = await waitUntil { await userRemote.sends.count == 1 }
+        runner.check("user options repeat send is held", userHeld)
+        _ = userStore.send(
+            .options(PlaybackOptions(shuffle: true, repeatMode: .context, repeatFlags: RepeatMode.context.flags)),
+            source: .user
+        )
+        runner.equal("a matching user options event keeps optimistic context", userStore.repeatMode, RepeatMode.context)
+        runner.equal("a matching user options event still adopts shuffle", userStore.state.options.shuffle, true)
+        runner.notNil(
+            "a matching user options event keeps the pending repeat command", userStore.state.pendingCommands[.options])
+        runner.check(
+            "a matching user options event does not record confirmation",
+            userStore.state.transportCommandResolutions.isEmpty
+        )
+        await userRemote.releaseHold()
+        let userFinished = await waitUntil { userStore.state.pendingCommands[.options] == nil }
+        runner.check("user options then rejection finishes", userFinished)
+        runner.equal(
+            "rejection after only a matching user options event restores off", userStore.repeatMode, RepeatMode.off)
+        await userStore.shutdownForTermination()
+
+        let staleRemote = ScriptedRepeatRemote(sleepUntilCancelled: true)
+        let staleStore = playbackStore(
+            repeatEnvironment(local: RepeatLocalEngine(), remote: staleRemote)
+        )
+        seedReadyRemote(staleStore)
+        staleStore.cycleRepeat()
+        let stalePending = await waitUntil { staleStore.state.pendingCommands[.options] != nil }
+        runner.check("repeat is pending before an engine-epoch bump", stalePending)
+        let optimisticRepeat = staleStore.repeatMode
+        _ = staleStore.send(
+            .engineConnection(EngineConnectionSnapshot(session: .recovering, owner: .none, localDeviceID: nil)),
+            source: .engineConnection,
+            revision: 1,
+            engineEpoch: staleStore.engineGeneration + 1
+        )
+        runner.nil_("an engine-epoch bump drops the pending repeat", staleStore.state.pendingCommands[.options])
+        runner.equal("an engine-epoch bump does not roll back context", staleStore.repeatMode, optimisticRepeat)
+        runner.check(
+            "an engine-epoch bump clears repeat confirmation state",
+            staleStore.state.transportCommandResolutions.isEmpty)
+        await staleStore.shutdownForTermination()
+
+        let accountRemote = ScriptedRepeatRemote(sleepUntilCancelled: true)
+        let accountStore = playbackStore(
+            repeatEnvironment(local: RepeatLocalEngine(), remote: accountRemote)
+        )
+        seedReadyRemote(accountStore)
+        accountStore.cycleRepeat()
+        let accountPending = await waitUntil { accountStore.state.pendingCommands[.options] != nil }
+        runner.check("repeat is pending before an account-epoch bump", accountPending)
+        accountStore.accountStore.advanceEpoch()
+        _ = accountStore.send(.reset(session: .signedOut), source: .account, accountEpoch: accountStore.accountEpoch)
+        runner.nil_("an account-epoch bump drops pending repeat", accountStore.state.pendingCommands[.options])
+        runner.equal("an account-epoch bump signs out", accountStore.state.session, PlaybackSessionPhase.signedOut)
+        runner.equal("an account-epoch bump does not keep signed-in repeat", accountStore.repeatMode, RepeatMode.off)
+        await accountStore.shutdownForTermination()
+
+        let joining = playbackStore(
+            repeatEnvironment(local: RepeatLocalEngine(), remote: ScriptedRepeatRemote())
+        )
+        _ = joining.send(.session(.ready), source: .account)
+        _ = joining.send(
+            .owner(.uncertain(PlaybackDevice(id: "speaker", name: "Speaker", type: "speaker", isActive: true))),
+            source: .command
+        )
+        let joiningBefore = joining.state
+        joining.cycleRepeat()
+        runner.equal(
+            "route refusal leaves repeat unchanged", joining.state.options.repeatMode, joiningBefore.options.repeatMode)
+        runner.check("route refusal does not start a pending repeat", joining.state.pendingCommands.isEmpty)
+        await joining.shutdownForTermination()
+
+        let duplicateRemote = ScriptedRepeatRemote(sleepUntilCancelled: true)
+        let duplicateStore = playbackStore(
+            repeatEnvironment(local: RepeatLocalEngine(), remote: duplicateRemote)
+        )
+        seedReadyRemote(duplicateStore)
+        duplicateStore.cycleRepeat()
+        let repeatPending = await waitUntil { duplicateStore.state.pendingCommands[.options] != nil }
+        runner.check("the first repeat is pending before a duplicate", repeatPending)
+        let afterFirstRepeat = duplicateStore.state
+        duplicateStore.cycleRepeat()
+        runner.equal(
+            "a duplicate repeat does not change options", duplicateStore.state.options, afterFirstRepeat.options)
+        runner.equal(
+            "a duplicate repeat keeps the original command", duplicateStore.state.pendingCommands[.options]?.id,
+            afterFirstRepeat.pendingCommands[.options]?.id)
+        if let commandID = duplicateStore.state.pendingCommands[.options]?.id {
+            duplicateStore.effects.cancel(.command(commandID))
+        }
+        await duplicateStore.shutdownForTermination()
+    }
+
+    runner.suite("cycleRepeat no longer owns repeat presentation") {
+        runner.noThrow("PlaybackStore transport source is readable") {
+            let transport = try auralSourceFile("Aural/Spotify/PlaybackStore+Transport.swift")
+            runner.check(
+                "cycleRepeat no longer assigns presentation outside the reducer",
+                !containsToken(transport, "setRepeat(")
+                    && !containsToken(transport, "reconcileRepeatCommandFailure")
+            )
+        }
     }
 }

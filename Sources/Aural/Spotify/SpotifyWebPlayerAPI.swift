@@ -1,3 +1,4 @@
+import AuralDomain
 import Foundation
 
 nonisolated enum SpotifyWebPlayerAPIError: Error, LocalizedError, Equatable {
@@ -28,32 +29,48 @@ nonisolated struct SpotifyWebPlayerAPI: Sendable {
     static let queueURL = URL(string: "https://api.spotify.com/v1/me/player/queue")!
 
     private let accessToken: @Sendable () async throws -> String
+    private let invalidateAccessToken: @Sendable (String) async throws -> Void
     private let transport: Transport
+    private let retryTiming: SpotifyTransientRetry.Timing
 
     init(
         accessToken: @escaping @Sendable () async throws -> String = {
             try await KeymasterSession.shared.accessToken()
         },
-        transport: @escaping Transport = { try await URLSession.shared.data(for: $0) }
+        invalidateAccessToken: @escaping @Sendable (String) async throws -> Void = SpotifyCredentials
+            .invalidateSharedAccess,
+        transport: @escaping Transport = { try await URLSession.shared.data(for: $0) },
+        retryTiming: SpotifyTransientRetry.Timing = .production
     ) {
         self.accessToken = accessToken
+        self.invalidateAccessToken = invalidateAccessToken
         self.transport = transport
+        self.retryTiming = retryTiming
     }
 
     func queue() async throws -> [CatalogTrack] {
-        var request = URLRequest(url: Self.queueURL)
-        request.httpMethod = "GET"
-        request.setValue("application/json", forHTTPHeaderField: "Accept")
-        try await request.setValue("Bearer \(accessToken())", forHTTPHeaderField: "Authorization")
+        // QueueService owns 429 cooldown and Connect fallback. Generic safe-read
+        // replay would sleep through Retry-After before that policy could run.
+        let sent = try await SpotifyCredentials.retryingRefusedCredentials(
+            replay: .unsafe,
+            retryTiming: retryTiming,
+            invalidateAccessToken: invalidateAccessToken
+        ) {
+            var request = URLRequest(url: Self.queueURL)
+            request.httpMethod = "GET"
+            request.setValue("application/json", forHTTPHeaderField: "Accept")
+            try await request.setValue("Bearer \(accessToken())", forHTTPHeaderField: "Authorization")
 
-        let (data, response) = try await transport(request)
-        guard let http = response as? HTTPURLResponse else {
-            throw SpotifyWebPlayerAPIError.malformedResponse
+            let (data, response) = try await transport(request)
+            guard let http = response as? HTTPURLResponse else {
+                throw SpotifyWebPlayerAPIError.malformedResponse
+            }
+            return SpotifyCredentials.Attempt(body: data, http: http, request: request)
         }
-        guard http.statusCode == 200 else {
-            throw SpotifyWebPlayerAPIError.requestFailed(http.statusCode)
+        guard sent.status == 200 else {
+            throw SpotifyWebPlayerAPIError.requestFailed(sent.status)
         }
-        return try Self.decodeQueue(data)
+        return try Self.decodeQueue(sent.body)
     }
 
     static func decodeQueue(_ data: Data) throws -> [CatalogTrack] {

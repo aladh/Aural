@@ -25,16 +25,16 @@ void aural_playback_free_string(char* _Nullable s);
 //   AuralPlaybackResultOk                   ( 0) = success
 //   AuralPlaybackResultError                (-1) = general error
 //   AuralPlaybackResultSessionDisconnected  (-2) = session disconnected, needs reinitialization
-//                                             (call aural_playback_init_player again with a fresh token)
+//                                             (call aural_playback_init_player with NULL)
 //   AuralPlaybackResultSessionNotConnected  (-3) = session not connected (command rejected,
 //                                             wait for session to connect)
 //
 // On AuralPlaybackResultSessionDisconnected, the Spirc channel has closed (e.g., due
-// to idle timeout). Get a fresh access token and call aural_playback_init_player() to
-// reconnect.
+// to idle timeout). Call aural_playback_init_player() with NULL so it reconnects from the
+// credentials cached by aural_playback_authorize_streaming().
 //
 // On AuralPlaybackResultSessionNotConnected, the session is not yet connected. Wait
-// for the session_connected callback before retrying the command.
+// for the connection-state callback before retrying the command.
 typedef enum __attribute__((enum_extensibility(open))) AuralPlaybackResult : int32_t {
     AuralPlaybackResultOk = 0,
     AuralPlaybackResultError = -1,
@@ -68,10 +68,6 @@ AuralPlaybackResult aural_playback_init_player(const char* _Nullable access_toke
 ///   -2 = Superseded by a logout; any credentials written were removed again
 int32_t aural_playback_authorize_streaming(const char* _Nonnull access_token);
 
-/// The Spotify account id the last successful grant authenticated as, or NULL.
-/// The caller owns the string and must free it with aural_playback_free_string().
-char* _Nullable aural_playback_last_grant_account(void);
-
 /// Removes the cached streaming credentials.
 /// Call on logout, after the session teardown, so the next launch cannot connect the
 /// account that just logged out. Removing credentials that are not there is not an error.
@@ -91,15 +87,8 @@ AuralPlaybackResult aural_playback_play_uri(const char* uri_or_url, int32_t trac
 /// Pauses playback.
 AuralPlaybackResult aural_playback_pause(void);
 
-/// Clears any buffered audio samples.
-/// Call this before sleep to prevent stale audio playing on wake.
-void aural_playback_clear_audio_buffer(void);
-
 /// Resumes playback.
 AuralPlaybackResult aural_playback_resume(void);
-
-/// Stops playback completely.
-AuralPlaybackResult aural_playback_stop(void);
 
 /// Shuts down the Spirc connection and sends goodbye to other devices.
 /// Call this when the app is quitting to properly disconnect from Spotify Connect.
@@ -115,16 +104,6 @@ AuralPlaybackResult aural_playback_disconnect(void);
 /// Call this before aural_playback_init_player() when the session has disconnected.
 /// This clears all static state (session, player, spirc, etc.)
 void aural_playback_cleanup(void);
-
-/// Returns 1 if currently playing, 0 otherwise.
-int32_t aural_playback_is_playing(void);
-
-/// Returns 1 if this device is the active Spotify Connect device, 0 otherwise.
-/// When not active, playback controls should use Web API instead of Spirc.
-int32_t aural_playback_is_active_device(void);
-
-/// Returns 1 if Spirc is initialized and connected, 0 otherwise.
-int32_t aural_playback_is_spirc_ready(void);
 
 /// Returns the last position the Player reported, in milliseconds, or 0 if it has not
 /// reported one. Deliberately not interpolated — Swift owns display interpolation, and
@@ -145,54 +124,6 @@ typedef void (*PlaybackStateCallback)(const char* state_json);
 /// Registers a callback to receive playback state updates from Mercury/Spirc.
 void aural_playback_register_playback_state_callback(PlaybackStateCallback callback);
 
-/// Callback function type for volume change notifications.
-/// Receives the new volume (0-65535).
-typedef void (*VolumeCallback)(uint16_t volume);
-
-/// Registers a callback to receive volume change notifications.
-/// Called when the volume is changed remotely (e.g., from another Spotify Connect device).
-void aural_playback_register_volume_callback(VolumeCallback callback);
-
-/// Callback function type for loading notifications.
-/// Receives a JSON string containing track_uri and position_ms.
-/// This fires earlier than TrackChanged (~180ms vs ~620ms after remote command).
-typedef void (*LoadingCallback)(const char* loading_json);
-
-/// Registers a callback to receive loading notifications.
-/// Called when a new track starts loading (before metadata is fetched).
-void aural_playback_register_loading_callback(LoadingCallback callback);
-
-/// Callback function type for Connect device deactivation notifications.
-typedef void (*BecameInactiveCallback)(void);
-
-/// Registers a callback fired when this device stops being the active Connect device.
-///
-/// This reports *activity*, not health: it fires on an explicit disconnect, on shutdown,
-/// and whenever another device takes over playback. Do not treat it as a connection
-/// failure — read the connection snapshot (aural_playback_get_connection_state) for that.
-void aural_playback_register_became_inactive_callback(BecameInactiveCallback callback);
-
-/// Callback function type for Connect device activation notifications.
-typedef void (*BecameActiveCallback)(void);
-
-/// Registers a callback fired when this device becomes the active Connect device.
-///
-/// Also activity, not readiness: the session was already connected beforehand. Use the
-/// connection snapshot to decide when playback commands can be sent.
-void aural_playback_register_became_active_callback(BecameActiveCallback callback);
-
-/// Callback function type for session client changed notifications.
-/// Receives a JSON string containing client_id, client_name, client_brand_name, client_model_name.
-typedef void (*SessionClientChangedCallback)(const char* client_json);
-
-/// Registers a callback to receive session client changed notifications.
-/// Called when the controlling Spotify client changes (e.g., which app initiated playback).
-void aural_playback_register_session_client_changed_callback(SessionClientChangedCallback callback);
-
-/// Returns 1 if session is connected and ready for commands, 0 otherwise.
-/// Use this to check if playback commands will be accepted.
-int32_t aural_playback_is_session_connected(void);
-
 /// Forces a reconnection to Spotify servers.
 /// Use this after system wake to ensure a fresh connection before playback.
 /// Returns:
@@ -200,23 +131,6 @@ int32_t aural_playback_is_session_connected(void);
 ///   1 = Reconnection already in progress
 ///   2 = No session initialized (nothing to reconnect)
 int32_t aural_playback_force_reconnect(void);
-
-/// Callback function type for set queue notifications.
-/// Receives a JSON string containing next_tracks and prev_tracks arrays with uri and provider.
-typedef void (*SetQueueCallback)(const char* set_queue_json);
-
-/// Registers a callback to receive set queue notifications.
-/// Called when the queue is set/modified (via set_queue command from mobile app).
-void aural_playback_register_set_queue_callback(SetQueueCallback callback);
-
-/// Callback function type for active device change notifications.
-/// Receives the device ID string of the currently active Spotify Connect device.
-typedef void (*ActiveDeviceCallback)(const char* device_id);
-
-/// Registers a callback to receive active device ID changes from cluster updates.
-/// Called on every cluster update — use this to track which device is active
-/// without polling the Web API.
-void aural_playback_register_active_device_callback(ActiveDeviceCallback callback);
 
 /// Returns the last queue the Connect cluster described, as JSON, or NULL if no cluster
 /// update has arrived yet. Caller owns the string and must free it with aural_playback_free_string.
@@ -269,10 +183,6 @@ void aural_playback_register_audio_data_callback(AudioDataCallback callback);
 /// Registers a callback for audio playback control events (start/stop/clear).
 void aural_playback_register_audio_control_callback(AudioControlCallback callback);
 
-/// Returns the current connection state as a JSON string, or NULL on error.
-/// Caller must free the returned string using aural_playback_free_string().
-char* _Nullable aural_playback_get_connection_state(void);
-
 /// Skips to the next track in the queue.
 AuralPlaybackResult aural_playback_next(void);
 
@@ -281,17 +191,6 @@ AuralPlaybackResult aural_playback_previous(void);
 
 /// Seeks to the given position in milliseconds.
 AuralPlaybackResult aural_playback_seek(uint32_t position_ms);
-
-/// Plays radio for a seed track.
-/// Gets the radio playlist URI and loads it directly via Spirc.
-///
-/// @param track_uri Spotify track URI (e.g., "spotify:track:xxx")
-AuralPlaybackResult aural_playback_play_radio(const char* track_uri);
-
-/// Sets the playback volume (0-65535).
-///
-/// @param volume Volume level (0 = muted, 65535 = max)
-AuralPlaybackResult aural_playback_set_volume(uint16_t volume);
 
 /// Sets shuffle mode for the current playback context.
 ///
@@ -314,11 +213,13 @@ AuralPlaybackResult aural_playback_transfer_to_local(void);
 /// @param to_device_id The target device ID to transfer playback to
 AuralPlaybackResult aural_playback_transfer_playback(const char* to_device_id);
 
-/// Adds content to the queue.
-/// Supports tracks, episodes, albums, playlists, artists, and shows.
-/// For albums/playlists/artists/shows, all tracks/episodes are resolved and queued.
+/// Adds a URI to the Connect queue.
 ///
-/// @param uri Spotify URI (e.g., "spotify:track:xxx", "spotify:album:xxx")
+/// The shipped command forwards the string to Spirc as a single Spotify URI.
+/// Track URIs are the path Aural uses; this export does not resolve episodes, shows,
+/// or context URIs into a list of tracks.
+///
+/// @param uri Spotify URI (e.g., "spotify:track:xxx")
 AuralPlaybackResult aural_playback_add_to_queue(const char* uri);
 
 // ============================================================================
@@ -332,18 +233,11 @@ AuralPlaybackResult aural_playback_add_to_queue(const char* uri);
 /// @param bitrate Bitrate level (0, 1, or 2)
 void aural_playback_set_bitrate(uint8_t bitrate);
 
-/// Gets the current bitrate setting.
-/// 0 = 96 kbps, 1 = 160 kbps, 2 = 320 kbps
-uint8_t aural_playback_get_bitrate(void);
-
 /// Sets gapless playback (true = enabled, false = disabled).
 /// Enabled by default. Takes effect on next player initialization.
 ///
 /// @param enabled Whether gapless playback is enabled
 void aural_playback_set_gapless(bool enabled);
-
-/// Gets the current gapless playback setting.
-bool aural_playback_get_gapless(void);
 
 /// Sets the initial volume (0-65535) used when registering with Spotify Connect.
 /// Must be called before aural_playback_init_player() to take effect.

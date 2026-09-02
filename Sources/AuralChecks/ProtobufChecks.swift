@@ -6,7 +6,6 @@
 import Foundation
 import AuralDomain
 
-
 func runProtobufChecks(_ check: CheckRunner) {
     check.suite("Protobuf codec") {
         for value: UInt64 in [0, 1, 127, 128, 16_383, 16_384, UInt64.max] {

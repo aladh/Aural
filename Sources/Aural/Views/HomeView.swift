@@ -42,7 +42,7 @@ struct HomeView: View {
                 } else {
                     HStack {
                         Text(store.greeting)
-                            .font(.system(size: 32, weight: .bold))
+                            .font(.largeTitle.bold())
                         Spacer()
                         if store.isLoading(.home) {
                             ProgressView()
@@ -61,7 +61,6 @@ struct HomeView: View {
             .padding(.top, 22)
             .padding(.bottom, 28)
         }
-        .background { CatalogCanvasBackground() }
         .navigationTitle("Home")
     }
 }

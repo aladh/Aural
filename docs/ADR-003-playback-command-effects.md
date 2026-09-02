@@ -31,15 +31,22 @@ different namespace. Command effects must not fold that watermark into reducer-o
 (cancel-in-flight for that token), completed, or cancelled. Account teardown calls
 `cancelAccountScoped()`.
 
-Transport commands today:
+Transport commands today share one store kernel, `performAdmittedPlaybackCommand`:
 
 1. Refuse a second command of the same `PlaybackCommandKind` while one is pending.
 2. `send(.commandStarted)` for an optimistic transport when requested.
-3. `effects.replace(.command(commandID), …)` with a unique UUID token.
-4. Await `PlaybackCoordinator.performLocal` / `performRemoteOperation`.
-5. Exit if the task was cancelled, the account epoch changed, or teardown began.
-6. `send(.commandFinished)` and, until this change, run reconnect / completion / extra notices
-   even when that send was rejected.
+3. `effects.replace(.command(commandID), …)` with a unique UUID token. Replacing that token
+   runs any previous `onCancel` and then cancels the superseded task. `complete` is keyed by
+   the registration object from that replace.
+4. Await the caller-supplied local or remote operation. Route selection, route refusal, and
+   waiting for local Connect identity stay outside the kernel so they cannot create pending
+   commands.
+5. After the operation, ordinary same-lifetime cancellation of that exact command token
+   settles through the reducer: restore the captured prior optimistic state, clear pending
+   ownership, and report `completion(false)` with no notice or reconnect. Confirmed,
+   superseded, teardown, and epoch-invalidated cancellation stay inert.
+6. Otherwise `send(.commandFinished)` and run reconnect / completion / extra notices only
+   through `playbackCommandFollowUp`.
 
 The representative workflow is **local pause**: optimistic pause, success, remote-style failure
 rollback, local reconnect-required, cancel-in-flight, account-epoch invalidation, a finish that
@@ -53,11 +60,13 @@ reconciles the pending command before the coordinator returns.
 The registry stays a small `@MainActor` dictionary of tasks. The store continues to decide *when*
 to start work. The reducer continues to decide *whether* a result may mutate state. Command start
 still requires an accepted send. Command-finish follow-ups use `playbackCommandFollowUp`: reducer
-acceptance is the normal gate, and a rejected transport finish may report success only when a
-same-lifetime authoritative snapshot already reconciled the pending expected transport. Stale,
-superseded, teardown, epoch-invalidated, and non-transport results stay inert. Command-error
-notices keep their existing timed lifetime; successful acknowledgements do not clear unrelated
-notices.
+acceptance is the normal gate. A captured same-lifetime transport resolution is evaluated first
+(confirmed success, superseded inert). Consume-only `commandFinished` acceptance exists only to
+remove that map entry and cannot turn a coordinator failure into `reportFailure`. A rejected
+transport finish may still report success when a same-lifetime snapshot already reconciled the
+pending expected transport without recording a resolution. Stale, superseded, teardown,
+epoch-invalidated, and non-transport results stay inert. Command-error notices keep their existing
+timed lifetime; successful acknowledgements do not clear unrelated notices.
 
 ### 2. Tiny Aural-specific command runner
 
@@ -165,19 +174,48 @@ Reasons:
 
 ## Production change justified by the spike
 
-In `PlaybackStore+Commands`, `commandStarted` must be accepted before a command task starts.
+In `PlaybackStore+Commands`, local and remote live routes share `performAdmittedPlaybackCommand`.
+`commandStarted` must be accepted before a command task starts.
 `commandFinished` follow-ups (completion, detailed notice, reconnect) go through
 `playbackCommandFollowUp`:
 
 - Reducer-accepted success reports success.
-- Reducer-accepted failure may reconnect.
-- A rejected finish on the same account/engine lifetime with no pending *transport* command is
-  already-reconciled success (matching snapshot). That includes a later coordinator failure:
-  `completion(true)` still runs, with no error notice, rollback, or reconnect.
-- Epoch changes, teardown, cancellation, non-transport kinds, and superseded ids stay inert.
+- Reducer-accepted failure may reconnect, except when the finish only consumed a captured
+  transport resolution.
+- `applyCommandOutcome` snapshots `transportCommandResolutions[id]` *before* `commandFinished`.
+  The reducer consumes that entry (pending rollback, or consume-only when the snapshot already
+  confirmed or superseded the command). Follow-up evaluates the captured optional resolution
+  before `finishAccepted`: confirmed reports success, superseded stays inert, so consume-only
+  acceptance cannot turn a coordinator failure into `reportFailure`.
+- A rejected finish on the same account/engine lifetime with no pending *transport* command and
+  no captured resolution is already-reconciled success (matching snapshot). Target confirmation and
+  supersession are keyed by command id so a later pause/resume cannot recycle the nil catch-all.
+- Unknown ids stay reducer-rejected and inert. Epoch changes, teardown, non-transport
+  kinds, and superseded ids stay inert even if a confirmation was captured.
+- Ordinary same-lifetime cancellation of the exact pending command id restores reducer-owned
+  rollback via `commandFinished(accepted: false, notice: nil)`, clears that ownership, and
+  reports `completion(false)` once. It does not show a command notice or reconnect.
+  Cancellation after confirmation or supersession, and cancellation after an account or
+  engine identity change, stay inert and notice-free.
 
-Successful `commandFinished` does not clear `notice`. Command errors keep the existing
+Successful `commandFinished` does not clear `notice`. A rejected finish with a nil notice
+restores rollback without replacing an existing notice. Command errors keep the existing
 `.commandError` lifetime.
+
+`togglePlayback` and `seek` pass their optimistic transport and/or timing on `commandStarted`.
+The reducer captures the prior presentation and `commandFinished` restores it on a matching
+rejection. Seek timing is held until an incoming sample matches the expected millisecond
+position on the same track. A different track supersedes the pending seek and
+adopts the incoming timing. Those call sites must not mutate `PlaybackState` before
+the start event.
+
+`play(track:)` and a loaded-playlist `playPlaylist` pass the known target track on
+`commandStarted`. The reducer applies that presentation atomically after command admission
+and restores the exact captured snapshot on a matching rejection. A lagging snapshot of
+the previous track cannot confirm the command. An authoritative snapshot of the target
+may confirm it so a later coordinator failure cannot roll back. An unrelated or empty
+track supersedes the optimistic target. Raw `play(uri:)` and playlist launches without a
+known first track keep their existing non-presenting behavior.
 
 No other command sites were migrated in #19/#27. Queue add remains a non-transport command path;
 its transient mutation feedback now uses the app-composed `TransientFeedbackPresenter` rather than
@@ -195,7 +233,8 @@ stamping.
 - Track metadata resolution sends `.trackMetadata`. `PlaybackHistoryStore.applyMetadata` runs only
   after that event is accepted.
 - Position refresh sends `.timing` with captured identity. Stale and cancelled refreshes are inert.
-- Queue adoption stamps `ProvenanceQueueSnapshot.accountEpoch` and the captured engine epoch.
+- Queue adoption stamps `ProvenanceQueueSnapshot.accountEpoch` and the payload
+  `sessionGeneration` (falling back to a captured engine epoch only when that field is absent).
   Catalog retain/replace runs only after the queue event is accepted. A cached queue snapshot's
   synchronous track presentation and `adoptTrackMetadata` path uses that same captured identity;
   `send(...) == true` gates history enrichment and starting a resolver. Merge/provenance policy is

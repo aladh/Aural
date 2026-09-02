@@ -25,7 +25,8 @@ private func partnerAPI(status: Int, body: String) -> PartnerAPI {
         accessToken: { "fixture-access" },
         clientToken: { "fixture-client" },
         invalidateClientToken: { _ in },
-        transport: rejectedTransport(status: status, body: Data(body.utf8))
+        transport: rejectedTransport(status: status, body: Data(body.utf8)),
+        retryTiming: .immediate
     )
 }
 
@@ -76,14 +77,14 @@ func runPrivacySanitizationChecks(_ check: CheckRunner) async {
         await expectFailure(
             check,
             "Partner GraphQL",
-            PartnerAPIError.graphQLErrors,
-            description: "Spotify returned a GraphQL error",
+            PartnerAPIError.graphQLErrors("profileAttributes"),
+            description: "Spotify returned a GraphQL error for profileAttributes",
             perform: {
                 _ = try await partnerAPI(
                     status: 200,
                     body: """
-                    {"errors":[{"message":"\(privacySentinel)","extensions":{"code":"INTERNAL"}}]}
-                    """
+                        {"errors":[{"message":"\(privacySentinel)","extensions":{"code":"INTERNAL"}}]}
+                        """
                 ).profile()
             }
         )
@@ -97,8 +98,8 @@ func runPrivacySanitizationChecks(_ check: CheckRunner) async {
                 _ = try await partnerAPI(
                     status: 200,
                     body: """
-                    {"errors":[{"message":"\(privacySentinel) persistedQueryNotFound","extensions":{"code":"PERSISTED_QUERY_NOT_FOUND"}}]}
-                    """
+                        {"errors":[{"message":"\(privacySentinel) persistedQueryNotFound","extensions":{"code":"PERSISTED_QUERY_NOT_FOUND"}}]}
+                        """
                 ).profile()
             }
         )
@@ -112,17 +113,44 @@ func runPrivacySanitizationChecks(_ check: CheckRunner) async {
                 try await partnerAPI(
                     status: 200,
                     body: """
-                    {"data":{"addLibraryItems":{"__typename":"NotFound","message":"\(privacySentinel)"}}}
-                    """
+                        {"data":{"addLibraryItems":{"__typename":"NotFound","message":"\(privacySentinel)"}}}
+                        """
                 ).addToLibrary(uris: ["spotify:track:fixture"])
             }
+        )
+
+        check.equal(
+            "pagination cap failures keep a stable category",
+            PartnerAPIError.pagination(.pageLimitReached),
+            .pagination(.pageLimitReached)
+        )
+        check.equal(
+            "pagination cap failures omit payloads",
+            PartnerAPIError.pagination(.pageLimitReached).errorDescription ?? "",
+            "Spotify pagination exceeded the request limit"
+        )
+        omitSentinel(
+            check,
+            "pagination cap LocalizedError",
+            PartnerAPIError.pagination(.pageLimitReached).errorDescription
+        )
+        check.equal(
+            "pagination non-progress failures omit payloads",
+            PartnerAPIError.pagination(.offsetDidNotAdvance).errorDescription ?? "",
+            "Spotify pagination did not advance"
+        )
+        omitSentinel(
+            check,
+            "pagination non-progress LocalizedError",
+            PartnerAPIError.pagination(.offsetDidNotAdvance).errorDescription
         )
 
         let connect = SpotifyConnectAPI(
             accessToken: { "fixture-access" },
             clientToken: { "fixture-client" },
             invalidateClientToken: { _ in },
-            transport: rejectedTransport(status: 502, body: Data(privacySentinel.utf8))
+            transport: rejectedTransport(status: 502, body: Data(privacySentinel.utf8)),
+            retryTiming: .immediate
         )
         await expectFailure(
             check,
@@ -137,7 +165,8 @@ func runPrivacySanitizationChecks(_ check: CheckRunner) async {
             transport: rejectedTransport(
                 status: 429,
                 body: Data("{\"error\":\"\(privacySentinel)\"}".utf8)
-            )
+            ),
+            retryTiming: .immediate
         )
         await expectFailure(
             check,
@@ -149,7 +178,8 @@ func runPrivacySanitizationChecks(_ check: CheckRunner) async {
         do {
             _ = try await SpotifyWebPlayerAPI(
                 accessToken: { "fixture-access" },
-                transport: rejectedTransport(status: 403, body: Data(privacySentinel.utf8))
+                transport: rejectedTransport(status: 403, body: Data(privacySentinel.utf8)),
+                retryTiming: .immediate
             ).queue()
             check.check("forbidden queue failures throw", false)
         } catch let error as SpotifyWebPlayerAPIError {
@@ -163,7 +193,8 @@ func runPrivacySanitizationChecks(_ check: CheckRunner) async {
             accessToken: { "fixture-access" },
             clientToken: { "fixture-client" },
             invalidateClientToken: { _ in },
-            transport: rejectedTransport(status: 500, body: Data(privacySentinel.utf8))
+            transport: rejectedTransport(status: 500, body: Data(privacySentinel.utf8)),
+            retryTiming: .immediate
         )
         await expectFailure(
             check,
@@ -180,7 +211,8 @@ func runPrivacySanitizationChecks(_ check: CheckRunner) async {
         )
         check.equal("failed session phases log a stable category", sessionPhaseLogLabel(failedPhase), "failed")
         omitSentinel(check, "session phase public log label", sessionPhaseLogLabel(failedPhase))
-        let publicLog = "Session phase changed: \(sessionPhaseLogLabel(.ready)) -> \(sessionPhaseLogLabel(failedPhase)); epoch=8"
+        let publicLog =
+            "Session phase changed: \(sessionPhaseLogLabel(.ready)) -> \(sessionPhaseLogLabel(failedPhase)); epoch=8"
         omitSentinel(check, "public session phase log", publicLog)
         check.check("session phase logs keep epoch", publicLog.contains("epoch=8"))
     }

@@ -9,12 +9,12 @@ import AuralDomain
 import SwiftUI
 
 /// Restarts queue hydration when launch-time Connect ordering arrives after the account becomes
-/// ready. Metadata-only repository updates deliberately do not change this identity, avoiding a
-/// refresh loop while individual track names fill in.
+/// ready. Queue snapshots produced by that hydration deliberately do not change this identity,
+/// avoiding a redundant second refresh while ordering and metadata converge.
 struct SidePanelQueueRefreshIdentity: Equatable {
     let isConnected: Bool
     let currentTrackURI: String
-    let queueURIs: [String]
+    let connectOrderingVersion: UInt64
 }
 
 struct SidePanelView: View {
@@ -57,7 +57,7 @@ struct SidePanelView: View {
         SidePanelQueueRefreshIdentity(
             isConnected: player.isConnected,
             currentTrackURI: player.trackURI,
-            queueURIs: player.queueNextEntries.map(\.uri)
+            connectOrderingVersion: player.queueInspectorOrderingVersion
         )
     }
 
@@ -145,11 +145,13 @@ struct SidePanelView: View {
                     selectedIDs: upcomingSelection,
                     in: player.queueNextEntries
                 ).count
-                guard QueueMutationSelection.keyboardCommand(
-                    deleteOrBackspace: true,
-                    selectedUpcomingCount: selectedCount,
-                    isRemovalAllowed: player.canRemoveUpcomingQueue(selectedIDs: upcomingSelection)
-                ) == .removeUpcomingOccurrences else {
+                guard
+                    QueueMutationSelection.keyboardCommand(
+                        deleteOrBackspace: true,
+                        selectedUpcomingCount: selectedCount,
+                        isRemovalAllowed: player.canRemoveUpcomingQueue(selectedIDs: upcomingSelection)
+                    ) == .removeUpcomingOccurrences
+                else {
                     return
                 }
                 player.removeUpcomingQueueOccurrences(selectedIDs: upcomingSelection)
@@ -193,12 +195,17 @@ private struct QueueUpcomingRow: View {
     let metadata: CatalogMetadataRepository
 
     var body: some View {
+        let displayInfo = metadata.displayInfo(for: entry.uri)
+        let subtitle = displayInfo.title == "Unknown track" ? entry.sourceLabel : displayInfo.artist
+        let track = metadata.knownTrack(for: entry.uri)
+        let durationText = track.flatMap { $0.duration > 0 ? formatDuration($0.duration) : nil }
+
         HStack(spacing: 10) {
             RemoteArtwork(url: track?.artworkURL, kind: .track, cornerRadius: 5, pointSize: 34)
                 .frame(width: 34, height: 34)
 
             VStack(alignment: .leading, spacing: 1) {
-                Text(title)
+                Text(displayInfo.title)
                     .font(.callout)
                     .lineLimit(1)
                 Text(subtitle)
@@ -209,32 +216,17 @@ private struct QueueUpcomingRow: View {
 
             Spacer(minLength: 4)
 
-            if let duration, duration > 0 {
-                Text(formatDuration(duration))
+            if let durationText {
+                Text(durationText)
                     .font(.caption2.monospacedDigit())
                     .foregroundStyle(.tertiary)
                     .lineLimit(1)
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .accessibilityLabel("\(title), \(subtitle)")
-    }
-
-    private var track: CatalogTrack? {
-        metadata.knownTrack(for: entry.uri)
-    }
-
-    private var duration: TimeInterval? {
-        track?.duration
-    }
-
-    private var title: String {
-        metadata.displayInfo(for: entry.uri).title
-    }
-
-    private var subtitle: String {
-        let artist = metadata.displayInfo(for: entry.uri).artist
-        return title == "Unknown track" ? entry.sourceLabel : artist
+        .accessibilityLabel(
+            [displayInfo.title, subtitle, durationText].compactMap { $0 }.joined(separator: ", ")
+        )
     }
 }
 
@@ -267,7 +259,7 @@ private struct HistoryRow: View {
                     .foregroundStyle(.tertiary)
                     .lineLimit(1)
             }
-            .padding(.vertical, 6)
+            .padding(6)
             .contentShape(Rectangle())
             .background(
                 isHovering ? Color.primary.opacity(0.055) : .clear,
@@ -279,7 +271,9 @@ private struct HistoryRow: View {
         // A row scrolled away under a resting cursor keeps no highlight.
         .onDisappear { isHovering = false }
         .help("Play \(entry.title)")
-        .accessibilityLabel("Play \(entry.title) by \(entry.artist), played \(entry.playedAt.formatted(.relative(presentation: .named)))")
+        .accessibilityLabel(
+            "Play \(entry.title) by \(entry.artist), played \(entry.playedAt.formatted(.relative(presentation: .named)))"
+        )
     }
 }
 
@@ -319,6 +313,12 @@ private struct CurrentTrackRow: View {
         .padding(.vertical, 3)
         .background(Color.accentColor.opacity(0.07), in: RoundedRectangle(cornerRadius: 7, style: .continuous))
         .accessibilityElement(children: .combine)
-        .accessibilityLabel("Now playing \(player.trackTitle) by \(player.artistName)")
+        .accessibilityLabel(currentTrackAccessibilityLabel)
+    }
+
+    private var currentTrackAccessibilityLabel: String {
+        let identity = "Now playing \(player.displayedTrackTitle) by \(player.displayedArtistName)"
+        guard player.duration > 0 else { return identity }
+        return "\(identity), \(formatDuration(player.duration))"
     }
 }

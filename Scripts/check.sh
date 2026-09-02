@@ -3,16 +3,7 @@ set -euo pipefail
 
 project_root="${0:A:h:h}"
 build_configuration="${AURAL_BUILD_CONFIGURATION:-debug}"
-sdk_path="$(xcrun --show-sdk-path)"
-compatible_sdk="/Library/Developer/CommandLineTools/SDKs/MacOSX26.5.sdk"
-if [[ -d "$compatible_sdk" ]]; then
-    sdk_path="$compatible_sdk"
-fi
-
-mkdir -p "$project_root/.build/module-cache"
-export SDKROOT="$sdk_path"
-export CLANG_MODULE_CACHE_PATH="$project_root/.build/module-cache"
-export SWIFTPM_MODULECACHE_OVERRIDE="$project_root/.build/module-cache"
+source "$project_root/Scripts/swiftpm-env.sh"
 
 case "$build_configuration" in
     debug|release) ;;
@@ -21,6 +12,11 @@ case "$build_configuration" in
         exit 2
         ;;
 esac
+
+# Fail fast on Swift format drift before Rust or Swift compilation.
+# The sibling self-test covers wrapper discovery/failure contracts without a Swift toolchain.
+"$project_root/Scripts/format-swift-self-test.sh"
+"$project_root/Scripts/format-swift.sh" --check
 
 # The Rust suite owns lifecycle, generation, queue conversion, JSON envelopes,
 # and compile-time C signature checks. Prefer the developer's normal toolchain;
@@ -67,7 +63,8 @@ fi
 # exact set comparison below is the contract check.
 header_symbols="$(mktemp /tmp/aural-header-symbols.XXXXXX)"
 library_symbols="$(mktemp /tmp/aural-library-symbols.XXXXXX)"
-trap 'rm -f "$header_symbols" "$library_symbols"' EXIT
+consumed_symbols="$(mktemp /tmp/aural-consumed-symbols.XXXXXX)"
+trap 'rm -f "$header_symbols" "$library_symbols" "$consumed_symbols"' EXIT
 rg -o --pcre2 'aural_playback_[a-z0-9_]+(?=\s*\()' \
     "$project_root/Sources/AuralPlaybackCore/aural_playback.h" | sort -u > "$header_symbols"
 (nm -gU "$backend_lib" 2>/dev/null || true) \
@@ -75,6 +72,21 @@ rg -o --pcre2 'aural_playback_[a-z0-9_]+(?=\s*\()' \
     | sort -u > "$library_symbols"
 if ! diff -u "$header_symbols" "$library_symbols"; then
     print -u2 "The C header and libaural_playback.a export different Aural symbols"
+    exit 1
+fi
+
+# Dead C exports cannot regrow silently: every remaining header symbol must be
+# called from the sole AuralPlaybackCore adapter. Reuses the header extractor's
+# call-site token pattern rather than a second parser or generated binding.
+# Line comments and quoted strings are dropped first so a mention is not a call.
+playback_core="$project_root/Sources/Aural/Spotify/PlaybackCore.swift"
+sed -e 's://.*::' -e 's/"[^"]*"//g' "$playback_core" \
+    | rg -o --pcre2 'aural_playback_[a-z0-9_]+(?=\s*\()' \
+    | sort -u > "$consumed_symbols"
+unused_header_exports="$(comm -23 "$header_symbols" "$consumed_symbols")"
+if [[ -n "$unused_header_exports" ]]; then
+    print -u2 "Header exports not called from PlaybackCore.swift:"
+    print -u2 "$unused_header_exports"
     exit 1
 fi
 
@@ -93,16 +105,20 @@ fi
 if [[ -n "${AURAL_SIGNING_IDENTITY:-}" ]]; then
     swift_arguments+=(-Xswiftc -DAURAL_DISTRIBUTION)
 fi
+swift_arguments+=("${aural_swiftc_warnings_as_errors[@]}")
 
 swift build "${swift_arguments[@]}"
 
 # Pure domain and deterministic scenario checks are a separate product so the
 # assertion harness and fixtures never ship in the application executable.
+# The gate always runs every registered suite. Suite-name arguments exist for
+# local iteration only and are not passed here.
 check_arguments=(
     --disable-sandbox
     --package-path "$project_root"
     --configuration "$build_configuration"
     --product AuralChecks
+    "${aural_swiftc_warnings_as_errors[@]}"
 )
 swift build "${check_arguments[@]}"
 checks_path="$(swift build "${check_arguments[@]}" --show-bin-path)/AuralChecks"
@@ -124,6 +140,7 @@ boundary_arguments=(
     --package-path "$project_root"
     --configuration debug
     --product AuralBoundaryChecks
+    "${aural_swiftc_warnings_as_errors[@]}"
 )
 swift build "${boundary_arguments[@]}"
 boundary_checks_path="$(swift build "${boundary_arguments[@]}" --show-bin-path)/AuralBoundaryChecks"
@@ -157,20 +174,8 @@ if [[ "$direct_core_calls" != "$expected_core_caller" ]]; then
     exit 1
 fi
 
-if rg -n 'LiveSpotifyController|nonisolated\(unsafe\)' "$project_root/Sources" --glob '*.swift'; then
-    print -u2 "A deleted controller or unsafe global state re-entered the Swift architecture"
-    exit 1
-fi
-
-# Read-only presentation projections live in PlaybackStore+Projections.swift. An explicit
-# setter there recreates partial-presentation states; setters in other files are out of scope.
-projections_file="$project_root/Sources/Aural/Spotify/PlaybackStore+Projections.swift"
-if [[ ! -f "$projections_file" ]]; then
-    print -u2 "PlaybackStore projections must live in PlaybackStore+Projections.swift"
-    exit 1
-fi
-if rg -n '(^|[^[:alnum:]_])set[[:space:]]*(\([^)]*\)[[:space:]]*)?\{' "$projections_file"; then
-    print -u2 "PlaybackStore state projections must remain read-only; use an explicit atomic action"
+if rg -n 'nonisolated\(unsafe\)' "$project_root/Sources" --glob '*.swift'; then
+    print -u2 "Production Swift must not use nonisolated(unsafe)"
     exit 1
 fi
 
@@ -203,12 +208,6 @@ feature_dependencies=(
 if rg -n 'PartnerAPI\(|SpotifyConnectAPI\(|SpotifyWebPlayerAPI\(|KeymasterAuth\.authorize|KeymasterSession\.shared|RustPlaybackEngine\.shared|PlaybackCore\.' \
     "${feature_dependencies[@]}"; then
     print -u2 "A store or view bypasses the injected production environment"
-    exit 1
-fi
-
-if rg -n 'func addToPlaylist|func removeFromPlaylist|func moveInPlaylist' \
-    "$project_root/Sources/Aural/Spotify/CatalogProviding.swift"; then
-    print -u2 "CatalogProviding must remain a read-only catalog surface"
     exit 1
 fi
 
@@ -249,6 +248,34 @@ if rg -n 'security@example\.com|replace this placeholder' \
     exit 1
 fi
 
+# The debug quality gate must keep using an existing runner rg, cache only repo-local
+# SwiftPM products (including the redirected module cache), and leave Rust caching alone.
+ci_workflow="$project_root/.github/workflows/ci.yml"
+if [[ ! -f "$ci_workflow" ]]; then
+    print -u2 "CI workflow is missing"
+    exit 1
+fi
+if ! rg -q 'command -v rg' "$ci_workflow"; then
+    print -u2 "CI must use an existing rg before Homebrew ripgrep"
+    exit 1
+fi
+if ! rg -q 'brew install ripgrep' "$ci_workflow"; then
+    print -u2 "CI must still install ripgrep when the runner has no rg"
+    exit 1
+fi
+if rg -q 'brew install swift-format|brew install swiftlint' "$ci_workflow"; then
+    print -u2 "CI must use the selected toolchain swift-format, not a Homebrew Swift linter"
+    exit 1
+fi
+if ! rg -q 'key: macos-rust-\$\{\{ hashFiles\(' "$ci_workflow"; then
+    print -u2 "CI must keep the existing Rust cache key"
+    exit 1
+fi
+if ! rg -U -q --fixed-strings $'      - name: Run checks\n        run: ./Scripts/check.sh\n\n      - name: Compile release Aural with AURAL_DISTRIBUTION\n        run: ./Scripts/compile-release-aural.sh' "$ci_workflow"; then
+    print -u2 "CI must compile release Aural with AURAL_DISTRIBUTION after the unfiltered debug gate"
+    exit 1
+fi
+
 plutil -lint "$project_root/Packaging/Info.plist"
 
-print "Aural checks passed ($build_configuration): Rust, ABI, native app, domain, concrete boundary, architecture, and packaging checks are green"
+print "Aural checks passed ($build_configuration): format, Rust, ABI, native app, domain, concrete boundary, architecture, and packaging checks are green"

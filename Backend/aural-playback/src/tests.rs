@@ -402,13 +402,8 @@ fn a_run_is_superseded_when_the_generation_moves() {
     assert!(run_is_superseded(4, 0));
 }
 
-/// Serialises the tests that drive the real FFI entry points. Everything else here is a
-/// pure predicate and needs no lock, but these mutate process-wide generation counters
-/// and the suite runs in parallel.
-static GLOBAL_STATE: Mutex<()> = Mutex::new(());
-
 fn lock_global_state() -> std::sync::MutexGuard<'static, ()> {
-    GLOBAL_STATE.lock().unwrap_or_else(|e| e.into_inner())
+    lock_lifecycle_test_globals()
 }
 
 #[test]
@@ -493,127 +488,6 @@ fn control_snapshot_stamps_are_monotonic_and_session_scoped() {
     assert_eq!(second.session_generation, expected_generation);
 }
 
-#[test]
-fn playback_snapshot_json_keeps_legacy_fields_and_adds_ordering() {
-    let json = serde_json::to_value(PlaybackStateUpdate {
-        revision: 12,
-        session_generation: 4,
-        is_playing: true,
-        is_paused: false,
-        track_uri: "spotify:track:test".to_string(),
-        position_ms: 1_250,
-        duration_ms: 180_000,
-        shuffle: true,
-        repeat_track: false,
-        repeat_context: true,
-        timestamp_ms: 99,
-    })
-    .expect("serialize playback snapshot");
-
-    assert_eq!(json["revision"], 12);
-    assert_eq!(json["session_generation"], 4);
-    assert_eq!(json["is_playing"], true);
-    assert_eq!(json["is_paused"], false);
-    assert_eq!(json["track_uri"], "spotify:track:test");
-    assert_eq!(json["position_ms"], 1_250);
-    assert_eq!(json["duration_ms"], 180_000);
-    assert_eq!(json["shuffle"], true);
-    assert_eq!(json["repeat_track"], false);
-    assert_eq!(json["repeat_context"], true);
-    assert_eq!(json["timestamp_ms"], 99);
-}
-
-#[test]
-fn queue_snapshot_json_keeps_legacy_fields_and_adds_ordering() {
-    let json = serde_json::to_value(QueueState {
-        revision: 13,
-        session_generation: 4,
-        track: None,
-        next_tracks: Vec::new(),
-        prev_tracks: Vec::new(),
-        protocol_next_tracks: Vec::new(),
-        protocol_prev_tracks: Vec::new(),
-        queue_revision: String::new(),
-        disallow_set_queue: false,
-        disallow_removing_from_next_tracks: false,
-    })
-    .expect("serialize queue snapshot");
-
-    assert_eq!(json["revision"], 13);
-    assert_eq!(json["session_generation"], 4);
-    assert!(json["track"].is_null());
-    assert_eq!(json["next_tracks"], serde_json::json!([]));
-    assert_eq!(json["prev_tracks"], serde_json::json!([]));
-    assert_eq!(json["protocol_next_tracks"], serde_json::json!([]));
-    assert_eq!(json["protocol_prev_tracks"], serde_json::json!([]));
-    assert_eq!(json["queue_revision"], "");
-    assert_eq!(json["disallow_set_queue"], false);
-    assert_eq!(json["disallow_removing_from_next_tracks"], false);
-}
-
-#[test]
-fn devices_snapshot_wraps_legacy_devices_with_ordering() {
-    let json = serde_json::to_value(DevicesState {
-        revision: 15,
-        session_generation: 6,
-        devices: vec![ConnectDeviceInfo {
-            id: "speaker-1".to_string(),
-            name: "Living Room".to_string(),
-            device_type: "SPEAKER".to_string(),
-            is_active: true,
-            is_private_session: false,
-            is_restricted: false,
-            volume_percent: Some(42),
-            disable_volume: true,
-        }],
-    })
-    .expect("serialize devices snapshot");
-
-    assert_eq!(json["revision"], 15);
-    assert_eq!(json["session_generation"], 6);
-    assert_eq!(json["devices"].as_array().map(Vec::len), Some(1));
-
-    let device = &json["devices"][0];
-    assert_eq!(device["id"], "speaker-1");
-    assert_eq!(device["name"], "Living Room");
-    assert_eq!(device["type"], "SPEAKER");
-    assert_eq!(device["is_active"], true);
-    assert_eq!(device["is_private_session"], false);
-    assert_eq!(device["is_restricted"], false);
-    assert_eq!(device["volume_percent"], 42);
-    assert_eq!(device["disable_volume"], true);
-}
-
-#[test]
-fn connection_snapshot_json_keeps_legacy_fields_and_adds_generation() {
-    let json = serde_json::to_value(ConnectionStateInfo {
-        revision: 14,
-        session_generation: 5,
-        session_connected: true,
-        session_connection_id: Some("connection".to_string()),
-        spirc_ready: true,
-        device_id: Some("device".to_string()),
-        device_name: "Aural".to_string(),
-        reconnect_attempt: 0,
-        last_error: None,
-        connected_since_ms: Some(100),
-        is_active_device: false,
-    })
-    .expect("serialize connection snapshot");
-
-    assert_eq!(json["revision"], 14);
-    assert_eq!(json["session_generation"], 5);
-    assert_eq!(json["session_connected"], true);
-    assert_eq!(json["session_connection_id"], "connection");
-    assert_eq!(json["spirc_ready"], true);
-    assert_eq!(json["device_id"], "device");
-    assert_eq!(json["device_name"], "Aural");
-    assert_eq!(json["reconnect_attempt"], 0);
-    assert!(json["last_error"].is_null());
-    assert_eq!(json["connected_since_ms"], 100);
-    assert_eq!(json["is_active_device"], false);
-}
-
 /// Compile-time ABI contract. The release archive is also checked with `nm`; these assignments
 /// make signature drift fail in the fast Rust test suite before reaching the linker check.
 ///
@@ -624,62 +498,41 @@ fn connection_snapshot_json_keeps_legacy_fields_and_adds_generation() {
 fn exported_c_function_signatures_are_stable() {
     let _: extern "C" fn(*mut c_char) = aural_playback_free_string;
     let _: extern "C" fn() = aural_playback_clear_streaming_credentials;
-    let _: extern "C" fn() = aural_playback_clear_audio_buffer;
     let _: extern "C" fn() = aural_playback_cleanup;
-    let _: extern "C" fn() -> *mut c_char = aural_playback_last_grant_account;
-    let _: extern "C" fn() -> *mut c_char = aural_playback_get_connection_state;
     let _: extern "C" fn() -> *mut c_char = aural_playback_get_queue_snapshot;
 
-    let _: [extern "C" fn() -> i32; 13] = [
+    let _: [extern "C" fn() -> i32; 8] = [
         aural_playback_force_reconnect,
-        aural_playback_is_session_connected,
         aural_playback_pause,
         aural_playback_resume,
-        aural_playback_stop,
         aural_playback_shutdown,
         aural_playback_disconnect,
-        aural_playback_is_playing,
-        aural_playback_is_active_device,
         aural_playback_next,
         aural_playback_previous,
         aural_playback_transfer_to_local,
-        aural_playback_is_spirc_ready,
     ];
 
     let _: extern "C" fn(*const c_char) -> i32 = aural_playback_authorize_streaming;
     let _: extern "C" fn(*const c_char) -> i32 = aural_playback_init_player;
     let _: extern "C" fn(*const c_char) -> i32 = aural_playback_play_tracks;
-    let _: extern "C" fn(*const c_char) -> i32 = aural_playback_play_radio;
     let _: extern "C" fn(*const c_char) -> i32 = aural_playback_transfer_playback;
     let _: extern "C" fn(*const c_char) -> i32 = aural_playback_add_to_queue;
     let _: extern "C" fn(*const c_char, i32) -> i32 = aural_playback_play_uri;
     let _: extern "C" fn(u32) -> i32 = aural_playback_seek;
     let _: extern "C" fn() -> u32 = aural_playback_get_position_ms;
-    let _: extern "C" fn(u16) -> i32 = aural_playback_set_volume;
     let _: extern "C" fn(u8) = aural_playback_set_bitrate;
-    let _: extern "C" fn() -> u8 = aural_playback_get_bitrate;
     let _: extern "C" fn(u16) = aural_playback_set_initial_volume;
     let _: extern "C" fn(bool) -> i32 = aural_playback_set_shuffle;
     let _: extern "C" fn(bool) -> i32 = aural_playback_set_repeat_context;
     let _: extern "C" fn(bool) -> i32 = aural_playback_set_repeat_track;
     let _: extern "C" fn(bool) = aural_playback_set_gapless;
-    let _: extern "C" fn() -> bool = aural_playback_get_gapless;
 
     let _: extern "C" fn(extern "C" fn(*const c_char)) = aural_playback_register_queue_callback;
     let _: extern "C" fn(extern "C" fn(*const c_char)) =
         aural_playback_register_playback_state_callback;
-    let _: extern "C" fn(extern "C" fn(*const c_char)) = aural_playback_register_loading_callback;
-    let _: extern "C" fn(extern "C" fn(*const c_char)) =
-        aural_playback_register_session_client_changed_callback;
-    let _: extern "C" fn(extern "C" fn(*const c_char)) = aural_playback_register_set_queue_callback;
-    let _: extern "C" fn(extern "C" fn(*const c_char)) =
-        aural_playback_register_active_device_callback;
     let _: extern "C" fn(extern "C" fn(*const c_char)) = aural_playback_register_devices_callback;
     let _: extern "C" fn(extern "C" fn(*const c_char)) =
         aural_playback_register_connection_state_callback;
-    let _: extern "C" fn(extern "C" fn(u16)) = aural_playback_register_volume_callback;
-    let _: extern "C" fn(extern "C" fn()) = aural_playback_register_became_inactive_callback;
-    let _: extern "C" fn(extern "C" fn()) = aural_playback_register_became_active_callback;
     let _: extern "C" fn(extern "C" fn(*const f32, usize)) =
         aural_playback_register_audio_data_callback;
     let _: extern "C" fn(extern "C" fn(u8)) = aural_playback_register_audio_control_callback;
@@ -795,7 +648,9 @@ fn exported_c_functions_enter_through_the_panic_barrier() {
         }
         let source = std::fs::read_to_string(&path).expect("read rust source");
         let file_name = path.file_name().and_then(|name| name.to_str());
-        if file_name != Some("runtime.rs") && file_name != Some("tests.rs") {
+        let is_test_module = file_name == Some("tests.rs")
+            || file_name.is_some_and(|name| name.ends_with("_tests.rs"));
+        if file_name != Some("runtime.rs") && !is_test_module {
             assert!(
                 !source.contains("RUNTIME.block_on"),
                 "{} must call block_on_export rather than RUNTIME.block_on",
@@ -816,6 +671,161 @@ fn exported_c_functions_enter_through_the_panic_barrier() {
             "{name} enters through {barrier}, which is not a panic-barrier helper"
         );
     }
+}
+
+/// `Spirc::load` Ok is queued, not playing. `resume_playback` trusts `IS_PLAYING` for its
+/// early return, so a queued `play_uri` / `play_tracks` load must not store true.
+/// Production code (excluding `tests.rs` / `*_tests.rs` and `#[cfg(test)]` modules) may
+/// write `IS_PLAYING=true` only from the `PlayerEvent::Playing` arm.
+#[test]
+fn only_a_playing_event_stores_is_playing_true() {
+    let src_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
+    let mut files_with_true_store = Vec::new();
+    let mut playing_arm_stores_true = false;
+    for entry in std::fs::read_dir(&src_dir).expect("src dir") {
+        let path = entry.expect("dir entry").path();
+        if path.extension().and_then(|ext| ext.to_str()) != Some("rs") {
+            continue;
+        }
+        let file_name = path
+            .file_name()
+            .and_then(|name| name.to_str())
+            .unwrap_or_default();
+        if file_name == "tests.rs" || file_name.ends_with("_tests.rs") {
+            continue;
+        }
+        let source = std::fs::read_to_string(&path).expect("read rust source");
+        let production = strip_cfg_test_modules(&source);
+        if code_contains(&production, "IS_PLAYING.store(true") {
+            files_with_true_store.push(file_name.to_string());
+        }
+        if file_name == "player_event_pump.rs" {
+            playing_arm_stores_true = code_contains(
+                &match_arm_body(&production, "PlayerEvent::Playing"),
+                "IS_PLAYING.store(true",
+            );
+        }
+    }
+    files_with_true_store.sort();
+    assert_eq!(
+        files_with_true_store,
+        vec!["player_event_pump.rs".to_string()],
+        "queued play commands must not store IS_PLAYING=true"
+    );
+    assert!(
+        playing_arm_stores_true,
+        "PlayerEvent::Playing must remain the authoritative IS_PLAYING=true write"
+    );
+}
+
+fn strip_cfg_test_modules(source: &str) -> String {
+    let bytes = source.as_bytes();
+    let marker = "#[cfg(test)]";
+    let mut out = String::new();
+    let mut search_from = 0;
+    while let Some(rel) = source[search_from..].find(marker) {
+        let attr_start = search_from + rel;
+        out.push_str(&source[search_from..attr_start]);
+        let after_attr = attr_start + marker.len();
+        let ident = skip_ws_and_comments(bytes, after_attr);
+        if source[ident..].starts_with("mod ") {
+            let name_start = ident + 4;
+            let name_end = source[name_start..]
+                .find(|c: char| !c.is_ascii_alphanumeric() && c != '_')
+                .map(|idx| name_start + idx)
+                .unwrap_or(source.len());
+            let after_name = skip_ws_and_comments(bytes, name_end);
+            if after_name < bytes.len() && bytes[after_name] == b'{' {
+                search_from = matching_brace(bytes, after_name) + 1;
+                continue;
+            }
+            if after_name < bytes.len() && bytes[after_name] == b';' {
+                search_from = after_name + 1;
+                continue;
+            }
+        }
+        out.push_str(marker);
+        search_from = after_attr;
+    }
+    out.push_str(&source[search_from..]);
+    out
+}
+
+#[test]
+fn strip_cfg_test_modules_keeps_production_after_a_test_module() {
+    let source = concat!(
+        "fn before() {}\n",
+        "#[cfg(test)]\n",
+        "mod tests {\n",
+        "    IS_PLAYING.store(true, Ordering::SeqCst);\n",
+        "}\n",
+        "fn after() { IS_PLAYING.store(true, Ordering::SeqCst); }\n",
+    );
+    let stripped = strip_cfg_test_modules(source);
+    assert!(
+        !code_contains(&stripped, "mod tests"),
+        "the test module body must be omitted"
+    );
+    assert!(
+        code_contains(&stripped, "fn after"),
+        "production after a test module must still be scanned"
+    );
+    assert!(code_contains(&stripped, "IS_PLAYING.store(true"));
+}
+
+fn code_contains(source: &str, needle: &str) -> bool {
+    let bytes = source.as_bytes();
+    let needle = needle.as_bytes();
+    let mut i = 0;
+    while i < bytes.len() {
+        match scan_code_byte(bytes, i) {
+            Scan::Skip(next) => i = next,
+            Scan::Byte(_, next) => {
+                if bytes[i..].starts_with(needle) {
+                    return true;
+                }
+                i = next;
+            }
+        }
+    }
+    false
+}
+
+fn match_arm_body(source: &str, pattern: &str) -> String {
+    let start = source
+        .find(pattern)
+        .unwrap_or_else(|| panic!("missing {pattern}"));
+    let bytes = source.as_bytes();
+    let arrow = start
+        + source[start..]
+            .find("=>")
+            .unwrap_or_else(|| panic!("{pattern} is not a match arm"));
+    let brace = next_unquoted(bytes, arrow + 2, b'{')
+        .unwrap_or_else(|| panic!("{pattern} arm has no body"));
+    let end = matching_brace(bytes, brace);
+    source[brace + 1..end].to_string()
+}
+
+fn matching_brace(bytes: &[u8], open: usize) -> usize {
+    let mut depth = 0usize;
+    let mut i = open;
+    while i < bytes.len() {
+        match scan_code_byte(bytes, i) {
+            Scan::Skip(next) => i = next,
+            Scan::Byte(b, next) => {
+                if b == b'{' {
+                    depth += 1;
+                } else if b == b'}' {
+                    depth -= 1;
+                    if depth == 0 {
+                        return i;
+                    }
+                }
+                i = next;
+            }
+        }
+    }
+    panic!("unbalanced brace")
 }
 
 fn exported_c_functions(source: &str) -> Vec<(String, String)> {

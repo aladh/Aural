@@ -3,6 +3,7 @@
 //  Aural
 //
 
+import AuralDomain
 import Foundation
 @testable import AuralCore
 
@@ -18,7 +19,8 @@ func runFormattingChecks(_ check: CheckRunner) {
         check.equal(
             "playlist descriptions discard Spotify markup",
             PlaylistDescription.plainText(
-                from: #"A collection by <a href="https://open.spotify.com/artist/1">Bonobo</a> &amp; friends.<br>New music."#
+                from:
+                    #"A collection by <a href="https://open.spotify.com/artist/1">Bonobo</a> &amp; friends.<br>New music."#
             ),
             "A collection by Bonobo & friends.\nNew music."
         )
@@ -34,102 +36,98 @@ func runFormattingChecks(_ check: CheckRunner) {
         // Clock skew must not render negative durations.
         check.equal("negative duration clamps to zero", formatDuration(-5), "0:00")
     }
-}
 
-@MainActor
-func runPlaylistSortingChecks(_ check: CheckRunner) {
-    let older = Date(timeIntervalSince1970: 1_000)
-    let newer = Date(timeIntervalSince1970: 2_000)
-
-    func track(uri: String, addedAt: Date?) -> CatalogTrack {
+    func track(uri: String, duration: TimeInterval = 1) -> CatalogTrack {
         CatalogTrack(
             id: uri,
             uri: uri,
             title: uri,
             artist: "",
             album: "",
-            duration: 1,
+            duration: duration,
             artworkURL: nil,
-            addedAt: addedAt
+            addedAt: nil
         )
     }
 
-    func uris(_ tracks: [CatalogTrack]) -> [String] {
-        tracks.map(\.uri)
+    func sortValues(
+        popularity: Int? = nil,
+        bpm: Int? = nil,
+        key: String? = nil
+    ) -> TrackTableSortValues {
+        TrackTableSortValues(popularity: popularity, bpm: bpm, key: key)
     }
 
-    check.suite("Playlist date sorting") {
-        check.equal("first date sort click chooses newest", PlaylistDateSort.playlistOrder.toggledDateOrder, .newestFirst)
-        check.equal("newest flips to oldest", PlaylistDateSort.newestFirst.toggledDateOrder, .oldestFirst)
-        check.equal("oldest flips back to newest", PlaylistDateSort.oldestFirst.toggledDateOrder, .newestFirst)
+    func sortedURIs(
+        _ tracks: [CatalogTrack],
+        using comparator: KeyPathComparator<TrackTableRow>,
+        sortValues: [String: TrackTableSortValues] = [:],
+    ) -> [String] {
+        let collection = CatalogTrackCollection(tracks: tracks)
+        var cache = TrackTableDisplayCache(collection)
+        _ = cache.update(
+            collection,
+            sortValues: sortValues,
+            sortValuesRevision: 1,
+            sortOrder: [comparator]
+        )
+        return cache.rows.map(\.track.uri)
+    }
 
-        let datedPair = [track(uri: "older", addedAt: older), track(uri: "newer", addedAt: newer)]
+    check.suite("Track table sorting") {
+        let short = track(uri: "short")
+        let long = track(uri: "long", duration: 240)
+        let missing = track(uri: "missing")
+        let values = [
+            "short": sortValues(popularity: 10, bpm: 90, key: "2A"),
+            "long": sortValues(popularity: 80, bpm: 130, key: "10A"),
+        ]
+
         check.equal(
-            "newest first puts later dates on top",
-            uris(sortedByDateAdded(datedPair, newestFirst: true)),
-            ["newer", "older"]
+            "popularity sorts ascending from displayed enrichment",
+            sortedURIs(
+                [long, short],
+                using: KeyPathComparator(\TrackTableRow.popularitySortValue),
+                sortValues: values
+            ),
+            ["short", "long"]
+        )
+        check.equal(
+            "BPM reverses while missing enrichment stays last",
+            sortedURIs(
+                [missing, short, long],
+                using: KeyPathComparator(\TrackTableRow.bpmSortValue, order: .reverse),
+                sortValues: values
+            ),
+            ["long", "short", "missing"]
+        )
+        check.equal(
+            "Camelot keys use numeric ordering",
+            sortedURIs(
+                [long, short],
+                using: KeyPathComparator(\TrackTableRow.keySortValue),
+                sortValues: values
+            ),
+            ["short", "long"]
+        )
+        check.equal(
+            "time sorts by numeric duration",
+            sortedURIs([long, short], using: KeyPathComparator(\TrackTableRow.duration)),
+            ["short", "long"]
         )
 
-        let reversedPair = [track(uri: "newer", addedAt: newer), track(uri: "older", addedAt: older)]
-        check.equal(
-            "oldest first reverses the direction",
-            uris(sortedByDateAdded(reversedPair, newestFirst: false)),
-            ["older", "newer"]
-        )
-
-        let undated = track(uri: "undated", addedAt: nil)
-        let dated = track(uri: "dated", addedAt: older)
-        check.equal(
-            "undated rows sink in newest-first order",
-            uris(sortedByDateAdded([undated, dated], newestFirst: true)),
-            ["dated", "undated"]
-        )
-        check.equal(
-            "undated rows sink in oldest-first order too",
-            uris(sortedByDateAdded([undated, dated], newestFirst: false)),
-            ["dated", "undated"]
-        )
-
-        // Ties must not reorder rows the listener curated.
-        let tie = [
-            track(uri: "second", addedAt: older),
-            track(uri: "first", addedAt: older),
+        let equalAttributes = [
+            "short": sortValues(popularity: 50),
+            "long": sortValues(popularity: 50),
         ]
         check.equal(
-            "equal dates keep playlist order",
-            uris(sortedByDateAdded(tie, newestFirst: true)),
-            ["second", "first"]
-        )
-
-        // With no dates at all every comparison falls to playlist order.
-        let undatedOnly = [
-            track(uri: "c", addedAt: nil),
-            track(uri: "a", addedAt: nil),
-            track(uri: "b", addedAt: nil),
-        ]
-        check.equal(
-            "all-undated lists keep playlist order",
-            uris(sortedByDateAdded(undatedOnly, newestFirst: true)),
-            ["c", "a", "b"]
-        )
-        check.equal(
-            "all-undated lists keep playlist order oldest-first too",
-            uris(sortedByDateAdded(undatedOnly, newestFirst: false)),
-            ["c", "a", "b"]
-        )
-
-        // Dated and undated rows interleaved: dated rows surface, undated rows sink
-        // in their original relative order.
-        let interleaved = [
-            track(uri: "u1", addedAt: nil),
-            track(uri: "old", addedAt: older),
-            track(uri: "u2", addedAt: nil),
-            track(uri: "new", addedAt: newer),
-        ]
-        check.equal(
-            "undated rows sink together below dated ones",
-            uris(sortedByDateAdded(interleaved, newestFirst: true)),
-            ["new", "old", "u1", "u2"]
+            "missing values sort deterministically and equal values keep source order",
+            sortedURIs(
+                [missing, long, short],
+                using: KeyPathComparator(\TrackTableRow.popularitySortValue),
+                sortValues: equalAttributes
+            ),
+            ["long", "short", "missing"]
         )
     }
 }

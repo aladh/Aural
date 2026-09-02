@@ -28,6 +28,7 @@ final class CatalogStore {
         attributesProvider: any TrackAttributesProviding,
         playlistMutations: any PlaylistMutating,
         session: CatalogSessionAvailability,
+        clock: any PlaybackClock,
         feedback: TransientFeedbackPresenter
     ) {
         self.session = session
@@ -37,7 +38,7 @@ final class CatalogStore {
         )
         self.metadata = metadata
         homeLibrary = HomeLibraryStore(provider: provider, metadata: metadata, session: session)
-        searchStore = SearchStore(provider: provider, metadata: metadata, session: session)
+        searchStore = SearchStore(provider: provider, metadata: metadata, session: session, clock: clock)
         playlistStore = PlaylistStore(provider: provider, metadata: metadata, session: session)
         albumStore = AlbumDetailStore(provider: provider, metadata: metadata, session: session)
         artistStore = ArtistDetailStore(provider: provider, session: session)

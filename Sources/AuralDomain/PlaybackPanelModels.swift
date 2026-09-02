@@ -165,52 +165,13 @@ public struct RepeatTransitionPlan: Equatable, Sendable {
     }
 }
 
-/// How a failed repeat command should treat the optimistic control.
-///
-/// Distinguishes known two-step intermediates (context → track off, and
-/// both-true track → off leaving `(false, true)`) from the requested target
-/// and from unrelated newer authoritative state. Uses the existing
-/// `.enginePlayback` source revision plus visible mode/flags — not a parallel
-/// watermark.
-public enum RepeatCommandFailureDisposition: Equatable, Sendable {
-    case restorePrevious
-    case keepVisible
-}
-
-public func reconcileRepeatCommandFailure(
-    visibleMode: RepeatMode,
-    visibleFlags: RepeatFlags,
-    previousMode: RepeatMode,
-    previousFlags: RepeatFlags,
-    targetMode: RepeatMode,
-    targetFlags: RepeatFlags,
-    enginePlaybackRevisionChanged: Bool
-) -> RepeatCommandFailureDisposition {
-    if !enginePlaybackRevisionChanged {
-        return visibleMode == targetMode ? .restorePrevious : .keepVisible
-    }
-    if visibleMode == targetMode {
-        return .keepVisible
-    }
-    if previousMode == .context, targetMode == .track, visibleMode == .off {
-        return .restorePrevious
-    }
-    let plan = RepeatTransitionPlan.planning(from: previousFlags, to: targetFlags)
-    if let first = plan.mutations.first,
-       plan.mutations.count > 1,
-       previousFlags.applying(first) == visibleFlags
-    {
-        return .restorePrevious
-    }
-    return .keepVisible
-}
-
 /// One row in the queue panel. Queue updates carry uris only, so display names
 /// resolve against the catalog at render time.
 public struct QueueEntry: Identifiable, Equatable, Sendable {
     public let id: String
     public let uri: String
     public let provider: String
+    public let occurrence: Int
     /// Connect occurrence uid when the authoritative snapshot supplied one.
     /// Empty for Web/non-authoritative presentation that has not bound a uid.
     public let uid: String
@@ -219,6 +180,7 @@ public struct QueueEntry: Identifiable, Equatable, Sendable {
         id = Self.identity(occurrence: occurrence, provider: provider, uri: uri, uid: uid)
         self.uri = uri
         self.provider = provider
+        self.occurrence = occurrence
         self.uid = uid
     }
 
@@ -293,7 +255,8 @@ public func connectCommandRoute(
     fallbackRemoteDeviceID: String? = nil
 ) -> ConnectCommandRoute {
     if isLocalActive { return .local }
-    let target = devices.first(where: \.isActive)
+    let target =
+        devices.first(where: \.isActive)
         ?? fallbackRemoteDeviceID.flatMap { id in devices.first { $0.id == id } }
     guard let target else { return .local }
     if target.id == localDeviceID { return .local }

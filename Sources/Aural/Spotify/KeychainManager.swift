@@ -11,8 +11,6 @@ import Security
 
 /// Manages secure storage of authentication tokens in the Keychain
 nonisolated enum KeychainManager {
-    /// Shared keychain access group - allows both dev and release builds to access the same items
-    /// Format: TeamID.groupName (must match keychain-access-groups in entitlements)
     // MARK: - The dashboard grant, which no longer exists
 
     /// Deletes what the dashboard app left behind: the Web API access and refresh tokens, and
@@ -50,7 +48,7 @@ nonisolated enum KeychainManager {
         guard let data = load(key: keymasterTokensKey, service: keymasterService) else {
             return nil
         }
-        return try? JSONDecoder().decode(KeymasterTokens.self, from: data)
+        return KeymasterStoredGrantCodec.decode(data, source: .secure)
     }
 
     static func clearKeymasterTokens() {
@@ -115,6 +113,14 @@ nonisolated enum KeychainManager {
         return context
     }
 
+    /// File-based generic-password items, authorized by this process's code signature.
+    ///
+    /// `kSecUseDataProtectionKeychain` is omitted. That flag selects the data-protection
+    /// keychain and its default access-group / application-identifier behavior. Local
+    /// self-signed, ad-hoc, and Developer ID packaging here do not provision that
+    /// identity; adding an entitlement or provisioning-profile workflow is out of
+    /// scope. The stable local signing identity is what makes the file-based ACL
+    /// reusable across development rebuilds.
     private static func makeQuery(key: String, service: String) -> [String: Any] {
         [
             kSecClass as String: kSecClassGenericPassword,

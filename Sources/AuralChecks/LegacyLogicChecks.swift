@@ -9,7 +9,7 @@ import Foundation
 
 enum LogicChecks {
     /// Runs every suite and reports the verdict.
- ///
+    ///
     /// The Command Line Tools toolchain this project builds with ships neither the XCTest
     /// framework nor the swift-testing runtime, so the checks live inside the app and run
     /// behind `--run-core-checks`: `Scripts/check.sh` executes that mode and asserts the
@@ -29,7 +29,6 @@ enum LogicChecks {
         runLoopbackParsingChecks(runner)
         runURIChecks(runner)
         runFormattingChecks(runner)
-        runPlaylistSortingChecks(runner)
 
         runner.report()
         return runner.succeeded

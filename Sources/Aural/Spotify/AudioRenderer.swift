@@ -37,10 +37,10 @@ final nonisolated class AudioRenderer: @unchecked Sendable {
 
     private static let sampleRate: Float64 = 44100
     private static let channelCount: UInt32 = 2
-    private static let bytesPerSample = MemoryLayout<Float>.size // 4
+    private static let bytesPerSample = MemoryLayout<Float>.size  // 4
 
     /// Ring buffer capacity in f32 samples (~2 seconds of stereo audio)
-    private static let ringBufferCapacity = 176_400 // 44100 * 2ch * 2s
+    private static let ringBufferCapacity = 176_400  // 44100 * 2ch * 2s
 
     /// Chunk size for feeding renderer (~1024 frames = 2048 stereo samples)
     private static let feedChunkSamples = 2048
@@ -284,9 +284,15 @@ final nonisolated class AudioRenderer: @unchecked Sendable {
                 return
             }
 
-            // Allocate temporary buffer for this chunk
+            // Allocate through the same allocator Core Media will use to release the block.
             let chunkSize = toRead * Self.bytesPerSample
-            let chunk = UnsafeMutableRawPointer.allocate(byteCount: chunkSize, alignment: Self.bytesPerSample)
+            guard let chunk = CFAllocatorAllocate(kCFAllocatorDefault, chunkSize, 0) else {
+                isRequestingData = false
+                bufferLock.unlock()
+                renderer.stopRequestingMediaData()
+                debugLog("AudioRenderer", "Failed to allocate audio chunk")
+                return
+            }
 
             // Copy with wrap-around
             let firstChunk = min(toRead, Self.ringBufferCapacity - cursor.readIndex)
@@ -310,7 +316,7 @@ final nonisolated class AudioRenderer: @unchecked Sendable {
                 allocator: kCFAllocatorDefault,
                 memoryBlock: chunk,
                 blockLength: chunkSize,
-                blockAllocator: kCFAllocatorDefault, // Core Media will free the block
+                blockAllocator: kCFAllocatorDefault,  // Core Media will free the block
                 customBlockSource: nil,
                 offsetToData: 0,
                 dataLength: chunkSize,
@@ -319,7 +325,7 @@ final nonisolated class AudioRenderer: @unchecked Sendable {
             )
 
             guard status == kCMBlockBufferNoErr, let block = blockBuffer else {
-                chunk.deallocate()
+                CFAllocatorDeallocate(kCFAllocatorDefault, chunk)
                 debugLog("AudioRenderer", "Failed to create CMBlockBuffer: \(status)")
                 return
             }
@@ -454,7 +460,8 @@ final nonisolated class AudioRenderer: @unchecked Sendable {
         ) { [weak self] notification in
             guard let self else { return }
 
-            let flushTime = (notification.userInfo?[AVSampleBufferAudioRendererFlushTimeKey] as? NSValue)?
+            let flushTime =
+                (notification.userInfo?[AVSampleBufferAudioRendererFlushTimeKey] as? NSValue)?
                 .timeValue ?? .zero
             debugLog("AudioRenderer", "Renderer auto-flushed (output device changed, time: \(flushTime))")
 
@@ -528,7 +535,8 @@ final nonisolated class AudioRenderer: @unchecked Sendable {
         bufferLock.lock()
         defer { bufferLock.unlock() }
         let formattedThrottle = String(format: "%.3f", throttleSeconds)
-        return "underruns=\(underrunCount), droppedSamples=\(droppedSampleCount), throttleSeconds=\(formattedThrottle), bufferedSamples=\(cursor.available)"
+        return
+            "underruns=\(underrunCount), droppedSamples=\(droppedSampleCount), throttleSeconds=\(formattedThrottle), bufferedSamples=\(cursor.available)"
     }
 
     /// Flushes the renderer and resets the ring buffer.

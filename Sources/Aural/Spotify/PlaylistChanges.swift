@@ -107,9 +107,10 @@ nonisolated struct PlaylistOp: Encodable, Sendable {
 
         return PlaylistOp(
             kind: "ADD",
-            add: ItemAddition(items: uris.map {
-                Item(uri: $0, attributes: ItemAttributes(timestamp: timestamp))
-            }),
+            add: ItemAddition(
+                items: uris.map {
+                    Item(uri: $0, attributes: ItemAttributes(timestamp: timestamp))
+                }),
         )
     }
 

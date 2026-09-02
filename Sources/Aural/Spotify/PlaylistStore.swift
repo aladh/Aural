@@ -2,7 +2,7 @@
 //  PlaylistStore.swift
 //  Aural
 //
-//  Selected-playlist detail and sorting state.
+//  Selected-playlist detail state.
 //
 
 import AuralDomain
@@ -11,14 +11,8 @@ import Foundation
 @MainActor
 @Observable
 final class PlaylistStore {
-    var tracks: [CatalogTrack] = []
-    var dateSort: PlaylistDateSort = .playlistOrder {
-        didSet {
-            guard oldValue != dateSort else { return }
-            resortTracks()
-        }
-    }
-    private(set) var sortedTracks: [CatalogTrack] = []
+    private(set) var trackCollection = CatalogTrackCollection()
+    var tracks: [CatalogTrack] { trackCollection.tracks }
     var description = ""
     private(set) var loadedURI: String?
     private(set) var ownerURI: String?
@@ -47,9 +41,7 @@ final class PlaylistStore {
         loadTask?.cancel()
         loadTask = nil
         loadSessionSnapshot = nil
-        tracks = []
-        sortedTracks = []
-        dateSort = .playlistOrder
+        replaceTracks([])
         description = ""
         loadedURI = nil
         ownerURI = nil
@@ -58,15 +50,22 @@ final class PlaylistStore {
         metadata.replaceTracks([], from: .playlist)
     }
 
+    /// Keeps `loadedURI` and `tracks` paired. Production loading still goes through `load(_:)`.
+    func replaceLoadedPlaylist(uri: String, tracks: [CatalogTrack]) {
+        loadedURI = uri
+        replaceTracks(tracks)
+    }
+
     func load(_ item: CatalogItem, force: Bool = false) async {
         let currentSession = session.snapshot
         guard currentSession.isAvailable, item.kind == .playlist else { return }
         if loadedURI == item.uri, !tracks.isEmpty, !force { return }
         if isLoading,
-           loadedURI == item.uri,
-           loadSessionSnapshot == currentSession,
-           let loadTask,
-           !force {
+            loadedURI == item.uri,
+            loadSessionSnapshot == currentSession,
+            let loadTask,
+            !force
+        {
             await loadTask.value
             return
         }
@@ -79,13 +78,16 @@ final class PlaylistStore {
         let isNewPlaylist = loadedURI != item.uri
         loadedURI = item.uri
         if isNewPlaylist {
-            tracks = []
-            sortedTracks = []
+            replaceTracks([])
             description = ""
             ownerURI = item.ownerURI
             metadata.replaceTracks([], from: .playlist)
+            error = nil
+        } else if !force {
+            error = nil
         }
-        error = nil
+        // Same-playlist force reloads keep `error` until a current load succeeds so a
+        // cancelled or superseded retry cannot hide stale rows.
         isLoading = true
         defer {
             if requestID == requestScope {
@@ -127,47 +129,34 @@ final class PlaylistStore {
         do {
             let playlist = try await provider.playlist(id: id)
             guard isCurrent(identity, uri: item.uri) else { return }
+            error = nil
             description = PlaylistDescription.plainText(from: playlist.description ?? "")
             ownerURI = CatalogMapping.ownerURI(from: playlist) ?? item.ownerURI
-            if isNewPlaylist {
-                dateSort = .playlistOrder
-            }
             let entries = playlist.content.flatMap(\.items) ?? []
-            tracks = entries.compactMap(CatalogMapping.playlistTrack(from:))
-            resortTracks()
+            replaceTracks(entries.compactMap(CatalogMapping.playlistTrack(from:)))
             metadata.replaceTracks(tracks, from: .playlist)
             metadata.loadTrackAttributes(for: tracks)
-        } catch is CancellationError {
-            return
-        } catch let error as URLError where error.code == .cancelled {
-            return
         } catch {
-            guard isCurrent(identity, uri: item.uri) else { return }
+            guard !isCancellation(error), isCurrent(identity, uri: item.uri) else { return }
             self.error = error.localizedDescription
         }
+    }
+
+    private func replaceTracks(_ newTracks: [CatalogTrack]) {
+        trackCollection.replace(newTracks)
     }
 
     private func isCurrent(
         _ identity: AccountScopedRequestIdentity,
         uri: String
     ) -> Bool {
-        loadedURI == uri && identity.isCurrent(
-            requestID: requestScope,
-            accountEpoch: session.accountEpoch,
-            sessionRevision: session.snapshot.revision,
-            isAvailable: session.isAvailable,
-            isCancelled: Task.isCancelled
-        )
-    }
-
-    private func resortTracks() {
-        sortedTracks = switch dateSort {
-        case .playlistOrder:
-            tracks
-        case .newestFirst:
-            sortedByDateAdded(tracks, newestFirst: true)
-        case .oldestFirst:
-            sortedByDateAdded(tracks, newestFirst: false)
-        }
+        loadedURI == uri
+            && identity.isCurrent(
+                requestID: requestScope,
+                accountEpoch: session.accountEpoch,
+                sessionRevision: session.snapshot.revision,
+                isAvailable: session.isAvailable,
+                isCancelled: Task.isCancelled
+            )
     }
 }

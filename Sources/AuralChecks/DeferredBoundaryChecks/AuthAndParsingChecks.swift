@@ -6,13 +6,13 @@
 import Foundation
 @testable import AuralCore
 
-
 @MainActor
 func runAuthFlowChecks(_ check: CheckRunner) {
     check.suite("Token response parsing") {
-        let body = Data("""
-        {"access_token":"at","refresh_token":"rt","expires_in":3600,"username":"listener"}
-        """.utf8)
+        let body = Data(
+            """
+            {"access_token":"at","refresh_token":"rt","expires_in":3600,"username":"listener"}
+            """.utf8)
         let now = Date(timeIntervalSince1970: 1_000_000)
 
         let tokens = try? KeymasterAuth.parseTokenResponse(body, fallbackRefreshToken: nil, now: now)
@@ -88,7 +88,9 @@ func runAuthFlowChecks(_ check: CheckRunner) {
         if case .tokenExchangeFailed = KeymasterAuth.tokenFailure(
             status: 400,
             body: Data(#"{"error":"invalid_request"}"#.utf8)
-        ) { classifiedAsFailure = true }
+        ) {
+            classifiedAsFailure = true
+        }
         check.check("a non-revocation refusal keeps the grant", classifiedAsFailure)
 
         var serverErrorKeepsGrant = false
@@ -209,8 +211,12 @@ func runPaginationChecks(_ check: CheckRunner) {
             Pagination.nextOffset(offset: 50, pageEntryCount: 50, totalCount: 130),
             100
         )
-        check.nil_("reaching totalCount ends the walk", Pagination.nextOffset(offset: 100, pageEntryCount: 30, totalCount: 130))
-        check.nil_("overshooting totalCount ends the walk", Pagination.nextOffset(offset: 100, pageEntryCount: 50, totalCount: 130))
+        check.nil_(
+            "reaching totalCount ends the walk", Pagination.nextOffset(offset: 100, pageEntryCount: 30, totalCount: 130)
+        )
+        check.nil_(
+            "overshooting totalCount ends the walk",
+            Pagination.nextOffset(offset: 100, pageEntryCount: 50, totalCount: 130))
 
         // A collection that shrinks mid-walk would otherwise name a length no offset reaches.
         check.nil_("an empty page ends the walk", Pagination.nextOffset(offset: 50, pageEntryCount: 0, totalCount: 130))

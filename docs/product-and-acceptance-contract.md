@@ -10,11 +10,11 @@ ADRs; historical measurements belong in the performance baseline.
 - macOS is the only current platform target. Cross-platform UI work is not a present constraint.
 - Prefer idiomatic SwiftUI and AppKit behavior over custom chrome. Do not add a WebView, Chromium
   runtime, or a second UI framework.
-- The visual composition should be familiar to Spotify users without reproducing Spotify's pixels:
-  use a dark content canvas, a library-forward sidebar, artwork-led media headers, dense track
-  tables, a right-side queue/history rail, and a full-width bottom player shelf. Interpret that
-  hierarchy with native macOS materials, typography, controls, spacing, focus, and accessibility;
-  this is an independent, unofficial client and must not imply Spotify affiliation or endorsement.
+- Use a Spotify-familiar composition without reproducing Spotify's pixels: artwork-led media
+  headers, dense track tables, a right-side queue/history rail, and a full-width bottom player
+  shelf. Dark appearance uses a near-black content canvas, while Light Mode, inactive windows,
+  focus, and every accent continue to use system-adaptive macOS semantics. Do not force Dark Mode
+  or introduce a parallel theme system.
 - Keep the product surface small. In particular, Aural has no in-app volume control or manual
   Spotify refresh action. Playlist creation, rename, cover editing, collaborative permission
   management, and arbitrary reordering are out of scope. Occurrence-safe add/remove for playlists
@@ -27,15 +27,14 @@ ADRs; historical measurements belong in the performance baseline.
 
 - The main window uses a native, fixed-width sidebar and inspector. Both side panels have the same
   220-point width and neither is user-collapsible by dragging.
-- The sidebar has native navigation symbols for primary destinations. Playlist shortcuts may show a
-  small artwork thumbnail with their title and metadata when artwork is available, with a text-only
-  fallback. Do not add a redundant app logo or app-name header to the content area.
+- The sidebar has native navigation symbols for primary destinations and at most three playlist
+  shortcuts. Those shortcuts may show compact artwork and metadata, with a text-only fallback. The
+  full Playlists destination remains the library browser. Do not add a redundant app logo or
+  app-name header to the content area.
 - The right inspector contains Queue and History in a stable segmented header. Switching tabs must
-  not move the header. The current queue item may show a compact artwork thumbnail with title,
-  artist, and duration when available; preserve a text-only fallback. History may show artwork.
-- Artwork-led headers should keep the media identity close to the content edge and leave the track
-  table dense and scannable. The persistent bottom player shelf spans the window width for current
-  media and transport; visual parity with Spotify does not justify adding an in-app volume control.
+  not move the header. Current and upcoming queue items may show compact artwork and duration when
+  metadata is available, with text-only fallbacks. VoiceOver uses the same catalog-enriched title,
+  artist, and available duration as the visible row. History may show artwork.
 - Closing the main window purges presentation caches but does not quit Aural. The app remains in the
   Dock and reopens through the Dock icon or the standard macOS Window command.
 - Sign Out belongs in the macOS **Aural** application menu, not in a custom profile card. Settings
@@ -47,7 +46,9 @@ ADRs; historical measurements belong in the performance baseline.
   different computer. The now-playing title, artist, artwork, position, play/pause state, queue,
   and available controls must follow that owner without requiring a manual refresh.
 - Transport commands target the device that owns playback. Aural must not silently transfer
-  playback to this Mac merely because the user pressed a remote control.
+  playback to this Mac merely because the user pressed a remote control. When no device is marked
+  active but a current track remains, a remembered last remote device stays an uncertain remote
+  candidate so commands remain remote-routable; a missing or stale fallback never becomes local.
 - With no current track, the primary control shows Play and is disabled. Pause appears only while
   the observed playback state is actually playing.
 - The transport order is shuffle, previous, play/pause, next, repeat. Previous and next use the
@@ -113,8 +114,10 @@ ADRs; historical measurements belong in the performance baseline.
   occurrences by Pathfinder UID (`CatalogTrack.id`), never by track URI. Read-only playlists do
   not advertise or route those commands.
 - Successful add/remove refresh only the affected open playlist and report through
-  `TransientFeedbackPresenter`. Failure, cancellation, and stale account/session results leave
-  presentation state unchanged.
+  `TransientFeedbackPresenter`. Write failure, cancellation, and stale account/session results leave
+  presentation state unchanged. A committed write stays successful if that refresh fails; the open
+  playlist then keeps its previous rows, shows that they may be stale, and Retry reloads rows without
+  repeating the mutation.
 - Dragging selected tracks onto playlist rows is omitted. A native SwiftUI Table transfer
   representation serializes the dragged row rather than the occurrence-aware multi-selection;
   disabled drop targeting for non-editable rows could not be demonstrated without private

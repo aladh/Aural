@@ -76,7 +76,8 @@ struct SearchView: View {
                         }
                         if !store.playlists.isEmpty {
                             MediaShelf(
-                                section: CatalogSection(id: "search-playlists", title: "Playlists", items: store.playlists),
+                                section: CatalogSection(
+                                    id: "search-playlists", title: "Playlists", items: store.playlists),
                                 onSelect: onSelect
                             )
                         }
@@ -84,12 +85,12 @@ struct SearchView: View {
                             VStack(alignment: .leading, spacing: 12) {
                                 Text("Tracks").font(.title2.bold())
                                 TrackTable(
-                                    tracks: store.tracks,
+                                    tracks: store.trackCollection,
                                     metadata: metadata,
                                     playback: playback,
                                     playlistActions: playlistActions
                                 )
-                                    .frame(minHeight: 280)
+                                .frame(minHeight: 280)
                             }
                         }
                     }
@@ -98,17 +99,16 @@ struct SearchView: View {
             }
         }
         .searchable(text: $searchText, placement: .toolbar, prompt: "Artists, albums, playlists, and tracks")
-        .background { CatalogCanvasBackground() }
         .navigationTitle("Search")
-        .task(id: SearchLoadIdentity(
-            query: searchText.trimmingCharacters(in: .whitespacesAndNewlines),
-            accountEpoch: playback.accountEpoch,
-            isConnected: playback.isConnected
-        )) {
+        .task(
+            id: SearchLoadIdentity(
+                query: searchText.trimmingCharacters(in: .whitespacesAndNewlines),
+                accountEpoch: playback.accountEpoch,
+                isConnected: playback.isConnected
+            )
+        ) {
             guard playback.isConnected else { return }
-            try? await Task.sleep(for: .milliseconds(300))
-            guard !Task.isCancelled else { return }
-            await store.search(searchText)
+            await store.scheduleSearch(searchText)
         }
     }
 
@@ -183,10 +183,10 @@ struct LibraryView: View {
             } else {
                 VStack(alignment: .leading, spacing: 20) {
                     Text(title)
-                        .font(.system(size: 32, weight: .bold))
+                        .font(.largeTitle.bold())
 
                     LazyVGrid(
-                        columns: [GridItem(.adaptive(minimum: 194, maximum: 224), spacing: 18)],
+                        columns: MediaGridLayout.columns,
                         alignment: .leading,
                         spacing: 22
                     ) {
@@ -198,7 +198,6 @@ struct LibraryView: View {
                 .padding(30)
             }
         }
-        .background { CatalogCanvasBackground() }
         .navigationTitle(title)
         .task(id: playback.accountEpoch) {
             guard playback.isConnected else { return }
@@ -210,7 +209,7 @@ struct LibraryView: View {
 struct TrackCollectionView: View {
     let title: String
     let subtitle: String
-    let tracks: [CatalogTrack]
+    let tracks: CatalogTrackCollection
     let metadata: CatalogMetadataRepository
     let playback: CatalogPlaybackAccess
     var reloadError: String? = nil
@@ -225,7 +224,7 @@ struct TrackCollectionView: View {
         VStack(spacing: 0) {
             VStack(alignment: .leading, spacing: 5) {
                 Text(title)
-                    .font(.system(size: 32, weight: .bold))
+                    .font(.largeTitle.bold())
                     .lineLimit(2)
                 Text(subtitle)
                     .foregroundStyle(.secondary)
@@ -235,9 +234,9 @@ struct TrackCollectionView: View {
 
             Divider()
 
-            if isLoading && tracks.isEmpty {
+            if isLoading && tracks.tracks.isEmpty {
                 LoadingState(label: "Loading \(title.lowercased())")
-            } else if tracks.isEmpty {
+            } else if tracks.tracks.isEmpty {
                 if !playback.isConnected {
                     EmptyState(
                         icon: "person.crop.circle.badge.plus",
@@ -274,7 +273,6 @@ struct TrackCollectionView: View {
                 )
             }
         }
-        .background { CatalogCanvasBackground() }
         .navigationTitle(title)
     }
 }

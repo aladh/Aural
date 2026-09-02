@@ -7,11 +7,7 @@
 
 import Foundation
 
-#if AURAL_DISTRIBUTION
-    private typealias DefaultKeymasterTokenStore = KeymasterMigratingStore
-#else
-    private typealias DefaultKeymasterTokenStore = KeymasterDefaultsStore
-#endif
+private typealias DefaultKeymasterTokenStore = KeymasterMigratingStore
 
 /// The live keymaster grant: one access token, kept valid, shared by everything that needs it.
 ///
@@ -39,6 +35,10 @@ actor KeymasterSession {
     private let cookieCleanup: @Sendable () -> Void
     private var tokens: KeymasterTokens?
     private var hasLoadedStore = false
+    /// Concurrent first callers join this rather than observing `hasLoadedStore` before the
+    /// detached store read has assigned `tokens`. The task includes the generation-guarded
+    /// assignment, not only the disk read.
+    private var storeLoadInFlight: Task<Void, Never>?
     private var refreshInFlight: Task<KeymasterTokens, Error>?
     /// Advanced by `supersedeRefresh()`. A refresh that was in flight when the grant was
     /// cleared or replaced must not write what it eventually returns — that would put the
@@ -95,18 +95,86 @@ actor KeymasterSession {
     }
 
     /// Loads persisted state lazily on this actor rather than synchronously while the main-actor
-    /// controller is being initialized. A distribution build's Keychain lookup can take time to
-    /// resolve an older item's ACL; that must not prevent SwiftUI from presenting the window.
+    /// controller is being initialized. A Keychain lookup can take time to resolve an older
+    /// item's ACL; that must not prevent SwiftUI from presenting the window.
+    ///
+    /// The load itself is a single flight: `hasLoadedStore` is not set until the read finishes,
+    /// so a concurrent early `accessToken()` cannot observe an empty grant and throw `noGrant`
+    /// while the store still holds one. `adopt` and `clear` bump `generation` and win over a
+    /// stale read the same way a superseded refresh does. Leftover plaintext is never written
+    /// to Keychain from the detached read; that commit happens only if this generation still
+    /// owns the slot afterwards.
     private func loadStoredGrantIfNeeded() async {
-        guard !hasLoadedStore else { return }
-        hasLoadedStore = true
+        if hasLoadedStore { return }
+
+        if let storeLoadInFlight {
+            await storeLoadInFlight.value
+            return
+        }
+
         let startedAt = generation
+        let task = Task {
+            await self.commitStoreLoad(startedAt: startedAt)
+        }
+        storeLoadInFlight = task
+        defer {
+            if storeLoadInFlight == task {
+                storeLoadInFlight = nil
+            }
+        }
+        await task.value
+    }
+
+    private func commitStoreLoad(startedAt: Int) async {
         let store = store
-        let storedTokens = await Task.detached(priority: .utility) {
-            store.load()
+        let snapshot = await Task.detached(priority: .utility) {
+            store.loadGrant()
         }.value
-        guard generation == startedAt, tokens == nil else { return }
+        applyLoadedGrant(snapshot.tokens, startedAt: startedAt)
+        guard snapshot.needsSecurePersist else { return }
+        await persistLeftoverGrantIfCurrent(snapshot.tokens, startedAt: startedAt)
+    }
+
+    /// Only the in-flight load task assigns. Joiners wait for that task so they cannot observe
+    /// `tokens == nil` after the disk read has finished. Adopt/clear bump `generation` and set
+    /// `hasLoadedStore` first, so a stale snapshot is discarded.
+    private func applyLoadedGrant(_ storedTokens: KeymasterTokens?, startedAt: Int) {
+        guard generation == startedAt, !hasLoadedStore else { return }
         tokens = storedTokens
+        hasLoadedStore = true
+    }
+
+    /// Writes a leftover plaintext grant only when this load still owns the session. If
+    /// `adopt`/`clear` won while the Keychain write ran, restore that later disk state.
+    private func persistLeftoverGrantIfCurrent(_ leftover: KeymasterTokens?, startedAt: Int) async {
+        guard generation == startedAt, hasLoadedStore, let leftover else { return }
+        let store = store
+        do {
+            try await Task.detached(priority: .utility) {
+                try store.save(leftover)
+            }.value
+        } catch {
+            AuralLog.authentication.error(
+                "\(KeymasterGrantPersistenceDiagnostics.legacyMigrationSaveFailed, privacy: .public)"
+            )
+            return
+        }
+        guard generation != startedAt else { return }
+        reconcileStoreAfterSupersededPersist()
+    }
+
+    private func reconcileStoreAfterSupersededPersist() {
+        if let tokens {
+            do {
+                try store.save(tokens)
+            } catch {
+                AuralLog.authentication.error(
+                    "\(KeymasterGrantPersistenceDiagnostics.supersededPersistRepairFailed, privacy: .public)"
+                )
+            }
+        } else {
+            store.clear()
+        }
     }
 
     var username: String? {
@@ -160,26 +228,66 @@ actor KeymasterSession {
             throw KeymasterSessionError.noGrant
         }
 
-        guard current.needsRefresh(now: now) else {
-            return current.accessToken
+        if refreshInFlight != nil || current.needsRefresh(now: now) {
+            do {
+                return try await refreshed(from: current).accessToken
+            } catch KeymasterSessionError.noGrant {
+                if let tokens, !tokens.needsRefresh(now: now) {
+                    return tokens.accessToken
+                }
+                throw KeymasterSessionError.noGrant
+            }
         }
 
-        return try await refreshed(from: current).accessToken
+        return current.accessToken
+    }
+
+    /// A token that is valid now, refreshing even when the clock still considers the current
+    /// access token live.
+    ///
+    /// HTTP 401 names the bearer that request actually sent. A token revoked mid-validity
+    /// (`needsRefresh` is still false for up to ~55 minutes) must be spent here or every retry
+    /// would carry the same dead credential. A late refusal for a bearer this session has
+    /// already replaced is inert: the replacement's rotating refresh token must not be spent.
+    /// Concurrent refusals of the same bearer join `refreshed(from:)` so that token is spent
+    /// once.
+    func refreshIgnoringExpiry(rejected: String) async throws -> String {
+        await loadStoredGrantIfNeeded()
+        guard let current = tokens else {
+            throw KeymasterSessionError.noGrant
+        }
+        guard current.accessToken == rejected else {
+            return current.accessToken
+        }
+        do {
+            return try await refreshed(from: current).accessToken
+        } catch KeymasterSessionError.noGrant {
+            if let tokens, tokens.accessToken != rejected {
+                return tokens.accessToken
+            }
+            throw KeymasterSessionError.noGrant
+        }
     }
 
     private func refreshed(from current: KeymasterTokens) async throws -> KeymasterTokens {
         // A second caller during a refresh joins the one already running. Two concurrent
         // refreshes would each spend the same rotating token, and the loser's replacement
-        // would be the one Spotify has already invalidated.
+        // would be the one Spotify has already invalidated. The in-flight task is the
+        // commit, not just the network call, so joiners observe the same persisted grant
+        // or `KeymasterSessionError` as the owner.
         if let refreshInFlight {
-            return try await refreshInFlight.value
+            do {
+                return try await refreshInFlight.value
+            } catch is CancellationError {
+                throw KeymasterSessionError.noGrant
+            }
         }
 
         let startedAt = generation
-        let task = Task { [refresher] () throws -> KeymasterTokens in
-            try await refresher(current.refreshToken)
+        let current = current
+        let task = Task {
+            try await self.commitRefresh(from: current, startedAt: startedAt)
         }
-
         refreshInFlight = task
         // Only if the slot still holds *this* run. `adopt` and `clear` both empty it, and a
         // later refresh can have filled it again by the time this one unwinds — clearing that
@@ -190,10 +298,13 @@ actor KeymasterSession {
                 refreshInFlight = nil
             }
         }
+        return try await task.value
+    }
 
+    private func commitRefresh(from current: KeymasterTokens, startedAt: Int) async throws -> KeymasterTokens {
         let renewed: KeymasterTokens
         do {
-            renewed = try await task.value
+            renewed = try await refresher(current.refreshToken)
         } catch KeymasterAuthError.grantRevoked {
             // Nothing to retry: this refresh token is dead and every later attempt spends the
             // same one. Left in place it fails forever and survives relaunch, because the
@@ -211,6 +322,13 @@ actor KeymasterSession {
             clear()
             announceRevocation()
             throw KeymasterSessionError.grantRevoked
+        } catch {
+            // Adopt, logout, or a newer refresh already owns the slot; a cancelled or
+            // transient failure from this spend must not be reported as the replacement's.
+            guard startedAt == generation else {
+                throw KeymasterSessionError.noGrant
+            }
+            throw error
         }
 
         // Back on the actor. A logout that landed during the network call already cleared the

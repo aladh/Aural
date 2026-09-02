@@ -27,7 +27,7 @@ struct SidebarView: View {
 
             if !playlists.isEmpty {
                 Section("Playlists") {
-                    ForEach(playlists) { playlist in
+                    ForEach(playlists.prefix(3)) { playlist in
                         playlistRow(playlist)
                             .tag(SidebarSelection.playlist(playlist.uri))
                     }
@@ -35,8 +35,6 @@ struct SidebarView: View {
             }
         }
         .listStyle(.sidebar)
-        .scrollContentBackground(.hidden)
-        .background(SpotifyShellStyle.sidebar)
         .listRowInsets(EdgeInsets(top: 3, leading: 10, bottom: 3, trailing: 10))
         .environment(\.defaultMinListRowHeight, 34)
     }

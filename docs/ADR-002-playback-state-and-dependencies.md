@@ -16,7 +16,10 @@ could still combine values from different account, engine, command, queue, or se
 - `PlaybackStore` is a `@MainActor` compatibility and action surface. `PlaybackCoordinator`
   serializes playback effects and talks only to injected ports.
 - `AccountStore` owns restore, interactive authorization, revocation, logout, and account epochs.
-  Every suspended account operation revalidates its generation and epoch before mutation.
+  `AccountStore.epoch` is the only writable account-epoch owner. `PlaybackStore.accountEpoch` is a
+  read-only projection of that value. `PlaybackState.accountEpoch` remains reducer-owned accepted
+  snapshot state, not a second imperative lifecycle counter. Every suspended account operation
+  revalidates its generation and epoch before mutation.
 - `QueueService` owns source precedence, context identity, and the Connect mutation snapshot used
   for `set_queue`. Metadata enrichment cannot reorder a queue, and stale or provisional results
   cannot erase a newer authoritative snapshot. Same-context Web API `/me/player/queue` snapshots
@@ -32,8 +35,10 @@ could still combine values from different account, engine, command, queue, or se
   Playlist add/remove is a focused `PlaylistMutating` port injected beside read-only
   `CatalogProviding`; views consume catalog models and `PlaylistMutationController`, not
   Pathfinder DTOs.
-- `RustPlaybackEngine` is the process-lifetime callback adapter. It emits a bounded typed stream;
-  PCM continues directly to `AudioRenderer` and never enters the state architecture.
+- `RustPlaybackEngine` is the process-lifetime callback adapter. It emits a bounded typed stream
+  whose process-local sequence is assigned and delivered by one re-entry-safe drain so every
+  subscriber observes strictly increasing order across playback, queue, connection, and devices
+  callbacks. PCM continues directly to `AudioRenderer` and never enters the state architecture.
 - The `AuralApp` scene in `AuralCore` is the production composition root; the shipping `AuralApp`
   target is a deliberately thin launcher. Views receive feature stores or narrow immutable
   playback values/actions. Stores and views do not construct production APIs or call the C bridge.
@@ -53,10 +58,12 @@ paused remote ownership can be replayed in `AuralDomain` without Spotify, Rust, 
 or SwiftUI. Concrete app boundaries and injected coordinator/queue workflows run separately in
 `AuralBoundaryChecks`. The shipping executable contains neither check harness.
 
-Ordered engine *playback*, *connection*, and *device* callbacks are applied only when
-`PlaybackReducer.reduce` accepts the stamped envelope. `PlaybackStore.engineGeneration` mirrors
+Ordered engine *playback*, *connection*, *device*, and *queue* callbacks are applied only when
+`PlaybackReducer.reduce` accepts the stamped envelope. Queue intake stamps
+`RustQueueState.sessionGeneration` from the payload (including `refreshQueueSnapshot` after decode),
+not the MainActor `engineGeneration` mirror. `PlaybackStore.engineGeneration` mirrors
 `state.engineEpoch` after that success; intake must not guess a newer generation. Connect *queue
-callback* identity is a distinct generation+revision watermark; adopting an engine epoch in
+callback* identity remains a distinct generation+revision watermark; adopting an engine epoch in
 `reduce` does not clear it, because provenance-snapshot revisions on `.engineQueue` are a
 different namespace.
 

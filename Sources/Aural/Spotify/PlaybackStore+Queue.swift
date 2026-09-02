@@ -37,23 +37,25 @@ extension PlaybackStore {
         case let .remote(from, to):
             let effectID = PlaybackEffectID.queueCommand(UUID())
             let epoch = accountEpoch
-            effects.replace(effectID, with: Task { [weak self] in
-                defer { self?.effects.complete(effectID) }
-                guard let self else { return }
-                var completed = 0
-                for uri in ordered {
-                    do {
-                        try await self.coordinator.performRemote(.addToQueue(uri), from: from, to: to)
-                        completed += 1
-                    } catch {
-                        guard !Task.isCancelled, self.accountEpoch == epoch, self.isConnected else { return }
-                        self.presentAddToQueueFeedback(requested: ordered.count, completed: completed)
-                        return
+            effects.replace(
+                effectID,
+                with: Task { [weak self] in
+                    defer { self?.effects.complete(effectID) }
+                    guard let self else { return }
+                    var completed = 0
+                    for uri in ordered {
+                        do {
+                            try await self.coordinator.performRemote(.addToQueue(uri), from: from, to: to)
+                            completed += 1
+                        } catch {
+                            guard !Task.isCancelled, self.accountEpoch == epoch, self.isConnected else { return }
+                            self.presentAddToQueueFeedback(requested: ordered.count, completed: completed)
+                            return
+                        }
                     }
-                }
-                guard !Task.isCancelled, self.accountEpoch == epoch, self.isConnected else { return }
-                self.presentAddToQueueFeedback(requested: ordered.count, completed: completed)
-            })
+                    guard !Task.isCancelled, self.accountEpoch == epoch, self.isConnected else { return }
+                    self.presentAddToQueueFeedback(requested: ordered.count, completed: completed)
+                })
             return
         case .local:
             break
@@ -61,22 +63,24 @@ extension PlaybackStore {
 
         let effectID = PlaybackEffectID.queueCommand(UUID())
         let epoch = accountEpoch
-        effects.replace(effectID, with: Task { [weak self] in
-            defer { self?.effects.complete(effectID) }
-            guard let self else { return }
-            var completed = 0
-            for uri in ordered {
-                let result = await self.coordinator.performLocal(.addToQueue(uri))
-                guard result.isOK else {
-                    guard !Task.isCancelled, self.accountEpoch == epoch, self.isConnected else { return }
-                    self.presentAddToQueueFeedback(requested: ordered.count, completed: completed)
-                    return
+        effects.replace(
+            effectID,
+            with: Task { [weak self] in
+                defer { self?.effects.complete(effectID) }
+                guard let self else { return }
+                var completed = 0
+                for uri in ordered {
+                    let result = await self.coordinator.performLocal(.addToQueue(uri))
+                    guard result.isOK else {
+                        guard !Task.isCancelled, self.accountEpoch == epoch, self.isConnected else { return }
+                        self.presentAddToQueueFeedback(requested: ordered.count, completed: completed)
+                        return
+                    }
+                    completed += 1
                 }
-                completed += 1
-            }
-            guard !Task.isCancelled, self.accountEpoch == epoch, self.isConnected else { return }
-            self.presentAddToQueueFeedback(requested: ordered.count, completed: completed)
-        })
+                guard !Task.isCancelled, self.accountEpoch == epoch, self.isConnected else { return }
+                self.presentAddToQueueFeedback(requested: ordered.count, completed: completed)
+            })
     }
 
     func removeUpcomingQueueOccurrences(selectedIDs: Set<String>) {
@@ -101,56 +105,62 @@ extension PlaybackStore {
                 let beforeEntries = presentationEntries
                 let token = UUID()
                 queueReplacementToken = token
-                effects.replace(.queueReplacement, with: Task { [weak self] in
-                    defer { self?.finishQueueReplacementIfCurrent(token) }
-                    do {
-                        guard let self else { return }
-                        try await self.coordinator.performRemote(
-                            .setQueue(
-                                next: replacement.next,
-                                prev: replacement.prev,
-                                queueRevision: replacement.queueRevision
-                            ),
-                            from: from,
-                            to: to
-                        )
-                        guard self.queueReplacementStillCurrent(
-                            token: token,
-                            accountEpoch: epoch,
-                            engineEpoch: engineEpoch,
-                            from: from,
-                            to: to
-                        ) else { return }
-                        let mutation = await self.queueService.recordCommittedReplacement(
-                            replacement,
-                            accountEpoch: epoch,
-                            engineEpoch: engineEpoch
-                        )
-                        guard self.queueReplacementStillCurrent(
-                            token: token,
-                            accountEpoch: epoch,
-                            engineEpoch: engineEpoch,
-                            from: from,
-                            to: to
-                        ) else { return }
-                        if let mutation {
-                            self.queueMutation = mutation
-                        }
-                        self.feedback.success(Self.removedFromQueueMessage(count: replacement.removedCount))
-                    } catch {
-                        guard let self,
-                              self.queueReplacementStillCurrent(
-                                token: token,
-                                accountEpoch: epoch,
-                                engineEpoch: engineEpoch,
+                effects.replace(
+                    .queueReplacement,
+                    with: Task { [weak self] in
+                        defer { self?.finishQueueReplacementIfCurrent(token) }
+                        do {
+                            guard let self else { return }
+                            try await self.coordinator.performRemote(
+                                .setQueue(
+                                    next: replacement.next,
+                                    prev: replacement.prev,
+                                    queueRevision: replacement.queueRevision
+                                ),
                                 from: from,
                                 to: to
-                              )
-                        else { return }
-                        guard self.queueNextEntries == beforeEntries else { return }
-                        self.feedback.failure("Spotify couldn’t update the queue.")
-                    }
-                })
+                            )
+                            guard
+                                self.queueReplacementStillCurrent(
+                                    token: token,
+                                    accountEpoch: epoch,
+                                    engineEpoch: engineEpoch,
+                                    from: from,
+                                    to: to
+                                )
+                            else { return }
+                            let mutation = await self.queueService.recordCommittedReplacement(
+                                replacement,
+                                accountEpoch: epoch,
+                                engineEpoch: engineEpoch
+                            )
+                            guard
+                                self.queueReplacementStillCurrent(
+                                    token: token,
+                                    accountEpoch: epoch,
+                                    engineEpoch: engineEpoch,
+                                    from: from,
+                                    to: to
+                                )
+                            else { return }
+                            if let mutation {
+                                self.queueMutation = mutation
+                            }
+                            self.feedback.success(Self.removedFromQueueMessage(count: replacement.removedCount))
+                        } catch {
+                            guard let self,
+                                self.queueReplacementStillCurrent(
+                                    token: token,
+                                    accountEpoch: epoch,
+                                    engineEpoch: engineEpoch,
+                                    from: from,
+                                    to: to
+                                )
+                            else { return }
+                            guard self.queueNextEntries == beforeEntries else { return }
+                            self.feedback.failure("Spotify couldn’t update the queue.")
+                        }
+                    })
             }
         }
     }
@@ -192,7 +202,7 @@ extension PlaybackStore {
         guard self.accountEpoch == accountEpoch, self.engineGeneration == engineEpoch else { return false }
         guard isConnected else { return false }
         guard case let .remote(currentFrom, currentTo) = commandRoute,
-              currentFrom == from, currentTo == to
+            currentFrom == from, currentTo == to
         else { return false }
         return true
     }
@@ -226,32 +236,38 @@ extension PlaybackStore {
     func refreshQueueSnapshot() {
         let epoch = accountEpoch
         let capturedEngineEpoch = engineGeneration
-        effects.replace(.queueSnapshot, with: Task { [weak self] in
-            guard let self,
-                  let json = await self.coordinator.queueSnapshotJSON(),
-                  !Task.isCancelled,
-                  !self.isTearingDown,
-                  self.isConnected,
-                  self.accountEpoch == epoch,
-                  self.engineGeneration == capturedEngineEpoch,
-                  let data = json.data(using: .utf8),
-                  let state = try? JSONDecoder().decode(RustQueueState.self, from: data)
-            else { return }
-            // Watermark is callback identity, not reducer-owned queue provenance. A stale
-            // snapshot with a nil `sessionGeneration` can still record revision, so captured
-            // account/engine lifetime must still match before `accept`.
-            guard self.acceptsConnectQueueCallback(
-                generation: state.sessionGeneration,
-                revision: state.revision
-            ) else { return }
-            self.receive(
-                state,
-                revision: state.revision,
-                mayAdoptPlaybackIdentity: false,
-                accountEpoch: epoch,
-                engineEpoch: capturedEngineEpoch
-            )
-        })
+        effects.replace(
+            .queueSnapshot,
+            with: Task { [weak self] in
+                guard let self,
+                    let json = await self.coordinator.queueSnapshotJSON(),
+                    !Task.isCancelled,
+                    !self.isTearingDown,
+                    self.isConnected,
+                    self.accountEpoch == epoch,
+                    let data = json.data(using: .utf8),
+                    let state = try? JSONDecoder().decode(RustQueueState.self, from: data)
+                else { return }
+                // Stamp the decoded payload generation. A nil `sessionGeneration` snapshot can
+                // still record revision, so the pre-await engine lifetime must still match then.
+                // `ConnectQueueCallbackWatermark` remains callback identity, not this stamp.
+                if state.sessionGeneration == nil {
+                    guard self.engineGeneration == capturedEngineEpoch else { return }
+                }
+                guard
+                    self.acceptsConnectQueueCallback(
+                        generation: state.sessionGeneration,
+                        revision: state.revision
+                    )
+                else { return }
+                self.receive(
+                    state,
+                    revision: state.revision,
+                    mayAdoptPlaybackIdentity: false,
+                    accountEpoch: epoch,
+                    engineEpoch: state.sessionGeneration
+                )
+            })
     }
 
     /// Refreshes the cross-device queue without changing playback.
@@ -267,21 +283,26 @@ extension PlaybackStore {
         let cachedTracks = queueNextEntries.compactMap { catalog.metadata.knownTrack(for: $0.uri) }
         let epoch = accountEpoch
         let capturedEngineEpoch = engineGeneration
-        effects.replace(.queueRefresh, with: Task { [weak self] in
-            guard let self else { return }
-            guard let snapshot = await self.queueService.refresh(
-                fallbackEntries: self.queueNextEntries,
-                cachedTracks: cachedTracks,
-                currentTrackURI: self.trackURI.isEmpty ? nil : self.trackURI,
-                accountEpoch: epoch,
-                onUpdate: { [weak self] update in
-                    guard let self, !Task.isCancelled,
-                          !self.isTearingDown, self.isConnected else { return }
-                    self.apply(update, engineEpoch: capturedEngineEpoch)
-                }
-            ), !Task.isCancelled, !self.isTearingDown, self.isConnected else { return }
-            self.apply(snapshot, engineEpoch: capturedEngineEpoch)
-        })
+        effects.replace(
+            .queueRefresh,
+            with: Task { [weak self] in
+                guard let self else { return }
+                guard
+                    let snapshot = await self.queueService.refresh(
+                        fallbackEntries: self.queueNextEntries,
+                        cachedTracks: cachedTracks,
+                        currentTrackURI: self.trackURI.isEmpty ? nil : self.trackURI,
+                        accountEpoch: epoch,
+                        onUpdate: { [weak self] update in
+                            guard let self, !Task.isCancelled,
+                                !self.isTearingDown, self.isConnected
+                            else { return }
+                            self.apply(update, engineEpoch: capturedEngineEpoch)
+                        }
+                    ), !Task.isCancelled, !self.isTearingDown, self.isConnected
+                else { return }
+                self.apply(snapshot, engineEpoch: capturedEngineEpoch)
+            })
     }
 
     func cancelQueueRefresh() {
@@ -289,29 +310,32 @@ extension PlaybackStore {
         effects.cancel(.queueSnapshot)
     }
 
-    func apply(_ snapshot: ProvenanceQueueSnapshot, engineEpoch: UInt64) {
+    @discardableResult
+    func apply(_ snapshot: ProvenanceQueueSnapshot, engineEpoch: UInt64) -> Bool {
         let accepted = send(
-            .queue(PlaybackQueueSnapshot(
-                entries: snapshot.entries.map {
-                    PlaybackQueueItem($0)
-                },
-                source: snapshot.source,
-                completeness: snapshot.completeness,
-                revision: snapshot.revision,
-                receivedAt: snapshot.receivedAt,
-                contextURI: snapshot.contextURI
-            )),
+            .queue(
+                PlaybackQueueSnapshot(
+                    entries: snapshot.entries.map {
+                        PlaybackQueueItem($0)
+                    },
+                    source: snapshot.source,
+                    completeness: snapshot.completeness,
+                    revision: snapshot.revision,
+                    receivedAt: snapshot.receivedAt,
+                    contextURI: snapshot.contextURI
+                )),
             source: .engineQueue,
             revision: snapshot.revision,
             engineEpoch: engineEpoch,
             accountEpoch: snapshot.accountEpoch,
             receivedAt: snapshot.receivedAt
         )
-        guard accepted else { return }
+        guard accepted else { return false }
         var retainedURIs = Set(snapshot.entries.map(\.uri))
         if let contextURI = snapshot.contextURI { retainedURIs.insert(contextURI) }
         catalog.metadata.retainTracks(from: .queue, for: retainedURIs)
         catalog.metadata.replaceTracks(snapshot.tracks, from: .queue)
+        return true
     }
 
 }

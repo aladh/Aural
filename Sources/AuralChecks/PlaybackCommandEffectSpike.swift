@@ -15,8 +15,7 @@ private enum CommandWorkResult: Equatable {
 
 private struct InFlightCommand: Equatable {
     var id: UUID
-    var accountEpoch: UInt64
-    var engineEpoch: UInt64
+    var lifetime: PlaybackLifetime
     var cancelled: Bool
 }
 
@@ -68,7 +67,7 @@ private final class CommandSession {
         return accepted
     }
 
-    func applyFinish(commandID: UUID, capturedAccount: UInt64, capturedEngine: UInt64, result: CommandWorkResult) {
+    func applyFinish(commandID: UUID, capturedLifetime: PlaybackLifetime, result: CommandWorkResult) {
         let succeeded = result == .succeeded
         let finished = send(
             .commandFinished(
@@ -76,8 +75,8 @@ private final class CommandSession {
                 accepted: succeeded,
                 notice: succeeded ? nil : PlaybackNotice(id: pauseNoticeID, message: "Pause was rejected")
             ),
-            engineEpoch: capturedEngine,
-            accountEpoch: capturedAccount
+            engineEpoch: capturedLifetime.engineGeneration,
+            accountEpoch: capturedLifetime.accountEpoch
         )
         switch playbackCommandFollowUp(
             finishAccepted: finished,
@@ -85,10 +84,11 @@ private final class CommandSession {
             requiresReconnect: result == .reconnectRequired,
             commandKind: .transport,
             pendingCommandID: state.pendingCommands[.transport]?.id,
-            capturedAccountEpoch: capturedAccount,
-            capturedEngineEpoch: capturedEngine,
-            currentAccountEpoch: accountEpoch,
-            currentEngineEpoch: engineGeneration,
+            capturedLifetime: capturedLifetime,
+            currentLifetime: PlaybackLifetime(
+                accountEpoch: accountEpoch,
+                engineGeneration: engineGeneration
+            ),
             isTearingDown: isTearingDown
         ) {
         case .reportSuccess:
@@ -128,22 +128,25 @@ private final class RegistryRuntime {
 
     @discardableResult
     func requestPause() -> Bool {
-        guard !session.isTearingDown else {
-            session.completions.append(false)
-            return false
-        }
-        guard session.state.pendingCommands[.transport] == nil else {
+        guard
+            playbackCommandShouldAdmit(
+                isTearingDown: session.isTearingDown,
+                allowsCommands: true,
+                hasPendingCommandForKind: session.state.pendingCommands[.transport] != nil
+            )
+        else {
             session.completions.append(false)
             return false
         }
         let commandID = UUID()
         let started = session.send(
-            .commandStarted(PendingPlaybackCommand(
-                id: commandID,
-                kind: .transport,
-                expectedTransport: .paused,
-                startedAt: spikeDate
-            ))
+            .commandStarted(
+                PendingPlaybackCommand(
+                    id: commandID,
+                    kind: .transport,
+                    expectedTransport: .paused,
+                    startedAt: spikeDate
+                ))
         )
         guard started else {
             session.completions.append(false)
@@ -151,8 +154,10 @@ private final class RegistryRuntime {
         }
         inflight = InFlightCommand(
             id: commandID,
-            accountEpoch: session.accountEpoch,
-            engineEpoch: session.engineGeneration,
+            lifetime: PlaybackLifetime(
+                accountEpoch: session.accountEpoch,
+                engineGeneration: session.engineGeneration
+            ),
             cancelled: false
         )
         return true
@@ -164,14 +169,34 @@ private final class RegistryRuntime {
         guard !command.cancelled else { return }
         session.applyFinish(
             commandID: command.id,
-            capturedAccount: command.accountEpoch,
-            capturedEngine: command.engineEpoch,
+            capturedLifetime: command.lifetime,
             result: result
         )
     }
 
     func cancelInFlight() {
+        guard let command = inflight else { return }
         inflight?.cancelled = true
+        guard
+            playbackCommandShouldSettleOrdinaryCancellation(
+                pendingCommandID: session.state.pendingCommands[.transport]?.id,
+                cancelledCommandID: command.id,
+                capturedLifetime: command.lifetime,
+                currentLifetime: PlaybackLifetime(
+                    accountEpoch: session.accountEpoch,
+                    engineGeneration: session.engineGeneration
+                ),
+                isTearingDown: session.isTearingDown
+            )
+        else { return }
+        let finished = session.send(
+            .commandFinished(id: command.id, accepted: false, notice: nil),
+            engineEpoch: command.lifetime.engineGeneration,
+            accountEpoch: command.lifetime.accountEpoch
+        )
+        if finished {
+            session.completions.append(false)
+        }
     }
 
     func invalidateAccount() {
@@ -238,15 +263,38 @@ func runPlaybackCommandEffectSpikeChecks(_ check: CheckRunner) {
         check.nil_("a late coordinator failure does not surface an error notice", lateFailure.session.state.notice)
     }
 
-    check.suite("Cancel in flight preserves optimistic pause") {
+    check.suite("Cancel in flight restores captured pause") {
         let runtime = RegistryRuntime()
         _ = runtime.requestPause()
         runtime.cancelInFlight()
         runtime.deliver(.succeeded)
-        check.equal("cancellation preserves the optimistic pause", runtime.transport, .paused)
-        check.notNil("pending command remains until a valid finish or epoch reset", runtime.pending)
-        check.check("cancelled work reports no completion", runtime.session.completions.isEmpty)
+        check.equal("cancellation restores the captured transport", runtime.transport, .playing)
+        check.nil_("cancellation clears the pending command", runtime.pending)
+        check.equal("cancelled work reports failure once", runtime.session.completions, [false])
         check.equal("cancelled work does not reconnect", runtime.session.reconnectCount, 0)
+        check.check("a later pause of the same kind is admitted", runtime.requestPause())
+        check.equal("the later pause applies optimistic paused transport", runtime.transport, .paused)
+
+        let confirmed = RegistryRuntime()
+        _ = confirmed.requestPause()
+        let commandID = confirmed.pending?.id
+        check.notNil("pause is pending before the snapshot", commandID)
+        _ = confirmed.session.send(
+            .transport(.paused),
+            source: .enginePlayback,
+            revision: 1
+        )
+        check.nil_("the snapshot reconciles the pending command", confirmed.pending)
+        confirmed.cancelInFlight()
+        check.equal("confirmed cancellation keeps the paused transport", confirmed.transport, .paused)
+        check.check("confirmed cancellation reports no completion", confirmed.session.completions.isEmpty)
+
+        let stale = RegistryRuntime()
+        _ = stale.requestPause()
+        stale.session.restartEngine()
+        stale.cancelInFlight()
+        check.check("stale cancellation reports no completion", stale.session.completions.isEmpty)
+        check.nil_("engine-epoch invalidation already dropped the pending command", stale.pending)
     }
 
     check.suite("Stale finishes stay inert") {
@@ -270,12 +318,13 @@ func runPlaybackCommandEffectSpikeChecks(_ check: CheckRunner) {
         check.notNil("the original pause is pending", originalID)
         let replacementID = UUID(uuidString: "00000000-0000-0000-0000-000000000022")!
         _ = superseded.session.send(
-            .commandStarted(PendingPlaybackCommand(
-                id: replacementID,
-                kind: .transport,
-                expectedTransport: .playing,
-                startedAt: spikeDate
-            ))
+            .commandStarted(
+                PendingPlaybackCommand(
+                    id: replacementID,
+                    kind: .transport,
+                    expectedTransport: .playing,
+                    startedAt: spikeDate
+                ))
         )
         check.equal("the reducer replacement owns the pending slot", superseded.pending?.id, replacementID)
         check.equal("the replacement updates optimistic transport", superseded.transport, .playing)

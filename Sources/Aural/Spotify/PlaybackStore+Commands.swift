@@ -13,60 +13,40 @@ extension PlaybackStore {
     func performCommand(
         _ action: String,
         expecting expectedPlaybackState: Bool? = nil,
+        expectedTiming: PlaybackTiming? = nil,
+        expectedTrack: CurrentTrack? = nil,
+        expectedShuffle: Bool? = nil,
+        expectedRepeatFlags: RepeatFlags? = nil,
+        expectedOwner: PlaybackOwner? = nil,
         operation: LocalPlaybackOperation,
         kind: PlaybackCommandKind = .transport,
         completion: @escaping @MainActor (Bool) -> Void = { _ in }
     ) {
-        guard !isTearingDown, terminationGate.allowsCommands else {
-            completion(false)
-            return
+        let coordinator = coordinator
+        performAdmittedPlaybackCommand(
+            action,
+            kind: kind,
+            expecting: expectedPlaybackState,
+            expectedTiming: expectedTiming,
+            expectedTrack: expectedTrack,
+            expectedShuffle: expectedShuffle,
+            expectedRepeatFlags: expectedRepeatFlags,
+            expectedOwner: expectedOwner,
+            completion: completion
+        ) {
+            try await coordinator.performLocalCommand(operation)
         }
-        guard state.pendingCommands[kind] == nil else {
-            completion(false)
-            return
-        }
-        let commandID = UUID()
-        let epoch = accountEpoch
-        let engineEpoch = engineGeneration
-        let started = send(
-            .commandStarted(PendingPlaybackCommand(
-                id: commandID,
-                kind: kind,
-                expectedTransport: expectedPlaybackState.map { $0 ? .playing : .paused },
-                startedAt: environment.clock.now()
-            )),
-            source: .command
-        )
-        guard started else {
-            completion(false)
-            return
-        }
-        let effectID = PlaybackEffectID.command(commandID)
-        effects.replace(effectID, with: Task { [weak self] in
-            defer { self?.effects.complete(effectID) }
-            guard let self else { return }
-            do {
-                let outcome = try await self.coordinator.performLocalCommand(operation)
-                guard !Task.isCancelled, self.accountEpoch == epoch, !self.isTearingDown else { return }
-                self.applyCommandOutcome(
-                    commandID: commandID,
-                    kind: kind,
-                    capturedAccountEpoch: epoch,
-                    capturedEngineEpoch: engineEpoch,
-                    outcome: outcome,
-                    action: action,
-                    completion: completion
-                )
-            } catch {
-                return
-            }
-        })
     }
 
     func performRoutedCommand(
         _ action: String,
         kind: PlaybackCommandKind = .transport,
         expecting expectedPlaybackState: Bool? = nil,
+        expectedTiming: PlaybackTiming? = nil,
+        expectedTrack: CurrentTrack? = nil,
+        expectedShuffle: Bool? = nil,
+        expectedRepeatFlags: RepeatFlags? = nil,
+        expectedOwner: PlaybackOwner? = nil,
         local: LocalPlaybackOperation,
         remote command: SpotifyConnectCommand,
         completion: @escaping @MainActor (Bool) -> Void = { _ in }
@@ -75,6 +55,11 @@ extension PlaybackStore {
             action,
             kind: kind,
             expecting: expectedPlaybackState,
+            expectedTiming: expectedTiming,
+            expectedTrack: expectedTrack,
+            expectedShuffle: expectedShuffle,
+            expectedRepeatFlags: expectedRepeatFlags,
+            expectedOwner: expectedOwner,
             local: local,
             remote: { api, from, to in try await api.send(command, from: from, to: to) },
             completion: completion
@@ -85,6 +70,11 @@ extension PlaybackStore {
         _ action: String,
         kind: PlaybackCommandKind = .transport,
         expecting expectedPlaybackState: Bool? = nil,
+        expectedTiming: PlaybackTiming? = nil,
+        expectedTrack: CurrentTrack? = nil,
+        expectedShuffle: Bool? = nil,
+        expectedRepeatFlags: RepeatFlags? = nil,
+        expectedOwner: PlaybackOwner? = nil,
         local: LocalPlaybackOperation,
         remote: @escaping @Sendable (any RemotePlaybackClient, String, String) async throws -> Void,
         completion: @escaping @MainActor (Bool) -> Void = { _ in }
@@ -95,6 +85,11 @@ extension PlaybackStore {
             performCommand(
                 action,
                 expecting: expectedPlaybackState,
+                expectedTiming: expectedTiming,
+                expectedTrack: expectedTrack,
+                expectedShuffle: expectedShuffle,
+                expectedRepeatFlags: expectedRepeatFlags,
+                expectedOwner: expectedOwner,
                 operation: local,
                 kind: kind,
                 completion: completion
@@ -107,83 +102,155 @@ extension PlaybackStore {
             AuralLog.commands.info(
                 "Routing \(String(describing: kind), privacy: .public) command remotely; source=\(from, privacy: .private(mask: .hash)); target=\(to, privacy: .private(mask: .hash))"
             )
-            performRemoteOperation(
+            let coordinator = coordinator
+            performAdmittedPlaybackCommand(
                 action,
                 kind: kind,
                 expecting: expectedPlaybackState,
-                from: from,
-                to: to,
-                operation: remote,
+                expectedTiming: expectedTiming,
+                expectedTrack: expectedTrack,
+                expectedShuffle: expectedShuffle,
+                expectedRepeatFlags: expectedRepeatFlags,
+                expectedOwner: expectedOwner,
                 completion: completion
-            )
+            ) {
+                try await coordinator.performRemoteCommand { client in
+                    try await remote(client, from, to)
+                }
+            }
         }
     }
 
-    private func performRemoteOperation(
+    /// Shared playback-command lifecycle kernel. Route selection, route refusal, and
+    /// waiting-for-local-identity stay outside so they cannot create pending commands.
+    /// Callers supply the local or remote operation after choosing a live route.
+    private func performAdmittedPlaybackCommand(
         _ action: String,
         kind: PlaybackCommandKind,
         expecting expectedPlaybackState: Bool?,
-        from sourceID: String,
-        to targetID: String,
-        operation: @escaping @Sendable (any RemotePlaybackClient, String, String) async throws -> Void,
-        completion: @escaping @MainActor (Bool) -> Void
+        expectedTiming: PlaybackTiming?,
+        expectedTrack: CurrentTrack?,
+        expectedShuffle: Bool?,
+        expectedRepeatFlags: RepeatFlags?,
+        expectedOwner: PlaybackOwner?,
+        completion: @escaping @MainActor (Bool) -> Void,
+        operation: @escaping @MainActor () async throws -> Result<Void, PlaybackCommandFailure>
     ) {
-        guard !isTearingDown, terminationGate.allowsCommands else {
-            completion(false)
-            return
-        }
-        guard state.pendingCommands[kind] == nil else {
+        guard
+            playbackCommandShouldAdmit(
+                isTearingDown: isTearingDown,
+                allowsCommands: terminationGate.allowsCommands,
+                hasPendingCommandForKind: state.pendingCommands[kind] != nil
+            )
+        else {
             completion(false)
             return
         }
         let commandID = UUID()
-        let epoch = accountEpoch
-        let engineEpoch = engineGeneration
+        let lifetime = playbackLifetime
         let started = send(
-            .commandStarted(PendingPlaybackCommand(
-                id: commandID,
-                kind: kind,
-                expectedTransport: expectedPlaybackState.map { $0 ? .playing : .paused },
-                startedAt: environment.clock.now()
-            )),
-            source: .command
+            .commandStarted(
+                PendingPlaybackCommand(
+                    id: commandID,
+                    kind: kind,
+                    expectedTransport: expectedPlaybackState.map { $0 ? .playing : .paused },
+                    expectedTiming: expectedTiming,
+                    expectedTrack: expectedTrack,
+                    expectedShuffle: expectedShuffle,
+                    expectedRepeatFlags: expectedRepeatFlags,
+                    expectedOwner: expectedOwner,
+                    startedAt: environment.clock.now()
+                )),
+            source: .command,
+            playbackLifetime: lifetime
         )
         guard started else {
             completion(false)
             return
         }
         let effectID = PlaybackEffectID.command(commandID)
-        effects.replace(effectID, with: Task { [weak self] in
-            defer { self?.effects.complete(effectID) }
-            guard let self else { return }
-            do {
-                let outcome = try await self.coordinator.performRemoteCommand { remote in
-                    try await operation(remote, sourceID, targetID)
+        let registration = PlaybackEffectRegistration()
+        effects.replace(
+            effectID,
+            with: Task { [weak self] in
+                defer { self?.effects.complete(effectID, registration: registration) }
+                guard let self else { return }
+                do {
+                    let outcome = try await operation()
+                    // Account replacement and teardown make every outcome inert here. Engine
+                    // replacement is intentionally resolved by the lifetime-stamped reducer
+                    // finish and shared follow-up: an authoritative engine sample may confirm
+                    // or supersede a command while its coordinator operation is suspended.
+                    guard
+                        !Task.isCancelled,
+                        lifetime.accountEpoch == self.accountEpoch,
+                        !self.isTearingDown
+                    else { return }
+                    self.applyCommandOutcome(
+                        commandID: commandID,
+                        kind: kind,
+                        capturedLifetime: lifetime,
+                        outcome: outcome,
+                        action: action,
+                        completion: completion
+                    )
+                } catch is CancellationError {
+                    return
+                } catch {
+                    return
                 }
-                guard !Task.isCancelled, self.accountEpoch == epoch, !self.isTearingDown else { return }
-                self.applyCommandOutcome(
+            },
+            registration: registration,
+            onCancel: { [weak self] in
+                self?.settleCancelledPlaybackCommand(
                     commandID: commandID,
                     kind: kind,
-                    capturedAccountEpoch: epoch,
-                    capturedEngineEpoch: engineEpoch,
-                    outcome: outcome,
-                    action: action,
+                    capturedLifetime: lifetime,
                     completion: completion
                 )
-            } catch {
-                return
             }
-        })
+        )
+    }
+
+    /// Ordinary same-lifetime `PlaybackEffectID.command` cancellation. Matching pending
+    /// identity is the once-gate: restore reducer-owned rollback, clear that command,
+    /// and report `completion(false)` without a notice or reconnect. Confirmed,
+    /// superseded, stale, and teardown paths stay inert.
+    private func settleCancelledPlaybackCommand(
+        commandID: UUID,
+        kind: PlaybackCommandKind,
+        capturedLifetime: PlaybackLifetime,
+        completion: @escaping @MainActor (Bool) -> Void
+    ) {
+        guard
+            playbackCommandShouldSettleOrdinaryCancellation(
+                pendingCommandID: state.pendingCommands[kind]?.id,
+                cancelledCommandID: commandID,
+                capturedLifetime: capturedLifetime,
+                currentLifetime: playbackLifetime,
+                isTearingDown: isTearingDown
+            )
+        else { return }
+        let finished = send(
+            .commandFinished(id: commandID, accepted: false, notice: nil),
+            source: .command,
+            playbackLifetime: capturedLifetime
+        )
+        guard finished else { return }
+        completion(false)
     }
 
     /// Local and remote command finishes share this policy so a matching engine snapshot cannot
-    /// drop `play` / `togglePlayback` completions, including when the coordinator later fails.
-    /// Epoch, teardown, non-transport kinds, and superseded ids stay inert.
+    /// drop `play` / `togglePlayback` / shuffle / repeat / remote-transfer completions, including
+    /// when the coordinator later fails. The finished command's resolution is captured before
+    /// `commandFinished` so follow-up can treat consume-only reducer acceptance as confirmed
+    /// success or superseded inertness.
+    /// Epoch, teardown, unknown ids, and options finishes without a captured confirmation stay
+    /// inert.
     private func applyCommandOutcome(
         commandID: UUID,
         kind: PlaybackCommandKind,
-        capturedAccountEpoch: UInt64,
-        capturedEngineEpoch: UInt64,
+        capturedLifetime: PlaybackLifetime,
         outcome: Result<Void, PlaybackCommandFailure>,
         action: String,
         completion: @escaping @MainActor (Bool) -> Void
@@ -201,6 +268,7 @@ extension PlaybackStore {
             requiresReconnect = failure == .reconnectRequired
             notice = PlaybackNotice(message: action)
         }
+        let capturedResolution = state.transportCommandResolutions[commandID]
         let finished = send(
             .commandFinished(
                 id: commandID,
@@ -208,8 +276,7 @@ extension PlaybackStore {
                 notice: notice
             ),
             source: .command,
-            engineEpoch: capturedEngineEpoch,
-            accountEpoch: capturedAccountEpoch
+            playbackLifetime: capturedLifetime
         )
         switch playbackCommandFollowUp(
             finishAccepted: finished,
@@ -217,10 +284,9 @@ extension PlaybackStore {
             requiresReconnect: requiresReconnect,
             commandKind: kind,
             pendingCommandID: state.pendingCommands[kind]?.id,
-            capturedAccountEpoch: capturedAccountEpoch,
-            capturedEngineEpoch: capturedEngineEpoch,
-            currentAccountEpoch: accountEpoch,
-            currentEngineEpoch: engineGeneration,
+            finishedCommandResolution: capturedResolution,
+            capturedLifetime: capturedLifetime,
+            currentLifetime: playbackLifetime,
             isTearingDown: isTearingDown
         ) {
         case .reportSuccess:
@@ -240,11 +306,13 @@ extension PlaybackStore {
 
     func showTransientCommandError(_ message: String) {
         setNotice(message)
-        effects.replace(.commandError, with: Task { [weak self] in
-            try? await self?.environment.clock.sleep(seconds: 4)
-            guard !Task.isCancelled else { return }
-            self?.setNotice(nil)
-        })
+        effects.replace(
+            .commandError,
+            with: Task { [weak self] in
+                try? await self?.environment.clock.sleep(seconds: 4)
+                guard !Task.isCancelled else { return }
+                self?.setNotice(nil)
+            })
     }
 
 }

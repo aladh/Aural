@@ -7,52 +7,44 @@ struct RootView: View {
     let catalog: CatalogStore
     let feedback: TransientFeedbackPresenter
 
-    @SceneStorage("sidebarSelection") private var selectionRawValue = SidebarSelection.destination(.home).rawValue
-    @State private var selectedMedia: CatalogItem?
-    @SceneStorage("selectedMediaTitle") private var restoredMediaTitle = ""
-    @SceneStorage("selectedMediaSubtitle") private var restoredMediaSubtitle = ""
-    @SceneStorage("selectedMediaArtworkURL") private var restoredMediaArtworkURL = ""
+    @SceneStorage("sidebarSelection") private var mediaSelectionRawValue = MediaSelectionModel().rawValue
+    @SceneStorage("selectedMediaTitle") private var legacyMediaTitle = ""
+    @SceneStorage("selectedMediaSubtitle") private var legacyMediaSubtitle = ""
+    @SceneStorage("selectedMediaArtworkURL") private var legacyMediaArtworkURL = ""
     @State private var searchText = ""
     @SceneStorage("showsPlaybackInspector") private var showsSidePanel = false
 
     var body: some View {
-        ZStack {
-            SpotifyShellStyle.canvas
-                .ignoresSafeArea()
-
-            VStack(spacing: 0) {
-                NavigationSplitView {
-                    SidebarView(selection: selectionBinding, playlists: catalog.homeLibrary.playlists)
-                        .navigationSplitViewColumnWidth(min: 220, ideal: 220, max: 220)
-                } detail: {
-                    detail
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
-                }
-                .navigationSplitViewStyle(.balanced)
-                .background(SpotifyShellStyle.canvas)
-                .inspector(isPresented: $showsSidePanel) {
-                    SidePanelView(
-                        metadata: catalog.metadata,
-                        player: player,
-                        onClose: { showsSidePanel = false }
-                    )
-                    .inspectorColumnWidth(min: 220, ideal: 220, max: 220)
-                }
-                .overlay(alignment: .bottom) {
-                    TransientFeedbackBanner(feedback: feedback)
-                }
-
-                NowPlayingBar(player: player, showsSidePanel: $showsSidePanel)
+        VStack(spacing: 0) {
+            NavigationSplitView {
+                SidebarView(selection: selectionBinding, playlists: catalog.homeLibrary.playlists)
+                    .navigationSplitViewColumnWidth(min: 220, ideal: 220, max: 220)
+            } detail: {
+                detail
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .background { CatalogCanvasBackground() }
             }
+            .navigationSplitViewStyle(.balanced)
+            .inspector(isPresented: $showsSidePanel) {
+                SidePanelView(
+                    metadata: catalog.metadata,
+                    player: player,
+                    onClose: { showsSidePanel = false }
+                )
+                .inspectorColumnWidth(min: 220, ideal: 220, max: 220)
+            }
+            .overlay(alignment: .bottom) {
+                TransientFeedbackBanner(feedback: feedback)
+            }
+
+            NowPlayingBar(player: player, showsSidePanel: $showsSidePanel)
         }
-        .preferredColorScheme(.dark)
         .onChange(of: player.state.accountEpoch) {
-            selectedMedia = nil
-            clearRestoredMedia()
-            selectionRawValue = SidebarSelection.destination(.home).rawValue
+            resetMediaSelection()
         }
-        .onChange(of: selectionRawValue) {
-            AuralLog.ui.info("Sidebar selection changed: \(selection.diagnosticLabel, privacy: .public)")
+        .onAppear(perform: migrateLegacyMediaSelection)
+        .onChange(of: mediaSelectionRawValue) {
+            AuralLog.ui.info("Sidebar selection changed: \(mediaSelection.diagnosticLabel, privacy: .public)")
         }
         // Window-close artwork purging lives in AuralAppDelegate, which observes
         // NSWindow.willCloseNotification; adding a purge here would only duplicate it.
@@ -134,7 +126,7 @@ struct RootView: View {
                 subtitle: catalogPlayback.isConnected
                     ? "Saved to your Spotify library"
                     : "Connect Spotify to load your saved tracks",
-                tracks: catalog.homeLibrary.likedTracks,
+                tracks: catalog.homeLibrary.likedTrackCollection,
                 metadata: catalog.metadata,
                 playback: catalogPlayback,
                 reloadError: catalog.homeLibrary.error(for: .likedTracks),
@@ -183,30 +175,21 @@ struct RootView: View {
     }
 
     private func select(_ item: CatalogItem) {
-        switch item.kind {
-        case .playlist:
-            remember(item)
-            selectedMedia = item
-            selectionRawValue = SidebarSelection.playlist(item.uri).rawValue
-        case .album:
-            remember(item)
-            selectedMedia = item
-            selectionRawValue = SidebarSelection.album(item.uri).rawValue
-        case .artist:
-            remember(item)
-            selectedMedia = item
-            selectionRawValue = SidebarSelection.artist(item.uri).rawValue
-        case .track, .unknown:
-            catalogPlayback.playURI(item.uri)
+        var model = mediaSelection
+        switch model.select(item) {
+        case .navigate:
+            mediaSelectionRawValue = model.rawValue
+        case let .play(uri):
+            catalogPlayback.playURI(uri)
         }
     }
 
     private func selectedItem(uri: String, kind: CatalogItem.Kind) -> CatalogItem? {
-        if selectedMedia?.uri == uri, selectedMedia?.kind == kind {
-            return selectedMedia
-        }
-        return catalog.metadata.knownItem(for: uri).flatMap { $0.kind == kind ? $0 : nil }
-            ?? restoredItem(uri: uri, kind: kind)
+        mediaSelection.item(
+            uri: uri,
+            kind: kind,
+            metadataItem: catalog.metadata.knownItem(for: uri)
+        )
     }
 
     private func unavailableMedia(
@@ -220,20 +203,26 @@ struct RootView: View {
             actionTitle: "Show \(destination.rawValue)",
             actionSystemImage: "arrow.left"
         ) {
-            selectionRawValue = SidebarSelection.destination(destination).rawValue
+            updateMediaSelection { $0.updateSelection(.destination(destination)) }
         }
         .padding(30)
     }
 
     private func playlistItem(for uri: String) -> CatalogItem? {
-        return catalog.homeLibrary.playlists.first { $0.uri == uri }
-            ?? (selectedMedia?.uri == uri && selectedMedia?.kind == .playlist ? selectedMedia : nil)
-            ?? catalog.metadata.knownItem(for: uri).flatMap { $0.kind == .playlist ? $0 : nil }
-            ?? restoredItem(uri: uri, kind: .playlist)
+        mediaSelection.item(
+            uri: uri,
+            kind: .playlist,
+            playlists: catalog.homeLibrary.playlists,
+            metadataItem: catalog.metadata.knownItem(for: uri)
+        )
     }
 
     private var selection: SidebarSelection {
-        SidebarSelection(rawValue: selectionRawValue) ?? .destination(.home)
+        mediaSelection.selection
+    }
+
+    private var mediaSelection: MediaSelectionModel {
+        MediaSelectionModel(rawValue: mediaSelectionRawValue) ?? MediaSelectionModel()
     }
 
     private var catalogPlayback: CatalogPlaybackAccess {
@@ -257,42 +246,37 @@ struct RootView: View {
     private var selectionBinding: Binding<SidebarSelection?> {
         Binding(
             get: { selection },
-            set: {
-                let next = $0 ?? .destination(.home)
-                let nextMediaURI: String? = switch next {
-                case .destination: nil
-                case let .playlist(uri), let .album(uri), let .artist(uri): uri
-                }
-                if nextMediaURI == nil || selectedMedia?.uri != nextMediaURI {
-                    selectedMedia = nil
-                    clearRestoredMedia()
-                }
-                selectionRawValue = next.rawValue
+            set: { selection in
+                updateMediaSelection { $0.updateSelection(selection) }
             }
         )
     }
 
-    private func remember(_ item: CatalogItem) {
-        restoredMediaTitle = item.title
-        restoredMediaSubtitle = item.subtitle
-        restoredMediaArtworkURL = item.artworkURL?.absoluteString ?? ""
+    private func updateMediaSelection(_ update: (inout MediaSelectionModel) -> Void) {
+        var model = mediaSelection
+        update(&model)
+        mediaSelectionRawValue = model.rawValue
     }
 
-    private func clearRestoredMedia() {
-        restoredMediaTitle = ""
-        restoredMediaSubtitle = ""
-        restoredMediaArtworkURL = ""
+    private func migrateLegacyMediaSelection() {
+        var model = mediaSelection
+        guard
+            model.migrateLegacyMetadata(
+                title: legacyMediaTitle,
+                subtitle: legacyMediaSubtitle,
+                artworkURL: legacyMediaArtworkURL
+            )
+        else { return }
+        mediaSelectionRawValue = model.rawValue
+        legacyMediaTitle = ""
+        legacyMediaSubtitle = ""
+        legacyMediaArtworkURL = ""
     }
 
-    private func restoredItem(uri: String, kind: CatalogItem.Kind) -> CatalogItem? {
-        guard !restoredMediaTitle.isEmpty else { return nil }
-        return CatalogItem(
-            id: SpotifyURI.id(from: uri) ?? uri,
-            uri: uri,
-            title: restoredMediaTitle,
-            subtitle: restoredMediaSubtitle,
-            artworkURL: restoredMediaArtworkURL.isEmpty ? nil : URL(string: restoredMediaArtworkURL),
-            kind: kind
-        )
+    private func resetMediaSelection() {
+        updateMediaSelection { $0.reset() }
+        legacyMediaTitle = ""
+        legacyMediaSubtitle = ""
+        legacyMediaArtworkURL = ""
     }
 }

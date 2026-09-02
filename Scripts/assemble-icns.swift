@@ -43,8 +43,9 @@ private func runLengthEncode(_ channel: [UInt8]) -> Data {
     while index < channel.count {
         var runLength = 1
         while index + runLength < channel.count,
-              runLength < 130,
-              channel[index + runLength] == channel[index] {
+            runLength < 130,
+            channel[index + runLength] == channel[index]
+        {
             runLength += 1
         }
 
@@ -60,8 +61,9 @@ private func runLengthEncode(_ channel: [UInt8]) -> Data {
         while index < channel.count, index - literalStart < 128 {
             var nextRunLength = 1
             while index + nextRunLength < channel.count,
-                  nextRunLength < 3,
-                  channel[index + nextRunLength] == channel[index] {
+                nextRunLength < 3,
+                channel[index + nextRunLength] == channel[index]
+            {
                 nextRunLength += 1
             }
             if nextRunLength >= 3 { break }
@@ -82,8 +84,9 @@ private func componentByte(_ component: CGFloat) -> UInt8 {
 
 private func argbPayload(from png: Data, pixels: Int) throws -> Data {
     guard let bitmap = NSBitmapImageRep(data: png),
-          bitmap.pixelsWide == pixels,
-          bitmap.pixelsHigh == pixels else {
+        bitmap.pixelsWide == pixels,
+        bitmap.pixelsHigh == pixels
+    else {
         throw CocoaError(.fileReadCorruptFile)
     }
 
@@ -136,10 +139,13 @@ do {
         let width = bigEndianUInt32(in: png, at: 16)
         let height = bigEndianUInt32(in: png, at: 20)
         guard width == representation.pixels, height == representation.pixels else {
-            throw CocoaError(.fileReadCorruptFile, userInfo: [
-                NSFilePathErrorKey: pngURL.path,
-                NSLocalizedDescriptionKey: "Expected \(representation.pixels)×\(representation.pixels), found \(width)×\(height)",
-            ])
+            throw CocoaError(
+                .fileReadCorruptFile,
+                userInfo: [
+                    NSFilePathErrorKey: pngURL.path,
+                    NSLocalizedDescriptionKey:
+                        "Expected \(representation.pixels)×\(representation.pixels), found \(width)×\(height)",
+                ])
         }
 
         let payload: Data

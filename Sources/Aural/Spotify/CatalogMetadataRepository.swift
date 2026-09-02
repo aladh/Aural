@@ -26,6 +26,7 @@ final class CatalogMetadataRepository {
     }
 
     private(set) var trackAttributes: [String: TrackAttributes] = [:]
+    private(set) var trackAttributesRevision: UInt64 = 0
     private(set) var contentRevision: UInt64 = 0
 
     @ObservationIgnored private let attributesProvider: any TrackAttributesProviding
@@ -57,6 +58,7 @@ final class CatalogMetadataRepository {
         retainedTrackURIsBySource.removeAll(keepingCapacity: false)
         itemsBySource.removeAll(keepingCapacity: false)
         trackAttributes.removeAll(keepingCapacity: false)
+        trackAttributesRevision &+= 1
         contentEpoch = session.accountEpoch
         contentRevision &+= 1
     }
@@ -72,8 +74,7 @@ final class CatalogMetadataRepository {
         // knows one of the queued uris enrich it before that page is replaced.
         if let retainedURIs = retainedTrackURIsBySource[source] {
             for (uri, track) in tracksBySource[source] ?? [:]
-                where retainedURIs.contains(uri) && replacement[uri] == nil
-            {
+            where retainedURIs.contains(uri) && replacement[uri] == nil {
                 replacement[uri] = track
             }
         }
@@ -181,7 +182,7 @@ final class CatalogMetadataRepository {
         requestsInFlight.formUnion(uris)
 
         for offset in stride(from: 0, to: uris.count, by: Self.batchSize) {
-            let batch = Array(uris[offset ..< min(offset + Self.batchSize, uris.count)])
+            let batch = Array(uris[offset..<min(offset + Self.batchSize, uris.count)])
             let taskID = UUID()
             enrichmentTasks[taskID] = Task { [weak self] in
                 guard let self else { return }
@@ -230,14 +231,14 @@ final class CatalogMetadataRepository {
         do {
             let fetched = try await attributesProvider.attributes(for: uris)
             guard isCurrent(scope, sessionSnapshot: sessionSnapshot) else { return }
+            let addedAttributes = fetched.keys.contains { trackAttributes[$0] == nil }
             trackAttributes.merge(fetched) { current, _ in current }
             trimAttributeCache(preserving: Set(fetched.keys))
-        } catch is CancellationError {
-            return
-        } catch let error as URLError where error.code == .cancelled {
-            return
+            if addedAttributes {
+                trackAttributesRevision &+= 1
+            }
         } catch {
-            guard isCurrent(scope, sessionSnapshot: sessionSnapshot) else { return }
+            guard !isCancellation(error), isCurrent(scope, sessionSnapshot: sessionSnapshot) else { return }
             debugLog(
                 "CatalogMetadataRepository",
                 "Track attributes failed; error=\(String(describing: type(of: error)))"
@@ -260,6 +261,7 @@ final class CatalogMetadataRepository {
             retainedTrackURIsBySource.removeAll(keepingCapacity: false)
             itemsBySource.removeAll(keepingCapacity: false)
             trackAttributes.removeAll(keepingCapacity: false)
+            trackAttributesRevision &+= 1
             contentEpoch = snapshot.accountEpoch
         }
         return true

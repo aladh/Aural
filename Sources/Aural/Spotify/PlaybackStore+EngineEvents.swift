@@ -24,11 +24,13 @@ extension PlaybackStore {
         case let .playback(state):
             receive(state, revision: state.revision, receivedAt: envelope.receivedAt)
         case let .queue(state):
-            guard acceptsConnectQueueCallback(
-                generation: state.sessionGeneration,
-                revision: state.revision
-            ) else { return }
-            receive(state, revision: state.revision)
+            guard
+                acceptsConnectQueueCallback(
+                    generation: state.sessionGeneration,
+                    revision: state.revision
+                )
+            else { return }
+            receive(state, revision: state.revision, engineEpoch: state.sessionGeneration)
         case let .connection(state):
             receive(state, revision: state.revision, receivedAt: envelope.receivedAt)
         case let .devices(state):
@@ -71,9 +73,9 @@ extension PlaybackStore {
         let isInitialSnapshot = !hasReceivedPlaybackSnapshot
         let previousTrackURI = trackURI
         let snapshotIsPlaying = state.isPlaying && !(state.isPaused ?? false)
-        let transport: PlaybackTransportState = (
-            snapshotIsPlaying && !(isInitialSnapshot && isActiveDevice)
-        ) ? .playing : (state.trackURI.isEmpty ? .stopped : .paused)
+        let transport: PlaybackTransportState =
+            (snapshotIsPlaying && !(isInitialSnapshot && isActiveDevice))
+            ? .playing : (state.trackURI.isEmpty ? .stopped : .paused)
         let snapshotPosition = playbackSnapshotPosition(
             positionMilliseconds: state.positionMS,
             durationMilliseconds: state.durationMS,
@@ -87,18 +89,19 @@ extension PlaybackStore {
         )
         let repeatSnapshot = RepeatMode(context: flags.context, track: flags.track)
         let accepted = send(
-            .enginePlayback(EnginePlaybackSnapshot(
-                transport: transport,
-                trackURI: state.trackURI.isEmpty ? nil : state.trackURI,
-                timing: PlaybackTiming(
-                    position: snapshotPosition,
-                    duration: TimeInterval(max(0, state.durationMS)) / 1_000,
-                    anchoredAt: receivedAt
-                ),
-                shuffle: state.shuffle,
-                repeatMode: repeatSnapshot,
-                repeatFlags: flags
-            )),
+            .enginePlayback(
+                EnginePlaybackSnapshot(
+                    transport: transport,
+                    trackURI: state.trackURI.isEmpty ? nil : state.trackURI,
+                    timing: PlaybackTiming(
+                        position: snapshotPosition,
+                        duration: TimeInterval(max(0, state.durationMS)) / 1_000,
+                        anchoredAt: receivedAt
+                    ),
+                    shuffle: state.shuffle,
+                    repeatMode: repeatSnapshot,
+                    repeatFlags: flags
+                )),
             source: .enginePlayback,
             revision: revision,
             engineEpoch: state.sessionGeneration,
@@ -116,10 +119,10 @@ extension PlaybackStore {
         // A later cluster update can start Aural remotely. Count that transition, but never turn
         // the initial account snapshot into fresh listening history merely because the app opened.
         if !isInitialSnapshot,
-           isActiveDevice,
-           transport == .playing,
-           !state.trackURI.isEmpty,
-           state.trackURI != previousTrackURI
+            isActiveDevice,
+            transport == .playing,
+            !state.trackURI.isEmpty,
+            state.trackURI != previousTrackURI
         {
             recordPlayed(state.trackURI)
         }
@@ -140,42 +143,53 @@ extension PlaybackStore {
         let protocolNext = (state.protocolNextTracks ?? []).map { $0.domainTrack() }
         let protocolPrev = (state.protocolPrevTracks ?? []).map { $0.domainTrack() }
         let epoch = capturedAccountEpoch ?? accountEpoch
-        let engineEpoch = capturedEngineEpoch ?? engineGeneration
-        effects.replace(.connectQueueAccept, with: Task { [weak self] in
-            guard let self else { return }
-            let accepted = await self.queueService.acceptConnect(
-                entries,
-                accountEpoch: epoch,
-                sourceRevision: revision,
-                contextURI: state.track?.uri ?? self.trackURI,
-                provisional: state.track == nil && entries.isEmpty,
-                engineEpoch: engineEpoch,
-                protocolNext: protocolNext,
-                protocolPrev: protocolPrev,
-                queueRevision: state.queueRevision ?? "",
-                disallowSetQueue: state.disallowSetQueue ?? false,
-                disallowRemovingFromNextTracks: state.disallowRemovingFromNextTracks ?? false
-            )
-            guard !Task.isCancelled, !self.isTearingDown else { return }
-            guard self.accountEpoch == epoch, self.engineGeneration == engineEpoch else { return }
-            guard let accepted else { return }
-            self.queueMutation = accepted.mutation
-            self.apply(accepted.snapshot, engineEpoch: engineEpoch)
-        })
+        // Stamp from the payload generation. `engineGeneration` is only a fallback when the
+        // snapshot omitted `sessionGeneration`; it must not override a newer decoded epoch.
+        let engineEpoch = capturedEngineEpoch ?? state.sessionGeneration ?? engineGeneration
+        effects.replace(
+            .connectQueueAccept,
+            with: Task { [weak self] in
+                guard let self else { return }
+                let accepted = await self.queueService.acceptConnect(
+                    entries,
+                    accountEpoch: epoch,
+                    sourceRevision: revision,
+                    contextURI: state.track?.uri ?? self.trackURI,
+                    provisional: state.track == nil && entries.isEmpty,
+                    engineEpoch: engineEpoch,
+                    protocolNext: protocolNext,
+                    protocolPrev: protocolPrev,
+                    queueRevision: state.queueRevision ?? "",
+                    disallowSetQueue: state.disallowSetQueue ?? false,
+                    disallowRemovingFromNextTracks: state.disallowRemovingFromNextTracks ?? false
+                )
+                guard !Task.isCancelled, !self.isTearingDown else { return }
+                guard self.accountEpoch == epoch, self.engineGeneration <= engineEpoch else { return }
+                guard let accepted else { return }
+                let previousOrdering = self.state.queue.entries.map(\.uri)
+                self.queueMutation = accepted.mutation
+                guard self.apply(accepted.snapshot, engineEpoch: engineEpoch) else { return }
+                if self.state.queue.entries.map(\.uri) != previousOrdering {
+                    self.queueInspectorOrderingVersion &+= 1
+                }
+            })
 
         guard let track = state.track else { return }
         if !mayAdoptPlaybackIdentity {
-            guard queueBootstrapMetadataURI(
-                snapshotTrackURI: track.uri,
-                currentTrackURI: self.state.currentTrack?.uri
-            ) != nil else { return }
+            guard
+                queueBootstrapMetadataURI(
+                    snapshotTrackURI: track.uri,
+                    currentTrackURI: self.state.currentTrack?.uri
+                ) != nil
+            else { return }
         }
 
         let changedTrack = track.uri != trackURI
 
         if !track.name.isEmpty || !track.artist.isEmpty || !track.imageURL.isEmpty {
             // The backend supplied real metadata for this track.
-            let trackDuration = track.durationMS > 0
+            let trackDuration =
+                track.durationMS > 0
                 ? TimeInterval(track.durationMS) / 1_000
                 : duration
             let current = CurrentTrack(
@@ -286,33 +300,36 @@ extension PlaybackStore {
     ) {
         let epoch = accountEpoch ?? self.accountEpoch
         let capturedEngineEpoch = engineEpoch ?? engineGeneration
-        effects.replace(.trackMetadata, with: Task { [weak self] in
-            do {
-                guard let self else { return }
-                let metadata = try await self.coordinator.metadata(for: uri)
-                guard !Task.isCancelled, !self.isTearingDown else { return }
-                let accepted = self.setTrackMetadata(
-                    uri: uri,
-                    title: metadata.title,
-                    artist: metadata.artist,
-                    artworkURL: metadata.artworkURL,
-                    duration: metadata.duration > 0 ? metadata.duration : self.duration,
-                    provenance: .connect,
-                    accountEpoch: epoch,
-                    engineEpoch: capturedEngineEpoch
-                )
-                guard accepted else { return }
-                self.history.applyMetadata(
-                    uri: uri,
-                    title: metadata.title,
-                    artist: metadata.artist,
-                    artworkURL: metadata.artworkURL
-                )
-            } catch {
-                guard !Task.isCancelled, self?.isTearingDown == false else { return }
-                debugLog("SpotifyConnectAPI", "Track metadata resolution failed: \(String(describing: type(of: error)))")
-            }
-        })
+        effects.replace(
+            .trackMetadata,
+            with: Task { [weak self] in
+                do {
+                    guard let self else { return }
+                    let metadata = try await self.coordinator.metadata(for: uri)
+                    guard !Task.isCancelled, !self.isTearingDown else { return }
+                    let accepted = self.setTrackMetadata(
+                        uri: uri,
+                        title: metadata.title,
+                        artist: metadata.artist,
+                        artworkURL: metadata.artworkURL,
+                        duration: metadata.duration > 0 ? metadata.duration : self.duration,
+                        provenance: .connect,
+                        accountEpoch: epoch,
+                        engineEpoch: capturedEngineEpoch
+                    )
+                    guard accepted else { return }
+                    self.history.applyMetadata(
+                        uri: uri,
+                        title: metadata.title,
+                        artist: metadata.artist,
+                        artworkURL: metadata.artworkURL
+                    )
+                } catch {
+                    guard !Task.isCancelled, self?.isTearingDown == false else { return }
+                    debugLog(
+                        "SpotifyConnectAPI", "Track metadata resolution failed: \(String(describing: type(of: error)))")
+                }
+            })
     }
 
     func receive(_ devices: [ConnectDevice], revision: UInt64, engineEpoch: UInt64) {
@@ -322,7 +339,8 @@ extension PlaybackStore {
                 PlaybackDevice(id: $0.id, name: $0.name, type: $0.type, isActive: $0.isActive)
             },
             localDeviceID: localDeviceID,
-            revision: revision
+            revision: revision,
+            lastRemoteDeviceID: lastRemoteDeviceID
         )
         let accepted = send(
             .devices(snapshot),
@@ -364,11 +382,12 @@ extension PlaybackStore {
             session = nil
         }
         let accepted = send(
-            .engineConnection(EngineConnectionSnapshot(
-                session: session,
-                owner: owner,
-                localDeviceID: resolvedLocalID
-            )),
+            .engineConnection(
+                EngineConnectionSnapshot(
+                    session: session,
+                    owner: owner,
+                    localDeviceID: resolvedLocalID
+                )),
             source: .engineConnection,
             revision: revision,
             engineEpoch: state.sessionGeneration,

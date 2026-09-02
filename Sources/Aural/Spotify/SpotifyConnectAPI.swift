@@ -300,21 +300,26 @@ nonisolated struct SpotifyConnectAPI: Sendable {
         clientToken: @escaping @Sendable () async throws -> String = {
             try await ClientTokenProvider.shared.token()
         },
+        invalidateAccessToken: @escaping @Sendable (String) async throws -> Void = SpotifyCredentials
+            .invalidateSharedAccess,
         invalidateClientToken: @escaping @Sendable (String) async -> Void = SpotifyCredentials.invalidateShared,
-        transport: @escaping Transport = { try await URLSession.shared.data(for: $0) }
+        transport: @escaping Transport = { try await URLSession.shared.data(for: $0) },
+        retryTiming: SpotifyTransientRetry.Timing = .production
     ) {
         credentials = SpotifyCredentials(
             accessToken: accessToken,
             clientToken: clientToken,
+            invalidateAccessToken: invalidateAccessToken,
             invalidateClientToken: invalidateClientToken,
-            transport: transport
+            transport: transport,
+            retryTiming: retryTiming
         )
     }
 
     func send(_ command: SpotifyConnectCommand, from sourceID: String, to targetID: String) async throws {
         let path = "connect-state/v1/player/command/from/\(sourceID)/to/\(targetID)"
         let body = try JSONEncoder().encode(SpotifyConnectCommandEnvelope(command: command))
-        let sent = try await credentials.retryingRefusedToken {
+        let sent = try await credentials.retryingRefusedToken(replay: .unsafe) {
             try await request(method: "POST", path: path, body: body)
         }
         try validate(sent.status)
@@ -329,14 +334,15 @@ nonisolated struct SpotifyConnectAPI: Sendable {
         let url = Self.baseURL
             .appending(path: path)
             .appending(queryItems: [URLQueryItem(name: "market", value: "from_token")])
-        try await preflight(url)
-        let sent = try await credentials.retryingRefusedToken {
+        // URLSession is not a browser CORS client. The signed GET does not depend on an
+        // unsigned OPTIONS preflight, and issuing one per track doubles cold queue traffic.
+        let sent = try await credentials.retryingRefusedToken(replay: .safe) {
             try await request(method: "GET", url: url, body: nil)
         }
         try validate(sent.status)
 
         guard let response = try? JSONDecoder().decode(SpotifyConnectTrackResponse.self, from: sent.body),
-              let title = response.name, !title.isEmpty
+            let title = response.name, !title.isEmpty
         else {
             throw SpotifyConnectAPIError.malformedResponse
         }
@@ -370,31 +376,11 @@ nonisolated struct SpotifyConnectAPI: Sendable {
         guard let http = response as? HTTPURLResponse else {
             throw SpotifyConnectAPIError.malformedResponse
         }
-        return (data, http.statusCode, request.value(forHTTPHeaderField: "Client-Token"))
-    }
-
-    private func preflight(_ url: URL) async throws {
-        var request = URLRequest(url: url)
-        request.httpMethod = "OPTIONS"
-        request.setValue("*/*", forHTTPHeaderField: "Accept")
-        request.setValue("GET", forHTTPHeaderField: "Access-Control-Request-Method")
-        request.setValue(
-            "app-platform,authorization,client-token,spotify-app-version",
-            forHTTPHeaderField: "Access-Control-Request-Headers"
-        )
-        request.setValue(SpotifyCredentials.origin, forHTTPHeaderField: "Origin")
-        request.setValue(SpotifyCredentials.origin + "/", forHTTPHeaderField: "Referer")
-        let (_, response) = try await credentials.transport(request)
-        guard let http = response as? HTTPURLResponse else {
-            throw SpotifyConnectAPIError.malformedResponse
-        }
-        guard http.statusCode < 400 else {
-            throw SpotifyConnectAPIError.requestFailed(http.statusCode)
-        }
+        return SpotifyCredentials.Attempt(body: data, http: http, request: request)
     }
 
     private func validate(_ status: Int) throws {
-        guard (200 ..< 300).contains(status) else {
+        guard (200..<300).contains(status) else {
             throw SpotifyConnectAPIError.requestFailed(status)
         }
     }
