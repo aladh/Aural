@@ -25,8 +25,10 @@ ADRs; historical measurements belong in the performance baseline.
 
 ## Window and navigation behavior
 
-- The main window uses a native, fixed-width sidebar and inspector. Both side panels have the same
-  220-point width and neither is user-collapsible by dragging.
+- The main window uses a native, resizable sidebar and inspector. Both side panels start near the
+  same compact 208-point width; the sidebar stays within 180–260 points and the inspector within
+  200–280 points. At compact sidebar widths, playlist shortcuts keep artwork and title while
+  hiding secondary metadata. Either panel may still be shown or hidden through its native command.
 - The sidebar has native navigation symbols for primary destinations and at most three playlist
   shortcuts. Those shortcuts may show compact artwork and metadata, with a text-only fallback. The
   full Playlists destination remains the library browser. Do not add a redundant app logo or

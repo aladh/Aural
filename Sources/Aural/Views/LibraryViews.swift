@@ -27,17 +27,17 @@ struct SearchView: View {
                 ) {
                     playback.connect()
                 }
-                .padding(30)
+                .padding(CatalogLayout.contentPadding)
             } else if searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                 EmptyState(
                     icon: "magnifyingglass",
                     title: "Search Spotify",
                     message: "Find tracks, artists, albums, and playlists."
                 )
-                .padding(30)
+                .padding(CatalogLayout.contentPadding)
             } else if store.isSearching && store.isEmpty {
                 LoadingState(label: "Searching Spotify")
-                    .padding(30)
+                    .padding(CatalogLayout.contentPadding)
             } else if let error = store.error, store.isEmpty {
                 EmptyState(
                     icon: "exclamationmark.magnifyingglass",
@@ -48,17 +48,17 @@ struct SearchView: View {
                 ) {
                     Task { await store.search(searchText) }
                 }
-                .padding(30)
+                .padding(CatalogLayout.contentPadding)
             } else if store.isEmpty {
                 EmptyState(
                     icon: "magnifyingglass",
                     title: "No results for “\(searchText)”",
                     message: "Try another track, artist, or album."
                 )
-                .padding(30)
+                .padding(CatalogLayout.contentPadding)
             } else {
                 ScrollView {
-                    LazyVStack(alignment: .leading, spacing: 28) {
+                    LazyVStack(alignment: .leading, spacing: 24) {
                         if !store.failedSections.isEmpty {
                             partialFailureBanner
                         }
@@ -83,7 +83,7 @@ struct SearchView: View {
                         }
                         if !store.tracks.isEmpty {
                             VStack(alignment: .leading, spacing: 12) {
-                                Text("Tracks").font(.title2.bold())
+                                Text("Tracks").font(.title3.bold())
                                 TrackTable(
                                     tracks: store.trackCollection,
                                     metadata: metadata,
@@ -94,7 +94,7 @@ struct SearchView: View {
                             }
                         }
                     }
-                    .padding(30)
+                    .padding(CatalogLayout.contentPadding)
                 }
             }
         }
@@ -127,7 +127,7 @@ struct SearchView: View {
             }
         }
         .padding(12)
-        .background(.quaternary, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+        .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
     }
 
     private var failedSectionNames: String {
@@ -148,7 +148,7 @@ struct LibraryView: View {
         ScrollView {
             if isLoading && items.isEmpty {
                 LoadingState(label: "Loading \(title.lowercased())")
-                    .padding(30)
+                    .padding(CatalogLayout.contentPadding)
             } else if items.isEmpty {
                 Group {
                     if !playback.isConnected {
@@ -179,7 +179,7 @@ struct LibraryView: View {
                         )
                     }
                 }
-                .padding(30)
+                .padding(CatalogLayout.contentPadding)
             } else {
                 VStack(alignment: .leading, spacing: 20) {
                     Text(title)
@@ -188,14 +188,14 @@ struct LibraryView: View {
                     LazyVGrid(
                         columns: MediaGridLayout.columns,
                         alignment: .leading,
-                        spacing: 22
+                        spacing: 18
                     ) {
                         ForEach(items) { item in
                             MediaCard(item: item) { onSelect(item) }
                         }
                     }
                 }
-                .padding(30)
+                .padding(CatalogLayout.contentPadding)
             }
         }
         .navigationTitle(title)
@@ -227,12 +227,13 @@ struct TrackCollectionView: View {
                     .font(.largeTitle.bold())
                     .lineLimit(2)
                 Text(subtitle)
+                    .font(.subheadline)
                     .foregroundStyle(.secondary)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(30)
+            .padding(CatalogLayout.contentPadding)
 
-            Divider()
+            CatalogTableDivider()
 
             if isLoading && tracks.tracks.isEmpty {
                 LoadingState(label: "Loading \(title.lowercased())")

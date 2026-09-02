@@ -70,7 +70,9 @@ struct SidePanelView: View {
             }
             .pickerStyle(.segmented)
             .labelsHidden()
-            .frame(width: 148)
+            .controlSize(.small)
+            .font(.caption)
+            .frame(width: 136)
 
             Spacer(minLength: 0)
 
@@ -81,8 +83,9 @@ struct SidePanelView: View {
             .buttonStyle(.borderless)
             .help("Close inspector")
         }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 10)
+        .padding(.horizontal, 12)
+        .padding(.vertical, 6)
+        .frame(minHeight: 36)
     }
 
     // MARK: - Queue
@@ -98,22 +101,27 @@ struct SidePanelView: View {
         } else {
             List(selection: $upcomingSelection) {
                 if player.hasCurrentTrack {
-                    Section("Now playing") {
+                    Section {
                         CurrentTrackRow(player: player)
+                    } header: {
+                        railSectionHeader("Now playing")
                     }
                 }
 
                 if !player.queueNextEntries.isEmpty {
-                    Section("Next up") {
+                    Section {
                         ForEach(player.queueNextEntries) { entry in
                             QueueUpcomingRow(entry: entry, metadata: metadata)
                                 .tag(entry.id)
                         }
+                    } header: {
+                        railSectionHeader("Next up")
                     }
                 }
             }
             .listStyle(.plain)
-            .environment(\.defaultMinListRowHeight, 52)
+            .listRowInsets(EdgeInsets(top: 3, leading: 12, bottom: 3, trailing: 12))
+            .environment(\.defaultMinListRowHeight, 46)
             .contextMenu(forSelectionType: QueueEntry.ID.self) { selectedIDs in
                 let selected = QueueMutationSelection.orderedUpcoming(
                     selectedIDs: selectedIDs,
@@ -163,6 +171,13 @@ struct SidePanelView: View {
         }
     }
 
+    private func railSectionHeader(_ title: String) -> some View {
+        Text(title)
+            .font(.caption.weight(.semibold))
+            .foregroundStyle(.secondary)
+            .textCase(nil)
+    }
+
     // MARK: - History
 
     @ViewBuilder
@@ -182,7 +197,7 @@ struct SidePanelView: View {
                         }
                     }
                 }
-                .padding(14)
+                .padding(12)
             }
         }
     }
@@ -259,7 +274,7 @@ private struct HistoryRow: View {
                     .foregroundStyle(.tertiary)
                     .lineLimit(1)
             }
-            .padding(6)
+            .padding(4)
             .contentShape(Rectangle())
             .background(
                 isHovering ? Color.primary.opacity(0.055) : .clear,

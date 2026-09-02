@@ -4,6 +4,7 @@ import SwiftUI
 struct SidebarView: View {
     @Binding var selection: SidebarSelection?
     let playlists: [CatalogItem]
+    @State private var sidebarWidth: CGFloat = 0
 
     var body: some View {
         List(selection: $selection) {
@@ -28,8 +29,11 @@ struct SidebarView: View {
             if !playlists.isEmpty {
                 Section("Playlists") {
                     ForEach(playlists.prefix(3)) { playlist in
-                        playlistRow(playlist)
-                            .tag(SidebarSelection.playlist(playlist.uri))
+                        playlistRow(
+                            playlist,
+                            showsSubtitle: sidebarWidth >= CatalogLayout.sidebarCompactSubtitleThreshold
+                        )
+                        .tag(SidebarSelection.playlist(playlist.uri))
                     }
                 }
             }
@@ -37,6 +41,12 @@ struct SidebarView: View {
         .listStyle(.sidebar)
         .listRowInsets(EdgeInsets(top: 3, leading: 10, bottom: 3, trailing: 10))
         .environment(\.defaultMinListRowHeight, 34)
+        .onGeometryChange(for: CGFloat.self) { proxy in
+            proxy.size.width
+        } action: { newWidth in
+            guard newWidth > 0 else { return }
+            sidebarWidth = newWidth
+        }
     }
 
     private func sidebarDestination(
@@ -49,7 +59,7 @@ struct SidebarView: View {
             .accessibilityAddTraits(selection == .destination(destination) ? .isSelected : [])
     }
 
-    private func playlistRow(_ playlist: CatalogItem) -> some View {
+    private func playlistRow(_ playlist: CatalogItem, showsSubtitle: Bool) -> some View {
         HStack(spacing: 10) {
             RemoteArtwork(
                 url: playlist.artworkURL,
@@ -64,10 +74,12 @@ struct SidebarView: View {
                     .font(.body.weight(selection == .playlist(playlist.uri) ? .semibold : .regular))
                     .lineLimit(1)
 
-                Text(playlist.subtitle.isEmpty ? "Playlist" : playlist.subtitle)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
+                if showsSubtitle {
+                    Text(playlist.subtitle.isEmpty ? "Playlist" : playlist.subtitle)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                }
             }
             Spacer(minLength: 0)
         }
@@ -75,6 +87,8 @@ struct SidebarView: View {
         .accessibilityElement(children: .combine)
         .accessibilityAddTraits(selection == .playlist(playlist.uri) ? .isSelected : [])
         .accessibilityLabel(playlist.title)
-        .accessibilityValue(playlist.subtitle.isEmpty ? "Playlist" : playlist.subtitle)
+        .accessibilityValue(
+            showsSubtitle ? (playlist.subtitle.isEmpty ? "Playlist" : playlist.subtitle) : ""
+        )
     }
 }

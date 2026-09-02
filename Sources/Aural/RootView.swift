@@ -18,7 +18,7 @@ struct RootView: View {
         VStack(spacing: 0) {
             NavigationSplitView {
                 SidebarView(selection: selectionBinding, playlists: catalog.homeLibrary.playlists)
-                    .navigationSplitViewColumnWidth(min: 220, ideal: 220, max: 220)
+                    .navigationSplitViewColumnWidth(min: 180, ideal: 208, max: 260)
             } detail: {
                 detail
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -31,7 +31,7 @@ struct RootView: View {
                     player: player,
                     onClose: { showsSidePanel = false }
                 )
-                .inspectorColumnWidth(min: 220, ideal: 220, max: 220)
+                .inspectorColumnWidth(min: 200, ideal: 208, max: 280)
             }
             .overlay(alignment: .bottom) {
                 TransientFeedbackBanner(feedback: feedback)

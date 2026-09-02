@@ -31,7 +31,7 @@ struct NowPlayingBar: View {
                 .frame(minWidth: 210, maxWidth: .infinity, alignment: .trailing)
         }
         .padding(.horizontal, 20)
-        .frame(height: player.hasCurrentTrack ? 92 : 78)
+        .frame(height: player.hasCurrentTrack ? 72 : 68)
         .background {
             Rectangle()
                 .fill(.bar)

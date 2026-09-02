@@ -10,6 +10,23 @@ struct TrackPlaylistActions {
     let removeOccurrences: @MainActor ([String]) -> Void
 }
 
+enum CatalogLayout {
+    static let contentPadding: CGFloat = 28
+    static let headerThreshold: CGFloat = 640
+    static let headerCompactArtwork: CGFloat = 152
+    static let headerMinimumArtwork: CGFloat = 184
+    static let headerMediumArtwork: CGFloat = 208
+    static let headerMaximumArtwork: CGFloat = 236
+    static let sidebarCompactSubtitleThreshold: CGFloat = 220
+    static let cardArtwork: CGFloat = 160
+    static let cardPadding: CGFloat = 8
+    static let cardCornerRadius: CGFloat = 11
+    static let cardWidth: CGFloat = cardArtwork
+    static let gridMinimumWidth: CGFloat = cardArtwork + (cardPadding * 2)
+    static let gridMaximumWidth: CGFloat = 208
+    static let gridSpacing: CGFloat = 16
+}
+
 /// The content canvas follows the system appearance while borrowing Spotify's quiet,
 /// near-black detail-pane hierarchy in Dark Mode. The accent wash is intentionally subtle so
 /// artwork and selection remain the visual anchors.
@@ -21,15 +38,26 @@ struct CatalogCanvasBackground: View {
             Color(nsColor: .underPageBackgroundColor)
             LinearGradient(
                 colors: [
-                    Color.accentColor.opacity(colorScheme == .dark ? 0.16 : 0.07),
+                    Color.accentColor.opacity(colorScheme == .dark ? 0.11 : 0.045),
+                    Color.accentColor.opacity(colorScheme == .dark ? 0.025 : 0.01),
                     .clear,
                 ],
                 startPoint: .topLeading,
                 endPoint: .bottomTrailing
             )
-            .frame(height: 270)
+            .frame(height: 320)
         }
         .ignoresSafeArea()
+    }
+}
+
+/// A low-contrast boundary between an artwork-led header and its native table.
+struct CatalogTableDivider: View {
+    var body: some View {
+        Rectangle()
+            .fill(.separator.opacity(0.72))
+            .frame(height: 1)
+            .accessibilityHidden(true)
     }
 }
 
@@ -54,7 +82,12 @@ struct CircularPlayButton: View {
 
 enum MediaGridLayout {
     static var columns: [GridItem] {
-        [GridItem(.adaptive(minimum: 194, maximum: 224), spacing: 18)]
+        [
+            GridItem(
+                .adaptive(minimum: CatalogLayout.gridMinimumWidth, maximum: CatalogLayout.gridMaximumWidth),
+                spacing: CatalogLayout.gridSpacing
+            )
+        ]
     }
 }
 
@@ -66,6 +99,7 @@ struct MediaDetailHeader: View {
     let itemCount: String?
     let canPlay: Bool
     let play: () -> Void
+    @State private var availableWidth: CGFloat = 0
 
     init(
         item: CatalogItem,
@@ -84,55 +118,144 @@ struct MediaDetailHeader: View {
     }
 
     var body: some View {
-        HStack(alignment: .bottom, spacing: 26) {
-            RemoteArtwork(
-                url: item.artworkURL,
-                kind: item.kind,
-                cornerRadius: item.kind == .artist ? 92 : 10,
-                pointSize: 184
-            )
-            .frame(width: 184, height: 184)
-            .shadow(color: .black.opacity(0.26), radius: 16, y: 8)
-
-            VStack(alignment: .leading, spacing: 8) {
-                Text(item.kind.rawValue.uppercased())
-                    .font(.caption.weight(.bold))
-                    .foregroundStyle(.secondary)
-                    .tracking(0.8)
-
-                Text(item.title)
-                    .font(.largeTitle.bold())
-                    .lineLimit(2)
-                    .minimumScaleFactor(0.8)
-
-                if !description.isEmpty {
-                    Text(description)
-                        .foregroundStyle(.secondary)
-                        .lineLimit(3)
-                }
-
-                if !supportingText.isEmpty {
-                    Text(supportingText)
-                        .foregroundStyle(.secondary)
-                }
-
-                CircularPlayButton(action: play)
-                    .disabled(!canPlay)
-                    .accessibilityHint("Starts this \(item.kind.rawValue.lowercased())")
+        headerContent(width: availableWidth)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .onGeometryChange(for: CGFloat.self) { proxy in
+                proxy.size.width
+            } action: { newWidth in
+                guard newWidth > 0 else { return }
+                availableWidth = newWidth
             }
-            .padding(.bottom, 2)
+            .background { CatalogHeaderWash() }
+            .padding(.horizontal, CatalogLayout.contentPadding)
+            .padding(.top, 20)
+            .padding(.bottom, 16)
+    }
 
+    @ViewBuilder
+    private func headerContent(width: CGFloat) -> some View {
+        if width >= CatalogLayout.headerThreshold {
+            horizontalHeader(width: width)
+        } else {
+            compactHeader(width: width)
+        }
+    }
+
+    private func horizontalHeader(width: CGFloat) -> some View {
+        return HStack(alignment: .bottom, spacing: 26) {
+            artwork(size: horizontalArtworkSize(for: width))
+            detailColumn()
             Spacer(minLength: 0)
         }
-        .padding(.horizontal, 34)
-        .padding(.top, 28)
-        .padding(.bottom, 22)
+    }
+
+    private func compactHeader(width: CGFloat) -> some View {
+        ViewThatFits(in: .horizontal) {
+            HStack(alignment: .bottom, spacing: 20) {
+                artwork(size: compactArtworkSize(for: width))
+                detailColumn()
+            }
+
+            VStack(alignment: .leading, spacing: 18) {
+                artwork(size: compactArtworkSize(for: width))
+                detailColumn()
+            }
+        }
+    }
+
+    private func horizontalArtworkSize(for width: CGFloat) -> CGFloat {
+        switch width {
+        case ..<820:
+            return CatalogLayout.headerMinimumArtwork
+        case ..<940:
+            return CatalogLayout.headerMediumArtwork
+        default:
+            return CatalogLayout.headerMaximumArtwork
+        }
+    }
+
+    private func compactArtworkSize(for width: CGFloat) -> CGFloat {
+        width < 560 ? CatalogLayout.headerCompactArtwork : CatalogLayout.headerMinimumArtwork
+    }
+
+    private func artwork(size: CGFloat) -> some View {
+        RemoteArtwork(
+            url: item.artworkURL,
+            kind: item.kind,
+            cornerRadius: item.kind == .artist ? size / 2 : 10,
+            pointSize: size
+        )
+        .frame(width: size, height: size)
+        .shadow(color: .black.opacity(0.24), radius: 14, y: 7)
+    }
+
+    @ViewBuilder
+    private func detailColumn() -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text(item.kind.rawValue.uppercased())
+                .font(.caption.weight(.bold))
+                .foregroundStyle(.secondary)
+                .tracking(0.8)
+
+            Text(item.title)
+                .font(.largeTitle.bold())
+                .lineLimit(2)
+                .minimumScaleFactor(0.72)
+                .fixedSize(horizontal: false, vertical: true)
+
+            if !description.isEmpty {
+                Text(description)
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(2)
+            }
+
+            if !supportingText.isEmpty {
+                Text(supportingText)
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(2)
+            }
+
+            CircularPlayButton(action: play)
+                .disabled(!canPlay)
+                .accessibilityHint("Starts this \(item.kind.rawValue.lowercased())")
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.bottom, 2)
     }
 
     private var supportingText: String {
         [item.subtitle, detail, itemCount ?? ""]
             .filter { !$0.isEmpty && $0.caseInsensitiveCompare(item.kind.rawValue) != .orderedSame }
             .joined(separator: " · ")
+    }
+}
+
+private struct CatalogHeaderWash: View {
+    @Environment(\.colorScheme) private var colorScheme
+
+    var body: some View {
+        ZStack(alignment: .topLeading) {
+            RadialGradient(
+                colors: [
+                    Color.accentColor.opacity(colorScheme == .dark ? 0.075 : 0.03),
+                    .clear,
+                ],
+                center: .topLeading,
+                startRadius: 10,
+                endRadius: 430
+            )
+            LinearGradient(
+                colors: [
+                    Color.accentColor.opacity(colorScheme == .dark ? 0.035 : 0.012),
+                    .clear,
+                ],
+                startPoint: .top,
+                endPoint: .bottom
+            )
+        }
+        .allowsHitTesting(false)
     }
 }
 
@@ -175,23 +298,23 @@ struct TrackTable: View {
             TableColumn("Title", value: \.title) { row in
                 titleCell(row.track)
             }
-            .width(min: 160, ideal: 240, max: 280)
+            .width(min: 152, ideal: 224, max: 264)
 
             TableColumn("Artist", value: \.artist) { row in
                 Text(row.track.artist).foregroundStyle(.secondary).lineLimit(1)
             }
-            .width(min: 100, ideal: 130, max: 170)
+            .width(min: 96, ideal: 124, max: 160)
 
             TableColumn("Album", value: \.album) { row in
                 Text(row.track.album).foregroundStyle(.secondary).lineLimit(1)
             }
-            .width(min: 100, ideal: 140, max: 180)
+            .width(min: 96, ideal: 132, max: 170)
 
             TableColumn("Popularity", value: \.popularitySortValue) { row in
                 Text(attributeText(metadata.trackAttributes[row.track.uri]?.popularity.map(String.init)))
                     .foregroundStyle(.tertiary)
             }
-            .width(68)
+            .width(64)
 
             TableColumn("BPM", value: \.bpmSortValue) { row in
                 Text(attributeText(metadata.trackAttributes[row.track.uri]?.bpm.map(String.init)))
@@ -199,20 +322,20 @@ struct TrackTable: View {
                     .foregroundStyle(.tertiary)
                     .accessibilityLabel("Tempo in beats per minute")
             }
-            .width(46)
+            .width(44)
 
             TableColumn("Key", value: \.keySortValue) { row in
                 Text(attributeText(metadata.trackAttributes[row.track.uri]?.key))
                     .foregroundStyle(.tertiary)
             }
-            .width(40)
+            .width(38)
 
             if showsDateAdded {
                 TableColumn("Date Added", value: \.dateAddedSortValue) { row in
                     Text(formatDateAdded(row.track.addedAt))
                         .foregroundStyle(.secondary)
                 }
-                .width(96)
+                .width(90)
             }
 
             TableColumn("Time", value: \.duration) { row in
@@ -220,7 +343,7 @@ struct TrackTable: View {
                     .monospacedDigit()
                     .foregroundStyle(.tertiary)
             }
-            .width(46)
+            .width(44)
         }
         .contextMenu(forSelectionType: CatalogTrack.ID.self) { selectedIDs in
             let selectedTracks = PlaylistMutationSelection.orderedTracks(
@@ -280,6 +403,8 @@ struct TrackTable: View {
             removeSelectedOccurrences()
         }
         .accessibilityLabel("Tracks")
+        .font(.callout)
+        .tableStyle(.inset(alternatesRowBackgrounds: false))
         .onChange(of: displayInputs, initial: true) { oldInputs, newInputs in
             _ = displayCache.update(
                 tracks,

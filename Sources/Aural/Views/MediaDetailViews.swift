@@ -23,7 +23,7 @@ struct AlbumDetailView: View {
             ) {
                 playback.playURI(item.uri)
             }
-            Divider()
+            CatalogTableDivider()
             if store.isLoading && store.tracks.isEmpty {
                 LoadingState(label: "Loading album")
             } else if let error = store.error, store.tracks.isEmpty {
@@ -70,7 +70,7 @@ struct ArtistDetailView: View {
             MediaDetailHeader(item: item, canPlay: playback.canStartPlayback) {
                 playback.playURI(item.uri)
             }
-            Divider()
+            CatalogTableDivider()
             if store.isLoading && store.releases.isEmpty {
                 LoadingState(label: "Loading artist")
             } else if let error = store.error, store.releases.isEmpty {
@@ -90,13 +90,13 @@ struct ArtistDetailView: View {
                     LazyVGrid(
                         columns: MediaGridLayout.columns,
                         alignment: .leading,
-                        spacing: 24
+                        spacing: 18
                     ) {
                         ForEach(store.releases) { release in
                             MediaCard(item: release) { onSelect(release) }
                         }
                     }
-                    .padding(30)
+                    .padding(CatalogLayout.contentPadding)
                 }
             }
         }
