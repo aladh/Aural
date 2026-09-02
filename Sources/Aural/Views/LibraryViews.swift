@@ -181,12 +181,18 @@ struct LibraryView: View {
                 }
                 .padding(30)
             } else {
-                LazyVGrid(
-                    columns: [GridItem(.adaptive(minimum: 165, maximum: 210), spacing: 20)],
-                    spacing: 24
-                ) {
-                    ForEach(items) { item in
-                        MediaCard(item: item) { onSelect(item) }
+                VStack(alignment: .leading, spacing: 20) {
+                    Text(title)
+                        .font(.largeTitle.bold())
+
+                    LazyVGrid(
+                        columns: MediaGridLayout.columns,
+                        alignment: .leading,
+                        spacing: 22
+                    ) {
+                        ForEach(items) { item in
+                            MediaCard(item: item) { onSelect(item) }
+                        }
                     }
                 }
                 .padding(30)

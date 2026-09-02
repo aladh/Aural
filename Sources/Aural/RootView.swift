@@ -22,6 +22,7 @@ struct RootView: View {
             } detail: {
                 detail
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .background { CatalogCanvasBackground() }
             }
             .navigationSplitViewStyle(.balanced)
             .inspector(isPresented: $showsSidePanel) {

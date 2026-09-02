@@ -16,7 +16,13 @@ struct AlbumDetailView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            MediaDetailHeader(item: item, detail: store.releaseDate, playback: playback)
+            MediaDetailHeader(
+                item: item,
+                detail: store.releaseDate,
+                canPlay: playback.canStartPlayback
+            ) {
+                playback.playURI(item.uri)
+            }
             Divider()
             if store.isLoading && store.tracks.isEmpty {
                 LoadingState(label: "Loading album")
@@ -61,7 +67,9 @@ struct ArtistDetailView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            MediaDetailHeader(item: item, detail: "", playback: playback)
+            MediaDetailHeader(item: item, canPlay: playback.canStartPlayback) {
+                playback.playURI(item.uri)
+            }
             Divider()
             if store.isLoading && store.releases.isEmpty {
                 LoadingState(label: "Loading artist")
@@ -80,7 +88,8 @@ struct ArtistDetailView: View {
             } else {
                 ScrollView {
                     LazyVGrid(
-                        columns: [GridItem(.adaptive(minimum: 165, maximum: 210), spacing: 20)],
+                        columns: MediaGridLayout.columns,
+                        alignment: .leading,
                         spacing: 24
                     ) {
                         ForEach(store.releases) { release in
@@ -102,50 +111,5 @@ struct ArtistDetailView: View {
             guard playback.isConnected else { return }
             await store.load(item)
         }
-    }
-}
-
-private struct MediaDetailHeader: View {
-    let item: CatalogItem
-    let detail: String
-    let playback: CatalogPlaybackAccess
-
-    var body: some View {
-        HStack(alignment: .bottom, spacing: 22) {
-            RemoteArtwork(
-                url: item.artworkURL,
-                kind: item.kind,
-                cornerRadius: item.kind == .artist ? 68 : 12,
-                pointSize: 136
-            )
-            .frame(width: 136, height: 136)
-
-            VStack(alignment: .leading, spacing: 8) {
-                Text(item.kind.rawValue.uppercased())
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(.secondary)
-                Text(item.title)
-                    .font(.largeTitle.bold())
-                    .lineLimit(2)
-                let supportingText = [item.subtitle, detail].filter {
-                    !$0.isEmpty && $0.caseInsensitiveCompare(item.kind.rawValue) != .orderedSame
-                }.joined(separator: " · ")
-                if !supportingText.isEmpty {
-                    Text(supportingText)
-                        .foregroundStyle(.secondary)
-                }
-                Button {
-                    playback.playURI(item.uri)
-                } label: {
-                    Label("Play", systemImage: "play.fill")
-                }
-                .buttonStyle(.borderedProminent)
-                .controlSize(.large)
-                .disabled(!playback.canStartPlayback)
-                .accessibilityHint("Starts this \(item.kind.rawValue.lowercased())")
-            }
-            Spacer()
-        }
-        .padding(30)
     }
 }

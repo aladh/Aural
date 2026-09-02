@@ -10,6 +10,11 @@ ADRs; historical measurements belong in the performance baseline.
 - macOS is the only current platform target. Cross-platform UI work is not a present constraint.
 - Prefer idiomatic SwiftUI and AppKit behavior over custom chrome. Do not add a WebView, Chromium
   runtime, or a second UI framework.
+- Use a Spotify-familiar composition without reproducing Spotify's pixels: artwork-led media
+  headers, dense track tables, a right-side queue/history rail, and a full-width bottom player
+  shelf. Dark appearance uses a near-black content canvas, while Light Mode, inactive windows,
+  focus, and every accent continue to use system-adaptive macOS semantics. Do not force Dark Mode
+  or introduce a parallel theme system.
 - Keep the product surface small. In particular, Aural has no in-app volume control or manual
   Spotify refresh action. Playlist creation, rename, cover editing, collaborative permission
   management, and arbitrary reordering are out of scope. Occurrence-safe add/remove for playlists
@@ -22,11 +27,14 @@ ADRs; historical measurements belong in the performance baseline.
 
 - The main window uses a native, fixed-width sidebar and inspector. Both side panels have the same
   220-point width and neither is user-collapsible by dragging.
-- The sidebar has native navigation symbols for primary destinations, but playlist shortcuts are
-  text-only. Do not add a redundant app logo or app-name header to the content area.
+- The sidebar has native navigation symbols for primary destinations and at most three playlist
+  shortcuts. Those shortcuts may show compact artwork and metadata, with a text-only fallback. The
+  full Playlists destination remains the library browser. Do not add a redundant app logo or
+  app-name header to the content area.
 - The right inspector contains Queue and History in a stable segmented header. Switching tabs must
-  not move the header. The current queue item is text-only; history may show artwork. VoiceOver for
-  that now-playing row uses the same catalog-enriched title and artist as the visible text.
+  not move the header. Current and upcoming queue items may show compact artwork and duration when
+  metadata is available, with text-only fallbacks. VoiceOver uses the same catalog-enriched title,
+  artist, and available duration as the visible row. History may show artwork.
 - Closing the main window purges presentation caches but does not quit Aural. The app remains in the
   Dock and reopens through the Dock icon or the standard macOS Window command.
 - Sign Out belongs in the macOS **Aural** application menu, not in a custom profile card. Settings

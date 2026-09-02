@@ -61,15 +61,6 @@ struct HomeView: View {
             .padding(.top, 22)
             .padding(.bottom, 28)
         }
-        .background(alignment: .topLeading) {
-            LinearGradient(
-                colors: [Color.accentColor.opacity(0.07), .clear],
-                startPoint: .topLeading,
-                endPoint: .bottomTrailing
-            )
-            .frame(height: 260)
-            .ignoresSafeArea()
-        }
         .navigationTitle("Home")
     }
 }
@@ -81,7 +72,7 @@ struct MediaShelf: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             Text(section.title)
-                .font(.title2.bold())
+                .font(.title3.weight(.bold))
 
             ScrollView(.horizontal, showsIndicators: false) {
                 LazyHStack(spacing: 16) {
@@ -108,10 +99,10 @@ struct MediaCard: View {
                 RemoteArtwork(
                     url: item.artworkURL,
                     kind: item.kind,
-                    cornerRadius: item.kind == .artist ? 79 : 13,
-                    pointSize: 158
+                    cornerRadius: item.kind == .artist ? 87 : 12,
+                    pointSize: 174
                 )
-                .frame(width: 158, height: 158)
+                .frame(width: 174, height: 174)
                 .shadow(color: .black.opacity(isHovering ? 0.18 : 0.08), radius: isHovering ? 10 : 5, y: 4)
 
                 Text(item.title)
@@ -124,8 +115,13 @@ struct MediaCard: View {
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
             }
-            .frame(width: 158, alignment: .leading)
-            .contentShape(Rectangle())
+            .frame(width: 174, alignment: .leading)
+            .padding(10)
+            .contentShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+            .background(
+                Color.primary.opacity(isHovering ? 0.075 : 0),
+                in: RoundedRectangle(cornerRadius: 12, style: .continuous)
+            )
             .scaleEffect(isHovering && !reduceMotion ? 1.015 : 1)
         }
         .buttonStyle(.plain)

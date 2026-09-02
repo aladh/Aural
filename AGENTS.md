@@ -48,6 +48,10 @@ cramped, and capable without advertising every capability.
 
 - Start with established macOS behavior. Prefer system structure, materials, typography, controls,
   menus, focus, keyboard behavior, accessibility, and inactive-window semantics over custom chrome.
+- Use a Spotify-familiar hierarchy—artwork-led media headers, dense tables, a queue rail, and a
+  full-width player shelf—through system-adaptive macOS surfaces. Dark appearance may use a
+  near-black canvas; do not force an appearance or build a second theme system. Keep sidebar
+  playlist artwork to a bounded shortcut list rather than duplicating the library browser.
 - Remove before adding. Every persistent control must earn its space through frequent use or
   essential state. Capability alone does not justify UI.
 - Keep one clear hierarchy. At a glance the user should see where they are, what is playing, and the

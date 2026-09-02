@@ -10,6 +10,132 @@ struct TrackPlaylistActions {
     let removeOccurrences: @MainActor ([String]) -> Void
 }
 
+/// The content canvas follows the system appearance while borrowing Spotify's quiet,
+/// near-black detail-pane hierarchy in Dark Mode. The accent wash is intentionally subtle so
+/// artwork and selection remain the visual anchors.
+struct CatalogCanvasBackground: View {
+    @Environment(\.colorScheme) private var colorScheme
+
+    var body: some View {
+        ZStack(alignment: .top) {
+            Color(nsColor: .underPageBackgroundColor)
+            LinearGradient(
+                colors: [
+                    Color.accentColor.opacity(colorScheme == .dark ? 0.16 : 0.07),
+                    .clear,
+                ],
+                startPoint: .topLeading,
+                endPoint: .bottomTrailing
+            )
+            .frame(height: 270)
+        }
+        .ignoresSafeArea()
+    }
+}
+
+/// A compact, unambiguous primary action for artwork-led detail headers.
+struct CircularPlayButton: View {
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            Image(systemName: "play.fill")
+                .font(.system(size: 17, weight: .bold))
+                .frame(width: 38, height: 38)
+        }
+        .buttonStyle(.borderedProminent)
+        .buttonBorderShape(.circle)
+        .controlSize(.large)
+        .tint(.accentColor)
+        .help("Play")
+        .accessibilityLabel("Play")
+    }
+}
+
+enum MediaGridLayout {
+    static var columns: [GridItem] {
+        [GridItem(.adaptive(minimum: 194, maximum: 224), spacing: 18)]
+    }
+}
+
+/// Shared artwork-led identity for albums, artists, and playlists.
+struct MediaDetailHeader: View {
+    let item: CatalogItem
+    let description: String
+    let detail: String
+    let itemCount: String?
+    let canPlay: Bool
+    let play: () -> Void
+
+    init(
+        item: CatalogItem,
+        description: String = "",
+        detail: String = "",
+        itemCount: String? = nil,
+        canPlay: Bool,
+        play: @escaping () -> Void
+    ) {
+        self.item = item
+        self.description = description
+        self.detail = detail
+        self.itemCount = itemCount
+        self.canPlay = canPlay
+        self.play = play
+    }
+
+    var body: some View {
+        HStack(alignment: .bottom, spacing: 26) {
+            RemoteArtwork(
+                url: item.artworkURL,
+                kind: item.kind,
+                cornerRadius: item.kind == .artist ? 92 : 10,
+                pointSize: 184
+            )
+            .frame(width: 184, height: 184)
+            .shadow(color: .black.opacity(0.26), radius: 16, y: 8)
+
+            VStack(alignment: .leading, spacing: 8) {
+                Text(item.kind.rawValue.uppercased())
+                    .font(.caption.weight(.bold))
+                    .foregroundStyle(.secondary)
+                    .tracking(0.8)
+
+                Text(item.title)
+                    .font(.largeTitle.bold())
+                    .lineLimit(2)
+                    .minimumScaleFactor(0.8)
+
+                if !description.isEmpty {
+                    Text(description)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(3)
+                }
+
+                if !supportingText.isEmpty {
+                    Text(supportingText)
+                        .foregroundStyle(.secondary)
+                }
+
+                CircularPlayButton(action: play)
+                    .disabled(!canPlay)
+                    .accessibilityHint("Starts this \(item.kind.rawValue.lowercased())")
+            }
+            .padding(.bottom, 2)
+
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, 34)
+        .padding(.top, 28)
+        .padding(.bottom, 22)
+    }
+
+    private var supportingText: String {
+        [item.subtitle, detail, itemCount ?? ""]
+            .filter { !$0.isEmpty && $0.caseInsensitiveCompare(item.kind.rawValue) != .orderedSame }
+            .joined(separator: " · ")
+    }
+}
+
 /// A native macOS table shared by playlists, search results, and track libraries.
 /// Single-click selects; command-click extends a simple multi-selection; double-click
 /// or Return plays the primary row, matching desktop table behavior.
@@ -165,6 +291,8 @@ struct TrackTable: View {
                 selection = TrackTableDisplayCache.prunedSelection(selection, from: tracks.tracks)
             }
         }
+        .scrollContentBackground(.hidden)
+        .background(Color.clear)
     }
 
     private var displayInputs: TrackTableDisplayInputs {

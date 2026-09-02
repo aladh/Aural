@@ -95,8 +95,14 @@ func runPlaybackProjectionContractChecks(_ check: CheckRunner) {
     }
 
     check.suite("CurrentTrackRow accessibility contract") {
-        let expectedLabel =
-            ".accessibilityLabel(\"Now playing \\(player.displayedTrackTitle) by \\(player.displayedArtistName)\")"
+        let expectedLabel = ".accessibilityLabel(currentTrackAccessibilityLabel)"
+        let expectedIdentity =
+            "let identity = \"Now playing \\(player.displayedTrackTitle) by \\(player.displayedArtistName)\""
+        let expectedDuration = "return \"\\(identity), \\(formatDuration(player.duration))\""
+        let expectedUpcomingDuration =
+            "let durationText = track.flatMap { $0.duration > 0 ? formatDuration($0.duration) : nil }"
+        let expectedUpcomingLabel =
+            "[displayInfo.title, subtitle, durationText].compactMap { $0 }.joined(separator: \", \")"
         let expectedTitle =
             "var displayedTrackTitle: String { catalogCurrentTrack?.title ?? trackTitle }"
         let expectedArtist =
@@ -105,14 +111,14 @@ func runPlaybackProjectionContractChecks(_ check: CheckRunner) {
         check.check(
             "a line-commented expected label does not satisfy the check",
             !PlaybackStoreProjectionContract.containsUncommented(
-                ".accessibilityLabel(\"Now playing \\(player.trackTitle) by \\(player.artistName)\") // \(expectedLabel)",
+                ".accessibilityLabel(\"fallback\") // \(expectedLabel)",
                 expectedLabel
             )
         )
         check.check(
             "a block-commented expected label does not satisfy the check",
             !PlaybackStoreProjectionContract.containsUncommented(
-                ".accessibilityLabel(\"Now playing \\(player.trackTitle) by \\(player.artistName)\")\n/* \(expectedLabel) */",
+                ".accessibilityLabel(\"fallback\")\n/* \(expectedLabel) */",
                 expectedLabel
             )
         )
@@ -176,8 +182,24 @@ func runPlaybackProjectionContractChecks(_ check: CheckRunner) {
                 encoding: .utf8
             )
             check.check(
-                "production VoiceOver label uses displayedTrackTitle and displayedArtistName",
+                "production VoiceOver label uses the duration-aware helper",
                 PlaybackStoreProjectionContract.containsUncommented(panel, expectedLabel)
+            )
+            check.check(
+                "production VoiceOver identity uses displayedTrackTitle and displayedArtistName",
+                PlaybackStoreProjectionContract.containsUncommented(panel, expectedIdentity)
+            )
+            check.check(
+                "production VoiceOver identity includes a valid duration",
+                PlaybackStoreProjectionContract.containsUncommented(panel, expectedDuration)
+            )
+            check.check(
+                "upcoming queue VoiceOver computes a valid duration",
+                PlaybackStoreProjectionContract.containsUncommented(panel, expectedUpcomingDuration)
+            )
+            check.check(
+                "upcoming queue VoiceOver includes its displayed duration",
+                PlaybackStoreProjectionContract.containsUncommented(panel, expectedUpcomingLabel)
             )
             check.check(
                 "displayedTrackTitle prefers catalog then engine fallback",

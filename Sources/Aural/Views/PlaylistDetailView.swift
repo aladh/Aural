@@ -16,11 +16,14 @@ struct PlaylistDetailView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            hero
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.horizontal, 30)
-                .padding(.top, 16)
-                .padding(.bottom, 24)
+            MediaDetailHeader(
+                item: item,
+                description: store.description,
+                itemCount: showsSongCount ? songCountText : nil,
+                canPlay: playback.canStartPlayback
+            ) {
+                playback.playPlaylist(item)
+            }
 
             Divider()
 
@@ -37,54 +40,6 @@ struct PlaylistDetailView: View {
             await store.load(item)
         }
         .navigationTitle(item.title)
-    }
-
-    private var hero: some View {
-        HStack(alignment: .bottom, spacing: 24) {
-            RemoteArtwork(url: item.artworkURL, kind: .playlist, cornerRadius: 16, pointSize: 184)
-                .frame(width: 184, height: 184)
-                .shadow(color: .black.opacity(0.22), radius: 16, y: 8)
-
-            VStack(alignment: .leading, spacing: 9) {
-                Text("PLAYLIST")
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(.secondary)
-
-                Text(item.title)
-                    .font(.largeTitle.bold())
-                    .lineLimit(2)
-
-                if !store.description.isEmpty {
-                    Text(store.description)
-                        .foregroundStyle(.secondary)
-                        .lineLimit(3)
-                }
-
-                HStack(spacing: 6) {
-                    Text(item.subtitle)
-                        .fontWeight(.medium)
-
-                    if showsSongCount {
-                        Text("·")
-                            .foregroundStyle(.tertiary)
-                        Text(songCountText)
-                            .foregroundStyle(.secondary)
-                    }
-                }
-                .font(.subheadline)
-
-                Button {
-                    playback.playPlaylist(item)
-                } label: {
-                    Label("Play", systemImage: "play.fill")
-                }
-                .buttonStyle(.borderedProminent)
-                .tint(.accentColor)
-                .controlSize(.large)
-                .disabled(!playback.canStartPlayback)
-            }
-            .padding(.bottom, 3)
-        }
     }
 
     @ViewBuilder
