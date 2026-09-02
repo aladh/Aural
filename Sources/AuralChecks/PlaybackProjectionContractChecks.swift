@@ -212,49 +212,4 @@ func runPlaybackProjectionContractChecks(_ check: CheckRunner) {
         }
     }
 
-    check.suite("Dark-only app appearance contract") {
-        check.noThrow("shipping UI has one fixed dark appearance") {
-            let sourceRoot = URL(fileURLWithPath: #filePath)
-                .deletingLastPathComponent()
-                .deletingLastPathComponent()
-                .appending(path: "Aural")
-            let appSource = try String(
-                contentsOf: sourceRoot.appending(path: "AuralApp.swift"),
-                encoding: .utf8
-            )
-            let darkAppearance = "NSApplication.shared.appearance = NSAppearance(named: .darkAqua)"
-            check.check(
-                "the application pins native controls and windows to dark Aqua",
-                PlaybackStoreProjectionContract.containsUncommented(appSource, darkAppearance)
-            )
-
-            let forbiddenModeTokens = [
-                "ColorScheme",
-                "colorScheme",
-                "preferredColorScheme",
-                "effectiveAppearance",
-                "bestMatch(from:",
-                "NSAppearance(named: .aqua)",
-            ]
-            let enumerator = FileManager.default.enumerator(
-                at: sourceRoot,
-                includingPropertiesForKeys: nil
-            )
-            var modeBearingFiles: [String] = []
-            while let file = enumerator?.nextObject() as? URL {
-                guard file.pathExtension == "swift" else { continue }
-                let source = try String(contentsOf: file, encoding: .utf8)
-                if forbiddenModeTokens.contains(where: {
-                    PlaybackStoreProjectionContract.containsUncommented(source, $0)
-                }) {
-                    modeBearingFiles.append(file.path.replacingOccurrences(of: sourceRoot.path + "/", with: ""))
-                }
-            }
-            check.equal(
-                "shipping Swift contains no appearance-mode branching",
-                modeBearingFiles.sorted(),
-                []
-            )
-        }
-    }
 }

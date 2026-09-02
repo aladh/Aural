@@ -197,6 +197,23 @@ if rg -n 'nonisolated\(unsafe\)' "$project_root/Sources" --glob '*.swift'; then
     exit 1
 fi
 
+# Aural deliberately has one appearance rather than a theme preference. Pin the native dark
+# appearance at the application boundary and reject concrete APIs or comparisons that would
+# reintroduce runtime appearance selection. The patterns are code-shaped so prose comments about
+# the product contract do not fail the gate.
+aural_app_source="$project_root/Sources/Aural/AuralApp.swift"
+if ! rg -q --fixed-strings \
+    'NSApplication.shared.appearance = NSAppearance(named: .darkAqua)' \
+    "$aural_app_source"; then
+    print -u2 "AuralApp must pin the application to native dark Aqua"
+    exit 1
+fi
+if rg -n '@Environment\(\.colorScheme\)|\.preferredColorScheme\(|\.effectiveAppearance\b|colorScheme[[:space:]]*(==|!=)|NSAppearance\(named:[[:space:]]*\.aqua\)' \
+    "$project_root/Sources/Aural" --glob '*.swift'; then
+    print -u2 "Aural has one fixed dark appearance; appearance-mode logic is not allowed"
+    exit 1
+fi
+
 # Authenticated development must never silently fall back to a self-signed identity. On current
 # macOS that gives the Keychain item a per-build CDHash partition and recreates the password prompt
 # after every rebuild. Packaging may remain self-signed for deterministic build verification, but
