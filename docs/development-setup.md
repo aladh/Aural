@@ -33,22 +33,57 @@ The first run downloads the exact Rust toolchain and locked Cargo dependencies, 
 contained Rust/librespot backend, generates `Backend/lib/libaural_playback.a`, builds the Swift
 products, and runs all deterministic checks. No Spotify sign-in or playback occurs.
 
-Build, package, sign, and launch the development app:
+For authenticated development, sign in to Xcode with an Apple Account and select its free Personal
+Team; paid Apple Developer Program membership is not required for local personal use. Create an
+Apple Development certificate in Xcode's Accounts settings. If that control is unavailable for a
+Personal Team, create a disposable macOS App project, select the Personal Team under **Signing &
+Capabilities**, and let Xcode manage signing once; the disposable project can then be discarded.
+`build_and_run.sh` automatically uses the identity when exactly one is available. If the machine has
+multiple Apple Development identities, select one explicitly using the exact name printed by
+`security find-identity -p codesigning -v`:
+
+```bash
+export AURAL_DEVELOPMENT_SIGNING_IDENTITY='Apple Development: Your Name (TEAMID)'
+```
+
+Then build, package, sign, and launch the development app:
 
 ```bash
 ./script/build_and_run.sh
 ```
 
-The packaging script creates an isolated self-signed development identity and keychain under
-`.build/aural-signing/`. It does not install a permanent identity in the login keychain and should
-not require repeated login-keychain approvals. The generated identity is local-only and unsuitable
-for distribution.
+The launch script requires an Apple-issued signing identity with a Team ID. The stable Team ID is
+the Keychain authorization boundary that survives changes to the app's per-build CDHash. A
+self-signed certificate cannot provide that invariant on current macOS: Keychain records the
+changing CDHash in the password item's partition ACL and prompts again after later rebuilds.
 
-Sandboxed development tools may require one permission grant for `./Scripts/package-app.sh` (or the
-calling `./script/build_and_run.sh`) to invoke macOS `security` and `codesign` when that isolated
-keychain is first created. Grant the packaging script as a unit instead of approving individual
-`security` commands. Later builds reuse the project-local keychain until `.build/` is deleted; no
-login-keychain password is part of the workflow.
+`Scripts/package-app.sh` can still create a build-only self-signed bundle using an isolated identity
+and keychain under `.build/aural-signing/`. That path exists for deterministic packaging checks; it
+is local-only, unsuitable for distribution, and must not be used to sign in. `build_and_run.sh`
+fails before terminating or launching Aural when no Apple-issued team identity is available.
+
+Sandboxed development tools may require permission for the packaging or launch script to invoke
+macOS `security` and `codesign`. Grant the script as a unit instead of approving individual
+commands. Signing with an Apple Development identity can require the identity's private-key access
+once; it must not require Aural to reauthorize its stored Spotify credential after every rebuild.
+
+If this checkout previously signed in using the self-signed build, the first team-signed launch may
+ask once for permission to read the existing item. Enter the login-keychain password and choose
+**Always Allow**. Later builds signed by the same Apple team must reuse that authorization without
+prompting.
+
+If the legacy item's authorization cannot be repaired that way, delete only that item as a fallback
+(or sign out using the old build if it is still usable):
+
+```bash
+security delete-generic-password \
+  -s dev.aural.app.keymaster \
+  -a keymaster_tokens
+```
+
+Deleting the item removes the stored Spotify grant and requires browser authorization again. Do not
+repeat it as a workaround for later builds; a later prompt means the app is not using the same Apple
+team identity and should be diagnosed with `codesign -dvvv Aural.app`.
 
 On first launch, choose Connect and complete Spotify authorization in the browser. The grant is
 stored in the macOS Keychain; leftover plaintext from older development builds is migrated once

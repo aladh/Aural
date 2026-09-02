@@ -25,8 +25,28 @@ case "$mode" in
         ;;
 esac
 
-pkill -x "$app_name" >/dev/null 2>&1 || true
+if [[ -z "${AURAL_SIGNING_IDENTITY:-}" && -z "${AURAL_DEVELOPMENT_SIGNING_IDENTITY:-}" ]]; then
+    apple_development_identities="$(
+        security find-identity -p codesigning -v 2>/dev/null \
+            | sed -nE 's/^[[:space:]]*[0-9]+\) [[:xdigit:]]+ "(Apple Development:[^"]+)"$/\1/p'
+    )"
+    identity_count="$(print -r -- "$apple_development_identities" | sed '/^$/d' | wc -l | tr -d ' ')"
+    if [[ "$identity_count" == "1" ]]; then
+        export AURAL_DEVELOPMENT_SIGNING_IDENTITY="$(print -r -- "$apple_development_identities" | head -n 1)"
+    elif [[ "$identity_count" == "0" ]]; then
+        print -u2 "Authenticated Aural development requires an Apple Development signing identity."
+        print -u2 "Create one in Xcode Accounts, or package without launching via ./Scripts/package-app.sh."
+        exit 1
+    else
+        print -u2 "Multiple Apple Development identities are available."
+        print -u2 "Set AURAL_DEVELOPMENT_SIGNING_IDENTITY to the exact identity to use."
+        exit 1
+    fi
+fi
+
 "$root_dir/Scripts/package-app.sh" "$package_mode"
+"$root_dir/Scripts/validate-app.sh" --keychain-stable "$app_bundle"
+pkill -x "$app_name" >/dev/null 2>&1 || true
 
 open_app() {
     /usr/bin/open -n "$app_bundle"

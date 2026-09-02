@@ -46,8 +46,17 @@ Useful modes:
 ./script/build_and_run.sh --telemetry
 ```
 
-The generated local signing identity lives under the ignored `.build/aural-signing/` directory. It
-is not system-trusted, is not a distribution identity, and never needs to be committed.
+Authenticated launches require an Apple Development identity. A free Xcode Personal Team is
+sufficient for local personal use; paid Apple Developer Program membership is not required. When
+exactly one identity is installed, `build_and_run.sh` selects it automatically; otherwise set
+`AURAL_DEVELOPMENT_SIGNING_IDENTITY` to its exact `security find-identity -p codesigning -v` name.
+The launch path validates both an Apple code-signing anchor and a non-empty Team ID before opening
+Aural, because a self-signed identity falls back to a per-build CDHash Keychain partition and causes
+recurring credential prompts.
+
+The generated identity under the ignored `.build/aural-signing/` directory remains available only
+for build/package verification. It is not system-trusted, is not a distribution identity, must not
+be used to sign in, and never belongs in Git.
 
 ## Build and checks
 

@@ -197,6 +197,22 @@ if rg -n 'nonisolated\(unsafe\)' "$project_root/Sources" --glob '*.swift'; then
     exit 1
 fi
 
+# Authenticated development must never silently fall back to a self-signed identity. On current
+# macOS that gives the Keychain item a per-build CDHash partition and recreates the password prompt
+# after every rebuild. Packaging may remain self-signed for deterministic build verification, but
+# the launch entry point must require the Apple anchor + Team ID validator.
+if ! rg -q --fixed-strings 'AURAL_DEVELOPMENT_SIGNING_IDENTITY' \
+    "$project_root/script/build_and_run.sh" \
+    || ! rg -q --fixed-strings 'validate-app.sh" --keychain-stable' \
+        "$project_root/script/build_and_run.sh" \
+    || ! rg -q --fixed-strings 'AURAL_DEVELOPMENT_SIGNING_IDENTITY' \
+        "$project_root/Scripts/package-app.sh" \
+    || ! rg -q --fixed-strings 'TeamIdentifier=' "$project_root/Scripts/validate-app.sh" \
+    || ! rg -q --fixed-strings 'anchor apple generic' "$project_root/Scripts/validate-app.sh"; then
+    print -u2 "Authenticated development signing policy is incomplete"
+    exit 1
+fi
+
 # Passing one PlaybackStore field as inout while the callee touches another field on the same
 # store traps at runtime under Swift's exclusivity enforcement. Keep engine revision gates keyed
 # by source instead of accepting a stored revision through inout.
