@@ -34,27 +34,21 @@ nonisolated struct RustPlaybackState: Decodable, Sendable {
 }
 
 nonisolated struct RustQueueState: Decodable, Sendable {
+    /// Current-track identity from the engine. Catalog enrichment supplies names.
+    /// Optional label fields remain decodable for older snapshots and check fixtures.
     struct Item: Decodable, Sendable {
         let uri: String
-        let name: String
-        let artist: String
-        let imageURL: String
-        let durationMS: UInt32
-
-        enum CodingKeys: String, CodingKey {
-            case uri, name, artist
-            case imageURL = "image_url"
-            case durationMS = "duration_ms"
-        }
-    }
-
-    struct QueueItem: Decodable, Sendable {
-        let uri: String
-        let provider: String
+        var name: String?
+        var artist: String?
+        var imageURL: String?
+        var durationMS: UInt32?
+        var provider: String?
         var uid: String?
 
         enum CodingKeys: String, CodingKey {
-            case uri, provider, uid
+            case uri, name, artist, provider, uid
+            case imageURL = "image_url"
+            case durationMS = "duration_ms"
         }
     }
 
@@ -94,8 +88,6 @@ nonisolated struct RustQueueState: Decodable, Sendable {
     }
 
     let track: Item?
-    let nextTracks: [QueueItem]?
-    let prevTracks: [QueueItem]?
     var protocolNextTracks: [ProtocolTrack]?
     var protocolPrevTracks: [ProtocolTrack]?
     var queueRevision: String?
@@ -106,8 +98,6 @@ nonisolated struct RustQueueState: Decodable, Sendable {
 
     enum CodingKeys: String, CodingKey {
         case track
-        case nextTracks = "next_tracks"
-        case prevTracks = "prev_tracks"
         case protocolNextTracks = "protocol_next_tracks"
         case protocolPrevTracks = "protocol_prev_tracks"
         case queueRevision = "queue_revision"
@@ -115,6 +105,12 @@ nonisolated struct RustQueueState: Decodable, Sendable {
         case disallowRemovingFromNextTracks = "disallow_removing_from_next_tracks"
         case revision
         case sessionGeneration = "session_generation"
+    }
+
+    func upcomingEntries() -> [QueueEntry] {
+        QueueProtocolProjection.upcomingEntries(
+            from: (protocolNextTracks ?? []).map { $0.domainTrack() }
+        )
     }
 }
 

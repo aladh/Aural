@@ -327,24 +327,22 @@ func runPlaybackPanelChecks(_ check: CheckRunner) {
     }
 
     check.suite("Queue and device decoding") {
-        // The backend's current-track entries carry full metadata; queue rows carry
-        // only a uri and what fed it.
+        // Engine queue snapshots carry current-track identity and unfiltered protocol
+        // rows. Swift projects the upcoming rail and catalog supplies labels.
         let queueJSON = """
-            {"track":{"uri":"spotify:track:now","provider":"context","name":"Now","artist":"A",
-                      "image_url":"https://example/now.jpg","duration_ms":200000},
-             "next_tracks":[
-              {"uri":"spotify:track:next1","provider":"queue"},
-              {"uri":"spotify:delimiter","provider":"autoplay"}]}
+            {"track":{"uri":"spotify:track:now","provider":"context","uid":"occ-now"},
+             "protocol_next_tracks":[
+              {"uri":"spotify:track:next1","provider":"queue","uid":"q0"},
+              {"uri":"spotify:delimiter","provider":"delimiter","uid":""},
+              {"uri":"spotify:track:autoplay","provider":"autoplay","uid":""}]}
             """
         do {
             let decoded = try JSONDecoder().decode(RustQueueState.self, from: Data(queueJSON.utf8))
-            check.equal("current track keeps metadata", decoded.track?.uri, "spotify:track:now")
-            check.equal("next tracks decode with providers", decoded.nextTracks?.first?.provider, "queue")
-            check.equal(
-                "delimiter row survives transport (filtered server-side)",
-                decoded.nextTracks?.count,
-                2
-            )
+            check.equal("current track keeps identity", decoded.track?.uri, "spotify:track:now")
+            let upcoming = decoded.upcomingEntries()
+            check.equal("upcoming projection keeps providers", upcoming.first?.provider, "queue")
+            check.equal("delimiter is hidden from the upcoming rail", upcoming.count, 1)
+            check.equal("protocol transport keeps delimiter and autoplay", decoded.protocolNextTracks?.count, 3)
         } catch {
             check.check("queue state decodes: \(error)", false)
         }

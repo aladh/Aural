@@ -56,8 +56,7 @@ func runEnginePayloadContractChecks(_ check: CheckRunner) {
             check.equal("minimal queue revision", state.revision, 1)
             check.equal("minimal queue session generation", state.sessionGeneration, 1)
             check.nil_("minimal queue has no current track", state.track)
-            check.equal("minimal next tracks", state.nextTracks?.count, 0)
-            check.equal("minimal prev tracks", state.prevTracks?.count, 0)
+            check.equal("minimal upcoming projection", state.upcomingEntries().count, 0)
             check.equal("minimal protocol next", state.protocolNextTracks?.count, 0)
             check.equal("minimal protocol prev", state.protocolPrevTracks?.count, 0)
             check.equal("minimal queue revision string", state.queueRevision, "")
@@ -73,29 +72,15 @@ func runEnginePayloadContractChecks(_ check: CheckRunner) {
             check.equal("full queue revision", state.revision, 13)
             check.equal("full queue session generation", state.sessionGeneration, 4)
             check.equal("current track URI is context identity", state.track?.uri, "spotify:track:fixtureNow")
-            check.equal("current track name", state.track?.name, "Fixture Track")
-            check.equal("current track artist", state.track?.artist, "Fixture Artist")
-            check.equal(
-                "current track artwork",
-                state.track?.imageURL,
-                "https://example.test/fixture-cover.jpg"
-            )
-            check.equal("current track duration", state.track?.durationMS, 180_000)
+            check.equal("current track provider", state.track?.provider, "context")
+            check.equal("current track uid", state.track?.uid, "occ-now")
+            check.nil_("current track does not carry catalog labels", state.track?.name)
+            check.nil_("current track does not carry catalog artist", state.track?.artist)
 
-            let next = state.nextTracks ?? []
+            let next = state.upcomingEntries()
             check.equal("next track count", next.count, 3)
-            let first = QueueEntry(
-                uri: next[0].uri,
-                provider: next[0].provider,
-                occurrence: 0,
-                uid: next[0].uid ?? ""
-            )
-            let duplicate = QueueEntry(
-                uri: next[1].uri,
-                provider: next[1].provider,
-                occurrence: 1,
-                uid: next[1].uid ?? ""
-            )
+            let first = next[0]
+            let duplicate = next[1]
             check.equal("duplicate URI is preserved", first.uri, "spotify:track:fixtureDup")
             check.equal("duplicate URI still matches", duplicate.uri, first.uri)
             check.equal("first occurrence uid", first.uid, "occ-a")
@@ -104,14 +89,14 @@ func runEnginePayloadContractChecks(_ check: CheckRunner) {
             check.equal("second occurrence is typed", duplicate.occurrence, 1)
             check.check("duplicate occurrences stay distinct rows", first.id != duplicate.id)
             check.equal("unknown provider is preserved", next[2].provider, "unavailable")
-            check.equal("prev provider is context", state.prevTracks?.first?.provider, "context")
-            check.equal("prev uid", state.prevTracks?.first?.uid, "occ-prev")
+            check.equal("prev protocol provider is context", state.protocolPrevTracks?.first?.provider, "context")
+            check.equal("prev uid", state.protocolPrevTracks?.first?.uid, "occ-prev")
             check.equal("queue revision string", state.queueRevision, "fixture-rev-1")
             check.equal("disallow set queue", state.disallowSetQueue, true)
             check.equal("disallow removing from next", state.disallowRemovingFromNextTracks, true)
 
             let protocolNext = (state.protocolNextTracks ?? []).map { $0.domainTrack() }
-            check.equal("protocol next count", protocolNext.count, 2)
+            check.equal("protocol next count", protocolNext.count, 5)
             check.equal("protocol next uid", protocolNext[0].uid, "occ-a")
             check.equal("protocol next provider", protocolNext[0].provider, "queue")
             check.equal("protocol next metadata", protocolNext[0].metadata["is_queued"], "true")
@@ -122,11 +107,12 @@ func runEnginePayloadContractChecks(_ check: CheckRunner) {
             )
             check.equal("protocol next album", protocolNext[0].albumURI, "spotify:album:fixtureAlbum")
             check.equal("protocol next artist", protocolNext[0].artistURI, "spotify:artist:fixtureArtist")
-            check.equal("omitted protocol uid is empty", protocolNext[1].uid, "")
-            check.equal("omitted protocol provider", protocolNext[1].provider, "autoplay")
-            check.equal("omitted protocol metadata", protocolNext[1].metadata, [:])
-            check.equal("omitted protocol restrictions", protocolNext[1].restrictions, [:])
-            check.equal("omitted protocol album", protocolNext[1].albumURI, "")
+            check.equal("delimiter survives protocol transport", protocolNext[3].uri, "spotify:delimiter")
+            check.equal("omitted protocol uid is empty", protocolNext[4].uid, "")
+            check.equal("omitted protocol provider", protocolNext[4].provider, "autoplay")
+            check.equal("omitted protocol metadata", protocolNext[4].metadata, [:])
+            check.equal("omitted protocol restrictions", protocolNext[4].restrictions, [:])
+            check.equal("omitted protocol album", protocolNext[4].albumURI, "")
 
             let protocolPrev = (state.protocolPrevTracks ?? []).map { $0.domainTrack() }
             check.equal("protocol prev uid", protocolPrev.first?.uid, "occ-prev")

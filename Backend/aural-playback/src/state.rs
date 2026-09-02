@@ -393,14 +393,10 @@ pub(crate) static GAPLESS_SETTING: AtomicBool = AtomicBool::new(true);
 // Initial volume (0-65535), default 50%
 pub(crate) static INITIAL_VOLUME_SETTING: AtomicU16 = AtomicU16::new(65535 / 2);
 
+/// Current-track identity on a queue snapshot. Presentation labels are Swift-owned.
 #[derive(Serialize)]
 pub(crate) struct QueueItem {
     pub(crate) uri: String,
-    pub(crate) name: String,
-    pub(crate) artist: String,
-    pub(crate) image_url: String,
-    pub(crate) duration_ms: u32,
-    pub(crate) album_name: String,
     /// Track provider: "context", "queue", "autoplay", or "unavailable"
     pub(crate) provider: String,
     /// Connect occurrence uid when the cluster supplied one. Empty when unknown.
@@ -437,8 +433,6 @@ pub(crate) struct QueueState {
     pub(crate) revision: u64,
     pub(crate) session_generation: u64,
     pub(crate) track: Option<QueueItem>,
-    pub(crate) next_tracks: Vec<QueueItem>,
-    pub(crate) prev_tracks: Vec<QueueItem>,
     pub(crate) protocol_next_tracks: Vec<ProtocolQueueTrack>,
     pub(crate) protocol_prev_tracks: Vec<ProtocolQueueTrack>,
     pub(crate) queue_revision: String,

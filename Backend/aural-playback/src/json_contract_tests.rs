@@ -52,10 +52,6 @@ fn write_canonical_fixture(name: &str, payload: &impl Serialize) {
     fs::write(&path, pretty_canonical(&actual)).expect("write canonical fixture");
 }
 
-fn converted_queue_item(uri: &str, provider: &str, uid: &str) -> QueueItem {
-    to_queue_item(&provided_track(uri, provider, uid))
-}
-
 fn provided_track(uri: &str, provider: &str, uid: &str) -> ProvidedTrack {
     ProvidedTrack {
         uri: uri.to_string(),
@@ -97,13 +93,15 @@ fn playback_full() -> PlaybackStateUpdate {
     }
 }
 
+fn protocol_identity(uri: &str, provider: &str, uid: &str) -> ProtocolQueueTrack {
+    to_protocol_track(&provided_track(uri, provider, uid))
+}
+
 fn queue_minimal() -> QueueState {
     QueueState {
         revision: 1,
         session_generation: 1,
         track: None,
-        next_tracks: Vec::new(),
-        prev_tracks: Vec::new(),
         protocol_next_tracks: Vec::new(),
         protocol_prev_tracks: Vec::new(),
         queue_revision: String::new(),
@@ -154,25 +152,16 @@ fn queue_full() -> QueueState {
         session_generation: 4,
         track: Some(QueueItem {
             uri: "spotify:track:fixtureNow".to_string(),
-            name: "Fixture Track".to_string(),
-            artist: "Fixture Artist".to_string(),
-            image_url: "https://example.test/fixture-cover.jpg".to_string(),
-            duration_ms: 180_000,
-            album_name: "Fixture Album".to_string(),
             provider: "context".to_string(),
             uid: "occ-now".to_string(),
         }),
-        next_tracks: vec![
-            converted_queue_item("spotify:track:fixtureDup", "queue", "occ-a"),
-            converted_queue_item("spotify:track:fixtureDup", "queue", "occ-b"),
-            converted_queue_item("spotify:track:fixtureUnavailable", "unavailable", "occ-u"),
+        protocol_next_tracks: vec![
+            protocol_next_full(),
+            protocol_identity("spotify:track:fixtureDup", "queue", "occ-b"),
+            protocol_identity("spotify:track:fixtureUnavailable", "unavailable", "occ-u"),
+            protocol_identity("spotify:delimiter", "delimiter", ""),
+            protocol_next_omitted(),
         ],
-        prev_tracks: vec![converted_queue_item(
-            "spotify:track:fixturePrev",
-            "context",
-            "occ-prev",
-        )],
-        protocol_next_tracks: vec![protocol_next_full(), protocol_next_omitted()],
         protocol_prev_tracks: vec![protocol_prev_full()],
         queue_revision: "fixture-rev-1".to_string(),
         disallow_set_queue: true,

@@ -337,10 +337,10 @@ private func connectQueueState(revision: UInt64, sessionGeneration: UInt64) -> R
             name: "Now",
             artist: "Artist",
             imageURL: "",
-            durationMS: 1
+            durationMS: 1,
+            provider: "context",
+            uid: "occ-now"
         ),
-        nextTracks: next.map { RustQueueState.QueueItem(uri: $0.0, provider: "queue", uid: $0.1) },
-        prevTracks: [],
         protocolNextTracks: next.map {
             RustQueueState.ProtocolTrack(
                 uri: $0.0,

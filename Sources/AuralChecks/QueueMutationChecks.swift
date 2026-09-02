@@ -58,6 +58,39 @@ func runQueueMutationChecks(_ check: CheckRunner) {
             QueueProtocolProjection.upcoming(from: protocolNext).map(\.uid),
             ["q0", "q1", "q2"]
         )
+        check.equal(
+            "upcoming entries preserve occurrence uids",
+            QueueProtocolProjection.upcomingEntries(from: protocolNext).map(\.uid),
+            ["q0", "q1", "q2"]
+        )
+        let mixed = [
+            protocolTrack("spotify:episode:ignored", provider: "context"),
+            protocolTrack("spotify:track:first", uid: "q0"),
+            protocolTrack("spotify:delimiter", provider: "delimiter"),
+            protocolTrack("spotify:track:autoplay", provider: "autoplay"),
+        ]
+        check.equal(
+            "upcoming projection skips episodes and autoplay after the delimiter",
+            QueueProtocolProjection.upcoming(from: mixed).map(\.uri),
+            ["spotify:track:first"]
+        )
+        check.nil_(
+            "non-track current identity is not presentable",
+            QueueProtocolProjection.currentPlayableIdentity(
+                uri: "spotify:episode:ignored",
+                provider: "context",
+                uid: ""
+            )
+        )
+        check.equal(
+            "playable current identity keeps uid",
+            QueueProtocolProjection.currentPlayableIdentity(
+                uri: "spotify:track:now",
+                provider: "context",
+                uid: "occ-now"
+            )?.uid,
+            "occ-now"
+        )
         check.check(
             "visible Connect URIs match the upcoming projection",
             QueueProtocolProjection.matchesVisibleUpcoming(

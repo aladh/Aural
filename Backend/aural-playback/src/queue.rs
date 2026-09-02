@@ -110,18 +110,13 @@ pub(crate) fn send_local_playback_state(is_playing: bool, position_ms: u32) {
     send_json(callback, &update);
 }
 
-/// Converts a Connect-state track into a queue item.
+/// Converts a Connect-state track into current-track identity for a queue snapshot.
 ///
-/// Metadata is left empty on purpose: Swift resolves it from the AppStore by URI, so
-/// carrying names and artwork across the FFI boundary would just duplicate it.
+/// Labels stay empty across this boundary: Swift projects presentation rows from
+/// protocol tracks and resolves names from the catalog.
 pub(crate) fn to_queue_item(track: &ProvidedTrack) -> QueueItem {
     QueueItem {
         uri: track.uri.clone(),
-        name: String::new(),
-        artist: String::new(),
-        image_url: String::new(),
-        duration_ms: 0,
-        album_name: String::new(),
         provider: track.provider.clone(),
         uid: track.uid.clone(),
     }
@@ -277,41 +272,11 @@ pub(crate) fn queue_replacement_disallowed(player_state: &PlayerState) -> (bool,
     )
 }
 
-/// Collects the playable tracks of one queue side, stopping at the first delimiter.
+/// Publishes the Connect queue as unfiltered protocol rows plus slim current-track identity.
 ///
-/// `spotify:delimiter` marks the boundary of what the user actually queued: after it in
-/// next_tracks comes Spotify's autoplay continuation, and in prev_tracks it marks the
-/// start of the context. Showing either as part of the queue would present tracks the
-/// user never chose.
-pub(crate) fn collect_queue_items(tracks: &[ProvidedTrack], side: &str) -> Vec<QueueItem> {
-    let mut items = Vec::new();
-
-    for (i, track) in tracks.iter().enumerate() {
-        if i < 3 || !track.uri.starts_with("spotify:track:") {
-            debug!(
-                "{} track[{}] uri='{}' provider='{}'",
-                side, i, track.uri, track.provider
-            );
-        }
-
-        if track.uri == "spotify:delimiter" {
-            debug!(
-                "Stopping {} at delimiter (index {}), hiding {} tracks",
-                side,
-                i,
-                tracks.len() - i - 1
-            );
-            break;
-        }
-
-        if track.uri.starts_with("spotify:track:") {
-            items.push(to_queue_item(track));
-        }
-    }
-
-    items
-}
-
+/// Upcoming presentation (delimiter hiding, playable-track filtering) is Swift-owned
+/// `QueueProtocolProjection`. This function must not drop delimiter or autoplay rows: they
+/// are required for occurrence-safe `set_queue` replacement.
 pub(crate) fn process_and_send_queue(player_state: PlayerState) {
     debug!("process_and_send_queue called");
 
@@ -339,22 +304,18 @@ pub(crate) fn process_and_send_queue(player_state: PlayerState) {
             None
         }
     });
-    let next_tracks = collect_queue_items(&player_state.next_tracks, "next");
-    let prev_tracks = collect_queue_items(&player_state.prev_tracks, "prev");
 
     debug!(
-        "Queue counts: current={}, next={}, prev={}",
+        "Queue protocol counts: current={}, next={}, prev={}",
         if current_track.is_some() { 1 } else { 0 },
-        next_tracks.len(),
-        prev_tracks.len()
+        protocol_next_tracks.len(),
+        protocol_prev_tracks.len()
     );
 
     let state = stamped_snapshot(|stamp| QueueState {
         revision: stamp.revision,
         session_generation: stamp.session_generation,
         track: current_track,
-        next_tracks,
-        prev_tracks,
         protocol_next_tracks,
         protocol_prev_tracks,
         queue_revision,

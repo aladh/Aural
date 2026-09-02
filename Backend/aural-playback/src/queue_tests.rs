@@ -40,26 +40,22 @@ fn queue_conversion_preserves_identity_and_provider_only() {
     assert_eq!(item.uri, "spotify:track:abc");
     assert_eq!(item.provider, "queue");
     assert_eq!(item.uid, "occ-1");
-    assert!(item.name.is_empty());
-    assert!(item.artist.is_empty());
-    assert!(item.image_url.is_empty());
-    assert!(item.album_name.is_empty());
-    assert_eq!(item.duration_ms, 0);
 }
 
 #[test]
-fn queue_conversion_stops_at_delimiter_and_filters_non_tracks() {
+fn protocol_queue_tracks_keep_delimiter_episodes_and_autoplay() {
     let tracks = vec![
         provided_track("spotify:episode:ignored", "context"),
         provided_track("spotify:track:first", "queue"),
         provided_track("spotify:delimiter", "delimiter"),
         provided_track("spotify:track:autoplay-hidden", "autoplay"),
     ];
-
-    let items = collect_queue_items(&tracks, "next");
-    assert_eq!(items.len(), 1);
-    assert_eq!(items[0].uri, "spotify:track:first");
-    assert_eq!(items[0].provider, "queue");
+    let protocol = collect_protocol_tracks(&tracks);
+    assert_eq!(protocol.len(), 4);
+    assert_eq!(protocol[0].uri, "spotify:episode:ignored");
+    assert_eq!(protocol[1].uri, "spotify:track:first");
+    assert_eq!(protocol[2].uri, "spotify:delimiter");
+    assert_eq!(protocol[3].provider, "autoplay");
 }
 
 #[test]
@@ -138,8 +134,6 @@ fn protocol_queue_tracks_preserve_incoming_provided_track_metadata() {
         revision: 1,
         session_generation: 1,
         track: None,
-        next_tracks: Vec::new(),
-        prev_tracks: Vec::new(),
         protocol_next_tracks: next,
         protocol_prev_tracks: vec![prev_protocol],
         queue_revision: "rev-1".to_string(),

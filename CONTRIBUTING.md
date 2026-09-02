@@ -152,10 +152,14 @@ High-level ownership, kept short here so the [ADR index](docs/architecture-decis
 canonical list of accepted decisions:
 
 - Swift owns windows, navigation, presentation, OAuth, catalog access, metadata, shuffle policy,
-  progress interpolation, and native AVFoundation audio output.
-- Rust/librespot owns the streaming session, Spotify Connect, decoding, reconnects, and queue truth.
-  Build, reconnect cleanup+build, and exported cleanup serialize through one async lifecycle mutex
-  so those operations cannot interleave writes to the engine globals.
+  progress interpolation, upcoming-queue projection from Connect protocol rows, and native
+  AVFoundation audio output.
+- Rust/librespot owns the streaming session, Spotify Connect, decoding, reconnects, and
+  unfiltered protocol queue rows. Build, reconnect cleanup+build, and exported cleanup serialize
+  through one async lifecycle mutex so those operations cannot interleave writes to the engine
+  globals. Aural-owned vs protocol-owned module classification is
+  [playback engine ownership](docs/playback-engine-ownership.md) under
+  [ADR 004](docs/ADR-004-swift-owned-playback-logic.md).
 - `AuralDomain` owns atomic playback state, the reducer, queue precedence, and pure policies.
 - `AuralCore` owns the app implementation behind the thin shipping `AuralApp` executable.
 - `PlaybackStore` publishes reducer state, `PlaybackCoordinator` serializes effects, and

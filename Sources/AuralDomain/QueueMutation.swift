@@ -221,7 +221,11 @@ public enum QueueMutationSelection: Sendable {
 }
 
 public enum QueueProtocolProjection: Sendable {
-    /// Matches Rust `collect_queue_items`: stop at `spotify:delimiter`, keep playable tracks.
+    /// App-facing upcoming rows from unfiltered Connect protocol `next` tracks.
+    ///
+    /// Stop at `spotify:delimiter`, keep playable tracks, and ignore episodes or other
+    /// non-track URIs. Protocol rows after the delimiter (autoplay continuation) stay in
+    /// the mutation snapshot and must not appear in the queue rail.
     public static func upcoming(from protocolNext: [QueueProtocolTrack]) -> [QueueProtocolTrack] {
         var items: [QueueProtocolTrack] = []
         for track in protocolNext {
@@ -231,6 +235,23 @@ public enum QueueProtocolProjection: Sendable {
             }
         }
         return items
+    }
+
+    /// Occurrence-indexed presentation rows derived from protocol `next` tracks.
+    public static func upcomingEntries(from protocolNext: [QueueProtocolTrack]) -> [QueueEntry] {
+        upcoming(from: protocolNext).enumerated().map { index, track in
+            QueueEntry(uri: track.uri, provider: track.provider, occurrence: index, uid: track.uid)
+        }
+    }
+
+    /// Current-track identity for queue snapshots. Non-track URIs are not queue-presentable.
+    public static func currentPlayableIdentity(
+        uri: String,
+        provider: String,
+        uid: String
+    ) -> QueueEntry? {
+        guard uri.hasPrefix("spotify:track:") else { return nil }
+        return QueueEntry(uri: uri, provider: provider, occurrence: 0, uid: uid)
     }
 
     public static func matchesVisibleUpcoming(

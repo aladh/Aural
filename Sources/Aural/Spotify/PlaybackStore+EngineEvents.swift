@@ -136,12 +136,9 @@ extension PlaybackStore {
         engineEpoch capturedEngineEpoch: UInt64? = nil
     ) {
         guard !isTearingDown else { return }
-        let nextTracks = state.nextTracks ?? []
-        let entries = nextTracks.enumerated().map { index, item in
-            QueueEntry(uri: item.uri, provider: item.provider, occurrence: index, uid: item.uid ?? "")
-        }
         let protocolNext = (state.protocolNextTracks ?? []).map { $0.domainTrack() }
         let protocolPrev = (state.protocolPrevTracks ?? []).map { $0.domainTrack() }
+        let entries = state.upcomingEntries()
         let epoch = capturedAccountEpoch ?? accountEpoch
         // Stamp from the payload generation. `engineGeneration` is only a fallback when the
         // snapshot omitted `sessionGeneration`; it must not override a newer decoded epoch.
@@ -174,7 +171,13 @@ extension PlaybackStore {
                 }
             })
 
-        guard let track = state.track else { return }
+        guard let track = state.track,
+            QueueProtocolProjection.currentPlayableIdentity(
+                uri: track.uri,
+                provider: track.provider ?? "",
+                uid: track.uid ?? ""
+            ) != nil
+        else { return }
         if !mayAdoptPlaybackIdentity {
             guard
                 queueBootstrapMetadataURI(
@@ -185,18 +188,23 @@ extension PlaybackStore {
         }
 
         let changedTrack = track.uri != trackURI
+        let name = track.name ?? ""
+        let artist = track.artist ?? ""
+        let imageURL = track.imageURL ?? ""
+        let durationMS = track.durationMS ?? 0
 
-        if !track.name.isEmpty || !track.artist.isEmpty || !track.imageURL.isEmpty {
-            // The backend supplied real metadata for this track.
+        if !name.isEmpty || !artist.isEmpty || !imageURL.isEmpty {
+            // A check fixture or older snapshot supplied labels; production Connect
+            // queue rows do not. Catalog enrichment is the live metadata owner.
             let trackDuration =
-                track.durationMS > 0
-                ? TimeInterval(track.durationMS) / 1_000
+                durationMS > 0
+                ? TimeInterval(durationMS) / 1_000
                 : duration
             let current = CurrentTrack(
                 uri: track.uri,
-                title: track.name.isEmpty ? nil : track.name,
-                artist: track.artist.isEmpty ? nil : track.artist,
-                artworkURL: track.imageURL.isEmpty ? nil : URL(string: track.imageURL),
+                title: name.isEmpty ? nil : name,
+                artist: artist.isEmpty ? nil : artist,
+                artworkURL: imageURL.isEmpty ? nil : URL(string: imageURL),
                 duration: trackDuration,
                 metadataSource: .engine
             )
@@ -214,9 +222,9 @@ extension PlaybackStore {
             if accepted {
                 history.applyMetadata(
                     uri: track.uri,
-                    title: track.name,
-                    artist: track.artist,
-                    artworkURL: URL(string: track.imageURL)
+                    title: name,
+                    artist: artist,
+                    artworkURL: imageURL.isEmpty ? nil : URL(string: imageURL)
                 )
             }
         } else if changedTrack || !hasCurrentTrackMetadata {

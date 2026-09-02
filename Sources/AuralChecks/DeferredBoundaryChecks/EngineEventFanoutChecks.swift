@@ -436,8 +436,6 @@ private func queueEvent() -> RustPlaybackEvent {
     .queue(
         RustQueueState(
             track: nil,
-            nextTracks: [],
-            prevTracks: [],
             protocolNextTracks: [],
             protocolPrevTracks: [],
             queueRevision: "",

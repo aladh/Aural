@@ -21,7 +21,9 @@ could still combine values from different account, engine, command, queue, or se
   snapshot state, not a second imperative lifecycle counter. Every suspended account operation
   revalidates its generation and epoch before mutation.
 - `QueueService` owns source precedence, context identity, and the Connect mutation snapshot used
-  for `set_queue`. Metadata enrichment cannot reorder a queue, and stale or provisional results
+  for `set_queue`. Upcoming presentation rows are projected in Swift from unfiltered Connect
+  protocol tracks (`QueueProtocolProjection`); the engine must not send a second presentation
+  copy. Metadata enrichment cannot reorder a queue, and stale or provisional results
   cannot erase a newer authoritative snapshot. Same-context Web API `/me/player/queue` snapshots
   may enrich labels only; complete Connect occurrence order remains authoritative and is not
   replaced by Web entry order. A same-context Web snapshot must not copy its revision or
