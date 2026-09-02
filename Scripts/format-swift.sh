@@ -25,7 +25,7 @@ collect_tracked_swift() {
 
 resolve_formatter() {
     if ! command -v xcrun >/dev/null 2>&1; then
-        print -u2 "xcrun was not found. Select the Swift 6.4 Xcode toolchain so bundled swift-format is available."
+        print -u2 "xcrun was not found. Select the Swift 6.3 Xcode toolchain so bundled swift-format is available."
         exit 1
     fi
 

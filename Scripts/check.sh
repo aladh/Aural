@@ -48,6 +48,7 @@ backend_lib="$project_root/Backend/lib/libaural_playback.a"
 stale_backend_input=""
 if [[ -f "$backend_lib" ]]; then
     stale_backend_input="$(find "$project_root/Backend/aural-playback/src" \
+        "$project_root/rust-toolchain.toml" \
         "$project_root/Backend/aural-playback/Cargo.toml" \
         "$project_root/Backend/aural-playback/Cargo.lock" \
         "$project_root/Backend/aural-playback/build.sh" \
@@ -274,23 +275,27 @@ fi
 checks_job="$(sed -n '/^  checks:/,/^  release:/p' "$ci_workflow")"
 release_job="$(sed -n '/^  release:/,/^  gate:/p' "$ci_workflow")"
 gate_job="$(sed -n '/^  gate:/,$p' "$ci_workflow")"
-playback_cache_key='key: macos-playback-archive-${{ runner.arch }}-${{ env.RUST_TOOLCHAIN_KEY }}-${{ hashFiles('\''Backend/aural-playback/Cargo.toml'\'', '\''Backend/aural-playback/Cargo.lock'\'', '\''Backend/aural-playback/build.sh'\'', '\''Backend/aural-playback/src/**'\'') }}'
+playback_cache_key='key: macos-playback-archive-${{ runner.arch }}-${{ env.RUST_TOOLCHAIN_KEY }}-${{ hashFiles('\''rust-toolchain.toml'\'', '\''Backend/aural-playback/Cargo.toml'\'', '\''Backend/aural-playback/Cargo.lock'\'', '\''Backend/aural-playback/build.sh'\'', '\''Backend/aural-playback/src/**'\'') }}'
 debug_cache_key='key: macos-swiftpm-debug-${{ runner.os }}-${{ runner.arch }}-${{ env.SWIFT_TOOLCHAIN_KEY }}-${{ hashFiles('\''Package.swift'\'', '\''Package.resolved'\'') }}-${{ github.sha }}'
 release_cache_key='key: macos-swiftpm-release-${{ runner.os }}-${{ runner.arch }}-${{ env.SWIFT_TOOLCHAIN_KEY }}-${{ hashFiles('\''Package.swift'\'', '\''Package.resolved'\'') }}-${{ github.sha }}'
 checkout_without_credentials=$'uses: actions/checkout@[0-9a-f]{40} # v[^\n]+\n        with:\n          persist-credentials: false'
 if ! rg -q --fixed-strings 'runs-on: macos-26' <<< "$checks_job" \
     || ! rg -q --fixed-strings 'xcode-select -s /Applications/Xcode_26.6.app' <<< "$checks_job" \
+    || ! rg -q --fixed-strings "grep -q 'Apple Swift version 6.3.3'" <<< "$checks_job" \
     || ! rg -U -q "$checkout_without_credentials" <<< "$checks_job" \
     || ! rg -q --fixed-strings "$playback_cache_key" <<< "$checks_job" \
     || ! rg -q --fixed-strings "$debug_cache_key" <<< "$checks_job" \
     || ! rg -U -q --fixed-strings -- $'- name: Run checks\n        run: ./Scripts/check.sh' <<< "$checks_job" \
     || ! rg -q --fixed-strings 'runs-on: macos-26' <<< "$release_job" \
     || ! rg -q --fixed-strings 'xcode-select -s /Applications/Xcode_26.6.app' <<< "$release_job" \
+    || ! rg -q --fixed-strings "grep -q 'Apple Swift version 6.3.3'" <<< "$release_job" \
     || ! rg -U -q "$checkout_without_credentials" <<< "$release_job" \
     || ! rg -q --fixed-strings "$playback_cache_key" <<< "$release_job" \
     || ! rg -q --fixed-strings "$release_cache_key" <<< "$release_job" \
     || ! rg -U -q --fixed-strings -- $'- name: Compile release Aural with AURAL_DISTRIBUTION\n        run: ./Scripts/compile-release-aural.sh' <<< "$release_job" \
-    || ! rg -q --fixed-strings 'needs: [checks, release]' <<< "$gate_job"; then
+    || ! rg -q --fixed-strings 'if: always()' <<< "$gate_job" \
+    || ! rg -q --fixed-strings 'needs: [checks, release]' <<< "$gate_job" \
+    || ! rg -U -q --fixed-strings -- $'test "$CHECKS_RESULT" = success\n          test "$RELEASE_RESULT" = success' <<< "$gate_job"; then
     print -u2 "CI must cache the playback archive, isolate SwiftPM configurations, and aggregate parallel debug and release lanes"
     exit 1
 fi

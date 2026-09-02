@@ -11,7 +11,7 @@ license and that you have the right to submit it.
 ## Development environment
 
 - Apple-silicon Mac with macOS 15 or newer
-- Xcode 26.6 with Swift 6.4
+- Xcode 26.6 with Swift 6.3.3
 - Rustup; `rust-toolchain.toml` pins Rust, components, and the ARM64 macOS target
 - [ripgrep](https://github.com/BurntSushi/ripgrep) for the verification scripts
 - Spotify Premium only for manual integration testing
@@ -65,7 +65,7 @@ Swift check products:
 - `AuralChecks` exercises pure domain state, policies, parsing, and deterministic playback traces.
 - `AuralBoundaryChecks` exercises concrete codecs, fixtures, and injected coordinator/queue flows.
 
-Swift formatting uses the selected Swift 6.4 toolchain's bundled `swift-format`. Check or rewrite
+Swift formatting uses the selected Swift 6.3 toolchain's bundled `swift-format`. Check or rewrite
 the same Git-tracked `*.swift` set, including `Package.swift`, `Sources/`, and checked-in
 `Scripts/*.swift`:
 
@@ -78,7 +78,7 @@ the same Git-tracked `*.swift` set, including `Package.swift`, `Sources/`, and c
 behavior cannot drift from the documented commands.
 
 GitHub's required `Debug quality gate` aggregates two parallel macos-26 lanes using the explicitly
-selected Xcode 26.6 / Swift 6.4 toolchain, matching the package's tools version. The debug lane runs
+selected Xcode 26.6 / Swift 6.3.3 toolchain, matching the package's tools version. The debug lane runs
 the complete unfiltered `check.sh`; the release lane compiles shipping `Aural` with
 `-DAURAL_DISTRIBUTION` without rerunning Rust tests or Swift checks. The aggregate passes only when
 both lanes pass, so parallelism changes latency rather than coverage.

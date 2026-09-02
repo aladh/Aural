@@ -45,6 +45,7 @@ jobs:
           rustc --version
           xcrun --find swift-format
           xcrun swift-format --version
+          grep -q 'Apple Swift version 6.3.3' "$RUNNER_TEMP/swift-toolchain.txt"
           echo "SWIFT_TOOLCHAIN_KEY=$(shasum -a 256 "$RUNNER_TEMP/swift-toolchain.txt" | awk '{print $1}')" >> "$GITHUB_ENV"
           echo "RUST_TOOLCHAIN_KEY=$(rustc --version | shasum -a 256 | awk '{print $1}')" >> "$GITHUB_ENV"
 
@@ -62,7 +63,7 @@ jobs:
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: Backend/lib/libaural_playback.a
-          key: macos-playback-archive-${{ runner.arch }}-${{ env.RUST_TOOLCHAIN_KEY }}-${{ hashFiles('Backend/aural-playback/Cargo.toml', 'Backend/aural-playback/Cargo.lock', 'Backend/aural-playback/build.sh', 'Backend/aural-playback/src/**') }}
+          key: macos-playback-archive-${{ runner.arch }}-${{ env.RUST_TOOLCHAIN_KEY }}-${{ hashFiles('rust-toolchain.toml', 'Backend/aural-playback/Cargo.toml', 'Backend/aural-playback/Cargo.lock', 'Backend/aural-playback/build.sh', 'Backend/aural-playback/src/**') }}
 
       - name: Refresh cached playback archive timestamp
         run: |
@@ -106,6 +107,7 @@ jobs:
             uname -m
           } | tee "$RUNNER_TEMP/swift-toolchain.txt"
           rustc --version
+          grep -q 'Apple Swift version 6.3.3' "$RUNNER_TEMP/swift-toolchain.txt"
           echo "SWIFT_TOOLCHAIN_KEY=$(shasum -a 256 "$RUNNER_TEMP/swift-toolchain.txt" | awk '{print $1}')" >> "$GITHUB_ENV"
           echo "RUST_TOOLCHAIN_KEY=$(rustc --version | shasum -a 256 | awk '{print $1}')" >> "$GITHUB_ENV"
 
@@ -114,7 +116,7 @@ jobs:
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: Backend/lib/libaural_playback.a
-          key: macos-playback-archive-${{ runner.arch }}-${{ env.RUST_TOOLCHAIN_KEY }}-${{ hashFiles('Backend/aural-playback/Cargo.toml', 'Backend/aural-playback/Cargo.lock', 'Backend/aural-playback/build.sh', 'Backend/aural-playback/src/**') }}
+          key: macos-playback-archive-${{ runner.arch }}-${{ env.RUST_TOOLCHAIN_KEY }}-${{ hashFiles('rust-toolchain.toml', 'Backend/aural-playback/Cargo.toml', 'Backend/aural-playback/Cargo.lock', 'Backend/aural-playback/build.sh', 'Backend/aural-playback/src/**') }}
 
       - name: Cache Rust dependencies and build products
         if: steps.playback-archive.outputs.cache-hit != 'true'
