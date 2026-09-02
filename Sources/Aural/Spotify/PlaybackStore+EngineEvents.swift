@@ -138,7 +138,7 @@ extension PlaybackStore {
         guard !isTearingDown else { return }
         let protocolNext = (state.protocolNextTracks ?? []).map { $0.domainTrack() }
         let protocolPrev = (state.protocolPrevTracks ?? []).map { $0.domainTrack() }
-        let entries = state.upcomingEntries()
+        let entries = QueueProtocolProjection.upcomingEntries(from: protocolNext)
         let epoch = capturedAccountEpoch ?? accountEpoch
         // Stamp from the payload generation. `engineGeneration` is only a fallback when the
         // snapshot omitted `sessionGeneration`; it must not override a newer decoded epoch.
@@ -171,13 +171,9 @@ extension PlaybackStore {
                 }
             })
 
-        guard let track = state.track,
-            QueueProtocolProjection.currentPlayableIdentity(
-                uri: track.uri,
-                provider: track.provider ?? "",
-                uid: track.uid ?? ""
-            ) != nil
-        else { return }
+        guard let track = state.track, QueueProtocolProjection.isPlayableTrackURI(track.uri) else {
+            return
+        }
         if !mayAdoptPlaybackIdentity {
             guard
                 queueBootstrapMetadataURI(

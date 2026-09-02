@@ -106,12 +106,6 @@ nonisolated struct RustQueueState: Decodable, Sendable {
         case revision
         case sessionGeneration = "session_generation"
     }
-
-    func upcomingEntries() -> [QueueEntry] {
-        QueueProtocolProjection.upcomingEntries(
-            from: (protocolNextTracks ?? []).map { $0.domainTrack() }
-        )
-    }
 }
 
 nonisolated struct RustConnectionState: Decodable, Sendable {

@@ -56,7 +56,7 @@ func runEnginePayloadContractChecks(_ check: CheckRunner) {
             check.equal("minimal queue revision", state.revision, 1)
             check.equal("minimal queue session generation", state.sessionGeneration, 1)
             check.nil_("minimal queue has no current track", state.track)
-            check.equal("minimal upcoming projection", state.upcomingEntries().count, 0)
+            check.equal("minimal upcoming projection", upcomingEntries(from: state).count, 0)
             check.equal("minimal protocol next", state.protocolNextTracks?.count, 0)
             check.equal("minimal protocol prev", state.protocolPrevTracks?.count, 0)
             check.equal("minimal queue revision string", state.queueRevision, "")
@@ -77,7 +77,7 @@ func runEnginePayloadContractChecks(_ check: CheckRunner) {
             check.nil_("current track does not carry catalog labels", state.track?.name)
             check.nil_("current track does not carry catalog artist", state.track?.artist)
 
-            let next = state.upcomingEntries()
+            let next = upcomingEntries(from: state)
             check.equal("next track count", next.count, 3)
             let first = next[0]
             let duplicate = next[1]
@@ -257,6 +257,12 @@ func runEnginePayloadContractChecks(_ check: CheckRunner) {
             )
         }
     }
+}
+
+private func upcomingEntries(from state: RustQueueState) -> [QueueEntry] {
+    QueueProtocolProjection.upcomingEntries(
+        from: (state.protocolNextTracks ?? []).map { $0.domainTrack() }
+    )
 }
 
 private func decodeIgnoringUnknownFields<T: Decodable>(_ type: T.Type, from data: Data) throws -> T {

@@ -221,6 +221,11 @@ public enum QueueMutationSelection: Sendable {
 }
 
 public enum QueueProtocolProjection: Sendable {
+    /// Playable Connect rows that may appear in the upcoming rail or as current-track identity.
+    public static func isPlayableTrackURI(_ uri: String) -> Bool {
+        uri.hasPrefix("spotify:track:")
+    }
+
     /// App-facing upcoming rows from unfiltered Connect protocol `next` tracks.
     ///
     /// Stop at `spotify:delimiter`, keep playable tracks, and ignore episodes or other
@@ -230,7 +235,7 @@ public enum QueueProtocolProjection: Sendable {
         var items: [QueueProtocolTrack] = []
         for track in protocolNext {
             if track.uri == "spotify:delimiter" { break }
-            if track.uri.hasPrefix("spotify:track:") {
+            if isPlayableTrackURI(track.uri) {
                 items.append(track)
             }
         }
@@ -242,16 +247,6 @@ public enum QueueProtocolProjection: Sendable {
         upcoming(from: protocolNext).enumerated().map { index, track in
             QueueEntry(uri: track.uri, provider: track.provider, occurrence: index, uid: track.uid)
         }
-    }
-
-    /// Current-track identity for queue snapshots. Non-track URIs are not queue-presentable.
-    public static func currentPlayableIdentity(
-        uri: String,
-        provider: String,
-        uid: String
-    ) -> QueueEntry? {
-        guard uri.hasPrefix("spotify:track:") else { return nil }
-        return QueueEntry(uri: uri, provider: provider, occurrence: 0, uid: uid)
     }
 
     public static func matchesVisibleUpcoming(

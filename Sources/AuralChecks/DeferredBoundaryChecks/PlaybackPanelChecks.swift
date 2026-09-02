@@ -339,7 +339,9 @@ func runPlaybackPanelChecks(_ check: CheckRunner) {
         do {
             let decoded = try JSONDecoder().decode(RustQueueState.self, from: Data(queueJSON.utf8))
             check.equal("current track keeps identity", decoded.track?.uri, "spotify:track:now")
-            let upcoming = decoded.upcomingEntries()
+            let upcoming = QueueProtocolProjection.upcomingEntries(
+                from: (decoded.protocolNextTracks ?? []).map { $0.domainTrack() }
+            )
             check.equal("upcoming projection keeps providers", upcoming.first?.provider, "queue")
             check.equal("delimiter is hidden from the upcoming rail", upcoming.count, 1)
             check.equal("protocol transport keeps delimiter and autoplay", decoded.protocolNextTracks?.count, 3)

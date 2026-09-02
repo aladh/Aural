@@ -74,22 +74,13 @@ func runQueueMutationChecks(_ check: CheckRunner) {
             QueueProtocolProjection.upcoming(from: mixed).map(\.uri),
             ["spotify:track:first"]
         )
-        check.nil_(
-            "non-track current identity is not presentable",
-            QueueProtocolProjection.currentPlayableIdentity(
-                uri: "spotify:episode:ignored",
-                provider: "context",
-                uid: ""
-            )
+        check.check(
+            "episodes are not playable track URIs",
+            !QueueProtocolProjection.isPlayableTrackURI("spotify:episode:ignored")
         )
-        check.equal(
-            "playable current identity keeps uid",
-            QueueProtocolProjection.currentPlayableIdentity(
-                uri: "spotify:track:now",
-                provider: "context",
-                uid: "occ-now"
-            )?.uid,
-            "occ-now"
+        check.check(
+            "track URIs are playable",
+            QueueProtocolProjection.isPlayableTrackURI("spotify:track:now")
         )
         check.check(
             "visible Connect URIs match the upcoming projection",
