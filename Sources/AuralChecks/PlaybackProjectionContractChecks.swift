@@ -244,7 +244,9 @@ func runPlaybackProjectionContractChecks(_ check: CheckRunner) {
             while let file = enumerator?.nextObject() as? URL {
                 guard file.pathExtension == "swift" else { continue }
                 let source = try String(contentsOf: file, encoding: .utf8)
-                if forbiddenModeTokens.contains(where: source.contains) {
+                if forbiddenModeTokens.contains(where: {
+                    PlaybackStoreProjectionContract.containsUncommented(source, $0)
+                }) {
                     modeBearingFiles.append(file.path.replacingOccurrences(of: sourceRoot.path + "/", with: ""))
                 }
             }
