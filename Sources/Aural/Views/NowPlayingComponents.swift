@@ -8,19 +8,19 @@ struct NowPlayingTrackIdentity: View {
         HStack(spacing: 12) {
             Group {
                 if player.hasCurrentTrack {
-                    RemoteArtwork(url: player.displayedArtworkURL, kind: .track, cornerRadius: 8, pointSize: 56)
+                    RemoteArtwork(url: player.displayedArtworkURL, kind: .track, cornerRadius: 7, pointSize: 48)
                 } else {
                     ZStack {
-                        RoundedRectangle(cornerRadius: 8, style: .continuous).fill(.quaternary)
+                        RoundedRectangle(cornerRadius: 7, style: .continuous).fill(.quaternary)
                         Image(systemName: "music.note")
                             .font(.system(size: 20, weight: .medium))
                             .foregroundStyle(.secondary)
                     }
-                    .overlay { RoundedRectangle(cornerRadius: 8).strokeBorder(.separator.opacity(0.35)) }
+                    .overlay { RoundedRectangle(cornerRadius: 7).strokeBorder(.separator.opacity(0.35)) }
                     .accessibilityHidden(true)
                 }
             }
-            .frame(width: 56, height: 56)
+            .frame(width: 48, height: 48)
 
             VStack(alignment: .leading, spacing: 3) {
                 Text(player.displayedTrackTitle)
@@ -74,7 +74,7 @@ struct NowPlayingProgress: View {
         .animation(.snappy(duration: 0.2), value: isHovering)
     }
 
-    private var height: CGFloat { isHovering && player.hasCurrentTrack ? 5 : 3 }
+    private var height: CGFloat { isHovering && player.hasCurrentTrack ? 4 : 3 }
     private func fraction(at date: Date) -> Double {
         guard player.hasCurrentTrack, player.duration > 0 else { return 0 }
         return min(max(player.displayedPosition(at: date) / player.duration, 0), 1)
@@ -122,7 +122,7 @@ struct NowPlayingTransportControls: View {
                         )
                         .offset(x: player.showsPauseControl ? 0 : 1)
                 }
-                .frame(width: 42, height: 42)
+                .frame(width: 32, height: 32)
                 .contentShape(Circle())
             }
             .buttonStyle(.plain)

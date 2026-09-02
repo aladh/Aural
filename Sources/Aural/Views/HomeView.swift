@@ -8,7 +8,7 @@ struct HomeView: View {
 
     var body: some View {
         ScrollView {
-            LazyVStack(alignment: .leading, spacing: 30) {
+            LazyVStack(alignment: .leading, spacing: 26) {
                 if store.isLoading(.home) && store.homeSections.isEmpty {
                     LoadingState(label: "Loading your Spotify home")
                 } else if !playback.isConnected {
@@ -42,7 +42,7 @@ struct HomeView: View {
                 } else {
                     HStack {
                         Text(store.greeting)
-                            .font(.largeTitle.bold())
+                            .font(.system(size: 30, weight: .bold))
                         Spacer()
                         if store.isLoading(.home) {
                             ProgressView()
@@ -57,9 +57,9 @@ struct HomeView: View {
                     }
                 }
             }
-            .padding(.horizontal, 30)
+            .padding(.horizontal, CatalogLayout.contentPadding)
             .padding(.top, 22)
-            .padding(.bottom, 28)
+            .padding(.bottom, 24)
         }
         .navigationTitle("Home")
     }
@@ -70,17 +70,17 @@ struct MediaShelf: View {
     let onSelect: (CatalogItem) -> Void
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 14) {
+        VStack(alignment: .leading, spacing: 12) {
             Text(section.title)
                 .font(.title3.weight(.bold))
 
             ScrollView(.horizontal, showsIndicators: false) {
-                LazyHStack(spacing: 16) {
+                LazyHStack(spacing: 12) {
                     ForEach(section.items) { item in
                         MediaCard(item: item) { onSelect(item) }
                     }
                 }
-                .padding(.vertical, 3)
+                .padding(.vertical, 2)
             }
         }
     }
@@ -95,14 +95,14 @@ struct MediaCard: View {
 
     var body: some View {
         Button(action: action) {
-            VStack(alignment: .leading, spacing: 9) {
+            VStack(alignment: .leading, spacing: 8) {
                 RemoteArtwork(
                     url: item.artworkURL,
                     kind: item.kind,
-                    cornerRadius: item.kind == .artist ? 87 : 12,
-                    pointSize: 174
+                    cornerRadius: item.kind == .artist ? CatalogLayout.cardArtwork / 2 : 10,
+                    pointSize: CatalogLayout.cardArtwork
                 )
-                .frame(width: 174, height: 174)
+                .frame(width: CatalogLayout.cardArtwork, height: CatalogLayout.cardArtwork)
                 .shadow(color: .black.opacity(isHovering ? 0.18 : 0.08), radius: isHovering ? 10 : 5, y: 4)
 
                 Text(item.title)
@@ -115,12 +115,12 @@ struct MediaCard: View {
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
             }
-            .frame(width: 174, alignment: .leading)
-            .padding(10)
-            .contentShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+            .frame(width: CatalogLayout.cardWidth, alignment: .leading)
+            .padding(CatalogLayout.cardPadding)
+            .contentShape(RoundedRectangle(cornerRadius: CatalogLayout.cardCornerRadius, style: .continuous))
             .background(
-                Color.primary.opacity(isHovering ? 0.075 : 0),
-                in: RoundedRectangle(cornerRadius: 12, style: .continuous)
+                Color.primary.opacity(isHovering ? 0.055 : 0),
+                in: RoundedRectangle(cornerRadius: CatalogLayout.cardCornerRadius, style: .continuous)
             )
             .scaleEffect(isHovering && !reduceMotion ? 1.015 : 1)
         }

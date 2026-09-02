@@ -25,7 +25,7 @@ struct PlaylistDetailView: View {
                 playback.playPlaylist(item)
             }
 
-            Divider()
+            CatalogTableDivider()
 
             playlistContent
         }
@@ -77,7 +77,7 @@ struct PlaylistDetailView: View {
             VStack(spacing: 0) {
                 if store.error != nil {
                     staleRefreshWarning
-                    Divider()
+                    CatalogTableDivider()
                 }
                 TrackTable(
                     tracks: store.trackCollection,
@@ -107,7 +107,7 @@ struct PlaylistDetailView: View {
             .disabled(store.isLoading)
             .accessibilityHint("Reload the playlist without repeating the last change.")
         }
-        .padding(.horizontal, 30)
+        .padding(.horizontal, CatalogLayout.contentPadding)
         .padding(.vertical, 10)
         .accessibilityElement(children: .contain)
     }
