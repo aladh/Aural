@@ -10,7 +10,8 @@ license and that you have the right to submit it.
 
 ## Development environment
 
-- Apple-silicon Mac with macOS 15 or newer
+- Apple-silicon Mac running macOS 26.2 or newer for development; Aural's runtime deployment target
+  remains macOS 15 or newer
 - Xcode 26.6 with Swift 6.3.3
 - Rustup; `rust-toolchain.toml` pins Rust, components, and the ARM64 macOS target
 - [ripgrep](https://github.com/BurntSushi/ripgrep) for the verification scripts
