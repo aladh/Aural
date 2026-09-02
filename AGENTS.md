@@ -161,7 +161,7 @@ lifetime, or foreign-boundary failures:
   hold Rust locks while invoking Swift, or assume the barrier makes invalid foreign pointers safe.
 - PCM travels directly from the engine adapter to `AudioRenderer`, never through observable UI
   state. Keep callbacks bounded and do not block the Rust callback thread.
-- Swift 6.4 concurrency diagnostics are correctness; CI pins Xcode 26.5 so the same diagnostics
+- Swift 6.4 concurrency diagnostics are correctness; CI pins Xcode 26.6 so the same diagnostics
   gate every pull request. Prefer structured concurrency, `AsyncStream`, Observation,
   immutable `Sendable` values, and explicit actor isolation. Combine belongs only at a
   publisher-native system boundary where it is materially simpler. Avoid `nonisolated(unsafe)`,

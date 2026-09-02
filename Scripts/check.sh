@@ -248,8 +248,8 @@ if rg -n 'security@example\.com|replace this placeholder' \
     exit 1
 fi
 
-# The debug quality gate must keep using an existing runner rg, cache only repo-local
-# SwiftPM products (including the redirected module cache), and leave Rust caching alone.
+# The debug quality gate must keep using an existing runner rg, exact-input playback archives,
+# job-local SwiftPM caches, and credential-free checkouts.
 ci_workflow="$project_root/.github/workflows/ci.yml"
 if [[ ! -f "$ci_workflow" ]]; then
     print -u2 "CI workflow is missing"
@@ -271,14 +271,26 @@ if ! rg -q 'key: macos-rust-\$\{\{ hashFiles\(' "$ci_workflow"; then
     print -u2 "CI must keep the existing Rust cache key"
     exit 1
 fi
-if ! rg -q 'key: macos-playback-archive-' "$ci_workflow" \
-    || ! rg -q 'key: macos-swiftpm-debug-' "$ci_workflow" \
-    || ! rg -q 'key: macos-swiftpm-release-' "$ci_workflow" \
-    || [[ "$(rg -c '^    runs-on: macos-26$' "$ci_workflow")" -ne 2 ]] \
-    || [[ "$(rg -c 'xcode-select -s /Applications/Xcode_26\.5\.app' "$ci_workflow")" -ne 2 ]] \
-    || ! rg -U -q --fixed-strings $'      - name: Run checks\n        run: ./Scripts/check.sh' "$ci_workflow" \
-    || ! rg -U -q --fixed-strings $'      - name: Compile release Aural with AURAL_DISTRIBUTION\n        run: ./Scripts/compile-release-aural.sh' "$ci_workflow" \
-    || ! rg -q 'needs: \[checks, release\]' "$ci_workflow"; then
+checks_job="$(sed -n '/^  checks:/,/^  release:/p' "$ci_workflow")"
+release_job="$(sed -n '/^  release:/,/^  gate:/p' "$ci_workflow")"
+gate_job="$(sed -n '/^  gate:/,$p' "$ci_workflow")"
+playback_cache_key='key: macos-playback-archive-${{ runner.arch }}-${{ env.RUST_TOOLCHAIN_KEY }}-${{ hashFiles('\''Backend/aural-playback/Cargo.toml'\'', '\''Backend/aural-playback/Cargo.lock'\'', '\''Backend/aural-playback/build.sh'\'', '\''Backend/aural-playback/src/**'\'') }}'
+debug_cache_key='key: macos-swiftpm-debug-${{ runner.os }}-${{ runner.arch }}-${{ env.SWIFT_TOOLCHAIN_KEY }}-${{ hashFiles('\''Package.swift'\'', '\''Package.resolved'\'') }}-${{ github.sha }}'
+release_cache_key='key: macos-swiftpm-release-${{ runner.os }}-${{ runner.arch }}-${{ env.SWIFT_TOOLCHAIN_KEY }}-${{ hashFiles('\''Package.swift'\'', '\''Package.resolved'\'') }}-${{ github.sha }}'
+checkout_without_credentials=$'uses: actions/checkout@[0-9a-f]{40} # v[^\n]+\n        with:\n          persist-credentials: false'
+if ! rg -q --fixed-strings 'runs-on: macos-26' <<< "$checks_job" \
+    || ! rg -q --fixed-strings 'xcode-select -s /Applications/Xcode_26.6.app' <<< "$checks_job" \
+    || ! rg -U -q "$checkout_without_credentials" <<< "$checks_job" \
+    || ! rg -q --fixed-strings "$playback_cache_key" <<< "$checks_job" \
+    || ! rg -q --fixed-strings "$debug_cache_key" <<< "$checks_job" \
+    || ! rg -U -q --fixed-strings -- $'- name: Run checks\n        run: ./Scripts/check.sh' <<< "$checks_job" \
+    || ! rg -q --fixed-strings 'runs-on: macos-26' <<< "$release_job" \
+    || ! rg -q --fixed-strings 'xcode-select -s /Applications/Xcode_26.6.app' <<< "$release_job" \
+    || ! rg -U -q "$checkout_without_credentials" <<< "$release_job" \
+    || ! rg -q --fixed-strings "$playback_cache_key" <<< "$release_job" \
+    || ! rg -q --fixed-strings "$release_cache_key" <<< "$release_job" \
+    || ! rg -U -q --fixed-strings -- $'- name: Compile release Aural with AURAL_DISTRIBUTION\n        run: ./Scripts/compile-release-aural.sh' <<< "$release_job" \
+    || ! rg -q --fixed-strings 'needs: [checks, release]' <<< "$gate_job"; then
     print -u2 "CI must cache the playback archive, isolate SwiftPM configurations, and aggregate parallel debug and release lanes"
     exit 1
 fi
