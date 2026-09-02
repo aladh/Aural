@@ -73,12 +73,11 @@ fi
 
 if [[ "$require_keychain_stable" == true ]]; then
     team_identifier="$(print -r -- "$signing_details" | awk -F= '/^TeamIdentifier=/{print $2; exit}')"
-    designated_requirement="$(codesign --display -r- "$app_path" 2>&1)"
     if [[ -z "$team_identifier" || "$team_identifier" == "not set" ]]; then
         print -u2 "Keychain-stable validation requires an Apple-issued signature with a Team ID"
         exit 1
     fi
-    if [[ "$designated_requirement" != *"anchor apple generic"* ]]; then
+    if ! codesign --verify --strict -R '=anchor apple generic' "$app_path"; then
         print -u2 "Keychain-stable validation requires an Apple-issued signing identity"
         exit 1
     fi

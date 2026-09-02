@@ -205,10 +205,15 @@ if ! rg -q --fixed-strings 'AURAL_DEVELOPMENT_SIGNING_IDENTITY' \
     "$project_root/script/build_and_run.sh" \
     || ! rg -q --fixed-strings 'validate-app.sh" --keychain-stable' \
         "$project_root/script/build_and_run.sh" \
+    || ! rg -q --fixed-strings 'AURAL_APP_PATH="$staged_app_bundle"' \
+        "$project_root/script/build_and_run.sh" \
+    || ! rg -q --fixed-strings 'mv "$staged_app_bundle" "$app_bundle"' \
+        "$project_root/script/build_and_run.sh" \
     || ! rg -q --fixed-strings 'AURAL_DEVELOPMENT_SIGNING_IDENTITY' \
         "$project_root/Scripts/package-app.sh" \
     || ! rg -q --fixed-strings 'TeamIdentifier=' "$project_root/Scripts/validate-app.sh" \
-    || ! rg -q --fixed-strings 'anchor apple generic' "$project_root/Scripts/validate-app.sh"; then
+    || ! rg -q --fixed-strings "codesign --verify --strict -R '=anchor apple generic'" \
+        "$project_root/Scripts/validate-app.sh"; then
     print -u2 "Authenticated development signing policy is incomplete"
     exit 1
 fi

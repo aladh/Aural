@@ -12,7 +12,8 @@ case "$package_mode" in
 esac
 
 project_root="${0:A:h:h}"
-app_path="$project_root/Aural.app"
+app_path="${AURAL_APP_PATH:-$project_root/Aural.app}"
+staged_launch_path="$project_root/.build/aural-launch/Aural.app"
 executable="$project_root/.build/$build_configuration/Aural"
 icon="$project_root/Assets/Aural.icns"
 info_template="$project_root/Packaging/Info.plist"
@@ -51,7 +52,7 @@ fi
 
 # This is a generated bundle at one exact path; recreate it so stale binaries and resources
 # cannot survive a packaging run.
-if [[ "$app_path" != "$project_root/Aural.app" ]]; then
+if [[ "$app_path" != "$project_root/Aural.app" && "$app_path" != "$staged_launch_path" ]]; then
     print -u2 "Refusing to replace an unexpected app path"
     exit 1
 fi

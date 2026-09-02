@@ -152,6 +152,7 @@ func runKeymasterPersistenceSourceContractChecks(_ check: CheckRunner) {
                 "file-based keychain and team-signed development requirements stay explicit",
                 !containsPersistenceToken(keychain, "kSecUseDataProtectionKeychain as String")
                     && !containsPersistenceToken(keychain, "[kSecUseDataProtectionKeychain")
+                    && !containsPersistenceToken(keychain, "kSecAttrAccessGroup")
                     && !containsPersistenceToken(keychain, "Shared keychain access group")
                     && containsPersistenceToken(keychain, "Self-signed development signatures are build-only")
                     && containsPersistenceToken(keychain, "requires an Apple-issued team signature")

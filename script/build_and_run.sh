@@ -7,6 +7,7 @@ bundle_id="dev.aural.app"
 root_dir="${0:A:h:h}"
 app_bundle="$root_dir/Aural.app"
 app_binary="$app_bundle/Contents/MacOS/Aural"
+staged_app_bundle="$root_dir/.build/aural-launch/Aural.app"
 
 case "$mode" in
     --release|release|--verify-release|verify-release)
@@ -44,9 +45,20 @@ if [[ -z "${AURAL_SIGNING_IDENTITY:-}" && -z "${AURAL_DEVELOPMENT_SIGNING_IDENTI
     fi
 fi
 
-"$root_dir/Scripts/package-app.sh" "$package_mode"
-"$root_dir/Scripts/validate-app.sh" --keychain-stable "$app_bundle"
+AURAL_APP_PATH="$staged_app_bundle" "$root_dir/Scripts/package-app.sh" "$package_mode"
+"$root_dir/Scripts/validate-app.sh" --keychain-stable "$staged_app_bundle"
 pkill -x "$app_name" >/dev/null 2>&1 || true
+for _ in {1..20}; do
+    pgrep -x "$app_name" >/dev/null || break
+    sleep 0.1
+done
+if pgrep -x "$app_name" >/dev/null; then
+    print -u2 "Aural did not terminate; leaving the existing app bundle in place"
+    exit 1
+fi
+rm -rf "$app_bundle"
+mv "$staged_app_bundle" "$app_bundle"
+rmdir "$root_dir/.build/aural-launch" 2>/dev/null || true
 
 open_app() {
     /usr/bin/open -n "$app_bundle"
