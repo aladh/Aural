@@ -225,6 +225,7 @@ struct TrackTable: View {
     let tracks: CatalogTrackCollection
     let metadata: CatalogMetadataRepository
     let playback: CatalogPlaybackAccess
+    @Environment(\.colorScheme) private var colorScheme
     var showsDateAdded = false
     var playlistActions: TrackPlaylistActions?
     @State private var selection: Set<CatalogTrack.ID> = []
@@ -395,12 +396,12 @@ struct TrackTable: View {
         HStack(spacing: 6) {
             if isCurrent(track) {
                 Image(systemName: "speaker.wave.2.fill")
-                    .foregroundStyle(AuralPalette.mediaGreen)
+                    .foregroundStyle(AuralPalette.mediaForeground(for: colorScheme))
                     .accessibilityLabel("Current track")
             }
             Text(track.title)
                 .fontWeight(.medium)
-                .foregroundStyle(isCurrent(track) ? AuralPalette.mediaGreen : .primary)
+                .foregroundStyle(isCurrent(track) ? AuralPalette.mediaForeground(for: colorScheme) : .primary)
                 .lineLimit(1)
         }
     }
