@@ -98,6 +98,7 @@ struct SearchView: View {
             }
         }
         .searchable(text: $searchText, placement: .toolbar, prompt: "Artists, albums, playlists, and tracks")
+        .background { CatalogCanvasBackground() }
         .navigationTitle("Search")
         .task(id: SearchLoadIdentity(
             query: searchText.trimmingCharacters(in: .whitespacesAndNewlines),
@@ -180,17 +181,24 @@ struct LibraryView: View {
                 }
                 .padding(30)
             } else {
-                LazyVGrid(
-                    columns: [GridItem(.adaptive(minimum: 165, maximum: 210), spacing: 20)],
-                    spacing: 24
-                ) {
-                    ForEach(items) { item in
-                        MediaCard(item: item) { onSelect(item) }
+                VStack(alignment: .leading, spacing: 20) {
+                    Text(title)
+                        .font(.system(size: 32, weight: .bold))
+
+                    LazyVGrid(
+                        columns: [GridItem(.adaptive(minimum: 194, maximum: 224), spacing: 18)],
+                        alignment: .leading,
+                        spacing: 22
+                    ) {
+                        ForEach(items) { item in
+                            MediaCard(item: item) { onSelect(item) }
+                        }
                     }
                 }
                 .padding(30)
             }
         }
+        .background { CatalogCanvasBackground() }
         .navigationTitle(title)
         .task(id: playback.accountEpoch) {
             guard playback.isConnected else { return }
@@ -217,7 +225,7 @@ struct TrackCollectionView: View {
         VStack(spacing: 0) {
             VStack(alignment: .leading, spacing: 5) {
                 Text(title)
-                    .font(.largeTitle.bold())
+                    .font(.system(size: 32, weight: .bold))
                     .lineLimit(2)
                 Text(subtitle)
                     .foregroundStyle(.secondary)
@@ -266,6 +274,7 @@ struct TrackCollectionView: View {
                 )
             }
         }
+        .background { CatalogCanvasBackground() }
         .navigationTitle(title)
     }
 }

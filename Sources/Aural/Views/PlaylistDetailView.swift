@@ -18,14 +18,15 @@ struct PlaylistDetailView: View {
         VStack(spacing: 0) {
             hero
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.horizontal, 30)
-                .padding(.top, 16)
-                .padding(.bottom, 24)
+                .padding(.horizontal, 34)
+                .padding(.top, 28)
+                .padding(.bottom, 22)
 
             Divider()
 
             playlistContent
         }
+        .background { CatalogCanvasBackground() }
         .task(id: PlaylistLoadIdentity(
             uri: item.uri,
             accountEpoch: playback.accountEpoch,
@@ -38,50 +39,49 @@ struct PlaylistDetailView: View {
     }
 
     private var hero: some View {
-        HStack(alignment: .bottom, spacing: 24) {
-            RemoteArtwork(url: item.artworkURL, kind: .playlist, cornerRadius: 16, pointSize: 184)
-                .frame(width: 184, height: 184)
-                .shadow(color: .black.opacity(0.22), radius: 16, y: 8)
+        VStack(alignment: .leading, spacing: 20) {
+            HStack(alignment: .bottom, spacing: 26) {
+                RemoteArtwork(url: item.artworkURL, kind: .playlist, cornerRadius: 10, pointSize: 220)
+                    .frame(width: 220, height: 220)
+                    .shadow(color: .black.opacity(0.28), radius: 18, y: 10)
 
-            VStack(alignment: .leading, spacing: 9) {
-                Text("PLAYLIST")
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(.secondary)
-
-                Text(item.title)
-                    .font(.largeTitle.bold())
-                    .lineLimit(2)
-
-                if !store.description.isEmpty {
-                    Text(store.description)
+                VStack(alignment: .leading, spacing: 10) {
+                    Text("PLAYLIST")
+                        .font(.caption.weight(.bold))
                         .foregroundStyle(.secondary)
-                        .lineLimit(3)
-                }
+                        .tracking(0.8)
 
-                HStack(spacing: 6) {
-                    Text(item.subtitle)
-                        .fontWeight(.medium)
+                    Text(item.title)
+                        .font(.system(size: 42, weight: .bold, design: .default))
+                        .lineLimit(2)
+                        .minimumScaleFactor(0.8)
 
-                    if showsSongCount {
-                        Text("·")
-                            .foregroundStyle(.tertiary)
-                        Text(songCountText)
+                    if !store.description.isEmpty {
+                        Text(store.description)
                             .foregroundStyle(.secondary)
+                            .lineLimit(2)
                     }
-                }
-                .font(.subheadline)
 
-                Button {
-                    playback.playPlaylist(item)
-                } label: {
-                    Label("Play", systemImage: "play.fill")
+                    HStack(spacing: 6) {
+                        Text(item.subtitle)
+                            .fontWeight(.medium)
+
+                        if showsSongCount {
+                            Text("·")
+                                .foregroundStyle(.tertiary)
+                            Text(songCountText)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                    .font(.subheadline)
                 }
-                .buttonStyle(.borderedProminent)
-                .tint(.accentColor)
-                .controlSize(.large)
-                .disabled(!playback.canStartPlayback)
+                .padding(.bottom, 6)
             }
-            .padding(.bottom, 3)
+
+            CircularPlayButton {
+                playback.playPlaylist(item)
+            }
+            .disabled(!playback.canStartPlayback)
         }
     }
 

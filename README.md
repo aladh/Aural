@@ -15,6 +15,11 @@ app: SwiftUI and AppKit for the interface, AVFoundation for audio output, and a 
 Rust/librespot backend for Spotify Connect, streaming, and decoding. There is no WebView or
 Chromium runtime.
 
+Its visual direction uses a Spotify-familiar hierarchy—a dark content canvas, library-forward
+sidebar, artwork-led media headers, dense track tables, right-side queue rail, and full-width
+bottom player shelf—implemented as an independent native macOS interface. Familiarity is a design
+reference, not a pixel copy or an indication of affiliation with Spotify.
+
 > [!WARNING]
 > Aural is an unofficial, independent project. It is not affiliated with, endorsed by, or
 > sponsored by Spotify AB. It uses private, reverse-engineered Spotify interfaces and Spotify's

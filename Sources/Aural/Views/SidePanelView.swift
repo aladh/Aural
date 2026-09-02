@@ -45,6 +45,7 @@ struct SidePanelView: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+        .background(.bar)
         .task(id: queueRefreshIdentity) {
             guard player.isConnected else { return }
             player.refreshQueue()
@@ -69,7 +70,9 @@ struct SidePanelView: View {
             }
             .pickerStyle(.segmented)
             .labelsHidden()
-            .frame(maxWidth: .infinity)
+            .frame(width: 148)
+
+            Spacer(minLength: 0)
 
             Button("Close Inspector", systemImage: "xmark") {
                 onClose()
@@ -110,7 +113,7 @@ struct SidePanelView: View {
                 }
             }
             .listStyle(.plain)
-            .environment(\.defaultMinListRowHeight, 28)
+            .environment(\.defaultMinListRowHeight, 52)
             .contextMenu(forSelectionType: QueueEntry.ID.self) { selectedIDs in
                 let selected = QueueMutationSelection.orderedUpcoming(
                     selectedIDs: selectedIDs,
@@ -190,18 +193,39 @@ private struct QueueUpcomingRow: View {
     let metadata: CatalogMetadataRepository
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 1) {
-            Text(title)
-                .font(.callout)
-                .lineLimit(1)
-            Text(subtitle)
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                .lineLimit(1)
+        HStack(spacing: 10) {
+            RemoteArtwork(url: track?.artworkURL, kind: .track, cornerRadius: 5, pointSize: 34)
+                .frame(width: 34, height: 34)
+
+            VStack(alignment: .leading, spacing: 1) {
+                Text(title)
+                    .font(.callout)
+                    .lineLimit(1)
+                Text(subtitle)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+            }
+
+            Spacer(minLength: 4)
+
+            if let duration, duration > 0 {
+                Text(formatDuration(duration))
+                    .font(.caption2.monospacedDigit())
+                    .foregroundStyle(.tertiary)
+                    .lineLimit(1)
+            }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.vertical, 2)
         .accessibilityLabel("\(title), \(subtitle)")
+    }
+
+    private var track: CatalogTrack? {
+        metadata.knownTrack(for: entry.uri)
+    }
+
+    private var duration: TimeInterval? {
+        track?.duration
     }
 
     private var title: String {
@@ -243,7 +267,7 @@ private struct HistoryRow: View {
                     .foregroundStyle(.tertiary)
                     .lineLimit(1)
             }
-            .padding(6)
+            .padding(.vertical, 6)
             .contentShape(Rectangle())
             .background(
                 isHovering ? Color.primary.opacity(0.055) : .clear,
@@ -265,6 +289,9 @@ private struct CurrentTrackRow: View {
 
     var body: some View {
         HStack(spacing: 10) {
+            RemoteArtwork(url: player.displayedArtworkURL, kind: .track, cornerRadius: 5, pointSize: 34)
+                .frame(width: 34, height: 34)
+
             VStack(alignment: .leading, spacing: 1) {
                 Text(player.displayedTrackTitle)
                     .font(.callout.weight(.semibold))
@@ -278,11 +305,18 @@ private struct CurrentTrackRow: View {
 
             Spacer(minLength: 0)
 
-            Image(systemName: "speaker.wave.2.fill")
-                .font(.system(size: 11, weight: .semibold))
-                .foregroundStyle(Color.accentColor)
+            VStack(alignment: .trailing, spacing: 3) {
+                Image(systemName: "speaker.wave.2.fill")
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(Color.accentColor)
+                if player.duration > 0 {
+                    Text(formatDuration(player.duration))
+                        .font(.caption2.monospacedDigit())
+                        .foregroundStyle(.tertiary)
+                }
+            }
         }
-        .padding(6)
+        .padding(.vertical, 3)
         .background(Color.accentColor.opacity(0.07), in: RoundedRectangle(cornerRadius: 7, style: .continuous))
         .accessibilityElement(children: .combine)
         .accessibilityLabel("Now playing \(player.trackTitle) by \(player.artistName)")

@@ -10,6 +10,11 @@ ADRs; historical measurements belong in the performance baseline.
 - macOS is the only current platform target. Cross-platform UI work is not a present constraint.
 - Prefer idiomatic SwiftUI and AppKit behavior over custom chrome. Do not add a WebView, Chromium
   runtime, or a second UI framework.
+- The visual composition should be familiar to Spotify users without reproducing Spotify's pixels:
+  use a dark content canvas, a library-forward sidebar, artwork-led media headers, dense track
+  tables, a right-side queue/history rail, and a full-width bottom player shelf. Interpret that
+  hierarchy with native macOS materials, typography, controls, spacing, focus, and accessibility;
+  this is an independent, unofficial client and must not imply Spotify affiliation or endorsement.
 - Keep the product surface small. In particular, Aural has no in-app volume control or manual
   Spotify refresh action. Playlist creation, rename, cover editing, collaborative permission
   management, and arbitrary reordering are out of scope. Occurrence-safe add/remove for playlists
@@ -22,10 +27,15 @@ ADRs; historical measurements belong in the performance baseline.
 
 - The main window uses a native, fixed-width sidebar and inspector. Both side panels have the same
   220-point width and neither is user-collapsible by dragging.
-- The sidebar has native navigation symbols for primary destinations, but playlist shortcuts are
-  text-only. Do not add a redundant app logo or app-name header to the content area.
+- The sidebar has native navigation symbols for primary destinations. Playlist shortcuts may show a
+  small artwork thumbnail with their title and metadata when artwork is available, with a text-only
+  fallback. Do not add a redundant app logo or app-name header to the content area.
 - The right inspector contains Queue and History in a stable segmented header. Switching tabs must
-  not move the header. The current queue item is text-only; history may show artwork.
+  not move the header. The current queue item may show a compact artwork thumbnail with title,
+  artist, and duration when available; preserve a text-only fallback. History may show artwork.
+- Artwork-led headers should keep the media identity close to the content edge and leave the track
+  table dense and scannable. The persistent bottom player shelf spans the window width for current
+  media and transport; visual parity with Spotify does not justify adding an in-app volume control.
 - Closing the main window purges presentation caches but does not quit Aural. The app remains in the
   Dock and reopens through the Dock icon or the standard macOS Window command.
 - Sign Out belongs in the macOS **Aural** application menu, not in a custom profile card. Settings

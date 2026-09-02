@@ -64,15 +64,18 @@ Use these principles when the specification does not settle a decision:
   commands, focus, and accessibility before inventing a visual language. Native is a behavioral
   standard, not merely an SF Symbol and a blur.
 - **Remove before adding.** Aural became better by removing the redundant app header, profile card,
-  manual refresh, volume control, playlist icons, track-row artwork, and unnecessary pickers. Every
-  persistent control must earn its space through frequent use or essential state. Capability alone
-  is not a reason to expose UI.
+  manual refresh, volume control, decorative playlist chrome, track-row artwork, and unnecessary
+  pickers. Artwork may be used selectively where it clarifies media context—such as playlist
+  shortcuts, media headers, and the queue item—but must earn its space. Every persistent control
+  must earn its space through frequent use or essential state. Capability alone is not a reason to
+  expose UI.
 - **One clear hierarchy.** At a glance, the user should see where they are, what is playing, and the
   primary action. Supporting metadata should be quieter, aligned, and close to what it describes.
   Avoid competing cards, oversized empty hero regions, decorative containers, and repeated labels.
 - **Dense, not crowded.** Music libraries benefit from efficient tables and stable side panels.
-  Spend space on readable titles and useful columns, not repeated artwork or ornamental padding.
-  Preserve breathing room around groups rather than inflating every row and control.
+  Use artwork at meaningful context boundaries, but spend dense-table space on readable titles and
+  useful columns rather than repeating artwork or adding ornamental padding. Preserve breathing room
+  around groups rather than inflating every row and control.
 - **State must be honest.** Never show Pause when nothing is playing, imply that a remote device is
   local, display a control as available when it cannot succeed, or leave `Unknown` when information
   is resolvable. Loading, empty, stale, disabled, error, inactive-window, and reconnecting states are
@@ -243,8 +246,12 @@ The complete UX contract lives in
 - Prefer native SwiftUI/AppKit controls, tables, menus, Settings, keyboard behavior, accessibility,
   focus, and inactive-window semantics. Avoid custom chrome when a native pattern exists.
 - The fixed 220-point sidebar and inspector have equal width and are not drag-collapsible.
+- The visual hierarchy may be Spotify-familiar—dark content canvas, artwork-led media headers,
+  dense track tables, a right queue rail, and a full-width bottom player shelf—but it must remain a
+  native macOS interpretation, not a pixel copy or implied Spotify endorsement.
 - Sign Out belongs in the **Aural** application menu. Do not restore a profile/status card, manual
-  Spotify refresh control, redundant app header/logo, playlist sidebar icons, or volume control.
+  Spotify refresh control, redundant app header/logo, or volume control. Playlist shortcuts and the
+  current queue item may use compact artwork when available, with text-only fallbacks.
 - Transport order is Shuffle, Previous, Play/Pause, Next, Repeat. Use track-skip symbols with outer
   bars. With no current track, show disabled Play—not Pause.
 - Mirror the active Spotify Connect device without silently transferring it. Smooth progress is an

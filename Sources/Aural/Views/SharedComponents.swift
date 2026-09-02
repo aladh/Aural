@@ -10,6 +10,48 @@ struct TrackPlaylistActions {
     let removeOccurrences: @MainActor ([String]) -> Void
 }
 
+/// The content canvas follows the system appearance while borrowing Spotify's quiet,
+/// near-black detail-pane hierarchy in Dark Mode. The accent wash is intentionally subtle so
+/// artwork and selection remain the visual anchors.
+struct CatalogCanvasBackground: View {
+    @Environment(\.colorScheme) private var colorScheme
+
+    var body: some View {
+        ZStack(alignment: .top) {
+            Color(nsColor: .underPageBackgroundColor)
+            LinearGradient(
+                colors: [
+                    Color.accentColor.opacity(colorScheme == .dark ? 0.16 : 0.07),
+                    .clear
+                ],
+                startPoint: .topLeading,
+                endPoint: .bottomTrailing
+            )
+            .frame(height: 270)
+        }
+        .ignoresSafeArea()
+    }
+}
+
+/// A compact, unambiguous primary action for artwork-led detail headers.
+struct CircularPlayButton: View {
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            Image(systemName: "play.fill")
+                .font(.system(size: 17, weight: .bold))
+                .frame(width: 38, height: 38)
+        }
+        .buttonStyle(.borderedProminent)
+        .buttonBorderShape(.circle)
+        .controlSize(.large)
+        .tint(.accentColor)
+        .help("Play")
+        .accessibilityLabel("Play")
+    }
+}
+
 /// A native macOS table shared by playlists, search results, and track libraries.
 /// Single-click selects; command-click extends a simple multi-selection; double-click
 /// or Return plays the primary row, matching desktop table behavior.
@@ -166,6 +208,8 @@ struct TrackTable: View {
         .onChange(of: sortOrder) { _, _ in
             updateDisplayedTracks()
         }
+        .scrollContentBackground(.hidden)
+        .background(Color.clear)
     }
 
     private func isCurrent(_ track: CatalogTrack) -> Bool {

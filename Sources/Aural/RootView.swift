@@ -16,29 +16,36 @@ struct RootView: View {
     @SceneStorage("showsPlaybackInspector") private var showsSidePanel = false
 
     var body: some View {
-        VStack(spacing: 0) {
-            NavigationSplitView {
-                SidebarView(selection: selectionBinding, playlists: catalog.homeLibrary.playlists)
-                    .navigationSplitViewColumnWidth(min: 220, ideal: 220, max: 220)
-            } detail: {
-                detail
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-            }
-            .navigationSplitViewStyle(.balanced)
-            .inspector(isPresented: $showsSidePanel) {
-                SidePanelView(
-                    metadata: catalog.metadata,
-                    player: player,
-                    onClose: { showsSidePanel = false }
-                )
-                .inspectorColumnWidth(min: 220, ideal: 220, max: 220)
-            }
-            .overlay(alignment: .bottom) {
-                TransientFeedbackBanner(feedback: feedback)
-            }
+        ZStack {
+            SpotifyShellStyle.canvas
+                .ignoresSafeArea()
 
-            NowPlayingBar(player: player, showsSidePanel: $showsSidePanel)
+            VStack(spacing: 0) {
+                NavigationSplitView {
+                    SidebarView(selection: selectionBinding, playlists: catalog.homeLibrary.playlists)
+                        .navigationSplitViewColumnWidth(min: 220, ideal: 220, max: 220)
+                } detail: {
+                    detail
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                }
+                .navigationSplitViewStyle(.balanced)
+                .background(SpotifyShellStyle.canvas)
+                .inspector(isPresented: $showsSidePanel) {
+                    SidePanelView(
+                        metadata: catalog.metadata,
+                        player: player,
+                        onClose: { showsSidePanel = false }
+                    )
+                    .inspectorColumnWidth(min: 220, ideal: 220, max: 220)
+                }
+                .overlay(alignment: .bottom) {
+                    TransientFeedbackBanner(feedback: feedback)
+                }
+
+                NowPlayingBar(player: player, showsSidePanel: $showsSidePanel)
+            }
         }
+        .preferredColorScheme(.dark)
         .onChange(of: player.state.accountEpoch) {
             selectedMedia = nil
             clearRestoredMedia()

@@ -23,11 +23,22 @@ struct NowPlayingTrackIdentity: View {
             .frame(width: 56, height: 56)
 
             VStack(alignment: .leading, spacing: 3) {
-                Text(player.displayedTrackTitle).font(.headline).lineLimit(1)
-                Text(player.displayedArtistName).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                Text(player.displayedTrackTitle)
+                    .font(.callout.weight(.semibold))
+                    .lineLimit(1)
+                Text(player.displayedArtistName)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
             }
             .contentTransition(.opacity)
         }
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(
+            player.hasCurrentTrack
+                ? "Now playing \(player.displayedTrackTitle) by \(player.displayedArtistName)"
+                : "No track playing"
+        )
     }
 }
 
@@ -98,15 +109,19 @@ struct NowPlayingTransportControls: View {
             TransportIconButton(symbol: "backward.end.fill", label: "Previous", disabled: !player.canSkipTrack, action: player.previous)
             Button(action: player.togglePlayback) {
                 ZStack {
-                    Circle().fill(Color.accentColor)
+                    Circle().fill(player.canTogglePlayback ? Color.accentColor : Color.secondary.opacity(0.28))
                     Image(systemName: player.showsPauseControl ? "pause.fill" : "play.fill")
                         .contentTransition(.symbolEffect(.replace))
                         .symbolRenderingMode(.monochrome)
                         .font(.system(size: 16, weight: .bold))
-                        .foregroundStyle(.white)
+                        .foregroundStyle(
+                            player.canTogglePlayback
+                                ? Color.white
+                                : Color(nsColor: .tertiaryLabelColor)
+                        )
                         .offset(x: player.showsPauseControl ? 0 : 1)
                 }
-                .frame(width: 40, height: 40)
+                .frame(width: 42, height: 42)
                 .contentShape(Circle())
             }
             .buttonStyle(.plain)
@@ -150,15 +165,13 @@ struct NowPlayingTimeControls: View {
     @Binding var showsSidePanel: Bool
 
     var body: some View {
-        HStack(spacing: 10) {
-            Text(player.hasCurrentTrack ? formatDuration(player.position) : "—:—").foregroundStyle(.secondary)
-            Text(remainingTime).foregroundStyle(.tertiary)
+        HStack(spacing: 12) {
             devicesMenu
             Button { withAnimation(.snappy(duration: 0.2)) { showsSidePanel.toggle() } } label: {
                 Image(systemName: "sidebar.right")
-                    .font(.system(size: 13, weight: .semibold))
+                    .font(.system(size: 14, weight: .semibold))
                     .foregroundStyle(showsSidePanel ? Color.accentColor : Color(nsColor: .secondaryLabelColor))
-                    .frame(width: 26, height: 26)
+                    .frame(width: 30, height: 30)
                     .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
@@ -167,7 +180,7 @@ struct NowPlayingTimeControls: View {
         }
         .font(.caption2.monospacedDigit())
         .accessibilityElement(children: .contain)
-        .accessibilityLabel("Playback time and devices")
+        .accessibilityLabel("Playback devices and queue controls")
     }
 
     private var devicesMenu: some View {
@@ -195,10 +208,6 @@ struct NowPlayingTimeControls: View {
         .accessibilityLabel("Playback devices")
     }
 
-    private var remainingTime: String {
-        guard player.hasCurrentTrack, player.duration > 0 else { return "—:—" }
-        return "−\(formatDuration(max(0, player.duration - player.position)))"
-    }
     private func deviceName(_ device: ConnectDevice) -> String {
         if device.id == player.localDeviceID { return "\(device.name) (This Mac)" }
         if device.id == player.activeRemoteDevice?.id { return "\(device.name) (\(player.isPlaying ? "Playing" : "Paused"))" }

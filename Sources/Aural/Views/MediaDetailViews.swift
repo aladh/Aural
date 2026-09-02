@@ -39,6 +39,7 @@ struct AlbumDetailView: View {
                 )
             }
         }
+        .background { CatalogCanvasBackground() }
         .navigationTitle(item.title)
         .task(id: MediaDetailLoadIdentity(
             uri: item.uri,
@@ -87,6 +88,7 @@ struct ArtistDetailView: View {
                 }
             }
         }
+        .background { CatalogCanvasBackground() }
         .navigationTitle(item.title)
         .task(id: MediaDetailLoadIdentity(
             uri: item.uri,
@@ -105,22 +107,25 @@ private struct MediaDetailHeader: View {
     let playback: CatalogPlaybackAccess
 
     var body: some View {
-        HStack(alignment: .bottom, spacing: 22) {
+        HStack(alignment: .bottom, spacing: 26) {
             RemoteArtwork(
                 url: item.artworkURL,
                 kind: item.kind,
-                cornerRadius: item.kind == .artist ? 68 : 12,
-                pointSize: 136
+                cornerRadius: item.kind == .artist ? 92 : 10,
+                pointSize: 184
             )
-            .frame(width: 136, height: 136)
+            .frame(width: 184, height: 184)
+            .shadow(color: .black.opacity(0.26), radius: 16, y: 8)
 
             VStack(alignment: .leading, spacing: 8) {
                 Text(item.kind.rawValue.uppercased())
-                    .font(.caption.weight(.semibold))
+                    .font(.caption.weight(.bold))
                     .foregroundStyle(.secondary)
+                    .tracking(0.8)
                 Text(item.title)
-                    .font(.largeTitle.bold())
+                    .font(.system(size: 42, weight: .bold))
                     .lineLimit(2)
+                    .minimumScaleFactor(0.8)
                 let supportingText = [item.subtitle, detail].filter {
                     !$0.isEmpty && $0.caseInsensitiveCompare(item.kind.rawValue) != .orderedSame
                 }.joined(separator: " · ")
@@ -128,18 +133,17 @@ private struct MediaDetailHeader: View {
                     Text(supportingText)
                         .foregroundStyle(.secondary)
                 }
-                Button {
+                CircularPlayButton {
                     playback.playURI(item.uri)
-                } label: {
-                    Label("Play", systemImage: "play.fill")
                 }
-                .buttonStyle(.borderedProminent)
-                .controlSize(.large)
                 .disabled(!playback.canStartPlayback)
                 .accessibilityHint("Starts this \(item.kind.rawValue.lowercased())")
             }
-            Spacer()
+            .padding(.bottom, 2)
+            Spacer(minLength: 0)
         }
-        .padding(30)
+        .padding(.horizontal, 34)
+        .padding(.top, 28)
+        .padding(.bottom, 22)
     }
 }
