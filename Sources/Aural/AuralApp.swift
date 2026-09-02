@@ -90,8 +90,6 @@ struct AuralApp: App {
     @NSApplicationDelegateAdaptor(AuralAppDelegate.self) private var appDelegate
     @State private var player: PlaybackStore
     @State private var feedback: TransientFeedbackPresenter
-    @AppStorage(AccentColorOption.storageKey) private var accentColor =
-        AccentColorOption.defaultValue
 
     init() {
         let environment = PlaybackEnvironment.live
@@ -104,8 +102,6 @@ struct AuralApp: App {
         Window("Aural", id: "main") {
             RootView(player: player, catalog: player.catalog, feedback: feedback)
                 .frame(minWidth: 960, minHeight: 640)
-                .accentColor(accentColor.color)
-                .tint(accentColor.color)
                 .task {
                     appDelegate.installTerminationHandler { await player.shutdownForTermination() }
                     await player.restore()
@@ -119,12 +115,6 @@ struct AuralApp: App {
             InspectorCommands()
             AccountCommands(player: player)
             PlaybackCommands(player: player)
-        }
-
-        Settings {
-            SettingsView()
-                .accentColor(accentColor.color)
-                .tint(accentColor.color)
         }
     }
 }
