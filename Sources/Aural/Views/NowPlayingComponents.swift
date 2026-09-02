@@ -52,7 +52,7 @@ struct NowPlayingProgress: View {
                 ZStack(alignment: .leading) {
                     Capsule().fill(.quaternary).frame(height: height)
                     if player.hasCurrentTrack {
-                        Capsule().fill(Color.accentColor)
+                        Capsule().fill(AuralPalette.mediaGreen)
                             .frame(width: proxy.size.width * fraction(at: timeline.date), height: height)
                     }
                 }
@@ -96,6 +96,7 @@ struct NowPlayingProgress: View {
 
 struct NowPlayingTransportControls: View {
     let player: PlaybackStore
+    @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
         HStack(spacing: 18) {
@@ -110,14 +111,16 @@ struct NowPlayingTransportControls: View {
                 symbol: "backward.end.fill", label: "Previous", disabled: !player.canSkipTrack, action: player.previous)
             Button(action: player.togglePlayback) {
                 ZStack {
-                    Circle().fill(player.canTogglePlayback ? Color.accentColor : Color.secondary.opacity(0.28))
+                    Circle().fill(
+                        player.canTogglePlayback ? AuralPalette.mediaGreen : Color.secondary.opacity(0.28)
+                    )
                     Image(systemName: player.showsPauseControl ? "pause.fill" : "play.fill")
                         .contentTransition(.symbolEffect(.replace))
                         .symbolRenderingMode(.monochrome)
                         .font(.system(size: 16, weight: .bold))
                         .foregroundStyle(
                             player.canTogglePlayback
-                                ? Color.white
+                                ? Color.black
                                 : Color(nsColor: .tertiaryLabelColor)
                         )
                         .offset(x: player.showsPauseControl ? 0 : 1)
@@ -151,9 +154,11 @@ struct NowPlayingTransportControls: View {
         Button(action: action) {
             Image(systemName: symbol)
                 .font(.system(size: 14, weight: .semibold))
-                .foregroundStyle(active ? Color.accentColor : Color(nsColor: .secondaryLabelColor))
+                .foregroundStyle(
+                    active ? AuralPalette.mediaForeground(for: colorScheme) : Color(nsColor: .secondaryLabelColor)
+                )
                 .frame(width: 30, height: 30)
-                .background { Circle().fill(active ? Color.accentColor.opacity(0.14) : .clear) }
+                .background { Circle().fill(active ? AuralPalette.mediaGreen.opacity(0.10) : .clear) }
         }
         .buttonStyle(.plain)
         .disabled(!player.canStartPlayback)
@@ -165,6 +170,7 @@ struct NowPlayingTransportControls: View {
 struct NowPlayingTimeControls: View {
     let player: PlaybackStore
     @Binding var showsSidePanel: Bool
+    @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
         HStack(spacing: 12) {
@@ -174,7 +180,9 @@ struct NowPlayingTimeControls: View {
             } label: {
                 Image(systemName: "sidebar.right")
                     .font(.system(size: 14, weight: .semibold))
-                    .foregroundStyle(showsSidePanel ? Color.accentColor : Color(nsColor: .secondaryLabelColor))
+                    .foregroundStyle(
+                        showsSidePanel ? Color.primary : Color(nsColor: .secondaryLabelColor)
+                    )
                     .frame(width: 30, height: 30)
                     .contentShape(Rectangle())
             }
@@ -205,7 +213,8 @@ struct NowPlayingTimeControls: View {
                 .font(.system(size: 13, weight: .semibold))
                 .foregroundStyle(
                     player.isActiveDevice || player.activeRemoteDevice != nil
-                        ? Color.accentColor : Color(nsColor: .secondaryLabelColor)
+                        ? AuralPalette.mediaForeground(for: colorScheme)
+                        : Color(nsColor: .secondaryLabelColor)
                 )
                 .frame(width: 26, height: 26)
         }

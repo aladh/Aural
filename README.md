@@ -35,7 +35,9 @@ music streaming only for Premium subscribers; review the current
 
 ## Capabilities
 
-- Native macOS navigation, tables, menus, Settings, inspector, keyboard commands, and accessibility.
+- Native macOS navigation, tables, menus, inspector, keyboard commands, and accessibility. Native
+  selection and focus use the system accent; media actions and current-playback state use Aural's
+  fixed green. There is no Settings scene or custom accent-color preference.
 - Local 320 kbps playback with pause/resume, seek, previous/next, gapless transitions, repeat, and
   a persistent fewer-repeats shuffle mode.
 - Spotify Connect device discovery, remote playback mirroring, device transfer, and queue display.

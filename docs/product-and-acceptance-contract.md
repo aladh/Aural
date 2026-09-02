@@ -13,15 +13,14 @@ ADRs; historical measurements belong in the performance baseline.
 - Use a Spotify-familiar composition without reproducing Spotify's pixels: artwork-led media
   headers, dense track tables, a right-side queue/history rail, and a full-width bottom player
   shelf. Dark appearance uses a near-black content canvas, while Light Mode, inactive windows,
-  focus, and every accent continue to use system-adaptive macOS semantics. Do not force Dark Mode
-  or introduce a parallel theme system.
+  focus, and native selection continue to use system-adaptive macOS semantics. Aural's fixed green
+  is reserved for media actions and current-playback state; it is not a second selection or focus
+  system. Do not force Dark Mode or introduce a parallel theme system.
 - Keep the product surface small. In particular, Aural has no in-app volume control or manual
   Spotify refresh action. Playlist creation, rename, cover editing, collaborative permission
   management, and arbitrary reordering are out of scope. Occurrence-safe add/remove for playlists
   Aural can justify as owned is in scope.
-- The accent color is user-selectable in the native Settings scene. System semantics, keyboard
-  behavior, accessibility, focus, and inactive-window appearance must continue to work for every
-  accent.
+- Aural has no Settings scene or custom accent-color preference.
 
 ## Window and navigation behavior
 
@@ -39,8 +38,8 @@ ADRs; historical measurements belong in the performance baseline.
   artist, and available duration as the visible row. History may show artwork.
 - Closing the main window purges presentation caches but does not quit Aural. The app remains in the
   Dock and reopens through the Dock icon or the standard macOS Window command.
-- Sign Out belongs in the macOS **Aural** application menu, not in a custom profile card. Settings
-  belongs in the standard Settings scene.
+- Sign Out belongs in the macOS **Aural** application menu, not in a custom profile card. There is
+  no app-specific Settings surface.
 
 ## Playback presentation and ownership
 
@@ -158,8 +157,7 @@ Without explicit playback permission, it is safe to:
 
 - run `./Scripts/check.sh` and the synthetic check executables;
 - launch, sign in, browse Home/Search/library/detail pages, sort tables, inspect devices and queue,
-  change Aural-only settings, close/reopen the window, and sign out when sign-out testing is in
-  scope;
+  close/reopen the window, and sign out when sign-out testing is in scope;
 - observe remote playback state without pressing Play/Pause, Previous, Next, Shuffle, Repeat,
   Seek, Add to Queue, Transfer, Add to Playlist, or Remove from Playlist.
 

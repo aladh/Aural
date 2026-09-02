@@ -27,27 +27,14 @@ enum CatalogLayout {
     static let gridSpacing: CGFloat = 16
 }
 
-/// The content canvas follows the system appearance while borrowing Spotify's quiet,
-/// near-black detail-pane hierarchy in Dark Mode. The accent wash is intentionally subtle so
-/// artwork and selection remain the visual anchors.
+/// The catalog content canvas follows the system appearance, with a restrained near-black
+/// surface in Dark Mode so artwork and native selection remain the visual anchors.
 struct CatalogCanvasBackground: View {
     @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
-        ZStack(alignment: .top) {
-            Color(nsColor: .underPageBackgroundColor)
-            LinearGradient(
-                colors: [
-                    Color.accentColor.opacity(colorScheme == .dark ? 0.11 : 0.045),
-                    Color.accentColor.opacity(colorScheme == .dark ? 0.025 : 0.01),
-                    .clear,
-                ],
-                startPoint: .topLeading,
-                endPoint: .bottomTrailing
-            )
-            .frame(height: 320)
-        }
-        .ignoresSafeArea()
+        AuralPalette.catalogCanvas(for: colorScheme)
+            .ignoresSafeArea()
     }
 }
 
@@ -55,7 +42,7 @@ struct CatalogCanvasBackground: View {
 struct CatalogTableDivider: View {
     var body: some View {
         Rectangle()
-            .fill(.separator.opacity(0.72))
+            .fill(.separator.opacity(0.5))
             .frame(height: 1)
             .accessibilityHidden(true)
     }
@@ -68,13 +55,15 @@ struct CircularPlayButton: View {
     var body: some View {
         Button(action: action) {
             Image(systemName: "play.fill")
+                .symbolRenderingMode(.monochrome)
                 .font(.system(size: 17, weight: .bold))
+                .foregroundStyle(Color.black)
                 .frame(width: 38, height: 38)
         }
         .buttonStyle(.borderedProminent)
         .buttonBorderShape(.circle)
         .controlSize(.large)
-        .tint(.accentColor)
+        .tint(AuralPalette.mediaGreen)
         .help("Play")
         .accessibilityLabel("Play")
     }
@@ -126,7 +115,6 @@ struct MediaDetailHeader: View {
                 guard newWidth > 0 else { return }
                 availableWidth = newWidth
             }
-            .background { CatalogHeaderWash() }
             .padding(.horizontal, CatalogLayout.contentPadding)
             .padding(.top, 20)
             .padding(.bottom, 16)
@@ -232,33 +220,6 @@ struct MediaDetailHeader: View {
     }
 }
 
-private struct CatalogHeaderWash: View {
-    @Environment(\.colorScheme) private var colorScheme
-
-    var body: some View {
-        ZStack(alignment: .topLeading) {
-            RadialGradient(
-                colors: [
-                    Color.accentColor.opacity(colorScheme == .dark ? 0.075 : 0.03),
-                    .clear,
-                ],
-                center: .topLeading,
-                startRadius: 10,
-                endRadius: 430
-            )
-            LinearGradient(
-                colors: [
-                    Color.accentColor.opacity(colorScheme == .dark ? 0.035 : 0.012),
-                    .clear,
-                ],
-                startPoint: .top,
-                endPoint: .bottom
-            )
-        }
-        .allowsHitTesting(false)
-    }
-}
-
 /// A native macOS table shared by playlists, search results, and track libraries.
 /// Single-click selects; command-click extends a simple multi-selection; double-click
 /// or Return plays the primary row, matching desktop table behavior.
@@ -266,6 +227,7 @@ struct TrackTable: View {
     let tracks: CatalogTrackCollection
     let metadata: CatalogMetadataRepository
     let playback: CatalogPlaybackAccess
+    @Environment(\.colorScheme) private var colorScheme
     var showsDateAdded = false
     var playlistActions: TrackPlaylistActions?
     @State private var selection: Set<CatalogTrack.ID> = []
@@ -433,16 +395,30 @@ struct TrackTable: View {
     }
 
     private func titleCell(_ track: CatalogTrack) -> some View {
-        HStack(spacing: 6) {
-            if isCurrent(track) {
-                Image(systemName: "speaker.wave.2.fill")
-                    .foregroundStyle(Color.accentColor)
-                    .accessibilityLabel("Current track")
+        let isCurrentTrack = isCurrent(track)
+        let isSelected = selection.contains(track.id)
+
+        return HStack(spacing: 6) {
+            if isCurrentTrack {
+                if isSelected {
+                    Image(systemName: "speaker.wave.2.fill")
+                        .accessibilityLabel("Current track")
+                } else {
+                    Image(systemName: "speaker.wave.2.fill")
+                        .foregroundStyle(AuralPalette.mediaForeground(for: colorScheme))
+                        .accessibilityLabel("Current track")
+                }
             }
-            Text(track.title)
-                .fontWeight(.medium)
-                .foregroundStyle(isCurrent(track) ? Color.accentColor : .primary)
-                .lineLimit(1)
+            if isCurrentTrack && isSelected {
+                Text(track.title)
+                    .fontWeight(.medium)
+                    .lineLimit(1)
+            } else {
+                Text(track.title)
+                    .fontWeight(.medium)
+                    .foregroundStyle(isCurrentTrack ? AuralPalette.mediaForeground(for: colorScheme) : .primary)
+                    .lineLimit(1)
+            }
         }
     }
 
@@ -533,7 +509,7 @@ struct RemoteArtwork: View {
     private var placeholder: some View {
         ZStack {
             LinearGradient(
-                colors: [Color.secondary.opacity(0.13), Color.accentColor.opacity(0.2)],
+                colors: AuralPalette.artworkPlaceholderColors,
                 startPoint: .topLeading,
                 endPoint: .bottomTrailing
             )
