@@ -78,21 +78,25 @@ the same Git-tracked `*.swift` set, including `Package.swift`, `Sources/`, and c
 `check.sh` runs `Scripts/format-swift-self-test.sh` then `--check` so wrapper discovery and failure
 behavior cannot drift from the documented commands.
 
-GitHub's required `Debug quality gate` aggregates two parallel macos-26 lanes using the explicitly
-selected Xcode 26.6 / Swift 6.3.3 toolchain, matching the package's tools version. The debug lane runs
-the complete unfiltered `check.sh`; the release lane compiles shipping `Aural` with
-`-DAURAL_DISTRIBUTION` without rerunning Rust tests or Swift checks. The aggregate passes only when
-both lanes pass, so parallelism changes latency rather than coverage.
+GitHub's required `Debug quality gate` aggregates three parallel macos-26 lanes: Rust verification,
+Swift/architecture verification, and the release compile. The Swift lanes use the explicitly
+selected Xcode 26.6 / Swift 6.3.3 toolchain, matching the package's tools version. CI invokes the
+two verification scopes of `check.sh` independently; the ordinary local command still runs both
+scopes as one complete gate. The release lane compiles shipping `Aural` with
+`-DAURAL_DISTRIBUTION`. The aggregate passes only when all three lanes pass, so parallelism changes
+latency rather than coverage.
 
-Both lanes reuse a content-keyed playback archive when the Rust toolchain and every checked-in Rust
-input are unchanged. An exact cache miss rebuilds the archive normally. A cache hit refreshes only
-the restored archive's timestamp so `check.sh` does not mistake a content-matched artifact for a
-stale one after checkout. Debug and release SwiftPM products use separate `.build` cache keys to
-prevent concurrent jobs from publishing incomplete configuration-specific caches. Each key includes
-runner OS, architecture, the Swift toolchain, package manifests, and the commit SHA; restore prefixes
-reuse the nearest compatible configuration. Signing material and paths outside the checkout are not
-cached.
+The Swift and release lanes reuse a content-keyed playback archive when the Rust toolchain and every
+checked-in Rust input are unchanged. An exact cache miss rebuilds the archive normally. A cache hit
+refreshes only the restored archive's timestamp so `check.sh` does not mistake a content-matched
+artifact for a stale one after checkout. Debug and release SwiftPM products use separate `.build`
+cache keys to prevent concurrent jobs from publishing incomplete configuration-specific caches.
+Each key includes runner OS, architecture, the Swift toolchain, package manifests, and the commit
+SHA; restore prefixes reuse the nearest compatible configuration. Signing material and paths
+outside the checkout are not cached.
 
+`AURAL_CHECK_SCOPE=rust ./Scripts/check.sh` and `AURAL_CHECK_SCOPE=swift ./Scripts/check.sh` are CI
+partitioning controls, not substitutes for the normal local gate.
 `./Scripts/compile-release-aural.sh` remains the local compile-only command, and
 `./Scripts/check-clean.sh` remains the clean-room Debug and Release full gate. Rust-input changes
 still pay the optimized archive build cost; ordinary Swift and documentation pull requests avoid

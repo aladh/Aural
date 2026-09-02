@@ -129,9 +129,9 @@ Drag APIs stay in `check.sh` (full `Views/` tree; the playlist suite only sample
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | CI-WF-001 | `.github/workflows/ci.yml` exists. | Repository policy | `check.sh` | `Scripts/check.sh` | mechanically enforced | | keep |
 | CI-RG-001 | CI prefers an existing runner `rg`, else Homebrew ripgrep. | `CONTRIBUTING.md` | Two `rg -q` checks | `ci.yml` | mechanically enforced | Exact substring, not a parsed workflow AST. | keep |
-| CI-RUST-001 | Rust cache key remains `macos-rust-${{ hashFiles(`. | `CONTRIBUTING.md` | substring `rg` | `Scripts/check.sh` | mechanically enforced | Exact key fragment. | keep |
+| CI-RUST-001 | The dedicated Rust lane caches dependency state and native Debug verification products, keyed by runner architecture, `rust-toolchain.toml`, and `Cargo.lock`. | `CONTRIBUTING.md` | Job-scoped exact key assertion | `Scripts/check.sh` vs `.github/workflows/ci.yml` | mechanically enforced | Cache contents remain a workflow review concern. | keep |
 | CI-FMT-001 | CI must not Homebrew-install `swift-format` or SwiftLint. | `#42` / `d1acd598` | `rg` denylist in `check.sh` | `Scripts/check.sh` vs `.github/workflows/ci.yml` | mechanically enforced | `ci.yml` prints toolchain `swift-format` version; it does not install a second formatter. | keep |
-| CI-REL-001 | macos-26 PR lanes run the unfiltered debug `./Scripts/check.sh` and compile release `Aural` with `AURAL_DISTRIBUTION` in parallel; the required `Debug quality gate` aggregates both results. Content-keyed playback-archive reuse and separate Debug/Release SwiftPM caches may reduce latency but not coverage. | PR `#111` (release compile); `CONTRIBUTING.md` | `.github/workflows/ci.yml` + `Scripts/compile-release-aural.sh` | Workflow lanes and aggregate job; `check.sh` asserts the runner, archive/cache key prefixes, both commands, and aggregate dependencies | mechanically enforced | The source check matches selected workflow fragments rather than parsing YAML; cache-key completeness and action pins remain manual review under `DOC-CI-001`. | keep |
+| CI-REL-001 | macos-26 PR lanes run Rust verification, Swift/architecture verification, and the release `Aural` compile in parallel; the required `Debug quality gate` aggregates all three results. The two scoped `check.sh` invocations preserve the complete ordinary local gate. Content-keyed playback-archive reuse and separate Debug/Release SwiftPM caches may reduce latency but not coverage. | PR `#111` (release compile); `CONTRIBUTING.md` | `.github/workflows/ci.yml` + `Scripts/check.sh` + `Scripts/compile-release-aural.sh` | Workflow lanes and aggregate job; `check.sh` asserts each job-local command, cache key, and aggregate dependency/result check | mechanically enforced | The source check matches selected workflow fragments rather than parsing YAML; action pins remain manual review under `DOC-CI-001`. | keep |
 
 Pin GitHub Actions by full commit SHA (`AGENTS.md`) is **manually reviewed** on workflow-changing PRs (`DOC-CI-001`). `check.sh` does not parse every pin. SwiftPM cache shape is documented in `CONTRIBUTING.md` and reviewed on workflow-changing PRs (`CI-SWIFT-001` removed).
 
@@ -211,7 +211,7 @@ from `#42`. Remaining architecture sites keep their relative order.
 | 29 | `brew install ripgrep` in workflow | CI-RG-001 | keep |
 | 30 | No Homebrew `swift-format` / SwiftLint | CI-FMT-001 | keep |
 | 31 | Rust cache key fragment | CI-RUST-001 | keep |
-| 32 | Cached parallel Debug/release lanes aggregate into `Debug quality gate` | CI-REL-001 (PR `#111` release origin) | keep |
+| 32 | Cached parallel Rust/Swift/release lanes aggregate into `Debug quality gate` | CI-REL-001 (PR `#111` release origin) | keep |
 | 33 | `plutil -lint Packaging/Info.plist` | CMP-PKG-001 | keep |
 
 **Totals:** 33 numbered `check.sh` sites; **32** fail-the-gate policies and **1** relink side
