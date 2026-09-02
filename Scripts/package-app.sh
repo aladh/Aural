@@ -12,7 +12,8 @@ case "$package_mode" in
 esac
 
 project_root="${0:A:h:h}"
-app_path="$project_root/Aural.app"
+app_path="${AURAL_APP_PATH:-$project_root/Aural.app}"
+staged_launch_path="$project_root/.build/aural-launch/Aural.app"
 executable="$project_root/.build/$build_configuration/Aural"
 icon="$project_root/Assets/Aural.icns"
 info_template="$project_root/Packaging/Info.plist"
@@ -23,6 +24,12 @@ third_party_notices="$project_root/THIRD_PARTY_NOTICES.md"
 app_version="${AURAL_VERSION:-$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$info_template")}"
 app_build_number="${AURAL_BUILD_NUMBER:-$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$info_template")}"
 distribution_identity="${AURAL_SIGNING_IDENTITY:-}"
+development_identity="${AURAL_DEVELOPMENT_SIGNING_IDENTITY:-}"
+
+if [[ -n "$distribution_identity" && -n "$development_identity" ]]; then
+    print -u2 "Set only one of AURAL_SIGNING_IDENTITY or AURAL_DEVELOPMENT_SIGNING_IDENTITY"
+    exit 2
+fi
 
 export AURAL_BUILD_CONFIGURATION="$build_configuration"
 "$project_root/Scripts/check.sh"
@@ -45,7 +52,7 @@ fi
 
 # This is a generated bundle at one exact path; recreate it so stale binaries and resources
 # cannot survive a packaging run.
-if [[ "$app_path" != "$project_root/Aural.app" ]]; then
+if [[ "$app_path" != "$project_root/Aural.app" && "$app_path" != "$staged_launch_path" ]]; then
     print -u2 "Refusing to replace an unexpected app path"
     exit 1
 fi
@@ -134,17 +141,30 @@ elif [[ -n "$distribution_identity" ]]; then
         --sign "$distribution_identity" \
         "$app_path"
     signing_kind="Developer ID"
+elif [[ -n "$development_identity" ]]; then
+    codesign --force --options runtime --timestamp=none \
+        --sign "$development_identity" \
+        "$app_path"
+    signing_kind="Apple-team development"
 else
     sign_with_local_identity
     signing_kind="local development"
 fi
 
 "$project_root/Scripts/validate-app.sh" --local "$app_path"
+if [[ -n "$development_identity" ]]; then
+    "$project_root/Scripts/validate-app.sh" --keychain-stable "$app_path"
+fi
 
-if [[ "$build_configuration" == "release" && -z "$distribution_identity" ]]; then
+if [[ "$build_configuration" == "release" && -n "$development_identity" ]]; then
+    print -u2 "Release bundle uses an Apple Development identity; set AURAL_SIGNING_IDENTITY to create a distributable Developer ID build."
+elif [[ "$build_configuration" == "release" && -z "$distribution_identity" ]]; then
     print -u2 "Release bundle uses the local identity; set AURAL_SIGNING_IDENTITY to create a distributable Developer ID build."
 elif [[ "$build_configuration" == "release" && "$distribution_identity" == "-" ]]; then
     print -u2 "Release bundle uses an ad-hoc signature; set AURAL_SIGNING_IDENTITY to a Developer ID identity for distribution."
+fi
+if [[ -z "$distribution_identity" && -z "$development_identity" ]]; then
+    print -u2 "Self-signed bundles are build-only: authenticated launches require an Apple-issued team identity."
 fi
 
 print "Packaged $app_path ($build_configuration, $signing_kind signature, version $app_version ($app_build_number))"

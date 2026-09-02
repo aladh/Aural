@@ -116,11 +116,13 @@ nonisolated enum KeychainManager {
     /// File-based generic-password items, authorized by this process's code signature.
     ///
     /// `kSecUseDataProtectionKeychain` is omitted. That flag selects the data-protection
-    /// keychain and its default access-group / application-identifier behavior. Local
-    /// self-signed, ad-hoc, and Developer ID packaging here do not provision that
-    /// identity; adding an entitlement or provisioning-profile workflow is out of
-    /// scope. The stable local signing identity is what makes the file-based ACL
-    /// reusable across development rebuilds.
+    /// keychain, whose entitlement-based access requires a provisioning profile. Aural
+    /// retains the file-based item so existing credentials remain discoverable.
+    ///
+    /// Self-signed development signatures are build-only: macOS records their changing
+    /// CDHash in the item's partition ACL, so they cannot provide silent access across
+    /// rebuilds. `build_and_run.sh` therefore requires an Apple-issued team signature;
+    /// its stable Team ID is the reusable development access boundary.
     private static func makeQuery(key: String, service: String) -> [String: Any] {
         [
             kSecClass as String: kSecClassGenericPassword,

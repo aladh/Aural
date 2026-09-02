@@ -265,9 +265,11 @@ Generated archives, packages, diagnostics, signing material, private payloads, a
 not belong in Git. In particular, never commit `.build/`, `.swiftpm/`, `Aural.app/`, `dist/`,
 `diagnostics/`, `AuralArtwork/`, Rust `target/`, static `.a` archives, signing keychains or
 certificates, `.DS_Store`, tokens, OAuth callbacks, raw responses, or private screenshots. Inspect
-the staged diff. Never install project development identities in the login keychain or weaken
-signing to suppress prompts. Prefer fresh-clone recovery and never run destructive cleanup over
-user work. See [development setup](docs/development-setup.md),
+the staged diff. Never install project-generated signing identities in the login keychain or weaken
+signing to suppress prompts. Xcode-managed Apple Development identities follow the authenticated
+development procedure in [development setup](docs/development-setup.md). Prefer fresh-clone
+recovery and never run destructive cleanup over user work. See
+[development setup](docs/development-setup.md),
 [CONTRIBUTING.md](CONTRIBUTING.md), [PRIVACY.md](PRIVACY.md), and
 [SECURITY.md](SECURITY.md) for the owning procedures.
 

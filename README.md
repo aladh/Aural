@@ -107,10 +107,11 @@ Spotify-side changes.
 ## Privacy and security
 
 Aural has no analytics, advertising, crash-reporting SDK, or Aural-operated server. Account data is
-requested directly from Spotify and rendered locally. Distribution builds store OAuth credentials
-in Keychain. Local development packaging reuses a stable project-local signing identity so
-that Keychain access policy survives rebuilds; leftover plaintext from older development
-builds is read once and then deleted.
+requested directly from Spotify and rendered locally. OAuth credentials are stored in Keychain.
+Authenticated development launches require an Apple-issued signing identity with a stable Team ID;
+self-signed packages are build-only because their per-build CDHash does not provide durable
+Keychain authorization. Leftover plaintext from older development builds is read once and then
+deleted.
 
 Read [PRIVACY.md](PRIVACY.md) before signing in. Report security issues through the private process
 in [SECURITY.md](SECURITY.md), not a public issue.
