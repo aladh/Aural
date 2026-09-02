@@ -181,9 +181,7 @@ struct NowPlayingTimeControls: View {
                 Image(systemName: "sidebar.right")
                     .font(.system(size: 14, weight: .semibold))
                     .foregroundStyle(
-                        showsSidePanel
-                            ? AuralPalette.mediaForeground(for: colorScheme)
-                            : Color(nsColor: .secondaryLabelColor)
+                        showsSidePanel ? Color.primary : Color(nsColor: .secondaryLabelColor)
                     )
                     .frame(width: 30, height: 30)
                     .contentShape(Rectangle())

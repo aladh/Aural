@@ -55,7 +55,9 @@ struct CircularPlayButton: View {
     var body: some View {
         Button(action: action) {
             Image(systemName: "play.fill")
+                .symbolRenderingMode(.monochrome)
                 .font(.system(size: 17, weight: .bold))
+                .foregroundStyle(Color.black)
                 .frame(width: 38, height: 38)
         }
         .buttonStyle(.borderedProminent)
