@@ -105,7 +105,7 @@ repair the stale link or summary rather than creating another owner.
 | `Sources/Aural/` | `AuralCore`: composition root, native UI, feature stores, Spotify/auth adapters, audio renderer, and playback adapter. |
 | `Sources/AuralDomain/` | Portable models, reducer, lifetime rules, parsing, sorting, and policies. No UI, audio, network, or FFI imports. |
 | `Sources/AuralPlaybackCore/` | Checked-in C header/module map for the Rust ABI. |
-| `Backend/aural-playback/` | Rust/librespot session, Connect, streaming, decoding, recovery, queue truth, and C exports. |
+| `Backend/aural-playback/` | Rust/librespot session, Connect, streaming, decoding, recovery, unfiltered protocol queue rows, and C exports. |
 | `Sources/AuralChecks/` | Pure domain checks and deterministic playback traces; never ships. |
 | `Sources/AuralChecks/DeferredBoundaryChecks/` | Concrete codecs, fixtures, coordinator, and queue checks; never ships. |
 | `Scripts/`, `script/`, `Packaging/`, `Assets/` | Verification, build, signing, diagnostics, packaging metadata, privacy manifest, and icon sources. |
@@ -129,8 +129,9 @@ lifetime, or foreign-boundary failures:
   authoritative snapshot reconciles the expected transport; rejected non-transport, stale,
   superseded, teardown, and epoch-invalidated results stay inert. Do not add TCA, a generic
   `Effect`, or in-place partial playback presentation updates. See
-  [ADR 002](docs/ADR-002-playback-state-and-dependencies.md) and
-  [ADR 003](docs/ADR-003-playback-command-effects.md).
+  [ADR 002](docs/ADR-002-playback-state-and-dependencies.md),
+  [ADR 003](docs/ADR-003-playback-command-effects.md), and
+  [ADR 004](docs/ADR-004-swift-owned-playback-logic.md).
 - Production dependencies are assembled once in `PlaybackEnvironment.live`. Views and feature
   stores render state and invoke narrow actions; they do not construct Spotify APIs, auth
   singletons, or the Rust engine. `TransientFeedbackPresenter` owns transient mutation feedback;
@@ -146,7 +147,8 @@ lifetime, or foreign-boundary failures:
   `SESSION_GENERATION` at trigger time, revalidates after acquiring the lock, and must not clean up
   or rebuild a newer generation. Exported init re-checks its already-initialized no-op inside the
   lock.
-- `QueueService` owns queue precedence and context identity. Metadata may enrich labels but must not
+- `QueueService` owns queue precedence and context identity. Upcoming rows are projected in Swift
+  from Connect protocol tracks (`QueueProtocolProjection`); metadata may enrich labels but must not
   reorder or erase newer authoritative state. Playlist writes use `PlaylistMutating` and
   `PlaylistMutationController`; keep read-only catalog access separate and mutation DTOs out of
   views.

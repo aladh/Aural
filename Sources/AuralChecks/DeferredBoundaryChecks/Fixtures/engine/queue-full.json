@@ -1,50 +1,6 @@
 {
   "disallow_removing_from_next_tracks": true,
   "disallow_set_queue": true,
-  "next_tracks": [
-    {
-      "album_name": "",
-      "artist": "",
-      "duration_ms": 0,
-      "image_url": "",
-      "name": "",
-      "provider": "queue",
-      "uid": "occ-a",
-      "uri": "spotify:track:fixtureDup"
-    },
-    {
-      "album_name": "",
-      "artist": "",
-      "duration_ms": 0,
-      "image_url": "",
-      "name": "",
-      "provider": "queue",
-      "uid": "occ-b",
-      "uri": "spotify:track:fixtureDup"
-    },
-    {
-      "album_name": "",
-      "artist": "",
-      "duration_ms": 0,
-      "image_url": "",
-      "name": "",
-      "provider": "unavailable",
-      "uid": "occ-u",
-      "uri": "spotify:track:fixtureUnavailable"
-    }
-  ],
-  "prev_tracks": [
-    {
-      "album_name": "",
-      "artist": "",
-      "duration_ms": 0,
-      "image_url": "",
-      "name": "",
-      "provider": "context",
-      "uid": "occ-prev",
-      "uri": "spotify:track:fixturePrev"
-    }
-  ],
   "protocol_next_tracks": [
     {
       "album_uri": "spotify:album:fixtureAlbum",
@@ -63,6 +19,21 @@
       },
       "uid": "occ-a",
       "uri": "spotify:track:fixtureDup"
+    },
+    {
+      "provider": "queue",
+      "uid": "occ-b",
+      "uri": "spotify:track:fixtureDup"
+    },
+    {
+      "provider": "unavailable",
+      "uid": "occ-u",
+      "uri": "spotify:track:fixtureUnavailable"
+    },
+    {
+      "provider": "delimiter",
+      "uid": "",
+      "uri": "spotify:delimiter"
     },
     {
       "provider": "autoplay",
@@ -92,11 +63,6 @@
   "revision": 13,
   "session_generation": 4,
   "track": {
-    "album_name": "Fixture Album",
-    "artist": "Fixture Artist",
-    "duration_ms": 180000,
-    "image_url": "https://example.test/fixture-cover.jpg",
-    "name": "Fixture Track",
     "provider": "context",
     "uid": "occ-now",
     "uri": "spotify:track:fixtureNow"

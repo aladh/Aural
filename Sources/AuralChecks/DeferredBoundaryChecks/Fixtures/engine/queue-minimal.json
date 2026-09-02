@@ -1,8 +1,6 @@
 {
   "disallow_removing_from_next_tracks": false,
   "disallow_set_queue": false,
-  "next_tracks": [],
-  "prev_tracks": [],
   "protocol_next_tracks": [],
   "protocol_prev_tracks": [],
   "queue_revision": "",

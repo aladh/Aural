@@ -337,10 +337,10 @@ private func connectQueueState(revision: UInt64, sessionGeneration: UInt64) -> R
             name: "Now",
             artist: "Artist",
             imageURL: "",
-            durationMS: 1
+            durationMS: 1,
+            provider: "context",
+            uid: "occ-now"
         ),
-        nextTracks: next.map { RustQueueState.QueueItem(uri: $0.0, provider: "queue", uid: $0.1) },
-        prevTracks: [],
         protocolNextTracks: next.map {
             RustQueueState.ProtocolTrack(
                 uri: $0.0,
@@ -1368,9 +1368,11 @@ func runQueueManagementChecks(_ runner: CheckRunner) async {
             let queueService = try auralSourceFile("Aural/Spotify/QueueService.swift")
             let projections = try auralSourceFile("Aural/Spotify/PlaybackStore+Projections.swift")
             let models = try auralSourceFile("AuralDomain/PlaybackPanelModels.swift")
+            let queueProjection = try auralSourceFile("AuralDomain/QueueMutation.swift")
             runner.check(
                 "Connect intake binds occurrence uids into selectable identity",
-                containsToken(engineEvents, "uid: item.uid ?? \"\"")
+                containsToken(engineEvents, "QueueProtocolProjection.upcomingEntries(from: protocolNext)")
+                    && containsToken(queueProjection, "uid: track.uid")
                     && containsToken(models, "uid: String")
             )
             runner.check(

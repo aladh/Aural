@@ -221,16 +221,32 @@ public enum QueueMutationSelection: Sendable {
 }
 
 public enum QueueProtocolProjection: Sendable {
-    /// Matches Rust `collect_queue_items`: stop at `spotify:delimiter`, keep playable tracks.
+    /// Playable Connect rows that may appear in the upcoming rail or as current-track identity.
+    public static func isPlayableTrackURI(_ uri: String) -> Bool {
+        uri.hasPrefix("spotify:track:")
+    }
+
+    /// App-facing upcoming rows from unfiltered Connect protocol `next` tracks.
+    ///
+    /// Stop at `spotify:delimiter`, keep playable tracks, and ignore episodes or other
+    /// non-track URIs. Protocol rows after the delimiter (autoplay continuation) stay in
+    /// the mutation snapshot and must not appear in the queue rail.
     public static func upcoming(from protocolNext: [QueueProtocolTrack]) -> [QueueProtocolTrack] {
         var items: [QueueProtocolTrack] = []
         for track in protocolNext {
             if track.uri == "spotify:delimiter" { break }
-            if track.uri.hasPrefix("spotify:track:") {
+            if isPlayableTrackURI(track.uri) {
                 items.append(track)
             }
         }
         return items
+    }
+
+    /// Occurrence-indexed presentation rows derived from protocol `next` tracks.
+    public static func upcomingEntries(from protocolNext: [QueueProtocolTrack]) -> [QueueEntry] {
+        upcoming(from: protocolNext).enumerated().map { index, track in
+            QueueEntry(uri: track.uri, provider: track.provider, occurrence: index, uid: track.uid)
+        }
     }
 
     public static func matchesVisibleUpcoming(
@@ -307,7 +323,7 @@ public enum QueueProtocolProjection: Sendable {
                 pastDelimiter = true
                 continue
             }
-            if track.uri.hasPrefix("spotify:track:") {
+            if isPlayableTrackURI(track.uri) {
                 if selectedIndices.contains(upcomingIndex) {
                     upcomingIndex += 1
                     continue
