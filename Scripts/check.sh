@@ -209,6 +209,8 @@ if ! rg -q --fixed-strings 'AURAL_DEVELOPMENT_SIGNING_IDENTITY' \
         "$project_root/script/build_and_run.sh" \
     || ! rg -q --fixed-strings 'mv "$staged_app_bundle" "$app_bundle"' \
         "$project_root/script/build_and_run.sh" \
+    || ! rg -q --fixed-strings 'mv "$rollback_app_bundle" "$app_bundle"' \
+        "$project_root/script/build_and_run.sh" \
     || ! rg -q --fixed-strings 'AURAL_DEVELOPMENT_SIGNING_IDENTITY' \
         "$project_root/Scripts/package-app.sh" \
     || ! rg -q --fixed-strings 'TeamIdentifier=' "$project_root/Scripts/validate-app.sh" \

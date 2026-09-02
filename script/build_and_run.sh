@@ -8,6 +8,7 @@ root_dir="${0:A:h:h}"
 app_bundle="$root_dir/Aural.app"
 app_binary="$app_bundle/Contents/MacOS/Aural"
 staged_app_bundle="$root_dir/.build/aural-launch/Aural.app"
+rollback_app_bundle="$root_dir/.build/aural-launch/Aural.previous.app"
 
 case "$mode" in
     --release|release|--verify-release|verify-release)
@@ -56,8 +57,25 @@ if pgrep -x "$app_name" >/dev/null; then
     print -u2 "Aural did not terminate; leaving the existing app bundle in place"
     exit 1
 fi
-rm -rf "$app_bundle"
-mv "$staged_app_bundle" "$app_bundle"
+had_existing_bundle=false
+if [[ -e "$app_bundle" ]]; then
+    rm -rf "$rollback_app_bundle"
+    mv "$app_bundle" "$rollback_app_bundle"
+    had_existing_bundle=true
+fi
+if ! mv "$staged_app_bundle" "$app_bundle"; then
+    if [[ "$had_existing_bundle" == true ]]; then
+        if ! mv "$rollback_app_bundle" "$app_bundle"; then
+            print -u2 "Failed to install the staged app and restore the previous bundle"
+            exit 1
+        fi
+        print -u2 "Failed to install the staged app; restored the previous bundle"
+    else
+        print -u2 "Failed to install the staged app; no previous bundle was present"
+    fi
+    exit 1
+fi
+rm -rf "$rollback_app_bundle"
 rmdir "$root_dir/.build/aural-launch" 2>/dev/null || true
 
 open_app() {
