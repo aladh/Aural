@@ -246,9 +246,9 @@ review thread. A stale Cursor `CHANGES_REQUESTED` review may be dismissed by a m
 - CodeRabbit has approved the current head; and
 - the required checks pass and the final maintainer review finds the diff ready to merge.
 
-The dismissal message must identify why the review is stale and point to the fixing commit. Never
-dismiss a current-head review, an unresolved valid finding, or a review merely to bypass the
-conversation-resolution rule.
+The dismissal message must identify why the review is stale and point to the fixing commit or the
+commit that documents the declined findings. Never dismiss a current-head review, an unresolved
+valid finding, or a review merely to bypass the conversation-resolution rule.
 
 Follow the [product and acceptance contract](docs/product-and-acceptance-contract.md) for manual
 testing. Live Spotify playback and account mutations are opt-in: launching or read-only acceptance
