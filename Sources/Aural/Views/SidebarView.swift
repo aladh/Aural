@@ -87,6 +87,8 @@ struct SidebarView: View {
         .accessibilityElement(children: .combine)
         .accessibilityAddTraits(selection == .playlist(playlist.uri) ? .isSelected : [])
         .accessibilityLabel(playlist.title)
-        .accessibilityValue(playlist.subtitle.isEmpty ? "Playlist" : playlist.subtitle)
+        .accessibilityValue(
+            showsSubtitle ? (playlist.subtitle.isEmpty ? "Playlist" : playlist.subtitle) : ""
+        )
     }
 }
