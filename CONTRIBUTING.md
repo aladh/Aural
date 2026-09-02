@@ -231,6 +231,25 @@ that contains credentials, OAuth redirects, raw API responses or payloads, or pr
   re-reads the issue acceptance criteria against `main` and closes the issue only when every
   criterion is genuinely satisfied.
 
+### Automated review resolution
+
+CodeRabbit performs incremental reviews and provides the required current-head approval. Cursor is
+configured to review a pull request only once, so do not trigger another Cursor review merely to
+clear review state after its findings have been addressed.
+
+Before merging, reply to every actionable automated-review finding and resolve every associated
+review thread. A stale Cursor `CHANGES_REQUESTED` review may be dismissed by a maintainer only when:
+
+- the review targets an older commit than the pull request head;
+- every Cursor finding is either fixed or explicitly declined with a documented reason;
+- no Cursor review thread remains unresolved;
+- CodeRabbit has approved the current head; and
+- the required checks pass and the final maintainer review finds the diff ready to merge.
+
+The dismissal message must identify why the review is stale and point to the fixing commit or the
+commit that documents the declined findings. Never dismiss a current-head review, an unresolved
+valid finding, or a review merely to bypass the conversation-resolution rule.
+
 Follow the [product and acceptance contract](docs/product-and-acceptance-contract.md) for manual
 testing. Live Spotify playback and account mutations are opt-in: launching or read-only acceptance
 testing is not permission to alter playback on any Connect device.
