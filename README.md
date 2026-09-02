@@ -58,7 +58,7 @@ To run Aural:
 
 To build it from this repository:
 
-- Xcode Command Line Tools with Swift 6.1 or newer.
+- Xcode 26.5 with Swift 6.4.
 - [Rustup](https://rustup.rs/). The exact Rust toolchain and target are pinned in
   `rust-toolchain.toml` and install automatically on first use.
 - [ripgrep](https://github.com/BurntSushi/ripgrep) when running the verification scripts.

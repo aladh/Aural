@@ -271,8 +271,15 @@ if ! rg -q 'key: macos-rust-\$\{\{ hashFiles\(' "$ci_workflow"; then
     print -u2 "CI must keep the existing Rust cache key"
     exit 1
 fi
-if ! rg -U -q --fixed-strings $'      - name: Run checks\n        run: ./Scripts/check.sh\n\n      - name: Compile release Aural with AURAL_DISTRIBUTION\n        run: ./Scripts/compile-release-aural.sh' "$ci_workflow"; then
-    print -u2 "CI must compile release Aural with AURAL_DISTRIBUTION after the unfiltered debug gate"
+if ! rg -q 'key: macos-playback-archive-' "$ci_workflow" \
+    || ! rg -q 'key: macos-swiftpm-debug-' "$ci_workflow" \
+    || ! rg -q 'key: macos-swiftpm-release-' "$ci_workflow" \
+    || [[ "$(rg -c '^    runs-on: macos-26$' "$ci_workflow")" -ne 2 ]] \
+    || [[ "$(rg -c 'xcode-select -s /Applications/Xcode_26\.5\.app' "$ci_workflow")" -ne 2 ]] \
+    || ! rg -U -q --fixed-strings $'      - name: Run checks\n        run: ./Scripts/check.sh' "$ci_workflow" \
+    || ! rg -U -q --fixed-strings $'      - name: Compile release Aural with AURAL_DISTRIBUTION\n        run: ./Scripts/compile-release-aural.sh' "$ci_workflow" \
+    || ! rg -q 'needs: \[checks, release\]' "$ci_workflow"; then
+    print -u2 "CI must cache the playback archive, isolate SwiftPM configurations, and aggregate parallel debug and release lanes"
     exit 1
 fi
 

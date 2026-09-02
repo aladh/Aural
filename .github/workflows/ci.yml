@@ -13,24 +13,17 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  check:
-    name: Debug quality gate
-    runs-on: macos-15
+  checks:
+    name: Debug and deterministic checks
+    runs-on: macos-26
     timeout-minutes: 45
 
     steps:
       - name: Check out source
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - name: Cache Rust dependencies and build products
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: |
-            ~/.cargo/git
-            ~/.cargo/registry
-            Backend/aural-playback/target
-          key: macos-rust-${{ hashFiles('Backend/aural-playback/Cargo.lock') }}
-          restore-keys: macos-rust-
+      - name: Select Xcode 26.5
+        run: sudo xcode-select -s /Applications/Xcode_26.5.app
 
       - name: Install verification tools
         run: |
@@ -51,6 +44,29 @@ jobs:
           xcrun --find swift-format
           xcrun swift-format --version
           echo "SWIFT_TOOLCHAIN_KEY=$(shasum -a 256 "$RUNNER_TEMP/swift-toolchain.txt" | awk '{print $1}')" >> "$GITHUB_ENV"
+          echo "RUST_TOOLCHAIN_KEY=$(rustc --version | shasum -a 256 | awk '{print $1}')" >> "$GITHUB_ENV"
+
+      - name: Cache Rust dependencies and build products
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.cargo/git
+            ~/.cargo/registry
+            Backend/aural-playback/target
+          key: macos-rust-${{ hashFiles('Backend/aural-playback/Cargo.lock') }}
+          restore-keys: macos-rust-
+
+      - name: Cache playback archive
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: Backend/lib/libaural_playback.a
+          key: macos-playback-archive-${{ runner.arch }}-${{ env.RUST_TOOLCHAIN_KEY }}-${{ hashFiles('Backend/aural-playback/Cargo.toml', 'Backend/aural-playback/Cargo.lock', 'Backend/aural-playback/build.sh', 'Backend/aural-playback/src/**') }}
+
+      - name: Refresh cached playback archive timestamp
+        run: |
+          if [[ -f Backend/lib/libaural_playback.a ]]; then
+            touch Backend/lib/libaural_playback.a
+          fi
 
       - name: Cache SwiftPM build directory
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
@@ -58,12 +74,89 @@ jobs:
           path: |
             .build/*
             !.build/aural-signing
-          key: macos-swiftpm-${{ runner.os }}-${{ runner.arch }}-${{ env.SWIFT_TOOLCHAIN_KEY }}-${{ hashFiles('Package.swift', 'Package.resolved') }}-${{ github.sha }}
+          key: macos-swiftpm-debug-${{ runner.os }}-${{ runner.arch }}-${{ env.SWIFT_TOOLCHAIN_KEY }}-${{ hashFiles('Package.swift', 'Package.resolved') }}-${{ github.sha }}
           restore-keys: |
+            macos-swiftpm-debug-${{ runner.os }}-${{ runner.arch }}-${{ env.SWIFT_TOOLCHAIN_KEY }}-
             macos-swiftpm-${{ runner.os }}-${{ runner.arch }}-${{ env.SWIFT_TOOLCHAIN_KEY }}-
 
       - name: Run checks
         run: ./Scripts/check.sh
 
+  release:
+    name: Release distribution compile
+    runs-on: macos-26
+    timeout-minutes: 45
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Select Xcode 26.5
+        run: sudo xcode-select -s /Applications/Xcode_26.5.app
+
+      - name: Show toolchains
+        run: |
+          set -euo pipefail
+          {
+            swift --version
+            uname -m
+          } | tee "$RUNNER_TEMP/swift-toolchain.txt"
+          rustc --version
+          echo "SWIFT_TOOLCHAIN_KEY=$(shasum -a 256 "$RUNNER_TEMP/swift-toolchain.txt" | awk '{print $1}')" >> "$GITHUB_ENV"
+          echo "RUST_TOOLCHAIN_KEY=$(rustc --version | shasum -a 256 | awk '{print $1}')" >> "$GITHUB_ENV"
+
+      - name: Cache playback archive
+        id: playback-archive
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: Backend/lib/libaural_playback.a
+          key: macos-playback-archive-${{ runner.arch }}-${{ env.RUST_TOOLCHAIN_KEY }}-${{ hashFiles('Backend/aural-playback/Cargo.toml', 'Backend/aural-playback/Cargo.lock', 'Backend/aural-playback/build.sh', 'Backend/aural-playback/src/**') }}
+
+      - name: Cache Rust dependencies and build products
+        if: steps.playback-archive.outputs.cache-hit != 'true'
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.cargo/git
+            ~/.cargo/registry
+            Backend/aural-playback/target
+          key: macos-rust-${{ hashFiles('Backend/aural-playback/Cargo.lock') }}
+          restore-keys: macos-rust-
+
+      - name: Prepare playback archive
+        run: |
+          if [[ -f Backend/lib/libaural_playback.a ]]; then
+            touch Backend/lib/libaural_playback.a
+          else
+            ./Backend/aural-playback/build.sh
+          fi
+
+      - name: Cache SwiftPM release build directory
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            .build/*
+            !.build/aural-signing
+          key: macos-swiftpm-release-${{ runner.os }}-${{ runner.arch }}-${{ env.SWIFT_TOOLCHAIN_KEY }}-${{ hashFiles('Package.swift', 'Package.resolved') }}-${{ github.sha }}
+          restore-keys: |
+            macos-swiftpm-release-${{ runner.os }}-${{ runner.arch }}-${{ env.SWIFT_TOOLCHAIN_KEY }}-
+            macos-swiftpm-${{ runner.os }}-${{ runner.arch }}-${{ env.SWIFT_TOOLCHAIN_KEY }}-
+
       - name: Compile release Aural with AURAL_DISTRIBUTION
         run: ./Scripts/compile-release-aural.sh
+
+  gate:
+    name: Debug quality gate
+    if: always()
+    needs: [checks, release]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Require every quality lane
+        env:
+          CHECKS_RESULT: ${{ needs.checks.result }}
+          RELEASE_RESULT: ${{ needs.release.result }}
+        run: |
+          test "$CHECKS_RESULT" = success
+          test "$RELEASE_RESULT" = success

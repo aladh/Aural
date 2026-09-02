@@ -93,7 +93,7 @@ nonisolated struct AcceptedConnectQueue: Sendable {
 
 /// Optional suspension points around reset, `acceptConnect`, and `recordCommittedReplacement`.
 /// Production stores `nil` and does not `await`. Checks inject `QueueServiceTestHook`.
-nonisolated protocol QueueServiceHook: Sendable {
+protocol QueueServiceHook: Sendable {
     func beforeReset() async
     func beforeAcceptConnect() async
     func beforeRecordCommittedReplacement() async
