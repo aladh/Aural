@@ -13,8 +13,11 @@ struct TrackPlaylistActions {
 enum CatalogLayout {
     static let contentPadding: CGFloat = 28
     static let headerThreshold: CGFloat = 640
+    static let headerCompactArtwork: CGFloat = 152
     static let headerMinimumArtwork: CGFloat = 184
+    static let headerMediumArtwork: CGFloat = 208
     static let headerMaximumArtwork: CGFloat = 236
+    static let sidebarCompactSubtitleThreshold: CGFloat = 220
     static let cardArtwork: CGFloat = 160
     static let cardPadding: CGFloat = 8
     static let cardCornerRadius: CGFloat = 11
@@ -96,6 +99,7 @@ struct MediaDetailHeader: View {
     let itemCount: String?
     let canPlay: Bool
     let play: () -> Void
+    @State private var availableWidth: CGFloat = 0
 
     init(
         item: CatalogItem,
@@ -114,40 +118,64 @@ struct MediaDetailHeader: View {
     }
 
     var body: some View {
-        GeometryReader { proxy in
-            if proxy.size.width >= CatalogLayout.headerThreshold {
-                horizontalHeader(width: proxy.size.width)
-            } else {
-                compactHeader(width: proxy.size.width)
+        headerContent(width: availableWidth)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .onGeometryChange(for: CGFloat.self) { proxy in
+                proxy.size.width
+            } action: { newWidth in
+                guard newWidth > 0 else { return }
+                availableWidth = newWidth
             }
+            .background { CatalogHeaderWash() }
+            .padding(.horizontal, CatalogLayout.contentPadding)
+            .padding(.top, 20)
+            .padding(.bottom, 16)
+    }
+
+    @ViewBuilder
+    private func headerContent(width: CGFloat) -> some View {
+        if width >= CatalogLayout.headerThreshold {
+            horizontalHeader(width: width)
+        } else {
+            compactHeader(width: width)
         }
-        .frame(minHeight: 272, maxHeight: 320)
-        .background { CatalogHeaderWash() }
-        .padding(.horizontal, CatalogLayout.contentPadding)
-        .padding(.top, 20)
-        .padding(.bottom, 16)
     }
 
     private func horizontalHeader(width: CGFloat) -> some View {
-        let artworkSize = min(
-            max(width * 0.24, CatalogLayout.headerMinimumArtwork),
-            CatalogLayout.headerMaximumArtwork
-        )
-
         return HStack(alignment: .bottom, spacing: 26) {
-            artwork(size: artworkSize)
-            detailColumn(titleSize: min(max(38, artworkSize * 0.2), 46))
+            artwork(size: horizontalArtworkSize(for: width))
+            detailColumn()
             Spacer(minLength: 0)
         }
     }
 
     private func compactHeader(width: CGFloat) -> some View {
-        let artworkSize = min(max(width * 0.3, 152), CatalogLayout.headerMinimumArtwork)
+        ViewThatFits(in: .horizontal) {
+            HStack(alignment: .bottom, spacing: 20) {
+                artwork(size: compactArtworkSize(for: width))
+                detailColumn()
+            }
 
-        return HStack(alignment: .bottom, spacing: 20) {
-            artwork(size: artworkSize)
-            detailColumn(titleSize: 36)
+            VStack(alignment: .leading, spacing: 18) {
+                artwork(size: compactArtworkSize(for: width))
+                detailColumn()
+            }
         }
+    }
+
+    private func horizontalArtworkSize(for width: CGFloat) -> CGFloat {
+        switch width {
+        case ..<820:
+            return CatalogLayout.headerMinimumArtwork
+        case ..<940:
+            return CatalogLayout.headerMediumArtwork
+        default:
+            return CatalogLayout.headerMaximumArtwork
+        }
+    }
+
+    private func compactArtworkSize(for width: CGFloat) -> CGFloat {
+        width < 560 ? CatalogLayout.headerCompactArtwork : CatalogLayout.headerMinimumArtwork
     }
 
     private func artwork(size: CGFloat) -> some View {
@@ -162,7 +190,7 @@ struct MediaDetailHeader: View {
     }
 
     @ViewBuilder
-    private func detailColumn(titleSize: CGFloat) -> some View {
+    private func detailColumn() -> some View {
         VStack(alignment: .leading, spacing: 8) {
             Text(item.kind.rawValue.uppercased())
                 .font(.caption.weight(.bold))
@@ -170,7 +198,7 @@ struct MediaDetailHeader: View {
                 .tracking(0.8)
 
             Text(item.title)
-                .font(.system(size: titleSize, weight: .bold))
+                .font(.largeTitle.bold())
                 .lineLimit(2)
                 .minimumScaleFactor(0.72)
                 .fixedSize(horizontal: false, vertical: true)

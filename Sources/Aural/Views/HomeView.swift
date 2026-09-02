@@ -42,7 +42,7 @@ struct HomeView: View {
                 } else {
                     HStack {
                         Text(store.greeting)
-                            .font(.system(size: 30, weight: .bold))
+                            .font(.largeTitle.bold())
                         Spacer()
                         if store.isLoading(.home) {
                             ProgressView()

@@ -4,40 +4,48 @@ import SwiftUI
 struct SidebarView: View {
     @Binding var selection: SidebarSelection?
     let playlists: [CatalogItem]
+    @State private var sidebarWidth: CGFloat = 0
 
     var body: some View {
-        GeometryReader { proxy in
-            List(selection: $selection) {
-                Section {
-                    sidebarDestination("Home", systemImage: "house.fill", destination: .home)
-                        .tag(SidebarSelection.destination(.home))
-                    sidebarDestination("Search", systemImage: "magnifyingglass", destination: .search)
-                        .tag(SidebarSelection.destination(.search))
-                }
+        List(selection: $selection) {
+            Section {
+                sidebarDestination("Home", systemImage: "house.fill", destination: .home)
+                    .tag(SidebarSelection.destination(.home))
+                sidebarDestination("Search", systemImage: "magnifyingglass", destination: .search)
+                    .tag(SidebarSelection.destination(.search))
+            }
 
-                Section("Your Library") {
-                    sidebarDestination("Liked Songs", systemImage: "heart.fill", destination: .liked)
-                        .tag(SidebarSelection.destination(.liked))
-                    sidebarDestination("Albums", systemImage: "square.stack.fill", destination: .albums)
-                        .tag(SidebarSelection.destination(.albums))
-                    sidebarDestination("Artists", systemImage: "music.mic", destination: .artists)
-                        .tag(SidebarSelection.destination(.artists))
-                    sidebarDestination("Playlists", systemImage: "music.note.list", destination: .playlists)
-                        .tag(SidebarSelection.destination(.playlists))
-                }
+            Section("Your Library") {
+                sidebarDestination("Liked Songs", systemImage: "heart.fill", destination: .liked)
+                    .tag(SidebarSelection.destination(.liked))
+                sidebarDestination("Albums", systemImage: "square.stack.fill", destination: .albums)
+                    .tag(SidebarSelection.destination(.albums))
+                sidebarDestination("Artists", systemImage: "music.mic", destination: .artists)
+                    .tag(SidebarSelection.destination(.artists))
+                sidebarDestination("Playlists", systemImage: "music.note.list", destination: .playlists)
+                    .tag(SidebarSelection.destination(.playlists))
+            }
 
-                if !playlists.isEmpty {
-                    Section("Playlists") {
-                        ForEach(playlists.prefix(3)) { playlist in
-                            playlistRow(playlist, showsSubtitle: proxy.size.width >= 220)
-                                .tag(SidebarSelection.playlist(playlist.uri))
-                        }
+            if !playlists.isEmpty {
+                Section("Playlists") {
+                    ForEach(playlists.prefix(3)) { playlist in
+                        playlistRow(
+                            playlist,
+                            showsSubtitle: sidebarWidth >= CatalogLayout.sidebarCompactSubtitleThreshold
+                        )
+                        .tag(SidebarSelection.playlist(playlist.uri))
                     }
                 }
             }
-            .listStyle(.sidebar)
-            .listRowInsets(EdgeInsets(top: 3, leading: 10, bottom: 3, trailing: 10))
-            .environment(\.defaultMinListRowHeight, 34)
+        }
+        .listStyle(.sidebar)
+        .listRowInsets(EdgeInsets(top: 3, leading: 10, bottom: 3, trailing: 10))
+        .environment(\.defaultMinListRowHeight, 34)
+        .onGeometryChange(for: CGFloat.self) { proxy in
+            proxy.size.width
+        } action: { newWidth in
+            guard newWidth > 0 else { return }
+            sidebarWidth = newWidth
         }
     }
 
