@@ -3,6 +3,7 @@ set -euo pipefail
 
 project_root="${0:A:h:h}"
 build_configuration="${AURAL_BUILD_CONFIGURATION:-debug}"
+check_scope="${AURAL_CHECK_SCOPE:-full}"
 source "$project_root/Scripts/swiftpm-env.sh"
 
 case "$build_configuration" in
@@ -12,35 +13,51 @@ case "$build_configuration" in
         exit 2
         ;;
 esac
+case "$check_scope" in
+    full|rust|swift) ;;
+    *)
+        print -u2 "AURAL_CHECK_SCOPE must be full, rust, or swift"
+        exit 2
+        ;;
+esac
 
 # Fail fast on Swift format drift before Rust or Swift compilation.
 # The sibling self-test covers wrapper discovery/failure contracts without a Swift toolchain.
-"$project_root/Scripts/format-swift-self-test.sh"
-"$project_root/Scripts/format-swift.sh" --check
+if [[ "$check_scope" != rust ]]; then
+    "$project_root/Scripts/format-swift-self-test.sh"
+    "$project_root/Scripts/format-swift.sh" --check
+fi
 
 # The Rust suite owns lifecycle, generation, queue conversion, JSON envelopes,
 # and compile-time C signature checks. Prefer the developer's normal toolchain;
 # the fallback is the project-local toolchain provisioned by the development
 # bootstrap on this workspace.
-cargo_bin="${AURAL_CARGO:-}"
-if [[ -z "$cargo_bin" ]]; then
-    cargo_bin="$(command -v cargo || true)"
+if [[ "$check_scope" != swift ]]; then
+    cargo_bin="${AURAL_CARGO:-}"
+    if [[ -z "$cargo_bin" ]]; then
+        cargo_bin="$(command -v cargo || true)"
+    fi
+    workspace_cargo="/private/tmp/aural-rustup/toolchains/stable-aarch64-apple-darwin/bin/cargo"
+    if [[ -z "$cargo_bin" && -x "$workspace_cargo" ]]; then
+        cargo_bin="$workspace_cargo"
+        export CARGO_HOME="${CARGO_HOME:-/private/tmp/aural-cargo}"
+        export RUSTUP_HOME="${RUSTUP_HOME:-/private/tmp/aural-rustup}"
+        export PATH="${cargo_bin:h}:$PATH"
+    fi
+    if [[ -z "$cargo_bin" || ! -x "$cargo_bin" ]]; then
+        print -u2 "Rust cargo was not found. Install Rust or set AURAL_CARGO to an executable cargo path."
+        exit 1
+    fi
+    "$cargo_bin" fmt --all --manifest-path "$project_root/Backend/aural-playback/Cargo.toml" -- --check
+    "$cargo_bin" clippy --locked --manifest-path "$project_root/Backend/aural-playback/Cargo.toml" \
+        --all-targets -- -D warnings
+    "$cargo_bin" test --locked --manifest-path "$project_root/Backend/aural-playback/Cargo.toml"
+
+    if [[ "$check_scope" == rust ]]; then
+        print "Aural Rust checks passed: formatting, warning-clean clippy, and locked tests are green"
+        exit 0
+    fi
 fi
-workspace_cargo="/private/tmp/aural-rustup/toolchains/stable-aarch64-apple-darwin/bin/cargo"
-if [[ -z "$cargo_bin" && -x "$workspace_cargo" ]]; then
-    cargo_bin="$workspace_cargo"
-    export CARGO_HOME="${CARGO_HOME:-/private/tmp/aural-cargo}"
-    export RUSTUP_HOME="${RUSTUP_HOME:-/private/tmp/aural-rustup}"
-    export PATH="${cargo_bin:h}:$PATH"
-fi
-if [[ -z "$cargo_bin" || ! -x "$cargo_bin" ]]; then
-    print -u2 "Rust cargo was not found. Install Rust or set AURAL_CARGO to an executable cargo path."
-    exit 1
-fi
-"$cargo_bin" fmt --all --manifest-path "$project_root/Backend/aural-playback/Cargo.toml" -- --check
-"$cargo_bin" clippy --locked --manifest-path "$project_root/Backend/aural-playback/Cargo.toml" \
-    --all-targets -- -D warnings
-"$cargo_bin" test --locked --manifest-path "$project_root/Backend/aural-playback/Cargo.toml"
 
 # The archive is a generated, architecture-specific build product. Keep it out of Git and make
 # every verification entry point self-contained by rebuilding when it is absent or stale.
@@ -48,6 +65,7 @@ backend_lib="$project_root/Backend/lib/libaural_playback.a"
 stale_backend_input=""
 if [[ -f "$backend_lib" ]]; then
     stale_backend_input="$(find "$project_root/Backend/aural-playback/src" \
+        "$project_root/rust-toolchain.toml" \
         "$project_root/Backend/aural-playback/Cargo.toml" \
         "$project_root/Backend/aural-playback/Cargo.lock" \
         "$project_root/Backend/aural-playback/build.sh" \
@@ -248,8 +266,8 @@ if rg -n 'security@example\.com|replace this placeholder' \
     exit 1
 fi
 
-# The debug quality gate must keep using an existing runner rg, cache only repo-local
-# SwiftPM products (including the redirected module cache), and leave Rust caching alone.
+# The debug quality gate must keep using an existing runner rg, exact-input playback archives,
+# job-local SwiftPM caches, and credential-free checkouts.
 ci_workflow="$project_root/.github/workflows/ci.yml"
 if [[ ! -f "$ci_workflow" ]]; then
     print -u2 "CI workflow is missing"
@@ -267,15 +285,44 @@ if rg -q 'brew install swift-format|brew install swiftlint' "$ci_workflow"; then
     print -u2 "CI must use the selected toolchain swift-format, not a Homebrew Swift linter"
     exit 1
 fi
-if ! rg -q 'key: macos-rust-\$\{\{ hashFiles\(' "$ci_workflow"; then
-    print -u2 "CI must keep the existing Rust cache key"
-    exit 1
-fi
-if ! rg -U -q --fixed-strings $'      - name: Run checks\n        run: ./Scripts/check.sh\n\n      - name: Compile release Aural with AURAL_DISTRIBUTION\n        run: ./Scripts/compile-release-aural.sh' "$ci_workflow"; then
-    print -u2 "CI must compile release Aural with AURAL_DISTRIBUTION after the unfiltered debug gate"
+rust_job="$(sed -n '/^  rust:/,/^  checks:/p' "$ci_workflow")"
+checks_job="$(sed -n '/^  checks:/,/^  release:/p' "$ci_workflow")"
+release_job="$(sed -n '/^  release:/,/^  gate:/p' "$ci_workflow")"
+gate_job="$(sed -n '/^  gate:/,$p' "$ci_workflow")"
+playback_cache_key='key: macos-playback-archive-${{ runner.arch }}-${{ env.RUST_TOOLCHAIN_KEY }}-${{ hashFiles('\''rust-toolchain.toml'\'', '\''Backend/aural-playback/Cargo.toml'\'', '\''Backend/aural-playback/Cargo.lock'\'', '\''Backend/aural-playback/build.sh'\'', '\''Backend/aural-playback/src/**'\'') }}'
+rust_cache_key='key: macos-rust-debug-${{ runner.arch }}-${{ hashFiles('\''rust-toolchain.toml'\'', '\''Backend/aural-playback/Cargo.lock'\'') }}'
+debug_cache_key='key: macos-swiftpm-debug-${{ runner.os }}-${{ runner.arch }}-${{ env.SWIFT_TOOLCHAIN_KEY }}-${{ hashFiles('\''Package.swift'\'', '\''Package.resolved'\'') }}-${{ github.sha }}'
+release_cache_key='key: macos-swiftpm-release-${{ runner.os }}-${{ runner.arch }}-${{ env.SWIFT_TOOLCHAIN_KEY }}-${{ hashFiles('\''Package.swift'\'', '\''Package.resolved'\'') }}-${{ github.sha }}'
+checkout_without_credentials=$'uses: actions/checkout@[0-9a-f]{40} # v[^\n]+\n        with:\n          persist-credentials: false'
+if ! rg -q --fixed-strings 'runs-on: macos-26' <<< "$rust_job" \
+    || ! rg -U -q "$checkout_without_credentials" <<< "$rust_job" \
+    || ! rg -q --fixed-strings "$rust_cache_key" <<< "$rust_job" \
+    || ! rg -q --fixed-strings 'run: AURAL_CHECK_SCOPE=rust ./Scripts/check.sh' <<< "$rust_job" \
+    || ! rg -q --fixed-strings 'runs-on: macos-26' <<< "$checks_job" \
+    || ! rg -q --fixed-strings 'xcode-select -s /Applications/Xcode_26.6.app' <<< "$checks_job" \
+    || ! rg -q --fixed-strings "grep -q 'Apple Swift version 6.3.3'" <<< "$checks_job" \
+    || ! rg -U -q "$checkout_without_credentials" <<< "$checks_job" \
+    || ! rg -q --fixed-strings "$playback_cache_key" <<< "$checks_job" \
+    || ! rg -q --fixed-strings "$debug_cache_key" <<< "$checks_job" \
+    || ! rg -U -q --fixed-strings -- $'- name: Run checks\n        run: AURAL_CHECK_SCOPE=swift ./Scripts/check.sh' <<< "$checks_job" \
+    || ! rg -q --fixed-strings 'runs-on: macos-26' <<< "$release_job" \
+    || ! rg -q --fixed-strings 'xcode-select -s /Applications/Xcode_26.6.app' <<< "$release_job" \
+    || ! rg -q --fixed-strings "grep -q 'Apple Swift version 6.3.3'" <<< "$release_job" \
+    || ! rg -U -q "$checkout_without_credentials" <<< "$release_job" \
+    || ! rg -q --fixed-strings "$playback_cache_key" <<< "$release_job" \
+    || ! rg -q --fixed-strings "$release_cache_key" <<< "$release_job" \
+    || ! rg -U -q --fixed-strings -- $'- name: Compile release Aural with AURAL_DISTRIBUTION\n        run: ./Scripts/compile-release-aural.sh' <<< "$release_job" \
+    || ! rg -q --fixed-strings 'if: always()' <<< "$gate_job" \
+    || ! rg -q --fixed-strings 'needs: [rust, checks, release]' <<< "$gate_job" \
+    || ! rg -U -q --fixed-strings -- $'test "$RUST_RESULT" = success\n          test "$CHECKS_RESULT" = success\n          test "$RELEASE_RESULT" = success' <<< "$gate_job"; then
+    print -u2 "CI must cache exact inputs and aggregate parallel Rust, Swift, and release lanes"
     exit 1
 fi
 
 plutil -lint "$project_root/Packaging/Info.plist"
 
-print "Aural checks passed ($build_configuration): format, Rust, ABI, native app, domain, concrete boundary, architecture, and packaging checks are green"
+if [[ "$check_scope" == swift ]]; then
+    print "Aural Swift checks passed ($build_configuration): format, ABI, native app, domain, concrete boundary, architecture, and packaging checks are green"
+else
+    print "Aural checks passed ($build_configuration): format, Rust, ABI, native app, domain, concrete boundary, architecture, and packaging checks are green"
+fi

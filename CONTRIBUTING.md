@@ -10,8 +10,9 @@ license and that you have the right to submit it.
 
 ## Development environment
 
-- Apple-silicon Mac with macOS 15 or newer
-- Xcode Command Line Tools with Swift 6.1 or newer
+- Apple-silicon Mac running macOS 26.2 or newer for development; Aural's runtime deployment target
+  remains macOS 15 or newer
+- Xcode 26.6 with Swift 6.3.3
 - Rustup; `rust-toolchain.toml` pins Rust, components, and the ARM64 macOS target
 - [ripgrep](https://github.com/BurntSushi/ripgrep) for the verification scripts
 - Spotify Premium only for manual integration testing
@@ -65,7 +66,7 @@ Swift check products:
 - `AuralChecks` exercises pure domain state, policies, parsing, and deterministic playback traces.
 - `AuralBoundaryChecks` exercises concrete codecs, fixtures, and injected coordinator/queue flows.
 
-Swift formatting uses the selected Swift 6.1+ toolchain's bundled `swift-format`. Check or rewrite
+Swift formatting uses the selected Swift 6.3 toolchain's bundled `swift-format`. Check or rewrite
 the same Git-tracked `*.swift` set, including `Package.swift`, `Sources/`, and checked-in
 `Scripts/*.swift`:
 
@@ -77,18 +78,29 @@ the same Git-tracked `*.swift` set, including `Package.swift`, `Sources/`, and c
 `check.sh` runs `Scripts/format-swift-self-test.sh` then `--check` so wrapper discovery and failure
 behavior cannot drift from the documented commands.
 
-GitHub's macos-15 debug quality gate caches the repository `.build` tree, including the module cache
-`check.sh` already redirects there. The primary cache key includes runner OS, architecture, the Swift
-toolchain, `Package.swift`, `Package.resolved` when that lockfile exists, and the commit SHA so each
-successful run can save updated products. Restore-keys keep the OS/arch/toolchain prefix so a later
-commit or pull request can reuse the nearest compatible tree and compile incrementally. A toolchain
-or architecture mismatch misses and rebuilds cleanly. Signing material, Cargo's target directory, and
-paths outside the checkout are not part of that cache.
+GitHub's required `Debug quality gate` aggregates three parallel macos-26 lanes: Rust verification,
+Swift/architecture verification, and the release compile. The Swift lanes use the explicitly
+selected Xcode 26.6 / Swift 6.3.3 toolchain, matching the package's tools version. CI invokes the
+two verification scopes of `check.sh` independently; the ordinary local command still runs both
+scopes as one complete gate. The release lane compiles shipping `Aural` with
+`-DAURAL_DISTRIBUTION`. The aggregate passes only when all three lanes pass, so parallelism changes
+latency rather than coverage.
 
-The same macos-15 job then compiles shipping `Aural` in release with `-DAURAL_DISTRIBUTION`, reusing
-the playback archive and `.build` cache. That step does not rerun Rust tests or Swift checks, and it
-does not package or sign. `./Scripts/compile-release-aural.sh` is the local compile-only command.
-`./Scripts/check-clean.sh` is still the clean-room Debug and Release full gate.
+The Swift and release lanes reuse a content-keyed playback archive when the Rust toolchain and every
+checked-in Rust input are unchanged. An exact cache miss rebuilds the archive normally. A cache hit
+refreshes only the restored archive's timestamp so `check.sh` does not mistake a content-matched
+artifact for a stale one after checkout. Debug and release SwiftPM products use separate `.build`
+cache keys to prevent concurrent jobs from publishing incomplete configuration-specific caches.
+Each key includes runner OS, architecture, the Swift toolchain, package manifests, and the commit
+SHA; restore prefixes reuse the nearest compatible configuration. Signing material and paths
+outside the checkout are not cached.
+
+`AURAL_CHECK_SCOPE=rust ./Scripts/check.sh` and `AURAL_CHECK_SCOPE=swift ./Scripts/check.sh` are CI
+partitioning controls, not substitutes for the normal local gate.
+`./Scripts/compile-release-aural.sh` remains the local compile-only command, and
+`./Scripts/check-clean.sh` remains the clean-room Debug and Release full gate. Rust-input changes
+still pay the optimized archive build cost; ordinary Swift and documentation pull requests avoid
+recompiling an identical archive.
 
 `AuralChecks` depends only on `AuralDomain` and the tiny `AuralCheckSelection` helper. It does not
 link `AuralCore` or the Rust playback archive. Domain-only iteration can use SwiftPM directly:
@@ -131,8 +143,8 @@ Add deterministic coverage in the closest existing suite:
 Do not add The Composable Architecture or another effect framework to support a prototype;
 see [ADR 003](docs/ADR-003-playback-command-effects.md).
 
-The Swift checks use a small custom runner rather than XCTest/Swift Testing so the full gate works
-with Command Line Tools alone. Neither check executable is included in the packaged app.
+The Swift checks use a small custom runner rather than XCTest/Swift Testing. Neither check
+executable is included in the packaged app.
 
 ## Architecture
 
@@ -199,7 +211,7 @@ upstreams, but are not a substitute for binary-distribution license review.
 ### Tagged releases
 
 Pushing a version tag such as `v0.0.1` runs the ARM64 release workflow on GitHub's Apple-silicon
-`macos-15` runner. Tags are `v`-prefixed; the workflow strips the leading `v` and compares that
+`macos-26` runner. Tags are `v`-prefixed; the workflow strips the leading `v` and compares that
 numeric suffix with `CFBundleShortVersionString` in `Packaging/Info.plist`. The workflow runs the
 full quality gate, validates an ARM64-only app, creates a ZIP and SHA-256 checksum, and publishes
 an experimental GitHub prerelease.
