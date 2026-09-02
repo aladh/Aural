@@ -395,16 +395,30 @@ struct TrackTable: View {
     }
 
     private func titleCell(_ track: CatalogTrack) -> some View {
-        HStack(spacing: 6) {
-            if isCurrent(track) {
-                Image(systemName: "speaker.wave.2.fill")
-                    .foregroundStyle(AuralPalette.mediaForeground(for: colorScheme))
-                    .accessibilityLabel("Current track")
+        let isCurrentTrack = isCurrent(track)
+        let isSelected = selection.contains(track.id)
+
+        return HStack(spacing: 6) {
+            if isCurrentTrack {
+                if isSelected {
+                    Image(systemName: "speaker.wave.2.fill")
+                        .accessibilityLabel("Current track")
+                } else {
+                    Image(systemName: "speaker.wave.2.fill")
+                        .foregroundStyle(AuralPalette.mediaForeground(for: colorScheme))
+                        .accessibilityLabel("Current track")
+                }
             }
-            Text(track.title)
-                .fontWeight(.medium)
-                .foregroundStyle(isCurrent(track) ? AuralPalette.mediaForeground(for: colorScheme) : .primary)
-                .lineLimit(1)
+            if isCurrentTrack && isSelected {
+                Text(track.title)
+                    .fontWeight(.medium)
+                    .lineLimit(1)
+            } else {
+                Text(track.title)
+                    .fontWeight(.medium)
+                    .foregroundStyle(isCurrentTrack ? AuralPalette.mediaForeground(for: colorScheme) : .primary)
+                    .lineLimit(1)
+            }
         }
     }
 
