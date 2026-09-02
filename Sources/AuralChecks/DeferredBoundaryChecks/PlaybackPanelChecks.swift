@@ -3,9 +3,10 @@
 //  Aural
 //
 
-import AuralDomain
 import Foundation
 @testable import AuralCore
+import enum AuralDomain.QueueProtocolProjection
+import struct AuralDomain.QueueProtocolTrack
 
 @MainActor
 func runPlaybackPanelChecks(_ check: CheckRunner) {
