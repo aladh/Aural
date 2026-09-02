@@ -3,9 +3,9 @@
 //  Aural
 //
 
+import AuralDomain
 import Foundation
 @testable import AuralCore
-import struct AuralDomain.QueueProtocolTrack
 
 @MainActor
 func runPlaybackPanelChecks(_ check: CheckRunner) {

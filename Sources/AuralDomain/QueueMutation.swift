@@ -323,7 +323,7 @@ public enum QueueProtocolProjection: Sendable {
                 pastDelimiter = true
                 continue
             }
-            if track.uri.hasPrefix("spotify:track:") {
+            if isPlayableTrackURI(track.uri) {
                 if selectedIndices.contains(upcomingIndex) {
                     upcomingIndex += 1
                     continue
