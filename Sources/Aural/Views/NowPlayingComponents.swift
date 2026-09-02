@@ -96,7 +96,6 @@ struct NowPlayingProgress: View {
 
 struct NowPlayingTransportControls: View {
     let player: PlaybackStore
-    @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
         HStack(spacing: 18) {
@@ -155,7 +154,7 @@ struct NowPlayingTransportControls: View {
             Image(systemName: symbol)
                 .font(.system(size: 14, weight: .semibold))
                 .foregroundStyle(
-                    active ? AuralPalette.mediaForeground(for: colorScheme) : Color(nsColor: .secondaryLabelColor)
+                    active ? AuralPalette.mediaGreen : Color(nsColor: .secondaryLabelColor)
                 )
                 .frame(width: 30, height: 30)
                 .background { Circle().fill(active ? AuralPalette.mediaGreen.opacity(0.10) : .clear) }
@@ -170,7 +169,6 @@ struct NowPlayingTransportControls: View {
 struct NowPlayingTimeControls: View {
     let player: PlaybackStore
     @Binding var showsSidePanel: Bool
-    @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
         HStack(spacing: 12) {
@@ -213,7 +211,7 @@ struct NowPlayingTimeControls: View {
                 .font(.system(size: 13, weight: .semibold))
                 .foregroundStyle(
                     player.isActiveDevice || player.activeRemoteDevice != nil
-                        ? AuralPalette.mediaForeground(for: colorScheme)
+                        ? AuralPalette.mediaGreen
                         : Color(nsColor: .secondaryLabelColor)
                 )
                 .frame(width: 26, height: 26)

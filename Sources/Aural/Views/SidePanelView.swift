@@ -295,7 +295,6 @@ private struct HistoryRow: View {
 /// The current track card at the top of the queue tab.
 private struct CurrentTrackRow: View {
     let player: PlaybackStore
-    @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
         HStack(spacing: 10) {
@@ -305,7 +304,7 @@ private struct CurrentTrackRow: View {
             VStack(alignment: .leading, spacing: 1) {
                 Text(player.displayedTrackTitle)
                     .font(.callout.weight(.semibold))
-                    .foregroundStyle(AuralPalette.mediaForeground(for: colorScheme))
+                    .foregroundStyle(AuralPalette.mediaGreen)
                     .lineLimit(1)
                 Text(player.displayedArtistName)
                     .font(.caption)
@@ -318,7 +317,7 @@ private struct CurrentTrackRow: View {
             VStack(alignment: .trailing, spacing: 3) {
                 Image(systemName: "speaker.wave.2.fill")
                     .font(.system(size: 11, weight: .semibold))
-                    .foregroundStyle(AuralPalette.mediaForeground(for: colorScheme))
+                    .foregroundStyle(AuralPalette.mediaGreen)
                 if player.duration > 0 {
                     Text(formatDuration(player.duration))
                         .font(.caption2.monospacedDigit())

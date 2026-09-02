@@ -92,7 +92,6 @@ struct MediaCard: View {
 
     @State private var isHovering = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
         Button(action: action) {
@@ -120,7 +119,7 @@ struct MediaCard: View {
             .padding(CatalogLayout.cardPadding)
             .contentShape(RoundedRectangle(cornerRadius: CatalogLayout.cardCornerRadius, style: .continuous))
             .background(
-                AuralPalette.mediaCardSurface(for: colorScheme, isHovering: isHovering),
+                AuralPalette.mediaCardSurface(isHovering: isHovering),
                 in: RoundedRectangle(cornerRadius: CatalogLayout.cardCornerRadius, style: .continuous)
             )
             .scaleEffect(isHovering && !reduceMotion ? 1.015 : 1)

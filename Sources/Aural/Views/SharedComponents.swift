@@ -27,13 +27,10 @@ enum CatalogLayout {
     static let gridSpacing: CGFloat = 16
 }
 
-/// The catalog content canvas follows the system appearance, with a restrained near-black
-/// surface in Dark Mode so artwork and native selection remain the visual anchors.
+/// Restrained near-black catalog canvas that keeps artwork and native selection as visual anchors.
 struct CatalogCanvasBackground: View {
-    @Environment(\.colorScheme) private var colorScheme
-
     var body: some View {
-        AuralPalette.catalogCanvas(for: colorScheme)
+        AuralPalette.catalogCanvas
             .ignoresSafeArea()
     }
 }
@@ -227,7 +224,6 @@ struct TrackTable: View {
     let tracks: CatalogTrackCollection
     let metadata: CatalogMetadataRepository
     let playback: CatalogPlaybackAccess
-    @Environment(\.colorScheme) private var colorScheme
     var showsDateAdded = false
     var playlistActions: TrackPlaylistActions?
     @State private var selection: Set<CatalogTrack.ID> = []
@@ -405,7 +401,7 @@ struct TrackTable: View {
                         .accessibilityLabel("Current track")
                 } else {
                     Image(systemName: "speaker.wave.2.fill")
-                        .foregroundStyle(AuralPalette.mediaForeground(for: colorScheme))
+                        .foregroundStyle(AuralPalette.mediaGreen)
                         .accessibilityLabel("Current track")
                 }
             }
@@ -416,7 +412,7 @@ struct TrackTable: View {
             } else {
                 Text(track.title)
                     .fontWeight(.medium)
-                    .foregroundStyle(isCurrentTrack ? AuralPalette.mediaForeground(for: colorScheme) : .primary)
+                    .foregroundStyle(isCurrentTrack ? AuralPalette.mediaGreen : .primary)
                     .lineLimit(1)
             }
         }
