@@ -79,6 +79,7 @@ extension PlaybackStore {
             isPlaying: state.isPlaying,
             isPaused: state.isPaused,
             trackURI: state.trackURI,
+            contextURI: state.contextURI,
             positionMilliseconds: state.positionMS,
             durationMilliseconds: state.durationMS,
             timestampMilliseconds: state.timestampMS,

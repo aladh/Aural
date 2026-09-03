@@ -37,8 +37,10 @@ boundaries. Read the relevant ADRs and the
   name is Swift-owned; do not move presentation policy, `device_name`, or write-only reconnect
   bookkeeping into Rust.
 - `PlaybackSnapshotProjection` owns engine playback transport, empty-URI identity, timestamp
-  correction, and omitted-repeat fallback. The engine sends protocol playing/paused flags; do not
-  move that presentation policy into Rust.
+  correction, and omitted-repeat fallback. The engine sends protocol playing/paused flags and
+  cluster `context_uri`; do not move that presentation policy into Rust. Do not treat playback
+  context as QueueService mutation identity. Do not widen `aural_playback_resume`. Resume-load
+  target order stays in the engine until Swift can issue seek-capable loads.
 - Keep read-only catalog access separate from playlist mutation. Writes use `PlaylistMutating` and
   `PlaylistMutationController`; Pathfinder mutation DTOs do not enter views.
 - PCM goes directly from the engine adapter to `AudioRenderer`, never observable UI state. Keep

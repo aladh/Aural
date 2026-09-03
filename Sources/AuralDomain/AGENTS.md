@@ -17,7 +17,8 @@ changing state transitions, queue/device policy, parsing, sorting, or lifetime s
   is pure. Preserve occurrence identity, authoritative ordering/provenance, the distinction between
   protocol state and metadata labels, the session-phase/empty-device-ID semantics in
   `ConnectionSnapshotProjection`, and transport/empty-URI/timestamp semantics in
-  `PlaybackSnapshotProjection`.
+  `PlaybackSnapshotProjection`. `playbackContextURI` is protocol playlist/album/artist
+  identity from authoritative engine playback, not `queue.contextURI`.
 - Prefer immutable `Sendable` values, typed state, exhaustive switches, and pure functions. Match the
   surrounding naming and comment density; document only non-obvious invariants.
 

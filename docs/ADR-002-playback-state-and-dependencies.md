@@ -15,7 +15,9 @@ could still combine values from different account, engine, command, queue, or se
   (`ConnectDeviceProjection`) from unfiltered cluster members plus `active_device_id`.
   Connection session phase and empty-device-id fallback are projected in Swift
   (`ConnectionSnapshotProjection`). Engine playback transport, empty-URI identity, and
-  timestamp correction are projected in Swift (`PlaybackSnapshotProjection`).
+  timestamp correction are projected in Swift (`PlaybackSnapshotProjection`). Protocol
+  `context_uri` is stored as `PlaybackState.playbackContextURI`, distinct from
+  `queue.contextURI`. Resume-load target order stays in the engine.
 - `PlaybackReducer` is the only mutation mechanism for that snapshot. External callbacks enter as
   account/engine/source-stamped events; ordered sources also carry revisions.
 - `PlaybackStore` is a `@MainActor` compatibility and action surface. `PlaybackCoordinator`

@@ -30,9 +30,9 @@ in the [enforcement inventory](architecture-enforcement.md).
 | `session_lifecycle.rs` | Mixed | AP connect and credential cache are librespot. Path policy and logout cache wipe are Aural-owned but must run next to the cache. Streaming grant completion stays here because only librespot performs AP login. |
 | `lifecycle_serialization.rs` | Aural-owned coordination that must stay with Rust globals | One async lifecycle mutex, reconnect unit outcomes, generation revalidation |
 | `connect.rs` | Mixed | Dealer subscribe, hidden-member bootstrap PUT, and protobuf parse are protocol. Device-list and connection-snapshot presentation are Swift-owned. `cluster_offer_decision`, bootstrap-vs-push linearization, and `is_active_in_cluster` (this engine's Connect role) stay until cluster observations can cross the boundary without a second protobuf stack. |
-| `queue.rs` | Adapter after this slice | Serializes unfiltered `ProvidedTrack` rows, slim current-track identity, and protocol playback flags. Does **not** own delimiter hiding, upcoming presentation, or transport presentation. |
+| `queue.rs` | Adapter after this slice | Serializes unfiltered `ProvidedTrack` rows, slim current-track identity, protocol playback flags, and protocol `context_uri` on cluster snapshots. Local `PlayerEvent` playback snapshots send an empty context. Does **not** own delimiter hiding, upcoming presentation, or transport presentation. |
 | `state.rs` | Mixed | Librespot object slots (`SESSION`, `SPIRC`, `PLAYER`, `MIXER`). Snapshot stamps, connection aggregation, and JSON DTOs exist to cross FFI. |
-| `transport.rs` | Aural-owned sequencing over protocol commands | `ResumeLoadPlan` and playing-event waits; `LoadRequest` construction is protocol |
+| `transport.rs` | Aural-owned sequencing over protocol commands | `ResumeLoadPlan` and playing-event waits; `LoadRequest` construction is protocol. Reconnect rehydration uses this path without Swift. |
 | `player_control.rs` | Adapter | Spirc play/pause/seek/shuffle/repeat/transfer/queue-add |
 | `player_event_pump.rs` | Adapter | Local `PlayerEvent` → position and protocol playing/paused bits when this device is active |
 | `spirc_command_error.rs` | Adapter | Map librespot errors onto FFI codes Swift already understands |
@@ -44,10 +44,11 @@ Queue snapshots no longer carry presentation `next_tracks` / `prev_tracks` or ca
 labels. Device snapshots no longer carry `is_active` or unused Web API volume/restriction
 fields; they send protocol members plus `active_device_id`. Connection snapshots send
 session flags plus `device_id` and `last_error`. Playback snapshots send protocol
-playing/paused flags, track URI, timing, and options; Swift projects transport.
-Hardcoded `device_name` is gone, and write-only `reconnect_attempt`, `connected_since_ms`,
-and `session_connection_id` were removed from `ConnectionState`. Later slices should prefer
-typed payloads or rawer protocol rows over new Aural-only fields.
+playing/paused flags, track URI, context URI, timing, and options; Swift projects transport.
+Local player-event snapshots send an empty `context_uri`. Hardcoded `device_name` is gone, and
+write-only `reconnect_attempt`, `connected_since_ms`, and `session_connection_id` were removed
+from `ConnectionState`. Later slices should prefer typed payloads or rawer protocol rows over
+new Aural-only fields.
 
 `aural_playback_get_queue_snapshot` still returns the last serialized cluster queue so
 Swift can recover after a provisional empty `SetQueue`. Caching that JSON in Rust is
@@ -55,8 +56,9 @@ adapter convenience, not a second app-facing store.
 
 ## Later slices (not this change)
 
-- Resume-load fallback policy, if Swift can name load targets without widening
-  `aural_playback_resume` or leaking protocol track identity
+- Resume-load target order in Swift, together with a seek-capable load export Swift can
+  issue, without widening `aural_playback_resume` or treating protocol context as
+  QueueService mutation identity. Reconnect rehydration still needs an engine-side load.
 - Replacing JSON callbacks with a tighter ABI
 
 Do not move PCM, Spirc, session connect, or dealer cluster fetch into Swift in order to

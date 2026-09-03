@@ -1161,6 +1161,67 @@ func runPlaybackReducerChecks(_ check: CheckRunner) {
             "engine playback records the backend revision separately", state.sourceRevisions[.enginePlayback], 7)
     }
 
+    check.suite("Engine playback adopts protocol context URI") {
+        var state = PlaybackState(
+            accountEpoch: 1,
+            engineEpoch: 1,
+            session: .ready,
+            playbackContextURI: "spotify:playlist:old"
+        )
+        state.queue = queue(
+            [item("now")],
+            source: .connect,
+            completeness: .complete,
+            revision: 1,
+            contextURI: "spotify:track:now"
+        )
+        _ = PlaybackReducer.reduce(
+            &state,
+            envelope: envelope(
+                source: .enginePlayback,
+                revision: 1,
+                event: .enginePlayback(
+                    EnginePlaybackSnapshot(
+                        transport: .playing,
+                        trackURI: "spotify:track:now",
+                        contextURI: "spotify:playlist:ctx",
+                        timing: PlaybackTiming(anchoredAt: traceDate)
+                    ))
+            )
+        )
+        check.equal(
+            "playback context is the protocol playlist URI",
+            state.playbackContextURI,
+            "spotify:playlist:ctx"
+        )
+        check.equal(
+            "queue mutation identity is unchanged",
+            state.queue.contextURI,
+            "spotify:track:now"
+        )
+
+        _ = PlaybackReducer.reduce(
+            &state,
+            envelope: envelope(
+                source: .enginePlayback,
+                revision: 2,
+                event: .enginePlayback(
+                    EnginePlaybackSnapshot(
+                        transport: .stopped,
+                        trackURI: nil,
+                        contextURI: nil,
+                        timing: PlaybackTiming(anchoredAt: traceDate)
+                    ))
+            )
+        )
+        check.nil_("an empty protocol context clears playback context", state.playbackContextURI)
+        check.equal(
+            "queue mutation identity still survives a missing protocol context",
+            state.queue.contextURI,
+            "spotify:track:now"
+        )
+    }
+
     check.suite("Queue precedence and identity") {
         var state = PlaybackState(accountEpoch: 1, engineEpoch: 1, session: .ready)
         let provisionalEmpty = queue([], source: .provisional, completeness: .partial, revision: 100)
