@@ -211,5 +211,4 @@ func runPlaybackProjectionContractChecks(_ check: CheckRunner) {
             )
         }
     }
-
 }

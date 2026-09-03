@@ -202,10 +202,14 @@ fi
 # reintroduce runtime appearance selection. The patterns are code-shaped so prose comments about
 # the product contract do not fail the gate.
 aural_app_source="$project_root/Sources/Aural/AuralApp.swift"
-if ! rg -q --fixed-strings \
-    'NSApplication.shared.appearance = NSAppearance(named: .darkAqua)' \
-    "$aural_app_source"; then
+dark_appearance_assignment_pattern='^[[:space:]]*NSApplication\.shared\.appearance[[:space:]]*=[[:space:]]*NSAppearance\(named:[[:space:]]*\.darkAqua\)[[:space:]]*$'
+if ! rg -q "$dark_appearance_assignment_pattern" "$aural_app_source"; then
     print -u2 "AuralApp must pin the application to native dark Aqua"
+    exit 1
+fi
+if rg -q "$dark_appearance_assignment_pattern" \
+    <<< '    // NSApplication.shared.appearance = NSAppearance(named: .darkAqua)'; then
+    print -u2 "Dark appearance assignment check must reject a commented-out statement"
     exit 1
 fi
 if rg -n '@Environment\(\.colorScheme\)|\.preferredColorScheme\(|\.effectiveAppearance\b|colorScheme[[:space:]]*(==|!=)|NSAppearance\(named:[[:space:]]*\.aqua\)' \
