@@ -55,9 +55,14 @@ pub(crate) static CONTROL_CALLBACKS: Lazy<ControlCallbacks> = Lazy::new(ControlC
 /// unchanged cluster update stays silent. Cluster updates arrive for every playback tick,
 /// and the device list changes far more rarely. Activity changes still fire because the
 /// active id is part of the fingerprint.
-pub(crate) static LAST_DEVICES_FINGERPRINT: Lazy<
-    Mutex<Option<(String, Vec<ProtocolConnectDevice>)>>,
-> = Lazy::new(|| Mutex::new(None));
+#[derive(Clone, PartialEq, Eq)]
+pub(crate) struct DevicesFingerprint {
+    pub(crate) active_device_id: String,
+    pub(crate) devices: Vec<ProtocolConnectDevice>,
+}
+
+pub(crate) static LAST_DEVICES_FINGERPRINT: Lazy<Mutex<Option<DevicesFingerprint>>> =
+    Lazy::new(|| Mutex::new(None));
 /// The last queue the cluster described, so Swift can ask again rather than re-deriving it
 /// from the Web API. See `aural_playback_get_queue_snapshot`.
 pub(crate) static LAST_QUEUE_JSON: Lazy<Mutex<Option<String>>> = Lazy::new(|| Mutex::new(None));

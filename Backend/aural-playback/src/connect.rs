@@ -405,16 +405,17 @@ pub(crate) fn notify_devices(
         active_device_id
     );
 
+    let fingerprint = DevicesFingerprint {
+        active_device_id: active_device_id.to_string(),
+        devices: list.clone(),
+    };
     let mut last = LAST_DEVICES_FINGERPRINT
         .lock()
         .unwrap_or_else(|e| e.into_inner());
-    if last
-        .as_ref()
-        .is_some_and(|(id, devices)| id == active_device_id && devices == &list)
-    {
+    if last.as_ref() == Some(&fingerprint) {
         return;
     }
-    *last = Some((active_device_id.to_string(), list.clone()));
+    *last = Some(fingerprint);
     drop(last);
 
     if let Some(callback) = registered_callback(&CONTROL_CALLBACKS.devices) {
