@@ -171,30 +171,6 @@ fn queue_full() -> QueueState {
     }
 }
 
-fn connection_minimal() -> ConnectionStateInfo {
-    ConnectionStateInfo {
-        revision: 2,
-        session_generation: 1,
-        session_connected: false,
-        spirc_ready: false,
-        device_id: None,
-        last_error: Some("fixture-session-timeout".to_string()),
-        is_active_device: false,
-    }
-}
-
-fn connection_full() -> ConnectionStateInfo {
-    ConnectionStateInfo {
-        revision: 14,
-        session_generation: 5,
-        session_connected: true,
-        spirc_ready: true,
-        device_id: Some("fixture-mac".to_string()),
-        last_error: None,
-        is_active_device: true,
-    }
-}
-
 fn devices_full() -> DevicesState {
     DevicesState {
         revision: 15,
@@ -226,8 +202,6 @@ fn canonical_engine_json_matches_pinned_structs() {
     assert_canonical_fixture("playback-full", &playback_full());
     assert_canonical_fixture("queue-minimal", &queue_minimal());
     assert_canonical_fixture("queue-full", &queue_full());
-    assert_canonical_fixture("connection-minimal", &connection_minimal());
-    assert_canonical_fixture("connection-full", &connection_full());
     assert_canonical_fixture("devices-full", &devices_full());
 }
 
@@ -249,7 +223,5 @@ fn write_engine_json_contract_fixtures() {
     write_canonical_fixture("playback-full", &playback_full());
     write_canonical_fixture("queue-minimal", &queue_minimal());
     write_canonical_fixture("queue-full", &queue_full());
-    write_canonical_fixture("connection-minimal", &connection_minimal());
-    write_canonical_fixture("connection-full", &connection_full());
     write_canonical_fixture("devices-full", &devices_full());
 }

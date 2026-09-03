@@ -139,9 +139,8 @@ nonisolated final class RustPlaybackEngine: LocalPlaybackEngine, @unchecked Send
             }
         }
         PlaybackCore.registerConnectionStateCallback { pointer in
-            RustPlaybackEngine.shared.decodeAndEmit(pointer, as: RustConnectionState.self) {
-                .connection($0)
-            }
+            guard let state = PlaybackCore.connectionState(from: pointer) else { return }
+            RustPlaybackEngine.shared.emit(.connection(state))
         }
         PlaybackCore.registerDevicesCallback { pointer in
             RustPlaybackEngine.shared.decodeAndEmit(pointer, as: RustDevicesState.self) {

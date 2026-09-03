@@ -177,39 +177,7 @@ func runEnginePayloadContractChecks(_ check: CheckRunner) {
             check.equal("protocol prev blocked", protocolPrev.first?.blocked, ["blocked-reason"])
         }
 
-        check.noThrow("connection-minimal decodes disconnected identity") {
-            let state = try decoder.decode(
-                RustConnectionState.self,
-                from: enginePayloadFixture(named: "connection-minimal")
-            )
-            check.equal("minimal connection revision", state.revision, 2)
-            check.equal("minimal connection session generation", state.sessionGeneration, 1)
-            check.equal("minimal session is disconnected", state.sessionConnected, false)
-            check.equal("minimal spirc is not ready", state.spircReady, false)
-            check.equal("minimal device is not active", state.isActiveDevice, false)
-            check.nil_("minimal device id is omitted as null", state.deviceID)
-            check.equal("minimal last error", state.lastError, "fixture-session-timeout")
-            check.equal(
-                "disconnected with an error is failed",
-                ConnectionSnapshotProjection.sessionPhase(
-                    connected: state.sessionConnected,
-                    spircReady: state.spircReady,
-                    lastError: state.lastError
-                ),
-                .failed("fixture-session-timeout")
-            )
-            let raw =
-                try JSONSerialization.jsonObject(
-                    with: enginePayloadFixture(named: "connection-minimal")
-                ) as? [String: Any]
-            check.check(
-                "connection snapshot omits unused reconnect bookkeeping",
-                raw?["reconnect_attempt"] == nil
-                    && raw?["connected_since_ms"] == nil
-                    && raw?["session_connection_id"] == nil
-                    && raw?["device_name"] == nil
-            )
-
+        check.noThrow("inactive connection without a device id waits for local identity") {
             let devices = projectedDevices(
                 from: try decoder.decode(
                     RustDevicesState.self,
@@ -219,36 +187,15 @@ func runEnginePayloadContractChecks(_ check: CheckRunner) {
             check.equal(
                 "active device without local identity waits",
                 AuralDomain.connectCommandRoute(
-                    isLocalActive: state.isActiveDevice,
-                    localDeviceID: state.deviceID,
+                    isLocalActive: false,
+                    localDeviceID: nil,
                     devices: devices
                 ),
                 .waitingForLocalIdentity
             )
         }
 
-        check.noThrow("connection-full decodes local ownership") {
-            let state = try decoder.decode(
-                RustConnectionState.self,
-                from: enginePayloadFixture(named: "connection-full")
-            )
-            check.equal("full connection revision", state.revision, 14)
-            check.equal("full connection session generation", state.sessionGeneration, 5)
-            check.equal("full session is connected", state.sessionConnected, true)
-            check.equal("full spirc is ready", state.spircReady, true)
-            check.equal("full device is locally active", state.isActiveDevice, true)
-            check.equal("full local device id", state.deviceID, "fixture-mac")
-            check.nil_("full last error is null", state.lastError)
-            check.equal(
-                "connected and ready is ready",
-                ConnectionSnapshotProjection.sessionPhase(
-                    connected: state.sessionConnected,
-                    spircReady: state.spircReady,
-                    lastError: state.lastError
-                ),
-                .ready
-            )
-
+        check.noThrow("active local connection owns playback") {
             let devices = projectedDevices(
                 from: try decoder.decode(
                     RustDevicesState.self,
@@ -259,9 +206,9 @@ func runEnginePayloadContractChecks(_ check: CheckRunner) {
                 PlaybackDevice(id: $0.id, name: $0.name, type: $0.type, isActive: $0.isActive)
             }
             let owner = connectionPlaybackOwner(
-                isLocalActive: state.isActiveDevice,
-                localDeviceID: state.deviceID,
-                localDeviceName: devices.first { $0.id == state.deviceID }?.name ?? "This Mac",
+                isLocalActive: true,
+                localDeviceID: "fixture-mac",
+                localDeviceName: devices.first { $0.id == "fixture-mac" }?.name ?? "This Mac",
                 devices: playbackDevices,
                 currentTrackURI: "spotify:track:fixtureNow",
                 previousOwner: .none,
@@ -274,13 +221,8 @@ func runEnginePayloadContractChecks(_ check: CheckRunner) {
             )
             check.equal(
                 "local ownership routes locally",
-                AuralDomain.connectCommandRoute(owner: owner, localDeviceID: state.deviceID),
+                AuralDomain.connectCommandRoute(owner: owner, localDeviceID: "fixture-mac"),
                 .local
-            )
-
-            _ = try decodeIgnoringUnknownFields(
-                RustConnectionState.self,
-                from: enginePayloadFixture(named: "connection-full")
             )
         }
 

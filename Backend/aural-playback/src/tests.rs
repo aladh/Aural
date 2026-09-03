@@ -593,11 +593,122 @@ fn exported_c_function_signatures_are_stable() {
     let _: extern "C" fn(extern "C" fn(*const c_char)) =
         aural_playback_register_playback_state_callback;
     let _: extern "C" fn(extern "C" fn(*const c_char)) = aural_playback_register_devices_callback;
-    let _: extern "C" fn(extern "C" fn(*const c_char)) =
+    let _: extern "C" fn(ConnectionSnapshotCallback) =
         aural_playback_register_connection_state_callback;
     let _: extern "C" fn(extern "C" fn(*const f32, usize)) =
         aural_playback_register_audio_data_callback;
     let _: extern "C" fn(extern "C" fn(u8)) = aural_playback_register_audio_control_callback;
+}
+
+#[test]
+fn connection_snapshot_repr_c_layout_matches_header() {
+    assert_eq!(std::mem::size_of::<AuralConnectionSnapshot>(), 40);
+    assert_eq!(std::mem::align_of::<AuralConnectionSnapshot>(), 8);
+    assert_eq!(std::mem::offset_of!(AuralConnectionSnapshot, revision), 0);
+    assert_eq!(
+        std::mem::offset_of!(AuralConnectionSnapshot, session_generation),
+        8
+    );
+    assert_eq!(
+        std::mem::offset_of!(AuralConnectionSnapshot, session_connected),
+        16
+    );
+    assert_eq!(
+        std::mem::offset_of!(AuralConnectionSnapshot, spirc_ready),
+        17
+    );
+    assert_eq!(
+        std::mem::offset_of!(AuralConnectionSnapshot, is_active_device),
+        18
+    );
+    assert_eq!(std::mem::offset_of!(AuralConnectionSnapshot, device_id), 24);
+    assert_eq!(
+        std::mem::offset_of!(AuralConnectionSnapshot, last_error),
+        32
+    );
+}
+
+#[test]
+fn connection_snapshot_callback_copies_nullable_fields() {
+    extern "C" fn capture(snapshot: *const AuralConnectionSnapshot) {
+        let snapshot = unsafe { &*snapshot };
+        assert_eq!(snapshot.revision, 14);
+        assert_eq!(snapshot.session_generation, 5);
+        assert_eq!(snapshot.session_connected, 1);
+        assert_eq!(snapshot.spirc_ready, 1);
+        assert_eq!(snapshot.is_active_device, 1);
+        assert!(!snapshot.device_id.is_null());
+        assert_eq!(
+            unsafe { CStr::from_ptr(snapshot.device_id) }
+                .to_str()
+                .unwrap(),
+            "fixture-mac"
+        );
+        assert!(snapshot.last_error.is_null());
+    }
+
+    send_connection_snapshot(
+        capture,
+        SnapshotStamp {
+            revision: 14,
+            session_generation: 5,
+        },
+        &ConnectionState {
+            session_connected: true,
+            spirc_ready: true,
+            device_id: Some("fixture-mac".to_string()),
+            last_error: None,
+            is_active_device: true,
+        },
+    );
+
+    extern "C" fn capture_missing(snapshot: *const AuralConnectionSnapshot) {
+        let snapshot = unsafe { &*snapshot };
+        assert!(snapshot.device_id.is_null());
+        assert!(!snapshot.last_error.is_null());
+        assert_eq!(
+            unsafe { CStr::from_ptr(snapshot.last_error) }
+                .to_str()
+                .unwrap(),
+            "fixture-session-timeout"
+        );
+    }
+
+    send_connection_snapshot(
+        capture_missing,
+        SnapshotStamp {
+            revision: 2,
+            session_generation: 1,
+        },
+        &ConnectionState {
+            session_connected: false,
+            spirc_ready: false,
+            device_id: None,
+            last_error: Some("fixture-session-timeout".to_string()),
+            is_active_device: false,
+        },
+    );
+
+    extern "C" fn capture_empty_and_nul(snapshot: *const AuralConnectionSnapshot) {
+        let snapshot = unsafe { &*snapshot };
+        assert!(snapshot.device_id.is_null());
+        assert!(snapshot.last_error.is_null());
+    }
+
+    send_connection_snapshot(
+        capture_empty_and_nul,
+        SnapshotStamp {
+            revision: 3,
+            session_generation: 1,
+        },
+        &ConnectionState {
+            session_connected: false,
+            spirc_ready: false,
+            device_id: Some(String::new()),
+            last_error: Some("err\0or".to_string()),
+            is_active_device: false,
+        },
+    );
 }
 
 #[test]

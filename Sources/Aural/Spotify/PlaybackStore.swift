@@ -114,24 +114,14 @@ nonisolated struct RustQueueState: Decodable, Sendable {
     }
 }
 
-nonisolated struct RustConnectionState: Decodable, Sendable {
-    var revision: UInt64?
-    var sessionGeneration: UInt64?
+nonisolated struct RustConnectionState: Sendable {
+    let revision: UInt64
+    let sessionGeneration: UInt64
     let sessionConnected: Bool
     let spircReady: Bool
     let isActiveDevice: Bool
     let lastError: String?
-    var deviceID: String?
-
-    enum CodingKeys: String, CodingKey {
-        case revision
-        case sessionGeneration = "session_generation"
-        case sessionConnected = "session_connected"
-        case spircReady = "spirc_ready"
-        case isActiveDevice = "is_active_device"
-        case lastError = "last_error"
-        case deviceID = "device_id"
-    }
+    let deviceID: String?
 }
 
 nonisolated struct RustDevicesState: Decodable, Sendable {

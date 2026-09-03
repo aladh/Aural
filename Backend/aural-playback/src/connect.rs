@@ -352,26 +352,18 @@ pub(crate) fn applied_cluster_ids() -> Vec<String> {
         .clone()
 }
 
-/// Builds the current connection observation, stamped with a fresh revision.
+/// Publishes the current connection observation.
 ///
 /// Presentation (session phase, local display name) is Swift-owned
 /// (`ConnectionSnapshotProjection`). Reading the state and assigning the revision happen
 /// together, so two concurrent publishers cannot end up with revisions that contradict
-/// the order they read state in. Delivery is deliberately left outside: `send_json`
-/// re-enters Swift, which must never happen while a lock is held.
-pub(crate) fn build_connection_state_info() -> ConnectionStateInfo {
-    stamped_snapshot(|stamp| {
-        let state = with_connection(|c| c.clone());
-        ConnectionStateInfo {
-            revision: stamp.revision,
-            session_generation: stamp.session_generation,
-            session_connected: state.session_connected,
-            spirc_ready: state.spirc_ready,
-            device_id: state.device_id,
-            last_error: state.last_error,
-            is_active_device: state.is_active_device,
-        }
-    })
+/// the order they read state in. Delivery is deliberately left outside: the C snapshot
+/// callback re-enters Swift, which must never happen while a lock is held.
+pub(crate) fn notify_connection_state_change() {
+    if let Some(callback) = registered_callback(&CONTROL_CALLBACKS.connection_state) {
+        let (stamp, state) = stamped_snapshot(|stamp| (stamp, with_connection(|c| c.clone())));
+        send_connection_snapshot(callback, stamp, &state);
+    }
 }
 
 /// Marks the session as disconnected, records the reason, and notifies the UI.
@@ -446,13 +438,6 @@ pub(crate) fn notify_devices(
         if let Ok(c_str) = CString::new(json) {
             callback(c_str.as_ptr());
         }
-    }
-}
-
-/// Sends connection state update to the registered callback
-pub(crate) fn notify_connection_state_change() {
-    if let Some(callback) = registered_callback(&CONTROL_CALLBACKS.connection_state) {
-        send_json(callback, &build_connection_state_info());
     }
 }
 

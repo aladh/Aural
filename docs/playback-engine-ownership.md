@@ -32,7 +32,7 @@ in the [enforcement inventory](architecture-enforcement.md).
 | `lifecycle_serialization.rs` | Aural-owned coordination that must stay with Rust globals | One async lifecycle mutex, reconnect unit outcomes, generation revalidation |
 | `connect.rs` | Mixed | Dealer subscribe, hidden-member bootstrap PUT, and protobuf parse are protocol. Device-list and connection-snapshot presentation are Swift-owned. `cluster_offer_decision`, bootstrap-vs-push linearization, and `is_active_in_cluster` (this engine's Connect role) stay until cluster observations can cross the boundary without a second protobuf stack. |
 | `queue.rs` | Adapter after this slice | Serializes unfiltered `ProvidedTrack` rows, slim current-track identity, protocol playback flags, and protocol `context_uri` on cluster snapshots. Local `PlayerEvent` playback snapshots send an empty context. Does **not** own delimiter hiding, upcoming presentation, or transport presentation. |
-| `state.rs` | Mixed | Librespot object slots (`SESSION`, `SPIRC`, `PLAYER`, `MIXER`). Snapshot stamps, connection aggregation, and JSON DTOs exist to cross FFI. |
+| `state.rs` | Mixed | Librespot object slots (`SESSION`, `SPIRC`, `PLAYER`, `MIXER`). Snapshot stamps and connection aggregation live here. Remaining JSON DTOs exist to cross FFI; connection observations use `AuralConnectionSnapshot`. |
 | `transport.rs` | Mixed | Reconnect `ResumeLoadPlan` / `resume_via_load`, playing-event waits, and seek-capable `load_at_position` stay here. User-resume capture and target iteration are Swift-owned. |
 | `player_control.rs` | Adapter | Spirc play/pause/seek/shuffle/repeat/transfer/queue-add, plus FFI getters for sticky resume URIs |
 | `player_event_pump.rs` | Adapter | Local `PlayerEvent` → position and protocol playing/paused bits when this device is active |
@@ -40,11 +40,12 @@ in the [enforcement inventory](architecture-enforcement.md).
 
 ## JSON / FFI surface
 
-Remaining control callbacks are JSON envelopes with `revision` and `session_generation`.
-Queue snapshots no longer carry presentation `next_tracks` / `prev_tracks` or catalog
+Remaining control callbacks for queue, playback, and devices are JSON envelopes with
+`revision` and `session_generation`. Connection observations use a typed C snapshot
+(`AuralConnectionSnapshot`) with the same stamps plus session flags, `device_id`, and
+`last_error`. Queue snapshots no longer carry presentation `next_tracks` / `prev_tracks` or catalog
 labels. Device snapshots no longer carry `is_active` or unused Web API volume/restriction
-fields; they send protocol members plus `active_device_id`. Connection snapshots send
-session flags plus `device_id` and `last_error`. Playback snapshots send protocol
+fields; they send protocol members plus `active_device_id`. Playback snapshots send protocol
 playing/paused flags, track URI, context URI, timing, and options; Swift projects transport.
 Local player-event snapshots send an empty `context_uri`. Hardcoded `device_name` is gone, and
 write-only `reconnect_attempt`, `connected_since_ms`, and `session_connection_id` were removed
@@ -57,8 +58,9 @@ adapter convenience, not a second app-facing store.
 
 ## Later slices (not this change)
 
-- Replacing JSON callbacks with a tighter ABI
+- Replacing remaining JSON callbacks (queue, playback, devices) with a tighter ABI
 - Moving reconnect rehydration loads onto Swift targets without duplicating session globals
+  (reconnect must still rehydrate before announcing readiness)
 
 Do not move PCM, Spirc, session connect, or dealer cluster fetch into Swift in order to
 satisfy this inventory.
