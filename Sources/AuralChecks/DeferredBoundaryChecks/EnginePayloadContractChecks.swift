@@ -139,10 +139,12 @@ func runEnginePayloadContractChecks(_ check: CheckRunner) {
             check.equal("minimal device name is empty", state.deviceName, "")
             check.equal("minimal last error", state.lastError, "fixture-session-timeout")
 
-            let devices = projectedDevices(from: try decoder.decode(
-                RustDevicesState.self,
-                from: enginePayloadFixture(named: "devices-full")
-            ))
+            let devices = projectedDevices(
+                from: try decoder.decode(
+                    RustDevicesState.self,
+                    from: enginePayloadFixture(named: "devices-full")
+                )
+            )
             check.equal(
                 "active device without local identity waits",
                 AuralDomain.connectCommandRoute(
@@ -168,10 +170,12 @@ func runEnginePayloadContractChecks(_ check: CheckRunner) {
             check.equal("full local device name", state.deviceName, "Fixture Mac")
             check.nil_("full last error is null", state.lastError)
 
-            let devices = projectedDevices(from: try decoder.decode(
-                RustDevicesState.self,
-                from: enginePayloadFixture(named: "devices-full")
-            ))
+            let devices = projectedDevices(
+                from: try decoder.decode(
+                    RustDevicesState.self,
+                    from: enginePayloadFixture(named: "devices-full")
+                )
+            )
             let playbackDevices = devices.map {
                 PlaybackDevice(id: $0.id, name: $0.name, type: $0.type, isActive: $0.isActive)
             }
