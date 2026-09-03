@@ -15,15 +15,14 @@ struct NowPlayingBar: View {
                     NowPlayingTransportControls(player: player)
 
                     HStack(spacing: 8) {
-                        Text(player.hasCurrentTrack ? formatDuration(player.position) : "—:—")
-                            .foregroundStyle(AuralPalette.playerSecondary)
-                            .frame(width: 34, alignment: .trailing)
+                        playerTimeLabel(
+                            player.hasCurrentTrack ? formatDuration(player.position) : "—:—",
+                            alignment: .trailing
+                        )
 
                         NowPlayingProgress(player: player)
 
-                        Text(remainingTime)
-                            .foregroundStyle(AuralPalette.playerSecondary)
-                            .frame(width: 34, alignment: .leading)
+                        playerTimeLabel(remainingTime, alignment: .leading)
                     }
                     .font(.system(size: 9, weight: .regular, design: .rounded).monospacedDigit())
                 }
@@ -64,6 +63,15 @@ struct NowPlayingBar: View {
     private var remainingTime: String {
         guard player.hasCurrentTrack, player.duration > 0 else { return "—:—" }
         return "−\(formatDuration(max(0, player.duration - player.position)))"
+    }
+
+    private func playerTimeLabel(_ value: String, alignment: Alignment) -> some View {
+        Text(value)
+            .foregroundStyle(AuralPalette.playerSecondary)
+            .lineLimit(1)
+            .allowsTightening(true)
+            .minimumScaleFactor(0.7)
+            .frame(width: 44, alignment: alignment)
     }
 }
 

@@ -80,6 +80,16 @@ func runVisualStyleContractChecks(_ runner: CheckRunner) {
             let palette = try visualStyleSourceFile("Aural/Views/AuralPalette.swift")
             let playerBar = try visualStyleSourceFile("Aural/Views/NowPlayingBar.swift")
             let playerComponents = try visualStyleSourceFile("Aural/Views/NowPlayingComponents.swift")
+            let trailingControls = try visualStyleSourceSection(
+                playerComponents,
+                from: "struct NowPlayingTimeControls: View",
+                through: "    private var devicesMenu: some View"
+            )
+            let deviceControl = try visualStyleSourceSection(
+                playerComponents,
+                from: "    private var devicesMenu: some View",
+                through: "    private func deviceName"
+            )
 
             runner.check(
                 "Home leads with a bounded compact shortcut shelf",
@@ -95,12 +105,16 @@ func runVisualStyleContractChecks(_ runner: CheckRunner) {
             )
             runner.check(
                 "the persistent player uses a compact near-black shelf",
-                palette.contains("static let playerShelf = Color(red: 0.035")
-                    && palette.contains("static let playerPrimary")
-                    && palette.contains("static let playerSecondary")
+                palette.contains(
+                    "static let playerShelf = Color(red: 0.035, green: 0.035, blue: 0.035)"
+                )
+                    && palette.contains("static let playerPrimary = Color.white.opacity(0.92)")
+                    && palette.contains("static let playerSecondary = Color.white.opacity(0.62)")
                     && playerBar.contains(".fill(AuralPalette.playerShelf)")
                     && playerBar.contains("player.hasCurrentTrack ? 64 : 60")
                     && playerBar.contains(".frame(minWidth: 500, maxWidth: 520)")
+                    && playerBar.contains(".frame(width: 44, alignment: alignment)")
+                    && playerBar.contains(".minimumScaleFactor(0.7)")
                     && !playerBar.contains(".fill(.bar)")
             )
             runner.check(
@@ -110,9 +124,15 @@ func runVisualStyleContractChecks(_ runner: CheckRunner) {
             )
             runner.check(
                 "the trailing player controls stay limited to queue and devices",
-                playerComponents.contains("Image(systemName: \"list.bullet\")")
-                    && playerComponents.contains("Image(systemName: \"display.2\")")
-                    && !playerComponents.contains("Image(systemName: \"sidebar.right\")")
+                visualStyleOccurrenceCount("Button {", in: trailingControls) == 1
+                    && visualStyleOccurrenceCount("devicesMenu", in: trailingControls) == 2
+                    && visualStyleOccurrenceCount("Image(systemName:", in: trailingControls) == 1
+                    && trailingControls.contains("Image(systemName: \"list.bullet\")")
+                    && !trailingControls.contains("Toggle")
+                    && !trailingControls.contains("Slider")
+                    && visualStyleOccurrenceCount("Menu {", in: deviceControl) == 1
+                    && visualStyleOccurrenceCount("Image(systemName:", in: deviceControl) == 1
+                    && deviceControl.contains("Image(systemName: \"display.2\")")
             )
             runner.check(
                 "identified remote playback gets a Spotify-familiar green footer",
@@ -133,4 +153,17 @@ private func visualStyleSourceFile(_ relativePath: String) throws -> String {
         .deletingLastPathComponent()
         .deletingLastPathComponent()
     return try String(contentsOf: repositoryRoot.appendingPathComponent(relativePath), encoding: .utf8)
+}
+
+private func visualStyleSourceSection(_ source: String, from start: String, through end: String) throws -> String {
+    guard let startRange = source.range(of: start),
+        let endRange = source.range(of: end, range: startRange.upperBound..<source.endIndex)
+    else {
+        throw CocoaError(.fileReadCorruptFile)
+    }
+    return String(source[startRange.lowerBound..<endRange.upperBound])
+}
+
+private func visualStyleOccurrenceCount(_ token: String, in source: String) -> Int {
+    source.components(separatedBy: token).count - 1
 }
