@@ -350,7 +350,7 @@ func runPlaybackPanelChecks(_ check: CheckRunner) {
             check.check("queue state decodes: \(error)", false)
         }
         let pausedPlaybackJSON = """
-            {"is_playing":true,"is_paused":true,"track_uri":"spotify:track:abc",
+            {"is_playing":true,"is_paused":true,"track_uri":"spotify:track:abc","context_uri":"",
              "position_ms":42000,"duration_ms":180000,"timestamp_ms":1000000}
             """
         do {

@@ -898,6 +898,7 @@ func runWorkflowChecks(_ runner: CheckRunner) async {
                         isPlaying: true,
                         isPaused: false,
                         trackURI: "spotify:track:stale",
+                        contextURI: "",
                         positionMS: 1_000,
                         durationMS: 10_000,
                         timestampMS: nil,

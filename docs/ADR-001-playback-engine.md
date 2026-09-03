@@ -61,7 +61,9 @@ Keep the embedded Rust/librespot core, but treat it as a replaceable leaf:
 - Catalog, OAuth, persistence, UI, shuffle policy, queue presentation (delimiter hiding and
   playable-track filtering via `QueueProtocolProjection`), device-list presentation
   (`ConnectDeviceProjection`), connection-snapshot presentation (`ConnectionSnapshotProjection`),
-  playback-snapshot presentation (`PlaybackSnapshotProjection`), and error policy remain Swift.
+  playback-snapshot presentation (`PlaybackSnapshotProjection`), resume-load target
+  order (`ResumeLoadPlan`), and error policy remain Swift. `LoadRequest` execution for
+  resume still lives in Rust because `aural_playback_play_uri` always seeks to 0.
 - The earlier unused playback-abstraction target remains removed. The current `AuralCore` target
   is the testable Swift application implementation, not another playback abstraction; the C leaf
   is still reached only through `PlaybackCore.swift` and `RustPlaybackEngine`.

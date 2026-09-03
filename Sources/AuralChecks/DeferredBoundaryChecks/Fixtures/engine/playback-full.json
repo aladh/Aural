@@ -1,4 +1,5 @@
 {
+  "context_uri": "spotify:playlist:fixtureContext",
   "duration_ms": 180000,
   "is_paused": false,
   "is_playing": true,

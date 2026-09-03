@@ -36,6 +36,7 @@ pub(crate) fn send_playback_state(player_state: &PlayerState) {
         is_playing: player_state.is_playing,
         is_paused: player_state.is_paused,
         track_uri,
+        context_uri: player_state.context_uri.clone(),
         position_ms: player_state.position_as_of_timestamp,
         duration_ms: player_state.duration,
         shuffle,
@@ -90,6 +91,11 @@ pub(crate) fn send_local_playback_state(is_playing: bool, position_ms: u32) {
         // Local PlayerEvent has one bit; shape it as the protocol pair Swift already projects.
         is_paused: !is_playing,
         track_uri,
+        context_uri: CURRENT_CONTEXT_URI
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .clone()
+            .unwrap_or_default(),
         position_ms: position_ms as i64,
         duration_ms: duration_ms as i64,
         shuffle,

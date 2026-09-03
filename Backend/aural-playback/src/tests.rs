@@ -163,6 +163,8 @@ fn a_paused_local_player_is_not_resumed() {
     .should_resume());
 }
 
+// Keep these in lockstep with `ResumeLoadPlanChecks.swift`. Execution stays here;
+// Swift owns the policy type used for presentation-state naming.
 #[test]
 fn resume_load_plan_prefers_context_then_track_at_the_resume_position() {
     let plan = ResumeLoadPlan::capture(

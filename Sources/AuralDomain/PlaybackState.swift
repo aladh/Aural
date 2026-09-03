@@ -229,6 +229,7 @@ public struct PlaybackOptions: Equatable, Sendable {
 public struct EnginePlaybackSnapshot: Equatable, Sendable {
     public let transport: PlaybackTransportState
     public let trackURI: String?
+    public let contextURI: String?
     public let timing: PlaybackTiming
     public let shuffle: Bool?
     public let repeatMode: RepeatMode?
@@ -237,6 +238,7 @@ public struct EnginePlaybackSnapshot: Equatable, Sendable {
     public init(
         transport: PlaybackTransportState,
         trackURI: String?,
+        contextURI: String? = nil,
         timing: PlaybackTiming,
         shuffle: Bool? = nil,
         repeatMode: RepeatMode? = nil,
@@ -244,6 +246,7 @@ public struct EnginePlaybackSnapshot: Equatable, Sendable {
     ) {
         self.transport = transport
         self.trackURI = trackURI
+        self.contextURI = contextURI
         self.timing = timing
         self.shuffle = shuffle
         self.repeatMode = repeatMode
@@ -505,6 +508,9 @@ public struct PlaybackState: Equatable, Sendable {
     public var owner: PlaybackOwner
     public var transport: PlaybackTransportState
     public var currentTrack: CurrentTrack?
+    /// Playlist/album/artist URI from the engine playback observation. Distinct from
+    /// `queue.contextURI`, which is QueueService mutation identity (often the current track).
+    public var playbackContextURI: String?
     public var timing: PlaybackTiming
     public var options: PlaybackOptions
     public var queue: PlaybackQueueSnapshot
@@ -521,6 +527,7 @@ public struct PlaybackState: Equatable, Sendable {
         owner: PlaybackOwner = .none,
         transport: PlaybackTransportState = .stopped,
         currentTrack: CurrentTrack? = nil,
+        playbackContextURI: String? = nil,
         timing: PlaybackTiming = PlaybackTiming(),
         options: PlaybackOptions = PlaybackOptions(),
         queue: PlaybackQueueSnapshot = PlaybackQueueSnapshot(),
@@ -536,6 +543,7 @@ public struct PlaybackState: Equatable, Sendable {
         self.owner = owner
         self.transport = transport
         self.currentTrack = currentTrack
+        self.playbackContextURI = playbackContextURI
         self.timing = timing
         self.options = options
         self.queue = queue
@@ -598,6 +606,7 @@ public enum PlaybackReducer {
         case let .transport(transport):
             reconcileTransport(transport, incomingTrackURI: nil, in: &candidate)
         case let .enginePlayback(snapshot):
+            candidate.playbackContextURI = snapshot.contextURI
             let incomingURI = playbackTrackURI(snapshot.trackURI)
             if shouldHoldOptimisticPlayTarget(incomingURI: incomingURI, in: candidate) {
                 applyEnginePlaybackOptions(snapshot, in: &candidate)

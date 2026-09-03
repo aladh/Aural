@@ -2,13 +2,17 @@ import Foundation
 
 /// App-facing engine playback from protocol playing/paused flags.
 ///
-/// The engine reports `is_playing`, `is_paused`, track URI, timing, and options.
-/// Transport, empty-URI identity, timestamp correction, and optional-option fallbacks
-/// are Swift-owned.
+/// The engine reports `is_playing`, `is_paused`, track URI, context URI, timing, and
+/// options. Transport, empty-URI identity, timestamp correction, and optional-option
+/// fallbacks are Swift-owned. Resume-load target order lives in `ResumeLoadPlan`.
 public enum PlaybackSnapshotProjection: Sendable {
-    /// Empty wire URIs are missing, not a distinct track.
+    /// Empty wire URIs are missing, not a distinct identity.
     public static func resolvedTrackURI(_ uri: String) -> String? {
         uri.isEmpty ? nil : uri
+    }
+
+    public static func resolvedContextURI(_ uri: String) -> String? {
+        resolvedTrackURI(uri)
     }
 
     public static func isAudible(isPlaying: Bool, isPaused: Bool) -> Bool {
@@ -52,6 +56,7 @@ public enum PlaybackSnapshotProjection: Sendable {
         isPlaying: Bool,
         isPaused: Bool,
         trackURI: String,
+        contextURI: String,
         positionMilliseconds: Int64,
         durationMilliseconds: Int64,
         timestampMilliseconds: Int64?,
@@ -78,6 +83,7 @@ public enum PlaybackSnapshotProjection: Sendable {
         return EnginePlaybackSnapshot(
             transport: transport,
             trackURI: resolvedTrackURI(trackURI),
+            contextURI: resolvedContextURI(contextURI),
             timing: PlaybackTiming(
                 position: playbackSnapshotPosition(
                     positionMilliseconds: positionMilliseconds,

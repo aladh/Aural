@@ -5,13 +5,15 @@ import Observation
 import OSLog
 
 /// Decode-only engine playback JSON. Transport, empty-URI identity, and option
-/// fallbacks are projected at intake (`PlaybackSnapshotProjection`).
+/// fallbacks are projected at intake (`PlaybackSnapshotProjection`). Protocol
+/// `context_uri` is forwarded so Swift can name resume-load targets.
 nonisolated struct RustPlaybackState: Decodable, Sendable {
     var revision: UInt64?
     var sessionGeneration: UInt64?
     let isPlaying: Bool
     let isPaused: Bool
     let trackURI: String
+    let contextURI: String
     let positionMS: Int64
     let durationMS: Int64
     var timestampMS: Int64?
@@ -26,6 +28,7 @@ nonisolated struct RustPlaybackState: Decodable, Sendable {
         case isPlaying = "is_playing"
         case isPaused = "is_paused"
         case trackURI = "track_uri"
+        case contextURI = "context_uri"
         case positionMS = "position_ms"
         case durationMS = "duration_ms"
         case timestampMS = "timestamp_ms"

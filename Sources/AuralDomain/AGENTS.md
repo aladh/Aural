@@ -16,8 +16,9 @@ changing state transitions, queue/device policy, parsing, sorting, or lifetime s
 - Queue, device, connection-snapshot, and playback-snapshot projection policy belongs here when it
   is pure. Preserve occurrence identity, authoritative ordering/provenance, the distinction between
   protocol state and metadata labels, the session-phase/empty-device-ID semantics in
-  `ConnectionSnapshotProjection`, and transport/empty-URI/timestamp semantics in
-  `PlaybackSnapshotProjection`.
+  `ConnectionSnapshotProjection`, transport/empty-URI/timestamp semantics in
+  `PlaybackSnapshotProjection`, and resume-load target order in `ResumeLoadPlan`.
+  `playbackContextURI` is protocol playlist/album/artist identity, not `queue.contextURI`.
 - Prefer immutable `Sendable` values, typed state, exhaustive switches, and pure functions. Match the
   surrounding naming and comment density; document only non-obvious invariants.
 

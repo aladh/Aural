@@ -17,6 +17,7 @@ func runEnginePayloadContractChecks(_ check: CheckRunner) {
             check.equal("minimal playback is stopped", state.isPlaying, false)
             check.equal("minimal playback is not paused", state.isPaused, false)
             check.equal("minimal playback has no track", state.trackURI, "")
+            check.equal("minimal playback has no context", state.contextURI, "")
             check.equal("minimal playback position", state.positionMS, 0)
             check.equal("minimal playback duration", state.durationMS, 0)
             check.equal("minimal playback timestamp", state.timestampMS, 0)
@@ -34,6 +35,18 @@ func runEnginePayloadContractChecks(_ check: CheckRunner) {
                 ),
                 .stopped
             )
+        }
+
+        check.throwsError("missing context_uri fails decode") {
+            let object = try JSONSerialization.jsonObject(
+                with: enginePayloadFixture(named: "playback-minimal")
+            )
+            guard var dictionary = object as? [String: Any] else {
+                throw CocoaError(.fileReadCorruptFile)
+            }
+            dictionary.removeValue(forKey: "context_uri")
+            let stripped = try JSONSerialization.data(withJSONObject: dictionary)
+            _ = try decoder.decode(RustPlaybackState.self, from: stripped)
         }
 
         check.throwsError("missing is_paused fails decode") {
@@ -58,6 +71,11 @@ func runEnginePayloadContractChecks(_ check: CheckRunner) {
             check.equal("full playback is playing", state.isPlaying, true)
             check.equal("full playback is not paused", state.isPaused, false)
             check.equal("full playback track", state.trackURI, "spotify:track:fixtureNow")
+            check.equal(
+                "full playback context is the playlist URI",
+                state.contextURI,
+                "spotify:playlist:fixtureContext"
+            )
             check.equal("full playback position", state.positionMS, 1_250)
             check.equal("full playback duration", state.durationMS, 180_000)
             check.equal("full playback timestamp", state.timestampMS, 1_700_000_000_000)
@@ -367,14 +385,41 @@ func runEnginePayloadContractChecks(_ check: CheckRunner) {
                 "Connect intake projects playback transport at the envelope, not on the DTO",
                 containsToken(engineEvents, "PlaybackSnapshotProjection.snapshot(")
                     && containsToken(engineEvents, "isPaused: state.isPaused")
+                    && containsToken(engineEvents, "contextURI: state.contextURI")
                     && containsToken(engineEvents, "previousRepeat: self.state.options.repeatFlags")
                     && containsToken(dto, "let isPaused: Bool")
+                    && containsToken(dto, "let contextURI: String")
                     && !containsToken(dto, "var isPaused")
                     && !containsToken(dto, "func snapshot(")
                     && !containsToken(dto, "func transport(")
                     && containsToken(projection, "public static func transport")
                     && containsToken(projection, "public static func snapshot")
                     && containsToken(projection, "public static func resolvedTrackURI")
+                    && containsToken(projection, "public static func resolvedContextURI")
+            )
+        }
+    }
+
+    check.suite("Resume-load policy source contract") {
+        check.noThrow("Swift owns resume-load target order; Rust still executes loads") {
+            let plan = try auralSourceFile("AuralDomain/ResumeLoadPlan.swift")
+            let playbackCore = try auralSourceFile("Aural/Spotify/PlaybackCore.swift")
+            let repoRoot = URL(fileURLWithPath: #filePath)
+                .deletingLastPathComponent()
+                .deletingLastPathComponent()
+                .deletingLastPathComponent()
+                .deletingLastPathComponent()
+            let transport = try String(
+                contentsOf: repoRoot.appending(path: "Backend/aural-playback/src/transport.rs"),
+                encoding: .utf8
+            )
+            check.check(
+                "resume-load policy is a domain type and resume FFI is still argument-free",
+                containsToken(plan, "public static func capture(")
+                    && containsToken(plan, "public func targets()")
+                    && containsToken(playbackCore, "static func resume() -> Result { aural_playback_resume() }")
+                    && containsToken(transport, "fn from_saved_playback()")
+                    && containsToken(transport, "LoadRequest::from_context_uri")
             )
         }
     }

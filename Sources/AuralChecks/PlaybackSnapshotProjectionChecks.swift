@@ -11,6 +11,15 @@ func runPlaybackSnapshotProjectionChecks(_ check: CheckRunner) {
             PlaybackSnapshotProjection.resolvedTrackURI("spotify:track:now"),
             "spotify:track:now"
         )
+        check.nil_(
+            "an empty context URI is missing",
+            PlaybackSnapshotProjection.resolvedContextURI("")
+        )
+        check.equal(
+            "a nonempty context URI is kept",
+            PlaybackSnapshotProjection.resolvedContextURI("spotify:playlist:ctx"),
+            "spotify:playlist:ctx"
+        )
 
         check.check(
             "playing and not paused is audible",
@@ -95,6 +104,7 @@ func runPlaybackSnapshotProjectionChecks(_ check: CheckRunner) {
             isPlaying: true,
             isPaused: false,
             trackURI: "",
+            contextURI: "",
             positionMilliseconds: 40_000,
             durationMilliseconds: 200_000,
             timestampMilliseconds: 1_005_000,
@@ -108,6 +118,7 @@ func runPlaybackSnapshotProjectionChecks(_ check: CheckRunner) {
         )
         check.equal("empty-URI audible snapshot stays playing", emptyURIPlaying.transport, .playing)
         check.nil_("empty-URI audible snapshot has no track identity", emptyURIPlaying.trackURI)
+        check.nil_("empty-URI audible snapshot has no context identity", emptyURIPlaying.contextURI)
         check.equal(
             "a paused track is paused",
             PlaybackSnapshotProjection.transport(
@@ -136,6 +147,7 @@ func runPlaybackSnapshotProjectionChecks(_ check: CheckRunner) {
             isPlaying: true,
             isPaused: false,
             trackURI: "spotify:track:now",
+            contextURI: "spotify:playlist:ctx",
             positionMilliseconds: 40_000,
             durationMilliseconds: 200_000,
             timestampMilliseconds: 1_005_000,
@@ -149,6 +161,11 @@ func runPlaybackSnapshotProjectionChecks(_ check: CheckRunner) {
         )
         check.equal("a live remote snapshot presents playing", snapshot.transport, .playing)
         check.equal("snapshot track identity drops empty URIs", snapshot.trackURI, "spotify:track:now")
+        check.equal(
+            "snapshot context identity drops empty URIs",
+            snapshot.contextURI,
+            "spotify:playlist:ctx"
+        )
         check.equal("playing snapshots compensate for their timestamp", snapshot.timing.position, 45)
         check.equal("snapshot duration is seconds", snapshot.timing.duration, 200)
         check.equal("snapshot shuffle is forwarded", snapshot.shuffle, true)
@@ -163,6 +180,7 @@ func runPlaybackSnapshotProjectionChecks(_ check: CheckRunner) {
             isPlaying: true,
             isPaused: false,
             trackURI: "spotify:track:now",
+            contextURI: "spotify:playlist:ctx",
             positionMilliseconds: 40_000,
             durationMilliseconds: 200_000,
             timestampMilliseconds: 1_005_000,
