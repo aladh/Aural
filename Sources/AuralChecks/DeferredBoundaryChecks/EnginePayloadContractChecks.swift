@@ -36,6 +36,18 @@ func runEnginePayloadContractChecks(_ check: CheckRunner) {
             )
         }
 
+        check.throwsError("missing is_paused fails decode") {
+            let object = try JSONSerialization.jsonObject(
+                with: enginePayloadFixture(named: "playback-minimal")
+            )
+            guard var dictionary = object as? [String: Any] else {
+                throw CocoaError(.fileReadCorruptFile)
+            }
+            dictionary.removeValue(forKey: "is_paused")
+            let stripped = try JSONSerialization.data(withJSONObject: dictionary)
+            _ = try decoder.decode(RustPlaybackState.self, from: stripped)
+        }
+
         check.noThrow("playback-full decodes a live playing snapshot and options") {
             let state = try decoder.decode(
                 RustPlaybackState.self,

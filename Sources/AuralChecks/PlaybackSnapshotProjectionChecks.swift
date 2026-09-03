@@ -91,6 +91,23 @@ func runPlaybackSnapshotProjectionChecks(_ check: CheckRunner) {
             ),
             .playing
         )
+        let emptyURIPlaying = PlaybackSnapshotProjection.snapshot(
+            isPlaying: true,
+            isPaused: false,
+            trackURI: "",
+            positionMilliseconds: 40_000,
+            durationMilliseconds: 200_000,
+            timestampMilliseconds: 1_005_000,
+            shuffle: false,
+            repeatContext: false,
+            repeatTrack: false,
+            previousRepeat: RepeatFlags(context: false, track: false),
+            isInitialSnapshot: false,
+            isActiveDevice: false,
+            receivedAt: receivedAt
+        )
+        check.equal("empty-URI audible snapshot stays playing", emptyURIPlaying.transport, .playing)
+        check.nil_("empty-URI audible snapshot has no track identity", emptyURIPlaying.trackURI)
         check.equal(
             "a paused track is paused",
             PlaybackSnapshotProjection.transport(
@@ -141,5 +158,23 @@ func runPlaybackSnapshotProjectionChecks(_ check: CheckRunner) {
             snapshot.repeatFlags,
             RepeatFlags(context: true, track: false)
         )
+
+        let firstLocal = PlaybackSnapshotProjection.snapshot(
+            isPlaying: true,
+            isPaused: false,
+            trackURI: "spotify:track:now",
+            positionMilliseconds: 40_000,
+            durationMilliseconds: 200_000,
+            timestampMilliseconds: 1_005_000,
+            shuffle: false,
+            repeatContext: false,
+            repeatTrack: false,
+            previousRepeat: RepeatFlags(context: false, track: false),
+            isInitialSnapshot: true,
+            isActiveDevice: true,
+            receivedAt: receivedAt
+        )
+        check.equal("first-local snapshot() presents paused", firstLocal.transport, .paused)
+        check.equal("first-local snapshot() does not interpolate position", firstLocal.timing.position, 40)
     }
 }
