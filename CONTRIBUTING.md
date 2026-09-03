@@ -12,7 +12,7 @@ surface; unsupported protocol risk is a design constraint, not an excuse for spe
 
 ## Environment
 
-- Apple-silicon Mac running macOS 26.2 or newer for development; runtime target macOS 15+
+- Apple Silicon Mac running macOS 26.2 or newer for development; runtime target macOS 15+
 - Xcode 26.6 with Swift 6.3.3
 - Rustup; `rust-toolchain.toml` pins the toolchain, components, and ARM64 macOS target
 - [ripgrep](https://github.com/BurntSushi/ripgrep) for repository verification
@@ -35,7 +35,8 @@ From the repository root:
 The script compiles the Rust backend when needed, builds the SwiftPM executable, creates and signs a
 local `Aural.app`, terminates any running development copy, and launches the replacement. Because that
 can disturb an authenticated session, use it only when the request authorizes launch or interactive
-acceptance; do not use it as a compile check.
+acceptance; do not use it as a compile check. The path-specific contract is
+[`script/AGENTS.md`](script/AGENTS.md).
 
 Useful modes:
 
@@ -57,7 +58,9 @@ installed in the login keychain or committed.
 
 ## Normal verification
 
-Run the complete non-playback gate before a pull request:
+For source, runtime, integration, build, or release changes, run the complete non-playback gate before
+opening a pull request. Documentation-only changes use the documentation evidence listed under
+[Clean and risk-specific verification](#clean-and-risk-specific-verification).
 
 ```bash
 ./Scripts/check.sh
@@ -132,12 +135,21 @@ Add deterministic evidence at the closest owner:
 | Concrete Swift adapters, stores, codecs, workflows | `Sources/AuralChecks/DeferredBoundaryChecks/` |
 | Rust lifecycle, Connect, queue serialization, FFI | `Backend/aural-playback/src/` tests |
 | Cross-language payload or ABI | Paired Rust serialization/signature coverage and Swift boundary fixture |
-| Documentation only | Link/command validation, rendered Markdown when relevant, `git diff --check` |
+| Documentation only | Link/command validation, rendered Markdown when relevant, stage the intended files, then `git diff --check HEAD` |
 | Performance | Like-for-like measurements with environment and methodology recorded |
 
 Fixtures are reduced, synthetic, and non-identifying. Do not use real Spotify payloads. Prefer
 behavior tests over source-text snapshots; regex is not the owner of concurrency, epochs, queue
 provenance, lifecycle, rollback, or payload correctness.
+
+## Architecture and technical context
+
+Accepted architecture is indexed in the
+[architecture decision records](docs/architecture-decisions.md), and hard-rule enforcement is routed
+through the [architecture enforcement inventory](docs/architecture-enforcement.md). Supporting
+protocol notes, research, and measured baselines are linked once from the ADR index's
+[related technical context](docs/architecture-decisions.md#related-technical-context). Do not
+duplicate those documents into this operations guide.
 
 ## Safe live acceptance
 
@@ -183,7 +195,7 @@ Gatekeeper acceptance. Signing proves artifact integrity; it does not make the p
 integration supported or policy-compliant. Before distributing a binary, generate and inspect the
 complete transitive license set from `Cargo.lock`.
 
-## Releases
+## Tagged releases
 
 A matching `vX.Y.Z` tag runs the ARM64 release workflow. It compares the numeric tag with
 `CFBundleShortVersionString` in `Packaging/Info.plist`, runs the full gate, validates an ARM64-only
@@ -247,12 +259,12 @@ conversation resolution.
 
 ## Maintaining repository guidance
 
-`AGENTS.md` is global policy; nested `AGENTS.md` files hold path-specific gotchas and review rules;
-this file owns reusable procedures; product/ADR/security documents own durable decisions. Claude bridge
-files import their adjacent `AGENTS.md` and contain no duplicated policy. Add guidance only for a
-repo-specific constraint or demonstrated failure mode, state it once, and delete superseded prose in
-the same change.
+`AGENTS.md` is the only repository instruction format. Root guidance owns repository-wide policy;
+nested `AGENTS.md` files hold path-specific gotchas and review rules; this file owns reusable
+procedures; product, ADR, privacy, and security documents own durable decisions. Add guidance only for
+a repository-specific constraint or demonstrated failure mode, state it once, and delete superseded
+prose in the same change.
 
 Do not add a byte-count gate or a second source-contract harness. Validate instruction discovery from
-the repository root and relevant subdirectories, keep every active instruction chain comfortably
-below tool limits, and let CI own formatting and mechanically checkable policy.
+the repository root and representative nested scopes, including `script/`, and let CI own formatting
+and mechanically checkable policy.

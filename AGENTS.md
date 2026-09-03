@@ -19,7 +19,7 @@ When goals compete, use this order:
 4. Keep ownership explicit, changes cohesive, and behavior deterministic to verify.
 5. Optimize only measured, user-visible costs.
 
-The supported envelope is macOS 15+ on Apple silicon with Spotify Premium. Keep the experimental,
+The supported envelope is macOS 15+ on Apple Silicon with Spotify Premium. Keep the experimental,
 unofficial-project warnings prominent in public material.
 
 ## Autonomy and approval
@@ -41,11 +41,10 @@ unofficial-project warnings prominent in public material.
 ## Load context progressively
 
 1. Run `git status --short` and preserve unrelated work. Never reset, discard, or overwrite it.
-2. Discover instruction files with
-   `git -C "$(git rev-parse --show-toplevel)" ls-files | rg '(^|/)(AGENTS|CLAUDE)\.md$'`.
-   Before editing a path,
-   read the `AGENTS.md` chain from the repository root through the path's nearest ancestor, even when
-   the agent was launched from the root.
+2. Discover repository instructions with
+   `git -C "$(git rev-parse --show-toplevel)" ls-files | rg '(^|/)AGENTS\.md$'`.
+   Before editing a path, read the `AGENTS.md` chain from the repository root through the path's
+   nearest ancestor, even when the agent was launched from the root.
 3. Read only the canonical documents relevant to the task:
 
 | Need | Canonical owner |
@@ -53,6 +52,7 @@ unofficial-project warnings prominent in public material.
 | Product identity, capabilities, requirements, limitations | [README.md](README.md) |
 | UX rules and safe live-account acceptance | [Product and acceptance contract](docs/product-and-acceptance-contract.md) |
 | Accepted architecture | [ADR index](docs/architecture-decisions.md) |
+| Protocol notes, research, and measured baselines | [Related technical context](docs/architecture-decisions.md#related-technical-context) |
 | Rule owners and enforcement gaps | [Architecture enforcement inventory](docs/architecture-enforcement.md) |
 | Fresh-clone setup, generated state, signing recovery | [Development setup](docs/development-setup.md) |
 | Commands, verification, PR/review, packaging, release | [Agent operations](CONTRIBUTING.md) |
@@ -72,7 +72,10 @@ unofficial-project warnings prominent in public material.
 | `Sources/AuralPlaybackCore/` | Checked-in C header and module map for the Rust ABI. |
 | `Backend/aural-playback/` | Rust/librespot session, Connect, streaming, decoding, recovery, protocol rows, and C exports. |
 | `Sources/AuralChecks/` | Deterministic domain and boundary evidence; never ships. |
-| `Scripts/`, `script/`, `.github/`, `Packaging/` | Verification, build, CI, signing, diagnostics, packaging, and release mechanics. |
+| `Scripts/` | Verification, packaging, signing, diagnostics, and release helpers. |
+| `script/` | Development build/sign/launch entry point. |
+| `.github/` | CI, pull-request metadata, and release workflows. |
+| `Packaging/` | App metadata and privacy manifest. |
 | `docs/` | Product contract, decisions, enforcement inventory, protocol notes, and measured baselines. |
 
 Swift target direction is `AuralApp -> AuralCore -> AuralDomain`; `AuralCore` reaches the C/Rust leaf
@@ -105,8 +108,8 @@ Default to **no playback and no account mutation**. Deterministic checks and bui
 or read-only UI inspection is not permission to press transport controls, seek, transfer devices,
 modify queue/library/playlists/follows, or sign out. Permission is scoped to the current request and
 the specific action. For authorized live tests, follow the bounded procedure in the
-[product contract](docs/product-and-acceptance-contract.md#safe-acceptance-testing) and
-report any state that could not be restored.
+[product contract](docs/product-and-acceptance-contract.md#safe-acceptance-testing) and report any
+state that could not be restored.
 
 Do not launch Aural merely to prove compilation: `./script/build_and_run.sh` terminates an existing
 process and can disturb an authenticated session.
@@ -121,7 +124,7 @@ process and can disturb an authenticated session.
    evidence for behavior that can be expressed as a transition or boundary check.
 4. Run proportional verification from the repository root:
    - Documentation only: validate links and commands, inspect rendered Markdown where layout matters,
-     and run `git diff --check`.
+     stage the intended files, and run `git diff --check HEAD`.
    - Normal Swift/domain/UI behavior: run the nearest focused suites while iterating, then
      `./Scripts/check.sh`.
    - Rust, lifecycle, FFI, dependencies, build, signing, packaging, CI, or release mechanics: run
@@ -138,8 +141,9 @@ acceptance step that was not performed.
 
 ## Maintaining these instructions
 
-Add a root rule only when it applies to most repository tasks and a capable agent cannot reliably
-infer it from code. Put path-specific review rules and gotchas in the nearest `AGENTS.md`; put
-multi-step procedures in `CONTRIBUTING.md` or the owning document. State each rule once, link rather
-than repeat, and remove stale guidance when behavior changes. Instruction changes should reduce
-ambiguity or correct an observed failure mode, not memorialize a one-off preference.
+`AGENTS.md` is the only repository instruction format. Add a root rule only when it applies to most
+tasks and a capable agent cannot reliably infer it from code. Put path-specific review rules and
+gotchas in the nearest `AGENTS.md`; put multi-step procedures in `CONTRIBUTING.md` or the owning
+document. State each rule once, link rather than repeat, and remove stale guidance when behavior
+changes. Instruction changes should reduce ambiguity or correct an observed failure mode, not
+memorialize a one-off preference.

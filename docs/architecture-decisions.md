@@ -18,6 +18,14 @@ Related index: [Architecture enforcement inventory](architecture-enforcement.md)
 families to their canonical decision, strongest proof, scoped agent guidance, and known enforcement
 gaps. It is a registry, not another ADR.
 
+## Related technical context
+
+These documents are supporting evidence or protocol notes, not accepted ADRs:
+
+- [Private extended-metadata protocol](extended-metadata.md)
+- [Performance and acceptance baseline](performance-baseline-2026-08-23.md)
+- [Research notes](../RESEARCH.md)
+
 ## Maintaining the index
 
 - Give each new record the next three-digit number and add it to this table in the same change.

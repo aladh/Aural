@@ -30,28 +30,29 @@ an API and not a reason to create one row per implementation detail.
 ## Agent-context ownership
 
 The old single-file policy is retired. The root [AGENTS.md](../AGENTS.md) contains repository-wide
-outcomes, authorization boundaries, ownership, safety, and completion evidence. The nearest nested `AGENTS.md`
-contains path-specific invariants and code-review rules. Claude bridge files import the adjacent
-`AGENTS.md` so Codex and Claude share one policy source instead of drifting copies.
+outcomes, authorization boundaries, ownership, safety, and completion evidence. For a changed path,
+agents load the root-to-nearest `AGENTS.md` chain; the nearest file contains only path-specific
+invariants and review rules. `AGENTS.md` is the repository's sole instruction format.
 
 | Scope | Semantic owner |
 | --- | --- |
 | Repository-wide outcome, autonomy, live-account safety, work loop | `AGENTS.md` |
 | Reusable build, verification, PR, automated-review, packaging, release procedures | `CONTRIBUTING.md` |
-| AuralCore state/effect/dependency ownership | `Sources/Aural/AGENTS.md` |
-| Spotify, auth, queue, audio, lifetime, and Swift/Rust boundary hazards | `Sources/Aural/Spotify/AGENTS.md` |
+| AuralCore composition, app shell, task registry, transient feedback | `Sources/Aural/AGENTS.md` |
+| Spotify state/effects/dependencies, auth, queue, audio, lifetime, Swift/Rust hazards | `Sources/Aural/Spotify/AGENTS.md` |
 | Native UI taste and review criteria | `Sources/Aural/Views/AGENTS.md` |
 | Portable deterministic policy | `Sources/AuralDomain/AGENTS.md` |
 | C ABI surface | `Sources/AuralPlaybackCore/AGENTS.md` |
 | Rust/librespot lifecycle and export boundary | `Backend/aural-playback/AGENTS.md` |
 | Deterministic check design and fixtures | `Sources/AuralChecks/AGENTS.md` |
-| Build and verification scripts | `Scripts/AGENTS.md` |
+| Build, verification, packaging, signing, diagnostics, release helpers | `Scripts/AGENTS.md` |
+| Development build/sign/terminate/launch entry point | `script/AGENTS.md` |
 | CI, PR metadata, and release workflows | `.github/AGENTS.md` |
 
-Instruction files should contain only constraints a capable agent cannot reliably infer from the
-nearby code. Put durable decisions in ADR/product/security documents and multi-step procedures in the
-operations guide. Do not add a byte-count gate or another source-contract harness; validate discovery
-and keep the active chains comfortably below agent limits.
+Instruction files should contain only constraints a capable agent cannot reliably infer from nearby
+code. Put durable decisions in ADR/product/security documents and multi-step procedures in the
+operations guide. Do not add a byte-count gate or another source-contract harness; validate
+root-to-nearest discovery for representative paths.
 
 ## Mechanically enforced families
 
@@ -61,7 +62,7 @@ and keep the active chains comfortably below agent limits.
 | --- | --- | --- | --- |
 | `FMT-SWIFT-001`–`003` | One selected-toolchain `swift-format` contract; Aural builds fail on warnings; wrapper discovery cannot drift | `CONTRIBUTING.md` | `Scripts/format-swift.sh`, its self-test, and warning flags in `Scripts/swiftpm-env.sh` / build scripts |
 | `FMT-RUST-001`–`002` | Rust is rustfmt-clean and Clippy warning-clean on locked targets | `CONTRIBUTING.md` | `cargo fmt --all -- --check`; `cargo clippy --locked --all-targets -- -D warnings` in `Scripts/check.sh` |
-| `CMP-PLT-001` | macOS 15+ on Apple silicon is the supported runtime envelope | Product contract | `Package.swift`, pinned ARM64 Rust target/build, and ARM64 release workflow; support wording remains semantic |
+| `CMP-PLT-001` | macOS 15+ on Apple Silicon is the supported runtime envelope | Product contract | `Package.swift`, pinned ARM64 Rust target/build, and ARM64 release workflow; support wording remains semantic |
 | `CMP-DEP-001`, `CMP-FFI-001` | Target direction is `AuralApp -> AuralCore -> AuralDomain`; only AuralCore depends on the C module | ADR 001–002 | SwiftPM target graph plus focused import checks |
 | `CMP-CHK-001`–`002` | Check products never ship; pure checks do not link AuralCore/Rust; boundary checks remain separate | ADR 002 | SwiftPM products/targets and `Scripts/check.sh` |
 | `CMP-TCA-001` | No TCA or generic Effect framework | ADR 003 | Empty external Swift dependency graph plus semantic review of dependency additions |
@@ -136,14 +137,15 @@ review under `DOC-CI-001` and `DOC-REL-001`.
 | `DOC-ENG-001` | Match surrounding code, fix at the owner, make the smallest cohesive change, avoid speculative machinery | Root and scoped `AGENTS.md` |
 | `DOC-TASTE-001`, `DOC-UI-001`, `DOC-CACHE-001` | Native-Mac restraint, truthful edge states, stable layout, accessibility, and bounded presentation cost | Product contract and `Sources/Aural/Views/AGENTS.md` |
 | `DOC-AGENT-001`, `DOC-DOD-001` | Progressive context loading, autonomous work loop, exact completion evidence, and no invented human handoff | Root `AGENTS.md` |
-| `DOC-MAP-001`, `DOC-IMPL-001` | Repository ownership map, declarative views, store split, real protocols only at boundaries | Root and `Sources/Aural/AGENTS.md` |
-| `DOC-CONC-001`, `DOC-ESCAPE-001`, `DOC-COMBINE-001` | Treat Swift concurrency diagnostics as correctness; avoid ownership escapes; Combine only at a native publisher boundary | Root and `Sources/Aural/AGENTS.md` |
+| `DOC-MAP-001` | Repository ownership and path-specific instruction placement | Root `AGENTS.md` and this inventory |
+| `DOC-IMPL-001` | Declarative composition/views, existing store split, real protocols only at boundaries, typed state | `Sources/Aural/AGENTS.md`, `Sources/Aural/Spotify/AGENTS.md`, and `Sources/Aural/Views/AGENTS.md` |
+| `DOC-CONC-001`, `DOC-ESCAPE-001`, `DOC-COMBINE-001` | Treat Swift concurrency diagnostics as correctness; avoid ownership escapes; Combine only at a native publisher boundary | Root, AuralCore, and Spotify scoped guidance |
 | `DOC-LOG-001` | User-facing errors are actionable and logs are privacy-safe | Scoped Spotify guidance, PRIVACY, SECURITY, sanitization checks |
 | `DOC-SAFE-001` | Live playback/account mutation is explicit-current-request opt-in and bounded | Root `AGENTS.md` and product contract |
 | `DOC-VER-001`, `DOC-PR-001` | Proportional verification, exact PR evidence, plain issue references, automated-review resolution | `CONTRIBUTING.md` and PR template |
 | `DOC-GEN-001`, `DOC-DEP-001` | Generated/private state stays untracked; Actions/dependencies remain pinned and deliberately reviewed | Root guidance, development setup, operations guide |
-| `DOC-SEC-001`–`002` | Credentials/private data never enter Git; authenticated launch uses a stable Apple-issued Team ID | PRIVACY, SECURITY, development setup, signature checks |
-| `DOC-ARCH-001` | New async/callback/provider/optimistic flows define owner, lifetime, cancellation, ordering, stale behavior, failure policy, and coverage | ADR 002 and scoped Aural/Spotify guidance |
+| `DOC-SEC-001`–`002` | Credentials/private data never enter Git; authenticated launch uses a stable Apple-issued Team ID | PRIVACY, SECURITY, development setup, `script/AGENTS.md`, signature checks |
+| `DOC-ARCH-001` | New async/callback/provider/optimistic flows define owner, lifetime, cancellation, ordering, stale behavior, failure policy, and coverage | ADR 002 and scoped Spotify guidance |
 
 ## Rule lifecycle
 

@@ -1,54 +1,60 @@
 # Spotify boundary agent guidance
 
-This directory contains account/auth, catalog, Connect, playback-engine, queue, audio, and network
-boundaries. Read the relevant accepted ADRs plus the
-[product contract](../../../docs/product-and-acceptance-contract.md) before changing behavior.
+This directory owns account/auth, catalog, Connect, playback state/effects, queue, audio, and network
+boundaries. Read the relevant ADRs and the
+[product contract](../../../docs/product-and-acceptance-contract.md).
+
+## State, effects, and dependencies
+
+- `AuralDomain.PlaybackState` is the single atomic presentation snapshot and `PlaybackReducer` its
+  only mutation entrance. `PlaybackStore` is the `@MainActor` state/action surface; never add a
+  second writer or partial in-place updates.
+- `PlaybackCoordinator` serializes commands and `PlaybackEffectRegistry` owns store-level tasks.
+  Reducer acceptance normally gates follow-ups; only documented same-lifetime transport
+  reconciliation may succeed after a rejected finish. Other stale, superseded, teardown,
+  cancellation, and epoch-invalidated outcomes stay inert.
+- Suspended account-, engine-, selection-, or request-scoped work captures and revalidates identity
+  immediately before each stateful apply.
+- Assemble live dependencies once in `PlaybackEnvironment.live` and the composition root. Feature
+  stores consume narrow injected boundaries; preserve the existing store split and keep transient
+  mutation feedback in `TransientFeedbackPresenter`.
 
 ## Boundary invariants
 
-- `PlaybackCore.swift` is the only Swift importer of `AuralPlaybackCore`, and
-  `RustPlaybackEngine.swift` is its only caller. Keep the checked-in C header, exported Rust symbols,
-  ownership, pointer lifetimes, callback threading, and JSON fixtures exactly aligned.
-- Track identity is the market/requested Spotify track ID. Relinked decode IDs and metadata may enrich
-  playback but must not replace that identity or create a second identity model.
-- Ordered callback sources carry revisions. Account and engine generations prevent stale callbacks,
-  teardown, or delayed requests from mutating replacements. Capture the relevant lifetime before
-  suspension and revalidate it immediately before every stateful apply. Do not implement revision
-  gates with `lastRevision: inout`; compare and commit revision state explicitly at its owner.
+- `PlaybackCore.swift` is the only Swift importer of `AuralPlaybackCore`;
+  `RustPlaybackEngine.swift` is its only caller. Keep the C header, Rust exports, ownership, pointer
+  lifetimes, callback threading, and JSON fixtures aligned.
+- Track identity is the market/requested Spotify track ID. Relinked decode IDs and metadata may
+  enrich it but never replace it or create a second identity model.
+- Ordered sources carry revisions; account and engine generations reject stale callbacks and
+  requests. Do not use `lastRevision: inout`; compare and commit revision state at its owner.
 - `RustPlaybackEngine` assigns process-local envelope sequence on one drain. Never call
   `AsyncStream.Continuation.yield` or `onTermination` while the fan-out lock is held.
-- `QueueService` owns queue precedence and context identity. `QueueProtocolProjection` projects
-  upcoming rows from unfiltered Connect protocol tracks; metadata may enrich labels but must not
-  reorder or erase newer authoritative state.
-- `ConnectDeviceProjection` owns display activity, sort, and empty-type fallback from cluster members
-  plus `active_device_id`. Do not move presentation policy back into Rust.
-- `ConnectionSnapshotProjection` owns connection session phase and empty-device-ID fallback from the
-  engine's session flags, `device_id`, and `last_error`. Local display name is Swift-owned
-  (`thisDeviceName`); do not reintroduce hardcoded `device_name` or write-only reconnect bookkeeping
-  into the Rust envelope.
-- Keep read-only catalog access separate from playlist mutation. Writes flow through
-  `PlaylistMutating` and `PlaylistMutationController`; Pathfinder mutation DTOs do not enter views.
-- PCM travels directly from the engine adapter to `AudioRenderer`, never through observable UI state.
-  Keep callbacks bounded and never block the Rust callback thread.
-- Auth, catalog, and playback logs are privacy boundaries. Do not log tokens, cookies, redirects, raw
-  payloads, or private identifiers. Fixtures must be reduced, synthetic, and non-identifying.
+- `QueueService` owns precedence and context identity. `QueueProtocolProjection` projects upcoming
+  rows from unfiltered Connect tracks; metadata must not reorder or erase newer authoritative state.
+- `ConnectDeviceProjection` owns device activity, sort, and empty-type fallback.
+  `ConnectionSnapshotProjection` owns session phase and empty-device-ID fallback. Local display
+  name is Swift-owned; do not move presentation policy, `device_name`, or write-only reconnect
+  bookkeeping into Rust.
+- Keep read-only catalog access separate from playlist mutation. Writes use `PlaylistMutating` and
+  `PlaylistMutationController`; Pathfinder mutation DTOs do not enter views.
+- PCM goes directly from the engine adapter to `AudioRenderer`, never observable UI state. Keep
+  callbacks bounded and never block the Rust callback thread.
+- Never log tokens, cookies, redirects, raw payloads, or private identifiers. Fixtures are reduced,
+  synthetic, and non-identifying.
 
 ## Live-account rule
 
 Reading remote state is read-only. Transport, seek, transfer, queue, library, playlist, follow, and
-sign-out actions require explicit current-request authorization. Do not treat an authenticated launch
-or a prior request as standing permission.
+sign-out actions require explicit current-request authorization.
 
-## Code review rules
+## Review and verification
 
-Flag any second C-module importer/caller, identity replacement, unchecked post-`await` apply, stale
-callback without generation/revision handling, lock-held continuation callback, presentation policy in
-Rust, raw payload logging, or unauthorized live mutation. The safe path is a narrow typed adapter,
-explicit lifetime/revision validation, synthetic cross-boundary fixtures, and a deterministic failure
-or stale-result check.
+Flag a second state writer, bypassed reducer acceptance, feature-owned live dependency, unowned task,
+second C-module importer/caller, unchecked post-`await` apply, missing generation/revision handling,
+lock-held continuation callback, presentation policy in Rust, raw payload logging, or unauthorized
+live mutation.
 
-## Verification
-
-Add boundary coverage under `Sources/AuralChecks/DeferredBoundaryChecks/`; FFI or Rust-facing changes
-also need Rust coverage and ABI parity. Run `./Scripts/check.sh`; use `./Scripts/check-clean.sh` for
-FFI, engine lifecycle, build, or archive changes. Perform live acceptance only when authorized.
+Add boundary coverage under `Sources/AuralChecks/DeferredBoundaryChecks/`; Rust-facing changes also
+need Rust coverage and ABI parity. Use `./Scripts/check-clean.sh` for FFI, engine lifecycle, build,
+or archive changes. Perform live acceptance only when authorized.
