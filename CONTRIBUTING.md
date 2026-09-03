@@ -1,14 +1,16 @@
-# Agent operations for Aural
+# Agent operations for Spotty
 
-Aural is maintained exclusively by autonomous coding agents. This conventional filename is retained
+Spotty is maintained exclusively by autonomous coding agents. This conventional filename is retained
 for repository tooling and links; it is an execution manual, not a human-contribution workflow.
 Start with [AGENTS.md](AGENTS.md), then load only the sections and path-specific guidance needed for
 the task. Never defer implementation, review, testing, issue validation, or release work to a
 hypothetical maintainer.
 
-Aural is an unofficial personal-use client built on private Spotify interfaces. Read the warning in
-[README.md](README.md). Keep changes inside the requested outcome and the deliberately small product
-surface; unsupported protocol risk is a design constraint, not an excuse for speculative machinery.
+Spotty is an unofficial, independent personal-use client built on private Spotify interfaces. It is
+not affiliated with, endorsed by, or sponsored by Spotify AB. Read the warning in
+[README.md](README.md).
+Keep changes inside the requested outcome and the deliberately small product surface; unsupported
+protocol risk is a design constraint, not an excuse for speculative machinery.
 
 ## Environment
 
@@ -67,7 +69,7 @@ opening a pull request. Documentation-only changes use the documentation evidenc
 ```
 
 The gate checks tracked Swift formatting, Rust formatting, warning-clean Clippy, locked Rust tests,
-Rust/C export and header parity, Swift builds with Aural-owned warnings as errors, deterministic
+Rust/C export and header parity, Swift builds with project-owned warnings as errors, deterministic
 Swift check products, architecture contracts, CI policy, and packaging metadata. It does not sign in
 or initiate playback.
 

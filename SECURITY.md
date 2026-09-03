@@ -1,5 +1,9 @@
 # Security Policy
 
+Spotty is an experimental, unofficial, independently developed project with no affiliation with,
+endorsement by, or sponsorship from Spotify AB. It uses private Spotify interfaces, so protocol
+breakage and policy risk remain expected limitations rather than security guarantees.
+
 ## Reporting a vulnerability
 
 Do not open a public issue with vulnerability details, credentials, OAuth callbacks, or account

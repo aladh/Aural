@@ -18,12 +18,12 @@ windowing integration without introducing another UI runtime.
   the no-WebView/no-Chromium goal.
 - Spotify's current [Development Mode rules](https://developer.spotify.com/documentation/web-api/concepts/quota-modes)
   require the app owner to have Premium and cap a dashboard application at five allowlisted users.
-  Those rules do not legitimize Aural's reused desktop-client identity or private endpoints.
+  Those rules do not legitimize Spotty's reused desktop-client identity or private endpoints.
 - Spotify's [Developer Policy](https://developer.spotify.com/policy) permits music streaming through
   the supported platform only for Premium subscribers, restricts commercial streaming applications,
   and requires a clear privacy policy.
 - Spotify's [Developer Terms](https://developer.spotify.com/terms) restrict reverse engineering and
-  distribution of the Spotify Platform. Aural's private protocols and reused Spotify-owned client
+  distribution of the Spotify Platform. Spotty's private protocols and reused Spotify-owned client
   identity are therefore policy and enforcement risks even when the source is free and non-commercial.
 
 ## Spotifly findings

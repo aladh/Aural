@@ -2,8 +2,9 @@
 
 Status: accepted on 2026-08-27
 
-Like all of Aural, this decision concerns an unofficial, experimental client. It does not authorize
-a Composable Architecture migration or a new effect framework.
+Like all of Spotty, this decision concerns an unofficial, independent, experimental client with no
+affiliation with Spotify AB. It does not authorize a Composable Architecture migration or a new
+effect framework.
 
 ## Goal
 
@@ -68,7 +69,7 @@ pending expected transport without recording a resolution. Stale, superseded, te
 epoch-invalidated, and non-transport results stay inert. Command-error notices keep their existing
 timed lifetime; successful acknowledgements do not clear unrelated notices.
 
-### 2. Tiny Aural-specific command runner
+### 2. Tiny Spotty-specific command runner
 
 A command-specific plan (`token`, captured account epoch, single in-flight pause) that the store
 starts and later completes. Not a generic `Effect<Action, Failure, Result>`. Cancellation and
@@ -125,7 +126,7 @@ struct PauseCommand {
 Current TCA (`swift-composable-architecture` main, Swift 6.1 tools) also pulls CasePaths, Clocks,
 CombineSchedulers, ConcurrencyExtras, CustomDump, Dependencies, IdentifiedCollections,
 IssueReporting, Perception, Sharing, Swift Navigation, swift-collections, and a SwiftSyntax macro
-plugin. That is incompatible with Aural's zero-dependency check executables, Renovate-scoped
+plugin. That is incompatible with Spotty's zero-dependency check executables, Renovate-scoped
 Rust/Swift surface, and `AuralDomain` rule that the reducer stay testable without frameworks.
 
 The package was **not** added to `Package.swift`. This ADR retains an illustrative TCA 1.x sketch
@@ -135,17 +136,17 @@ and a semantic comparison only; no TCA-shaped runtime or dependency remains.
 
 | Concern | Registry (option 1) | Tiny runner (option 2) | TCA 1.x (option 3) |
 | --- | --- | --- | --- |
-| Cancel / cancel-in-flight | Unique `.command(UUID)` owns one task. Same-token `replace` cancels. A **second pause is refused**, not replaced. Kind-level `cancelInFlight: true` would change product behavior. | One plan; a second request is refused. `cancel` drops the plan. | `.cancellable(id:)` can cancel; `cancelInFlight: true` **replaces** the in-flight pause. Matching Aural requires returning `.none` while pending and not setting `cancelInFlight`. |
-| Account-epoch invalidation | `cancelAccountScoped()` plus captured epoch before `send`. | Drop the plan, then reset. Still need the epoch check. | `.cancel(id:)` plus a custom epoch guard. TCA does not know Aural account epochs. |
+| Cancel / cancel-in-flight | Unique `.command(UUID)` owns one task. Same-token `replace` cancels. A **second pause is refused**, not replaced. Kind-level `cancelInFlight: true` would change product behavior. | One plan; a second request is refused. `cancel` drops the plan. | `.cancellable(id:)` can cancel; `cancelInFlight: true` **replaces** the in-flight pause. Matching Spotty requires returning `.none` while pending and not setting `cancelInFlight`. |
+| Account-epoch invalidation | `cancelAccountScoped()` plus captured epoch before `send`. | Drop the plan, then reset. Still need the epoch check. | `.cancel(id:)` plus a custom epoch guard. TCA does not know Spotty account epochs. |
 | Reducer-owned engine/revision gates | Unchanged. Effects must not reimplement them. | Same: still call `PlaybackReducer`. | Wrapping `PlaybackReducer` inside `Reduce` duplicates the store's `send` or moves Core types into a TCA feature. |
-| Rejected `send` / stale events | `playbackCommandFollowUp` treats matching-snapshot rejection as success and epoch/superseded rejection as inert. | Same. | Actions always enter the TCA reducer. Stale work is `.none` without mutation only if the wrapper checks `PlaybackReducer.reduce == false` before returning follow-up `Effect`s. That *is* Aural's `send` Bool, reimplemented. |
+| Rejected `send` / stale events | `playbackCommandFollowUp` treats matching-snapshot rejection as success and epoch/superseded rejection as inert. | Same. | Actions always enter the TCA reducer. Stale work is `.none` without mutation only if the wrapper checks `PlaybackReducer.reduce == false` before returning follow-up `Effect`s. That *is* Spotty's `send` Bool, reimplemented. |
 | Optimistic success / rollback | `commandStarted` / `commandFinished` already in the domain reducer. | Same events. | Same events if TCA defers to `PlaybackReducer`; duplicated if TCA state is a parallel model. |
 | Local reconnect-required | Typed `.reconnectRequired` from the coordinator; reconnect is **not** reducer state. Gate on accepted finish. | Same. | Follow-up `.run { await connect() }` from the failure action. Still a Core side effect. |
-| Remote failure | Typed `PlaybackCommandFailure` at the coordinator boundary (#17). Rollback is reducer-owned. | Same. | `Result` in `Action` helps tests; Aural already has a Core-scoped command failure without TCA. |
+| Remote failure | Typed `PlaybackCommandFailure` at the coordinator boundary (#17). Rollback is reducer-owned. | Same. | `Result` in `Action` helps tests; Spotty already has a Core-scoped command failure without TCA. |
 | MainActor / Sendable | Store and registry are `@MainActor`. Coordinator is an actor. Command closures hop back to the store. No new isolation model. | Same. | TCA `Store` / `@Dependency` / `Effect.run` (cooperative pool, `send` hops to the store) is a second isolation story beside `PlaybackEnvironment.live` and the coordinator actor. `PlaybackStore` is not a TCA `Store`. |
 | Deterministic tests | Reducer traces in `AuralChecks`; one scripted registry-shaped pause runtime in the spike; real `Task` cancel in `AuralBoundaryChecks`. | Scripted `deliver` is the nicest local ergonomics, but only for this workflow. | `TestStore` is excellent **if** the app is TCA. Adopting it for one command path still requires the package, macros, and wrapping the existing reducer. |
 | Call-site boilerplate | Explicit `Task`, epoch capture, `send` Bool. Honest about lifetimes. | Moves the same checks into a helper. | `@Reducer` + `Effect` + dependencies + cancel IDs for every feature. |
-| Package / build | No new dependency. | No new dependency if the helper stays in Core or checks. | Large transitive graph, macro plugin, SwiftUI/UIKit navigation extras Aural does not use. |
+| Package / build | No new dependency. | No new dependency if the helper stays in Core or checks. | Large transitive graph, macro plugin, SwiftUI/UIKit navigation extras Spotty does not use. |
 | Fit with `AuralDomain` / `AuralCore` | Domain stays pure. Registry stays Core. | Safe only as a Core helper or check prototype. | Either Domain depends on TCA, or Core becomes a TCA app around a second store. Both violate ADR 002. |
 
 `ConnectQueueCallbackWatermark` stays outside this table on purpose: it is callback identity, not a
@@ -162,7 +163,7 @@ Reasons:
    work after a rejected send**. #15 already returned `Bool` from `send`. The command path now
    feeds that Bool into `playbackCommandFollowUp` rather than treating it as the only gate. That
    is an evolution of the current architecture, not a new one.
-2. Aural already has the useful part of an effect system: atomic state, stamped events, a
+2. Spotty already has the useful part of an effect system: atomic state, stamped events, a
    coordinator, and named task cancellation. TCA’s remaining value is `TestStore` and
    `cancelInFlight` sugar. The former needs a TCA app; the latter **disagrees** with the pending-kind
    refusal policy unless carefully disabled.
@@ -275,5 +276,5 @@ remote `localizedDescription` text. Mapping stays in Core. `playbackCommandFollo
 - The check-suite keeps one registry-shaped pause workflow. Rejected effect runtimes are not
   executable architecture.
 
-Revisit only if Aural replaces `PlaybackStore` wholesale, or if a measured need appears for
+Revisit only if Spotty replaces `PlaybackStore` wholesale, or if a measured need appears for
 `TestStore`-style exhaustiveness that the existing check executables cannot provide.

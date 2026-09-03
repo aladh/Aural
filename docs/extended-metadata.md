@@ -1,6 +1,6 @@
 # Private extended-metadata protocol
 
-Aural uses a reverse-engineered Spotify endpoint to populate the Popularity, BPM, and Key columns
+Spotty uses a reverse-engineered Spotify endpoint to populate the Popularity, BPM, and Key columns
 in shared catalog track tables.
 This is not a supported Spotify API; it may change without notice, and using it may violate
 Spotify's Terms of Use. This document records the wire format so the integration can be maintained
@@ -61,7 +61,7 @@ The `Any` message's inner `value` bytes carry the payload named by the array's e
 ## Extension kinds
 
 These values come from the pinned librespot `extension_kind.proto` plus newer values present in
-the Spotify desktop bundle. Aural currently consumes the entries marked **used**.
+the Spotify desktop bundle. Spotty currently consumes the entries marked **used**.
 
 | Kind | Name | Notes |
 |---|---|---|

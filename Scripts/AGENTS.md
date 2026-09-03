@@ -12,8 +12,8 @@ sections of [agent operations](../CONTRIBUTING.md) and the
   rollback, or payload semantics as regex snapshots.
 - Keep `check-clean.sh` the clean Debug-and-Release owner. Do not add destructive cleanup that can
   erase unrelated work or credentials.
-- `script/build_and_run.sh` terminates a running Aural and can touch an authenticated development
-  session. Do not route compile-only verification through launch.
+- `script/build_and_run.sh` terminates a running Aural executable and can touch an authenticated
+  development session. Do not route compile-only verification through launch.
 - Generated archives, app bundles, diagnostics, signing material, and caches stay outside Git. Never
   install project-generated identities in the login keychain or weaken signing to silence prompts.
 - Shell changes must quote paths/values, propagate failures, use pinned inputs, and remain safe on the

@@ -1,6 +1,6 @@
 # Development setup
 
-This repository is the complete source of truth needed to resume Aural development. A previous
+This repository is the complete source of truth needed to resume Spotty development. A previous
 checkout, generated static library, app bundle, signing certificate, Spotify response capture,
 Spotifly checkout, or separate librespot checkout is neither required nor expected.
 
@@ -60,12 +60,13 @@ changing CDHash in the password item's partition ACL and prompts again after lat
 `Scripts/package-app.sh` can still create a build-only self-signed bundle using an isolated identity
 and keychain under `.build/aural-signing/`. That path exists for deterministic packaging checks; it
 is local-only, unsuitable for distribution, and must not be used to sign in. `build_and_run.sh`
-fails before terminating or launching Aural when no Apple-issued team identity is available.
+fails before terminating or launching the Aural executable when no Apple-issued team identity is
+available.
 
 Sandboxed development tools may require permission for the packaging or launch script to invoke
 macOS `security` and `codesign`. Grant the script as a unit instead of approving individual
 commands. Signing with an Apple Development identity can require the identity's private-key access
-once; it must not require Aural to reauthorize its stored Spotify credential after every rebuild.
+once; it must not require Spotty to reauthorize its stored Spotify credential after every rebuild.
 
 If this checkout previously signed in using the self-signed build, the first team-signed launch may
 ask once for permission to read the existing item. Enter the login-keychain password and choose

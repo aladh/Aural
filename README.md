@@ -1,34 +1,40 @@
 <p align="center">
-  <img src="Assets/AuralIcon.png" width="112" height="112" alt="Aural">
+  <img src="Assets/AuralIcon.png" width="112" height="112" alt="Spotty">
 </p>
 
-# Aural
+# Spotty
 
 > [!CAUTION]
-> **Experimental software:** Aural is an early-stage personal project built on unsupported,
-> reverse-engineered Spotify interfaces. It may break without notice, lose functionality, or expose
-> rough edges. Do not rely on it as your only Spotify client, and use it only with an account you
-> control.
+> **Experimental, unofficial software:** Spotty is an early-stage, independent personal project
+> built on unsupported, reverse-engineered Spotify interfaces. It is not affiliated with, endorsed
+> by, sponsored by, or otherwise connected to Spotify AB. It may break without notice, lose
+> functionality, or expose rough edges. Do not rely on it as your only Spotify client, and use it
+> only with an account you control.
 
-Aural is a native macOS music client for Spotify Premium. It is meant to feel like a focused Mac
+Spotty is a native macOS music client for Spotify Premium. It is meant to feel like a focused Mac
 app: SwiftUI and AppKit for the interface, AVFoundation for audio output, and a contained
 Rust/librespot backend for Spotify Connect, streaming, and decoding. There is no WebView or
 Chromium runtime.
 
-Its visual direction uses a Spotify-familiar hierarchy in a fixed dark appearance—a near-black
+Spotty's visual direction uses a Spotify-familiar hierarchy in a fixed dark appearance—a near-black
 canvas, library-forward sidebar, artwork-led media headers, dense track tables, right-side queue
 rail, and full-width bottom player shelf—implemented with native macOS surfaces. Familiarity is a
 design reference, not a pixel copy or an indication of affiliation with Spotify.
 
 > [!WARNING]
-> Aural is an unofficial, independent project. It is not affiliated with, endorsed by, or
-> sponsored by Spotify AB. It uses private, reverse-engineered Spotify interfaces and Spotify's
-> desktop-client authorization flow, not a supported public API. This may violate Spotify's
-> [Developer Terms](https://developer.spotify.com/terms) or other terms and can stop working at any
-> time. Use it only with an account you control and at your own risk.
+> Spotty is an unofficial, independent project with no affiliation to Spotify AB. It is not
+> endorsed, sponsored, or supported by Spotify. Spotty uses private, reverse-engineered Spotify
+> interfaces and Spotify's desktop-client authorization flow, not a supported public API. This may
+> violate Spotify's [Developer Terms](https://developer.spotify.com/terms) or other terms and can
+> stop working at any time. Use it only with an account you control and at your own risk.
+
+> **Naming note:** Spotty is the product name. Repository and build identifiers remain Aural-named
+> for compatibility, including the `Aural` repository path, `Aural.app`, executable `Aural`,
+> `Sources/Aural`, `AuralCore`, and `AURAL_*` environment variables. Those technical identifiers
+> do not imply affiliation with Spotify.
 
 The MIT license covers this repository's code; it does not grant rights to Spotify's service,
-content, trademarks, or private interfaces. Aural is intended for personal, non-commercial
+content, trademarks, or private interfaces. Spotty is intended for personal, non-commercial
 experimentation. Spotify's current policy restricts commercial streaming applications and permits
 music streaming only for Premium subscribers; review the current
 [Developer Policy](https://developer.spotify.com/policy) before distributing anything.
@@ -36,7 +42,7 @@ music streaming only for Premium subscribers; review the current
 ## Capabilities
 
 - Native macOS navigation, tables, menus, inspector, keyboard commands, and accessibility. Native
-  selection and focus use the system accent; media actions and current-playback state use Aural's
+  selection and focus use the system accent; media actions and current-playback state use Spotty's
   fixed green. There is no Settings scene or custom accent-color preference.
 - Local 320 kbps playback with pause/resume, seek, previous/next, gapless transitions, repeat, and
   a persistent fewer-repeats shuffle mode.
@@ -54,7 +60,7 @@ music streaming only for Premium subscribers; review the current
 
 ## Requirements
 
-To run Aural:
+To run Spotty:
 
 - An Apple Silicon Mac running macOS 15 or newer.
 - A Spotify Premium account.
@@ -87,7 +93,7 @@ Connect and complete Spotify authorization in the browser.
 
 Version tags also publish experimental GitHub prereleases. Until Developer ID and notarization
 credentials are configured, those artifacts use a hardened-runtime, ad-hoc signature and are not
-automatically trusted by macOS. Building from source remains the intended way to run Aural.
+automatically trusted by macOS. Building from source remains the intended way to run Spotty.
 
 For fresh-machine prerequisites, generated local state, and recovery, see
 [Development setup](docs/development-setup.md). Build modes, checks, packaging, signing, and
@@ -97,17 +103,17 @@ release mechanics are in [CONTRIBUTING.md](CONTRIBUTING.md).
 
 Live local and remote playback, Spotify Home, profile, saved tracks, demand-loaded library
 collections, search, and media detail pages are wired. Owned-playlist add and occurrence removal
-are available. Upcoming queue rows cannot be removed when Aural owns playback.
+are available. Upcoming queue rows cannot be removed when Spotty owns playback.
 Playlist creation, rename, reordering, cover editing, collaborative-permission
 management, liked-library editing, and incremental on-screen pagination remain future work.
 
-Aural currently targets Apple Silicon Macs on macOS 15 or newer. Compatibility with Spotify is
+Spotty currently targets Apple Silicon Macs on macOS 15 or newer. Compatibility with Spotify is
 best-effort: because it depends on undocumented protocols, no stability commitment can be made for
 Spotify-side changes.
 
 ## Privacy and security
 
-Aural has no analytics, advertising, crash-reporting SDK, or Aural-operated server. Account data is
+Spotty has no analytics, advertising, crash-reporting SDK, or Spotty-operated server. Account data is
 requested directly from Spotify and rendered locally. OAuth credentials are stored in Keychain.
 Authenticated development launches require an Apple-issued signing identity with a stable Team ID;
 self-signed packages are build-only because their per-build CDHash does not provide durable
@@ -128,7 +134,7 @@ See [LICENSE](LICENSE), [NOTICE](NOTICE), and [THIRD_PARTY_NOTICES.md](THIRD_PAR
 
 ## Agent-first maintenance
 
-Aural is developed, reviewed, tested, and maintained exclusively by autonomous coding agents; the
+Spotty is developed, reviewed, tested, and maintained exclusively by autonomous coding agents; the
 repository does not rely on a human contribution or review path. [AGENTS.md](AGENTS.md) is the sole
 repository instruction format, with scoped `AGENTS.md` files beside specialized code. Reusable
 commands and pull-request/release procedures live in [CONTRIBUTING.md](CONTRIBUTING.md), while

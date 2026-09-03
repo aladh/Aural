@@ -6,7 +6,7 @@ implementation and review gotchas closest to the view code.
 
 ## Product taste
 
-Aural should have quiet confidence: native, visually calm, information-dense without feeling cramped,
+Spotty should have quiet confidence: native, visually calm, information-dense without feeling cramped,
 and capable without advertising every capability.
 
 - Start with established macOS structure, typography, controls, menus, focus, keyboard behavior,

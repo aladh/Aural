@@ -1,5 +1,9 @@
 # Performance and acceptance baseline — 2026-08-23
 
+The measurements below are historical and intentionally retain the Aural product and UI labels
+recorded at the time. Spotty is the current product name; the measured values and observations are
+unchanged.
+
 This baseline closes the production-plan acceptance gate after the atomic playback, progressive
 queue, demand-loaded catalog, diagnostics, audio-boundary, quality-gate, and native-browsing work.
 

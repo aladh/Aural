@@ -1,14 +1,15 @@
 # AGENTS.md
 
-Aural is developed, reviewed, and maintained exclusively by autonomous coding agents. This file is
+Spotty is developed, reviewed, and maintained exclusively by autonomous coding agents. This file is
 the always-loaded repository contract. Keep it small: global constraints live here, path-specific
 gotchas live in the nearest `AGENTS.md`, and detailed procedures live in their canonical documents.
 
 ## Outcome
 
-Aural is an experimental, personal-use, native macOS client for Spotify Premium. It should be a
-polished, fast, resource-conscious Mac app with a deliberately small surface. The shipping app is
-SwiftUI/AppKit plus AVFoundation; Rust/librespot is a contained playback and Spotify Connect leaf.
+Spotty is an experimental, unofficial, independent, personal-use, native macOS client for Spotify
+Premium. It should be a polished, fast, resource-conscious Mac app with a deliberately small
+surface. The shipping app is SwiftUI/AppKit plus AVFoundation; Rust/librespot is a contained
+playback and Spotify Connect leaf.
 There is no WebView, Chromium shell, cross-platform UI, or supported Spotify API fallback.
 
 When goals compete, use this order:
@@ -19,8 +20,9 @@ When goals compete, use this order:
 4. Keep ownership explicit, changes cohesive, and behavior deterministic to verify.
 5. Optimize only measured, user-visible costs.
 
-The supported envelope is macOS 15+ on Apple Silicon with Spotify Premium. Keep the experimental,
-unofficial-project warnings prominent in public material.
+The supported envelope is macOS 15+ on Apple Silicon with Spotify Premium. Keep Spotty's
+experimental, unofficial, independent-project, and no-affiliation warnings prominent in public
+material.
 
 ## Autonomy and approval
 
@@ -111,8 +113,8 @@ the specific action. For authorized live tests, follow the bounded procedure in 
 [product contract](docs/product-and-acceptance-contract.md#safe-acceptance-testing) and report any
 state that could not be restored.
 
-Do not launch Aural merely to prove compilation: `./script/build_and_run.sh` terminates an existing
-process and can disturb an authenticated session.
+Do not launch the Aural executable merely to prove compilation: `./script/build_and_run.sh`
+terminates an existing process and can disturb an authenticated session.
 
 ## Work loop and evidence
 

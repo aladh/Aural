@@ -54,11 +54,11 @@ THE SOFTWARE.
 
 ## Transitive Rust dependencies
 
-The source repository does not vendor or publish a precompiled Rust archive. Building Aural fetches
+The source repository does not vendor or publish a precompiled Rust archive. Building Spotty fetches
 the exact transitive dependency graph recorded in `Backend/aural-playback/Cargo.lock`. Each fetched
 package carries its own license metadata and license files.
 
-Anyone distributing a compiled Aural binary must generate, review, and bundle the notices and
+Anyone distributing a compiled Spotty binary must generate, review, and bundle the notices and
 license texts required by the exact locked dependency graph and build target. The notices above
-cover Aural's adapted source and primary upstream; they are not a complete binary-distribution
+cover Spotty's adapted source and primary upstream; they are not a complete binary-distribution
 license report.

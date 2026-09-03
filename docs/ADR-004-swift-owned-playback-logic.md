@@ -1,14 +1,14 @@
-# ADR 004: Move Aural-owned playback logic into Swift incrementally
+# ADR 004: Move Spotty-owned playback logic into Swift incrementally
 
 Status: accepted on 2026-09-02
 
-Like all of Aural, this decision concerns an unofficial, experimental client built on
-reverse-engineered Spotify interfaces.
+Like all of Spotty, this decision concerns an unofficial, independent, experimental client with no
+affiliation with Spotify AB, built on reverse-engineered Spotify interfaces.
 
 ## Context
 
 [ADR 001](ADR-001-playback-engine.md) keeps librespot as a contained playback leaf. The leaf
-also accumulated Aural-owned orchestration: queue presentation filtering, snapshot JSON
+also accumulated Spotty-owned orchestration: queue presentation filtering, snapshot JSON
 shaped for the UI, device-list projections, resume fallback sequencing, and generation
 gates used to coordinate app state across a C/JSON boundary.
 
@@ -18,7 +18,7 @@ Swift. A big-bang rewrite would put live Connect correctness at risk.
 
 ## Decision
 
-Migrate Aural-owned playback responsibilities into Swift incrementally, without reimplementing
+Migrate Spotty-owned playback responsibilities into Swift incrementally, without reimplementing
 Spotify's private protocol and without removing librespot.
 
 - `AuralDomain.PlaybackState` remains the authoritative app-facing playback snapshot, with
@@ -48,7 +48,7 @@ Device-list presentation is Swift-owned (`ConnectDeviceProjection`). The engine 
 carries unfiltered cluster members (`id`, `name`, protobuf type name) plus
 `active_device_id`. Swift derives activity, sorts for display, and maps an empty type to
 `UNKNOWN`. Unused Web API leftovers (`volume_percent`, `disable_volume`, `is_restricted`,
-`is_private_session`) are not sent: Aural has no in-app volume control, and nothing
+`is_private_session`) are not sent: Spotty has no in-app volume control, and nothing
 read those fields. Rust still uses `is_active_in_cluster` for this engine's Connect role.
 
 ### Third slice
@@ -56,7 +56,7 @@ read those fields. Rust still uses `is_active_in_cluster` for this engine's Conn
 Connection-snapshot presentation is Swift-owned (`ConnectionSnapshotProjection`). The engine
 snapshot carries session flags (`session_connected`, `spirc_ready`, `is_active_device`,
 `device_id`, `last_error`) plus stamp fields. Swift derives session phase and treats an
-empty `device_id` as missing. The hardcoded `device_name` ("Aural") is not sent: the
+empty `device_id` as missing. The hardcoded `device_name` ("Spotty") is not sent: the
 local display name is Swift-owned (`thisDeviceName`), and the Connect advertised name
 still lives in `ConnectConfig` for protocol identity. `reconnect_attempt`,
 `connected_since_ms`, and `session_connection_id` were write-only leftovers on
