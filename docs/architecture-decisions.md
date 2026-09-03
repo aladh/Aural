@@ -1,6 +1,6 @@
 # Architecture decision records
 
-Architecture decision records (ADRs) capture choices that constrain future Aural changes. Read the
+Architecture decision records (ADRs) capture choices that constrain future Spotty changes. Read the
 records relevant to a task before changing the corresponding boundary. An accepted ADR remains in
 force until a later ADR explicitly supersedes it; edit an accepted record only to correct factual or
 linking errors, not to silently change its decision.
@@ -12,7 +12,7 @@ linking errors, not to silently change its decision.
 | [ADR 001: Keep librespot as a contained playback leaf](ADR-001-playback-engine.md) | Accepted | Keep playback and Spotify Connect behind the narrow Rust/C boundary rather than reimplementing the engine in Swift. |
 | [ADR 002: Atomic playback state and explicit dependency ownership](ADR-002-playback-state-and-dependencies.md) | Accepted | Use one reducer-owned playback snapshot, explicit dependency assembly, and generation-aware async ownership. |
 | [ADR 003: Keep PlaybackEffectRegistry; reject TCA and a generic Effect type](ADR-003-playback-command-effects.md) | Accepted | Keep store-level `PlaybackEffectRegistry`; do not adopt TCA or a generic Effect type. Reducer acceptance normally gates follow-ups; a captured same-lifetime transport resolution and matching-snapshot reconciliation are the documented exceptions, and consume-only acceptance cannot report coordinator failure. |
-| [ADR 004: Move Aural-owned playback logic into Swift incrementally](ADR-004-swift-owned-playback-logic.md) | Accepted | Keep librespot as the protocol leaf; move Aural-owned queue/state policy into Swift in reviewable slices. Live module classification is [playback engine ownership](playback-engine-ownership.md). |
+| [ADR 004: Move Spotty-owned playback logic into Swift incrementally](ADR-004-swift-owned-playback-logic.md) | Accepted | Keep librespot as the protocol leaf; move Spotty-owned queue/state policy into Swift in reviewable slices. Live module classification is [playback engine ownership](playback-engine-ownership.md). |
 
 Related index: [Architecture enforcement inventory](architecture-enforcement.md) routes hard-rule
 families to their canonical decision, strongest proof, scoped agent guidance, and known enforcement

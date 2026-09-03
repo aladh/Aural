@@ -73,7 +73,7 @@ extension PlaybackStore {
         switch phase {
         case .signedOut: "Connect Spotify Premium"
         case .authorizing: "Waiting for Spotify…"
-        case .connecting: "Starting Aural Connect…"
+        case .connecting: "Starting Spotty Connect…"
         case .recovering: "Restoring Spotify Connect…"
         case .ready:
             if let transientCommandError {
@@ -83,7 +83,7 @@ extension PlaybackStore {
             } else if showsPauseControl {
                 "Playing on this Mac"
             } else {
-                "Aural Connect is ready"
+                "Spotty Connect is ready"
             }
         case let .failed(message): message
         }

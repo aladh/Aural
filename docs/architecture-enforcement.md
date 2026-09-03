@@ -1,11 +1,11 @@
 # Architecture enforcement inventory
 
-This is the routing table for Aural's hard rules. It tells agents where a rule is decided, how it is
+This is the routing table for Spotty's hard rules. It tells agents where a rule is decided, how it is
 proved, and where enforcement is intentionally semantic rather than mechanical. It is not a second
 architecture manual and it does not repeat complete requirements from ADRs, product contracts, or
 agent instruction files.
 
-Aural has no human implementation or review path. In this document, **semantic agent review** means
+Spotty has no human implementation or review path. In this document, **semantic agent review** means
 inspection of the affected code, tests, diff, and canonical decisions by the implementing agent and
 available automated reviewers. It is evidence, but it is weaker than compiler, deterministic test,
 ABI, or focused source enforcement and must never be described as machine proof.
@@ -60,7 +60,7 @@ root-to-nearest discovery for representative paths.
 
 | IDs | Invariant | Canonical decision | Primary enforcement |
 | --- | --- | --- | --- |
-| `FMT-SWIFT-001`–`003` | One selected-toolchain `swift-format` contract; Aural builds fail on warnings; wrapper discovery cannot drift | `CONTRIBUTING.md` | `Scripts/format-swift.sh`, its self-test, and warning flags in `Scripts/swiftpm-env.sh` / build scripts |
+| `FMT-SWIFT-001`–`003` | One selected-toolchain `swift-format` contract; Spotty builds fail on warnings; wrapper discovery cannot drift | `CONTRIBUTING.md` | `Scripts/format-swift.sh`, its self-test, and warning flags in `Scripts/swiftpm-env.sh` / build scripts |
 | `FMT-RUST-001`–`002` | Rust is rustfmt-clean and Clippy warning-clean on locked targets | `CONTRIBUTING.md` | `cargo fmt --all -- --check`; `cargo clippy --locked --all-targets -- -D warnings` in `Scripts/check.sh` |
 | `CMP-PLT-001` | macOS 15+ on Apple Silicon is the supported runtime envelope | Product contract | `Package.swift`, pinned ARM64 Rust target/build, and ARM64 release workflow; support wording remains semantic |
 | `CMP-DEP-001`, `CMP-FFI-001` | Target direction is `AuralApp -> AuralCore -> AuralDomain`; only AuralCore depends on the C module | ADR 001–002 | SwiftPM target graph plus focused import checks |
@@ -136,7 +136,7 @@ review under `DOC-CI-001` and `DOC-REL-001`.
 
 | IDs | Decision or judgment | Canonical owner |
 | --- | --- | --- |
-| `DOC-PRI-001`, `DOC-PROD-001` | Safety/correctness/native-small-surface priority; experimental unofficial product envelope | Root `AGENTS.md`, README, product contract, ADR 001 |
+| `DOC-PRI-001`, `DOC-PROD-001` | Safety/correctness/native-small-surface priority; experimental, unofficial, independent, no-affiliation product envelope | Root `AGENTS.md`, README, product contract, ADR 001 |
 | `DOC-ENG-001` | Match surrounding code, fix at the owner, make the smallest cohesive change, avoid speculative machinery | Root and scoped `AGENTS.md` |
 | `DOC-TASTE-001`, `DOC-UI-001`, `DOC-CACHE-001` | Native-Mac restraint, truthful edge states, stable layout, accessibility, and bounded presentation cost | Product contract and `Sources/Aural/Views/AGENTS.md` |
 | `DOC-AGENT-001`, `DOC-DOD-001` | Progressive context loading, autonomous work loop, exact completion evidence, and no invented human handoff | Root `AGENTS.md` |

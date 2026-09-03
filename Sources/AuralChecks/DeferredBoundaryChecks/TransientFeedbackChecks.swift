@@ -246,6 +246,29 @@ private func containsToken(_ source: String, _ token: String) -> Bool {
 
 @MainActor
 func runTransientFeedbackChecks(_ runner: CheckRunner) async {
+    runner.suite("App display name resolution") {
+        runner.equal(
+            "configured bundle display name drives the window title",
+            AppDisplayName.resolve(info: ["CFBundleDisplayName": "Configured Name"]),
+            "Configured Name"
+        )
+        runner.equal(
+            "missing bundle display name falls back to Spotty",
+            AppDisplayName.resolve(info: [:]),
+            "Spotty"
+        )
+        runner.equal(
+            "blank bundle display name falls back to Spotty",
+            AppDisplayName.resolve(info: ["CFBundleDisplayName": "  \n"]),
+            "Spotty"
+        )
+        runner.equal(
+            "non-string bundle display name falls back to Spotty",
+            AppDisplayName.resolve(info: ["CFBundleDisplayName": 42]),
+            "Spotty"
+        )
+    }
+
     await runner.suite("Transient feedback kinds, replacement, and dismissal") {
         let clock = UncooperativeParkedClock()
         let feedback = TransientFeedbackPresenter(clock: clock, duration: 4)
@@ -385,7 +408,7 @@ func runTransientFeedbackChecks(_ runner: CheckRunner) async {
         runner.equal(
             "waiting for Connect identity is a mutation failure",
             joiningFeedback.message?.text,
-            "Aural is still joining Spotify Connect."
+            "Spotty is still joining Spotify Connect."
         )
         runner.nil_("joining add is not a playback notice", joining.transientCommandError)
         await joining.shutdownForTermination()

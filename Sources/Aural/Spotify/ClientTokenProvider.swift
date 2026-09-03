@@ -28,7 +28,7 @@ nonisolated enum ClientTokenError: Error, LocalizedError, Equatable {
         case .malformedResponse:
             "The Spotify client token response could not be read"
         case .challenged:
-            "Spotify asked for a client-token challenge that Aural cannot answer"
+            "Spotify asked for a client-token challenge that Spotty cannot answer"
         }
     }
 }

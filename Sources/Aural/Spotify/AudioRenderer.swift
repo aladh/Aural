@@ -17,7 +17,7 @@ nonisolated enum AudioRendererError: LocalizedError, Sendable {
     var errorDescription: String? {
         switch self {
         case let .formatDescription(status):
-            "Aural could not configure the system audio output (\(status))."
+            "Spotty could not configure the system audio output (\(status))."
         }
     }
 }

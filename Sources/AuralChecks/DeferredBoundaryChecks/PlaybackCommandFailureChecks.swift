@@ -722,7 +722,7 @@ func runPlaybackCommandFailureChecks(_ runner: CheckRunner) async {
         runner.equal(
             "route refusal still surfaces the joining notice",
             joining.transientCommandError,
-            "Aural is still joining Spotify Connect."
+            "Spotty is still joining Spotify Connect."
         )
         await joining.shutdownForTermination()
 

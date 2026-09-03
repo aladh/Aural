@@ -2,6 +2,21 @@ import AppKit
 import OSLog
 import SwiftUI
 
+enum AppDisplayName {
+    static let fallback = "Spotty"
+
+    static var current: String {
+        resolve(info: Bundle.main.infoDictionary)
+    }
+
+    static func resolve(info: [String: Any]?) -> String {
+        guard let displayName = info?["CFBundleDisplayName"] as? String,
+            !displayName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        else { return fallback }
+        return displayName
+    }
+}
+
 @MainActor
 final class AuralAppDelegate: NSObject, NSApplicationDelegate {
     /// The app's content window, tracked so its close can be distinguished from
@@ -103,7 +118,7 @@ struct AuralApp: App {
     }
 
     var body: some Scene {
-        Window("Aural", id: "main") {
+        Window(AppDisplayName.current, id: "main") {
             RootView(player: player, catalog: player.catalog, feedback: feedback)
                 .frame(minWidth: 960, minHeight: 640)
                 .task {

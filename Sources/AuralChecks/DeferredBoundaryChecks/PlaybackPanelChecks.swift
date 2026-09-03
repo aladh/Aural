@@ -398,47 +398,6 @@ func runPlaybackPanelChecks(_ check: CheckRunner) {
         ]
         check.check("duplicate queue tracks have distinct row identities", repeated[0].id != repeated[1].id)
 
-        let local = ConnectDevice(id: "local", name: "Aural", type: "computer", isActive: false)
-        let remote = ConnectDevice(id: "phone", name: "Phone", type: "smartphone", isActive: true)
-        check.equal(
-            "local device is identified even while inactive", local.displayName(localDeviceID: "local"),
-            "Aural (This Mac)")
-        check.equal(
-            "active remote device is identified as playing", remote.displayName(localDeviceID: "local"),
-            "Phone (Playing)")
-        check.equal(
-            "transport routes to the active remote device",
-            connectCommandRoute(isLocalActive: false, localDeviceID: "local", devices: [local, remote]),
-            .remote(from: "local", to: "phone")
-        )
-        check.equal(
-            "remote commands wait for this device identity",
-            connectCommandRoute(isLocalActive: false, localDeviceID: nil, devices: [remote]),
-            .waitingForLocalIdentity
-        )
-        check.equal(
-            "no active remote keeps local playback available",
-            connectCommandRoute(isLocalActive: false, localDeviceID: "local", devices: [local]),
-            .local
-        )
-        check.equal(
-            "paused playback retains its remote command target",
-            connectCommandRoute(
-                isLocalActive: false,
-                localDeviceID: "local",
-                devices: [
-                    local,
-                    ConnectDevice(
-                        id: "phone",
-                        name: "Phone",
-                        type: "smartphone",
-                        isActive: false
-                    ),
-                ],
-                fallbackRemoteDeviceID: "phone"
-            ),
-            .remote(from: "local", to: "phone")
-        )
     }
 
     check.suite("Documented queue response") {

@@ -370,6 +370,25 @@ fi
 
 plutil -lint "$project_root/Packaging/Info.plist"
 
+bundle_plist="$project_root/Packaging/Info.plist"
+if ! bundle_display_name="$(plutil -extract CFBundleDisplayName raw -o - "$bundle_plist")" \
+    || ! bundle_name="$(plutil -extract CFBundleName raw -o - "$bundle_plist")" \
+    || ! bundle_executable="$(plutil -extract CFBundleExecutable raw -o - "$bundle_plist")" \
+    || ! bundle_icon="$(plutil -extract CFBundleIconFile raw -o - "$bundle_plist")" \
+    || ! bundle_identifier="$(plutil -extract CFBundleIdentifier raw -o - "$bundle_plist")"; then
+    print -u2 "Packaging Info.plist is missing a required bundle identity key"
+    exit 1
+fi
+if [[ "$bundle_display_name" != "Spotty" \
+    || "$bundle_name" != "Spotty" \
+    || "$bundle_executable" != "Aural" \
+    || "$bundle_icon" != "Aural" \
+    || "$bundle_identifier" != "dev.aural.app" ]]; then
+    print -u2 "Packaging Info.plist must expose Spotty while preserving the Aural executable, icon, and bundle identifier"
+    print -u2 "display=$bundle_display_name name=$bundle_name executable=$bundle_executable icon=$bundle_icon identifier=$bundle_identifier"
+    exit 1
+fi
+
 if [[ "$check_scope" == swift ]]; then
     print "Aural Swift checks passed ($build_configuration): format, ABI, native app, domain, concrete boundary, architecture, and packaging checks are green"
 else

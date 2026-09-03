@@ -2,7 +2,7 @@
 
 Working inventory for [ADR 004](ADR-004-swift-owned-playback-logic.md). Classify logic as
 **librespot/protocol** (stays in `Backend/aural-playback` unless a later slice forwards a
-rawer observation) or **Aural-owned** (must live in Swift when practical).
+rawer observation) or **Spotty-owned** (must live in Swift when practical).
 
 This is not a second architecture manual. Product behavior stays in the
 [product and acceptance contract](product-and-acceptance-contract.md). Hard-rule owners stay
@@ -28,8 +28,8 @@ in the [enforcement inventory](architecture-enforcement.md).
 | --- | --- | --- |
 | `ffi.rs`, `runtime.rs` | Protocol/runtime adapter | Panic barrier, C string/JSON delivery, nested-runtime refusal |
 | `proxy_sink.rs` | Protocol/runtime adapter | PCM to Swift audio callback; not UI state |
-| `session_lifecycle.rs` | Mixed | AP connect and credential cache are librespot. Path policy and logout cache wipe are Aural-owned but must run next to the cache. Streaming grant completion stays here because only librespot performs AP login. |
-| `lifecycle_serialization.rs` | Aural-owned coordination that must stay with Rust globals | One async lifecycle mutex, reconnect unit outcomes, generation revalidation |
+| `session_lifecycle.rs` | Mixed | AP connect and credential cache are librespot. Path policy and logout cache wipe are Spotty-owned but must run next to the cache. Streaming grant completion stays here because only librespot performs AP login. |
+| `lifecycle_serialization.rs` | Spotty-owned coordination that must stay with Rust globals | One async lifecycle mutex, reconnect unit outcomes, generation revalidation |
 | `connect.rs` | Mixed | Dealer subscribe, hidden-member bootstrap PUT, and protobuf parse are protocol. Device-list and connection-snapshot presentation are Swift-owned. `cluster_offer_decision`, bootstrap-vs-push linearization, and `is_active_in_cluster` (this engine's Connect role) stay until cluster observations can cross the boundary without a second protobuf stack. |
 | `queue.rs` | Adapter after this slice | Serializes unfiltered `ProvidedTrack` rows, slim current-track identity, protocol playback flags, and protocol `context_uri` on cluster snapshots. Local `PlayerEvent` playback snapshots send an empty context. Does **not** own delimiter hiding, upcoming presentation, or transport presentation. |
 | `state.rs` | Mixed | Librespot object slots (`SESSION`, `SPIRC`, `PLAYER`, `MIXER`). Snapshot stamps and connection aggregation live here. Remaining JSON DTOs exist to cross FFI for queue; connection, playback, and device-list observations use typed C snapshots. |
@@ -52,7 +52,7 @@ playing/paused flags, track URI, context URI, timing, and options; Swift project
 Local player-event snapshots send an empty `context_uri`. Hardcoded `device_name` is gone, and
 write-only `reconnect_attempt`, `connected_since_ms`, and `session_connection_id` were removed
 from `ConnectionState`. Later slices should prefer typed payloads or rawer protocol rows over
-new Aural-only fields.
+new Spotty-only fields.
 
 `aural_playback_get_queue_snapshot` still returns the last serialized cluster queue so
 Swift can recover after a provisional empty `SetQueue`. Caching that JSON in Rust is

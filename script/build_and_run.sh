@@ -36,7 +36,7 @@ if [[ -z "${AURAL_SIGNING_IDENTITY:-}" && -z "${AURAL_DEVELOPMENT_SIGNING_IDENTI
     if [[ "$identity_count" == "1" ]]; then
         export AURAL_DEVELOPMENT_SIGNING_IDENTITY="$(print -r -- "$apple_development_identities" | head -n 1)"
     elif [[ "$identity_count" == "0" ]]; then
-        print -u2 "Authenticated Aural development requires an Apple Development signing identity."
+        print -u2 "Authenticated Spotty development requires an Apple Development signing identity."
         print -u2 "Create one in Xcode Accounts, or package without launching via ./Scripts/package-app.sh."
         exit 1
     else
@@ -54,7 +54,7 @@ for _ in {1..20}; do
     sleep 0.1
 done
 if pgrep -x "$app_name" >/dev/null; then
-    print -u2 "Aural did not terminate; leaving the existing app bundle in place"
+    print -u2 "Spotty did not terminate; leaving the existing Aural.app bundle in place"
     exit 1
 fi
 had_existing_bundle=false
@@ -103,7 +103,7 @@ case "$mode" in
             pgrep -x "$app_name" >/dev/null && exit 0
             sleep 0.1
         done
-        print -u2 "Aural did not launch"
+        print -u2 "Spotty did not launch"
         exit 1
         ;;
     --release|release)
@@ -115,7 +115,7 @@ case "$mode" in
             pgrep -x "$app_name" >/dev/null && exit 0
             sleep 0.1
         done
-        print -u2 "Aural release build did not launch"
+        print -u2 "Spotty release build did not launch"
         exit 1
         ;;
     *)

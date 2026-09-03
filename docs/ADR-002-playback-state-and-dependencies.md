@@ -80,7 +80,7 @@ different namespace.
 
 Adding a new callback, queue provider, or account-scoped request now requires an explicit epoch,
 revision/provenance rule, effect owner, and cancellation rule. This is intentional friction at the
-boundaries where Aural historically regressed.
+boundaries where Spotty historically regressed.
 
 Command and other store-level asynchronous work keeps `PlaybackEffectRegistry` as the task owner.
 Reducer-driven generic effects and The Composable Architecture were evaluated and rejected in

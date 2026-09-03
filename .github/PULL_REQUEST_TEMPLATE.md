@@ -18,8 +18,9 @@ List every command and result exactly; do not claim unperformed checks.
 
 ## Live and manual activity
 
-State the macOS/build configuration and scenarios exercised. Explicitly say whether Aural was
-launched and whether any Spotify playback, queue, device, library, playlist, follow, or account
+State the macOS/build configuration and scenarios exercised. Explicitly say whether the Spotty app
+(technical executable `Aural`) was launched and whether any Spotify playback, queue, device,
+library, playlist, follow, or account
 mutation occurred. For authorized mutations, record scope and restoration.
 
 ## Review state

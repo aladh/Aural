@@ -232,11 +232,11 @@ func runPlaybackSupportChecks(_ check: CheckRunner) {
             )
         )
 
-        let local = ConnectDevice(id: "local", name: "Aural", type: "computer", isActive: false)
+        let local = ConnectDevice(id: "local", name: "Spotty", type: "computer", isActive: false)
         let remote = ConnectDevice(id: "phone", name: "Phone", type: "smartphone", isActive: true)
         check.equal(
             "local device is identified even while inactive", local.displayName(localDeviceID: "local"),
-            "Aural (This Mac)")
+            "Spotty (This Mac)")
         check.equal(
             "active remote device is identified as playing", remote.displayName(localDeviceID: "local"),
             "Phone (Playing)")
@@ -291,8 +291,8 @@ func runPlaybackSupportChecks(_ check: CheckRunner) {
         let metadataLateOwner = connectionPlaybackOwner(
             isLocalActive: false,
             localDeviceID: "local",
-            localDeviceName: "Aural",
-            devices: [PlaybackDevice(id: "local", name: "Aural", type: "computer"), inactivePhone],
+            localDeviceName: "Spotty",
+            devices: [PlaybackDevice(id: "local", name: "Spotty", type: "computer"), inactivePhone],
             currentTrackURI: "spotify:track:metadata-late",
             previousOwner: .none,
             lastRemoteDeviceID: "phone"
@@ -310,8 +310,8 @@ func runPlaybackSupportChecks(_ check: CheckRunner) {
         let missingFallbackOwner = connectionPlaybackOwner(
             isLocalActive: false,
             localDeviceID: "local",
-            localDeviceName: "Aural",
-            devices: [PlaybackDevice(id: "local", name: "Aural", type: "computer"), inactivePhone],
+            localDeviceName: "Spotty",
+            devices: [PlaybackDevice(id: "local", name: "Spotty", type: "computer"), inactivePhone],
             currentTrackURI: "spotify:track:paused",
             previousOwner: .none,
             lastRemoteDeviceID: "missing-speaker"
@@ -329,8 +329,8 @@ func runPlaybackSupportChecks(_ check: CheckRunner) {
         let localIdentityFallback = connectionPlaybackOwner(
             isLocalActive: false,
             localDeviceID: "local",
-            localDeviceName: "Aural",
-            devices: [PlaybackDevice(id: "local", name: "Aural", type: "computer"), inactivePhone],
+            localDeviceName: "Spotty",
+            devices: [PlaybackDevice(id: "local", name: "Spotty", type: "computer"), inactivePhone],
             currentTrackURI: "spotify:track:paused",
             previousOwner: .none,
             lastRemoteDeviceID: "local"

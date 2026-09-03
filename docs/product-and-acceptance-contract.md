@@ -1,26 +1,28 @@
 # Product and acceptance contract
 
 This document records intentional product behavior that is easy to lose during a refactor, plus
-the safe way to test Aural against a real Spotify account. Architecture decisions belong in the
-ADRs; historical measurements belong in the performance baseline.
+the safe way to test Spotty against a real Spotify account. Spotty is an unofficial, independent
+project with no affiliation with, endorsement by, or sponsorship from Spotify AB; its private
+Spotify integration may violate Spotify's terms. Architecture decisions belong in the ADRs;
+historical measurements belong in the performance baseline.
 
 ## Product direction
 
-- Aural is a focused, polished, native macOS client for personal Spotify Premium use.
+- Spotty is a focused, polished, native macOS client for personal Spotify Premium use.
 - macOS is the only current platform target. Cross-platform UI work is not a present constraint.
 - Prefer idiomatic SwiftUI and AppKit behavior over custom chrome. Do not add a WebView, Chromium
   runtime, or a second UI framework.
 - Use a Spotify-familiar composition without reproducing Spotify's pixels: artwork-led media
   headers, dense track tables, a right-side queue/history rail, and a full-width bottom player
-  shelf. Aural always uses a dark native appearance with a near-black content canvas; there is no
+  shelf. Spotty always uses a dark native appearance with a near-black content canvas; there is no
   light appearance or appearance mode. Inactive windows, focus, and native selection retain macOS
-  semantics. Aural's fixed green is reserved for media actions and current-playback state; it is
+  semantics. Spotty's fixed green is reserved for media actions and current-playback state; it is
   not a second selection or focus system. Do not introduce a theme system.
-- Keep the product surface small. In particular, Aural has no in-app volume control or manual
+- Keep the product surface small. In particular, Spotty has no in-app volume control or manual
   Spotify refresh action. Playlist creation, rename, cover editing, collaborative permission
   management, and arbitrary reordering are out of scope. Occurrence-safe add/remove for playlists
-  Aural can justify as owned is in scope.
-- Aural has no Settings scene or custom accent-color preference.
+  Spotty can justify as owned is in scope.
+- Spotty has no Settings scene or custom accent-color preference.
 
 ## Window and navigation behavior
 
@@ -36,20 +38,20 @@ ADRs; historical measurements belong in the performance baseline.
   not move the header. Current and upcoming queue items may show compact artwork and duration when
   metadata is available, with text-only fallbacks. VoiceOver uses the same catalog-enriched title,
   artist, and available duration as the visible row. History may show artwork.
-- Closing the main window purges presentation caches but does not quit Aural. The app remains in the
+- Closing the main window purges presentation caches but does not quit Spotty. The app remains in the
   Dock and reopens through the Dock icon or the standard macOS Window command.
-- Sign Out belongs in the macOS **Aural** application menu, not in a custom profile card. There is
+- Sign Out belongs in the macOS **Spotty** application menu, not in a custom profile card. There is
   no app-specific Settings surface.
 
 ## Playback presentation and ownership
 
-- Aural mirrors the active Spotify Connect device automatically, including a device owned by a
+- Spotty mirrors the active Spotify Connect device automatically, including a device owned by a
   different computer. The now-playing title, artist, artwork, position, play/pause state, queue,
   and available controls must follow that owner without requiring a manual refresh.
 - When an identified remote device owns the current track, a thin green status strip attaches to
   the bottom of the player shelf and names that device. It says whether playback is playing or
   paused, disappears for local or unidentified ownership, and does not replace the device menu.
-- Transport commands target the device that owns playback. Aural must not silently transfer
+- Transport commands target the device that owns playback. Spotty must not silently transfer
   playback to this Mac merely because the user pressed a remote control. When no device is marked
   active but a current track remains, a remembered last remote device stays an uncertain remote
   candidate so commands remain remote-routable; a missing or stale fallback never becomes local.
@@ -60,13 +62,13 @@ ADRs; historical measurements belong in the performance baseline.
   right of Next.
 - Progress is interpolated smoothly between authoritative snapshots while playing. A new snapshot,
   seek, pause, track change, or ownership change must re-anchor it instead of allowing drift.
-- Shuffle is a single on/off control backed by Aural's persistent fewer-repeats policy. Spotify
+- Shuffle is a single on/off control backed by Spotty's persistent fewer-repeats policy. Spotify
   Connect does not expose a shuffle-style parameter, so no shuffle-style picker is presented.
 - Repeat cycles off → queue → track → off. Each step sends only the Connect flags that change,
   planned from the reducer's raw context/track pair rather than the display mode. Ordinary
   track-repeat (context off, track on) → off is one mutation; a both-true track snapshot → off
   clears both flags. Queue → track is the only two-flag step and applies context off before track
-  on. If the second mutation fails after the first was accepted, Aural best-effort restores the
+  on. If the second mutation fails after the first was accepted, Spotty best-effort restores the
   captured previous flags and still reports failure. A later snapshot of the requested target is
   kept; the known intermediate off after a compensated queue → track failure restores queue
   repeat; a compensated both-true track → off failure whose intermediate snapshot is still
@@ -82,7 +84,7 @@ ADRs; historical measurements belong in the performance baseline.
   remains a deliberate primary action (Return/double-click), not a single-click.
 - Queue replacement is a Spotify Connect `set_queue` of remaining protocol `next_tracks` plus the
   current `prev_tracks` and the exact incoming ProvidedTrack metadata map (`metadata`, `uid`,
-  `provider`, and the other player.proto fields the snapshot carried). Aural does not synthesize
+  `provider`, and the other player.proto fields the snapshot carried). Spotty does not synthesize
   `is_queued` or edit presentation state to fake success. Sequential Add to Queue is not atomic:
   feedback reports full success, zero success, or a partial completed count.
   Removal is gated on a complete Connect mutation snapshot, account/engine epoch, owner, and
