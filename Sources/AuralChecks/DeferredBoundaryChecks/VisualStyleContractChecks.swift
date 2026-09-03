@@ -123,12 +123,11 @@ func runVisualStyleContractChecks(_ runner: CheckRunner) {
             )
             runner.check(
                 "the trailing player controls stay limited to queue and devices",
-                visualStyleOccurrenceCount("Button {", in: trailingControls) == 1
+                visualStyleControlDeclarationCount(in: trailingControls) == 1
+                    && visualStyleOccurrenceCount("Button {", in: trailingControls) == 1
                     && visualStyleOccurrenceCount("devicesMenu", in: trailingControls) == 2
                     && visualStyleOccurrenceCount("Image(systemName:", in: trailingControls) == 1
                     && trailingControls.contains("Image(systemName: \"list.bullet\")")
-                    && !trailingControls.contains("Toggle")
-                    && !trailingControls.contains("Slider")
                     && visualStyleOccurrenceCount("Menu {", in: deviceControl) == 1
                     && visualStyleOccurrenceCount("Image(systemName:", in: deviceControl) == 1
                     && deviceControl.contains("Image(systemName: \"display.2\")")
@@ -168,4 +167,15 @@ private func visualStyleSourceSection(_ source: String, from start: String, thro
 
 private func visualStyleOccurrenceCount(_ token: String, in source: String) -> Int {
     source.components(separatedBy: token).count - 1
+}
+
+private func visualStyleControlDeclarationCount(in source: String) -> Int {
+    [
+        "Button {", "Button(",
+        "Link {", "Link(",
+        "Menu {", "Menu(",
+        "Toggle {", "Toggle(",
+        "Slider(",
+        "Picker {", "Picker(",
+    ].reduce(0) { $0 + visualStyleOccurrenceCount($1, in: source) }
 }
