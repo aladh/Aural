@@ -46,6 +46,9 @@ ADRs; historical measurements belong in the performance baseline.
 - Aural mirrors the active Spotify Connect device automatically, including a device owned by a
   different computer. The now-playing title, artist, artwork, position, play/pause state, queue,
   and available controls must follow that owner without requiring a manual refresh.
+- When an identified remote device owns the current track, a thin green status strip attaches to
+  the bottom of the player shelf and names that device. It says whether playback is playing or
+  paused, disappears for local or unidentified ownership, and does not replace the device menu.
 - Transport commands target the device that owns playback. Aural must not silently transfer
   playback to this Mac merely because the user pressed a remote control. When no device is marked
   active but a current track remains, a remembered last remote device stays an uncertain remote

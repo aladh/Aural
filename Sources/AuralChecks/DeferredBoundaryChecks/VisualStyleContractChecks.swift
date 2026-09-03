@@ -37,6 +37,14 @@ func runVisualStyleContractChecks(_ runner: CheckRunner) {
                 playerComponents.contains("player.canTogglePlayback ? Color.primary")
                     && playerComponents.contains("isHovering ? AuralPalette.mediaGreen : Color.primary")
             )
+            runner.check(
+                "identified remote playback gets a Spotify-familiar green footer",
+                playerBar.contains("if let remote = player.activeRemoteDevice")
+                    && playerBar.contains("RemotePlaybackBanner(device: remote, isPlaying: player.isPlaying)")
+                    && playerBar.contains(".background(AuralPalette.mediaGreen)")
+                    && playerBar.contains("Playing\" : \"Paused")
+                    && palette.contains("static let remotePlaybackForeground")
+            )
         }
     }
 }

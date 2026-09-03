@@ -14,6 +14,7 @@ enum AuralPalette {
     static let quickAccessSurface = Color(red: 0.16, green: 0.16, blue: 0.16)
     static let quickAccessSurfaceHover = Color(red: 0.22, green: 0.22, blue: 0.22)
     static let playerShelf = Color(red: 0.094, green: 0.094, blue: 0.094)
+    static let remotePlaybackForeground = Color(red: 0.025, green: 0.12, blue: 0.06)
 
     static func mediaCardSurface(isHovering: Bool) -> Color {
         isHovering ? mediaSurfaceHover : .clear
