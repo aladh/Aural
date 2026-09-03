@@ -197,6 +197,32 @@ if rg -n 'nonisolated\(unsafe\)' "$project_root/Sources" --glob '*.swift'; then
     exit 1
 fi
 
+# Aural deliberately has one appearance rather than a theme preference. Pin the native dark
+# appearance at the application boundary and reject concrete APIs or comparisons that would
+# reintroduce runtime appearance selection. The patterns are code-shaped so prose comments about
+# the product contract do not fail the gate.
+aural_app_source="$project_root/Sources/Aural/AuralApp.swift"
+dark_appearance_assignment_pattern='^[[:space:]]*NSApplication\.shared\.appearance[[:space:]]*=[[:space:]]*NSAppearance\(named:[[:space:]]*\.darkAqua\)[[:space:]]*$'
+strip_noncode_appearance_text() {
+    perl -0pe 's{""".*?"""}{}gs; s{/\*.*?\*/}{}gs; s{//[^\n]*}{}g'
+}
+aural_app_code="$(strip_noncode_appearance_text < "$aural_app_source")"
+if ! rg -q "$dark_appearance_assignment_pattern" <<< "$aural_app_code"; then
+    print -u2 "AuralApp must pin the application to native dark Aqua"
+    exit 1
+fi
+dark_appearance_noncode_fixture=$'// NSApplication.shared.appearance = NSAppearance(named: .darkAqua)\n/*\nNSApplication.shared.appearance = NSAppearance(named: .darkAqua)\n*/\nlet example = """\nNSApplication.shared.appearance = NSAppearance(named: .darkAqua)\n"""'
+dark_appearance_fixture_code="$(strip_noncode_appearance_text <<< "$dark_appearance_noncode_fixture")"
+if rg -q "$dark_appearance_assignment_pattern" <<< "$dark_appearance_fixture_code"; then
+    print -u2 "Dark appearance assignment check must reject comments and multiline strings"
+    exit 1
+fi
+if rg -n '@Environment\(\.colorScheme\)|\.preferredColorScheme\(|\.effectiveAppearance\b|colorScheme[[:space:]]*(==|!=)|NSAppearance\(named:[[:space:]]*\.aqua\)' \
+    "$project_root/Sources/Aural" --glob '*.swift'; then
+    print -u2 "Aural has one fixed dark appearance; appearance-mode logic is not allowed"
+    exit 1
+fi
+
 # Authenticated development must never silently fall back to a self-signed identity. On current
 # macOS that gives the Keychain item a per-build CDHash partition and recreates the password prompt
 # after every rebuild. Packaging may remain self-signed for deterministic build verification, but

@@ -16,6 +16,10 @@ final class AuralAppDelegate: NSObject, NSApplicationDelegate {
         terminationHandler = handler
     }
 
+    func applicationWillFinishLaunching(_: Notification) {
+        NSApplication.shared.appearance = NSAppearance(named: .darkAqua)
+    }
+
     func applicationDidFinishLaunching(_: Notification) {
         AuralLog.lifecycle.info("Application finished launching")
         let center = NotificationCenter.default

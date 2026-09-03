@@ -12,10 +12,10 @@ ADRs; historical measurements belong in the performance baseline.
   runtime, or a second UI framework.
 - Use a Spotify-familiar composition without reproducing Spotify's pixels: artwork-led media
   headers, dense track tables, a right-side queue/history rail, and a full-width bottom player
-  shelf. Dark appearance uses a near-black content canvas, while Light Mode, inactive windows,
-  focus, and native selection continue to use system-adaptive macOS semantics. Aural's fixed green
-  is reserved for media actions and current-playback state; it is not a second selection or focus
-  system. Do not force Dark Mode or introduce a parallel theme system.
+  shelf. Aural always uses a dark native appearance with a near-black content canvas; there is no
+  light appearance or appearance mode. Inactive windows, focus, and native selection retain macOS
+  semantics. Aural's fixed green is reserved for media actions and current-playback state; it is
+  not a second selection or focus system. Do not introduce a theme system.
 - Keep the product surface small. In particular, Aural has no in-app volume control or manual
   Spotify refresh action. Playlist creation, rename, cover editing, collaborative permission
   management, and arbitrary reordering are out of scope. Occurrence-safe add/remove for playlists

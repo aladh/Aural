@@ -49,8 +49,8 @@ cramped, and capable without advertising every capability.
 - Start with established macOS behavior. Prefer system structure, materials, typography, controls,
   menus, focus, keyboard behavior, accessibility, and inactive-window semantics over custom chrome.
 - Use a Spotify-familiar hierarchy—artwork-led media headers, dense tables, a queue rail, and a
-  full-width player shelf—through system-adaptive macOS surfaces. Dark appearance may use a
-  near-black canvas; do not force an appearance or build a second theme system. Keep sidebar
+  full-width player shelf—through native macOS surfaces in Aural's fixed dark appearance. Use a
+  near-black canvas and do not build a theme system or appearance preference. Keep sidebar
   playlist artwork to a bounded shortcut list rather than duplicating the library browser.
 - Remove before adding. Every persistent control must earn its space through frequent use or
   essential state. Capability alone does not justify UI.
@@ -61,7 +61,7 @@ cramped, and capable without advertising every capability.
   authoritative playback state.
 - Preserve spatial anchors and useful content across refresh, metadata arrival, tab changes, and
   window focus. Motion should explain continuity, not delay input or draw attention to chrome.
-- Use semantic, restrained color and verify light/dark, active/inactive, selected, disabled,
+- Use semantic, restrained color and verify active/inactive, selected, disabled,
   keyboard-focused, reduced-motion, and VoiceOver states.
 - Fast is a feeling built from details: keep the main thread free, cancel obsolete work, downsample
   artwork, bound caches, avoid gratuitous polling, and prefer deleting work to elaborate machinery.
