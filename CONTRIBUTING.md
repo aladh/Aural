@@ -259,11 +259,9 @@ conversation resolution.
 
 ## Maintaining repository guidance
 
-`AGENTS.md` is the only repository instruction format. Root guidance owns repository-wide policy;
-nested `AGENTS.md` files hold path-specific gotchas and review rules; this file owns reusable
-procedures; product, ADR, privacy, and security documents own durable decisions. Add guidance only for
-a repository-specific constraint or demonstrated failure mode, state it once, and delete superseded
-prose in the same change.
+Repository-wide instruction policy is canonical in
+[Maintaining these instructions](AGENTS.md#maintaining-these-instructions). This operations guide owns
+only the validation procedure below.
 
 Do not add a byte-count gate or a second source-contract harness. Validate instruction discovery from
 the repository root and representative nested scopes, including `script/`, and let CI own formatting
