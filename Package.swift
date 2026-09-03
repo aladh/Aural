@@ -21,6 +21,11 @@ let package = Package(
             name: "AuralCore",
             dependencies: ["AuralDomain", "AuralPlaybackCore"],
             path: "Sources/Aural",
+            exclude: [
+                "AGENTS.md",
+                "Spotify/AGENTS.md",
+                "Views/AGENTS.md",
+            ],
             linkerSettings: [
                 .unsafeFlags(["-LBackend/lib"]),
                 .linkedLibrary("aural_playback"),
@@ -35,7 +40,11 @@ let package = Package(
             dependencies: ["AuralCore"],
             path: "Sources/AuralApp"
         ),
-        .target(name: "AuralDomain"),
+        .target(
+            name: "AuralDomain",
+            path: "Sources/AuralDomain",
+            exclude: ["AGENTS.md"]
+        ),
         // Shared check CLI selection only. Not a CheckRunner/waitUntil library.
         .target(
             name: "AuralCheckSelection",
@@ -45,6 +54,7 @@ let package = Package(
             name: "AuralChecks",
             dependencies: ["AuralDomain", "AuralCheckSelection"],
             exclude: [
+                "AGENTS.md",
                 "DeferredBoundaryChecks",
                 "LegacyLogicChecks.swift",
             ]
