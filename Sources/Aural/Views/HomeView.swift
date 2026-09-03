@@ -53,7 +53,7 @@ struct HomeView: View {
                     .padding(.bottom, -6)
 
                     ForEach(Array(store.homeSections.enumerated()), id: \.element.id) { index, section in
-                        if index == 0 || section.title.localizedCaseInsensitiveContains("recent") {
+                        if index == 0 {
                             QuickAccessShelf(section: section, onSelect: onSelect)
                         } else {
                             MediaShelf(section: section, onSelect: onSelect)

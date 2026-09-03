@@ -13,6 +13,8 @@ func runVisualStyleContractChecks(_ runner: CheckRunner) {
             runner.check(
                 "Home leads with a bounded compact shortcut shelf",
                 home.contains("QuickAccessShelf(section: section")
+                    && home.contains("if index == 0")
+                    && !home.contains("localizedCaseInsensitiveContains")
                     && home.contains("section.items.prefix(8)")
                     && home.contains(".adaptive(minimum: 220, maximum: 340)")
             )
