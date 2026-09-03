@@ -774,8 +774,16 @@ func runPlaybackEventOutcomeChecks(_ runner: CheckRunner) async {
             "decoded payload generation stamps reducer state before playback catches up",
             await waitUntil { payloadStore.state.engineEpoch == payloadGeneration }
         )
-        runner.equal("decoded payload generation stamps presentation", payloadStore.engineGeneration, payloadGeneration)
-        runner.equal("decoded payload generation keeps now-playing title", payloadStore.state.currentTrack?.title, "Now")
+        runner.equal(
+            "decoded payload generation stamps presentation",
+            payloadStore.engineGeneration,
+            payloadGeneration
+        )
+        runner.equal(
+            "decoded payload generation keeps now-playing title",
+            payloadStore.state.currentTrack?.title,
+            "Now"
+        )
         runner.check(
             "decoded payload generation stamps the mutation snapshot",
             await waitUntil { payloadStore.queueMutation?.engineEpoch == payloadGeneration }
