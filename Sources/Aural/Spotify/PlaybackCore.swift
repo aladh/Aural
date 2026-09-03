@@ -47,6 +47,33 @@ nonisolated enum PlaybackCore {
         aural_playback_register_queue_callback(callback)
     }
 
+    static func queueState(
+        from pointer: UnsafePointer<AuralQueueSnapshot>?
+    ) -> RustQueueState? {
+        guard let pointer else { return nil }
+        let snapshot = pointer.pointee
+        return RustQueueState(
+            revision: snapshot.revision,
+            sessionGeneration: snapshot.session_generation,
+            track: queueItem(
+                uri: snapshot.track_uri,
+                provider: snapshot.track_provider,
+                uid: snapshot.track_uid
+            ),
+            protocolNextTracks: protocolTracks(
+                snapshot.next_tracks,
+                count: Int(snapshot.next_count)
+            ),
+            protocolPrevTracks: protocolTracks(
+                snapshot.prev_tracks,
+                count: Int(snapshot.prev_count)
+            ),
+            queueRevision: optionalCString(snapshot.queue_revision) ?? "",
+            disallowSetQueue: snapshot.disallow_set_queue != 0,
+            disallowRemovingFromNextTracks: snapshot.disallow_removing_from_next_tracks != 0
+        )
+    }
+
     static func registerConnectionStateCallback(_ callback: ConnectionStateCallback) {
         aural_playback_register_connection_state_callback(callback)
     }
@@ -152,6 +179,79 @@ nonisolated enum PlaybackCore {
         }
     }
 
+    private static func queueItem(
+        uri: UnsafePointer<CChar>?,
+        provider: UnsafePointer<CChar>?,
+        uid: UnsafePointer<CChar>?
+    ) -> RustQueueState.Item? {
+        guard let uri = optionalCString(uri) else { return nil }
+        return RustQueueState.Item(
+            uri: uri,
+            provider: optionalCString(provider) ?? "",
+            uid: optionalCString(uid) ?? ""
+        )
+    }
+
+    private static func protocolTracks(
+        _ pointer: UnsafePointer<AuralProtocolQueueTrack>?,
+        count: Int
+    ) -> [QueueProtocolTrack] {
+        guard count > 0, let pointer else { return [] }
+        return UnsafeBufferPointer(start: pointer, count: count).map(protocolTrack)
+    }
+
+    private static func protocolTrack(_ row: AuralProtocolQueueTrack) -> QueueProtocolTrack {
+        QueueProtocolTrack(
+            uri: optionalCString(row.uri) ?? "",
+            uid: optionalCString(row.uid) ?? "",
+            provider: optionalCString(row.provider) ?? "",
+            metadata: stringPairMap(row.metadata, count: Int(row.metadata_count)),
+            removed: cStringList(row.removed, count: Int(row.removed_count)),
+            blocked: cStringList(row.blocked, count: Int(row.blocked_count)),
+            restrictions: restrictionMap(row.restrictions, count: Int(row.restriction_count)),
+            albumURI: optionalCString(row.album_uri) ?? "",
+            disallowReasons: cStringList(
+                row.disallow_reasons,
+                count: Int(row.disallow_reason_count)
+            ),
+            artistURI: optionalCString(row.artist_uri) ?? ""
+        )
+    }
+
+    private static func stringPairMap(
+        _ pointer: UnsafePointer<AuralStringPair>?,
+        count: Int
+    ) -> [String: String] {
+        guard count > 0, let pointer else { return [:] }
+        var map: [String: String] = [:]
+        for pair in UnsafeBufferPointer(start: pointer, count: count) {
+            guard let key = optionalCString(pair.key) else { continue }
+            map[key] = optionalCString(pair.value) ?? ""
+        }
+        return map
+    }
+
+    private static func restrictionMap(
+        _ pointer: UnsafePointer<AuralRestriction>?,
+        count: Int
+    ) -> [String: [String]] {
+        guard count > 0, let pointer else { return [:] }
+        var map: [String: [String]] = [:]
+        for entry in UnsafeBufferPointer(start: pointer, count: count) {
+            guard let key = optionalCString(entry.key) else { continue }
+            map[key] = cStringList(entry.reasons, count: Int(entry.reason_count))
+        }
+        return map
+    }
+
+    private static func cStringList(
+        _ pointer: UnsafePointer<UnsafePointer<CChar>?>?,
+        count: Int
+    ) -> [String] {
+        guard count > 0, let pointer else { return [] }
+        return UnsafeBufferPointer(start: pointer, count: count).map { optionalCString($0) ?? "" }
+    }
+
     private static func takeOwnedString(_ pointer: UnsafeMutablePointer<CChar>?) -> String? {
         guard let pointer else { return nil }
         defer { aural_playback_free_string(pointer) }
@@ -193,9 +293,10 @@ nonisolated enum PlaybackCore {
     }
 
     /// The last queue the Connect cluster described, or nil before one has arrived.
-    /// Same JSON shape the queue callback delivers.
-    nonisolated static func queueSnapshotJSON() -> String? {
-        takeOwnedString(aural_playback_get_queue_snapshot())
+    nonisolated static func queueSnapshot() -> RustQueueState? {
+        guard let pointer = aural_playback_get_queue_snapshot() else { return nil }
+        defer { aural_playback_free_queue_snapshot(pointer) }
+        return queueState(from: UnsafePointer(pointer))
     }
 
     static func configureHighQualityPlayback() {

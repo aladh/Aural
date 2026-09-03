@@ -235,25 +235,16 @@ extension PlaybackStore {
     /// before the next cluster update streams in.
     func refreshQueueSnapshot() {
         let epoch = accountEpoch
-        let capturedEngineEpoch = engineGeneration
         effects.replace(
             .queueSnapshot,
             with: Task { [weak self] in
                 guard let self,
-                    let json = await self.coordinator.queueSnapshotJSON(),
+                    let state = await self.coordinator.queueSnapshot(),
                     !Task.isCancelled,
                     !self.isTearingDown,
                     self.isConnected,
-                    self.accountEpoch == epoch,
-                    let data = json.data(using: .utf8),
-                    let state = try? JSONDecoder().decode(RustQueueState.self, from: data)
+                    self.accountEpoch == epoch
                 else { return }
-                // Stamp the decoded payload generation. A nil `sessionGeneration` snapshot can
-                // still record revision, so the pre-await engine lifetime must still match then.
-                // `ConnectQueueCallbackWatermark` remains callback identity, not this stamp.
-                if state.sessionGeneration == nil {
-                    guard self.engineGeneration == capturedEngineEpoch else { return }
-                }
                 guard
                     self.acceptsConnectQueueCallback(
                         generation: state.sessionGeneration,

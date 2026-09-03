@@ -85,26 +85,10 @@ fn c_string_from_text(text: &str) -> Option<CString> {
     }
 }
 
-fn optional_callback_c_string(value: Option<&str>) -> Option<CString> {
+pub(crate) fn optional_callback_c_string(value: Option<&str>) -> Option<CString> {
     value
         .filter(|text| !text.is_empty())
         .and_then(c_string_from_text)
-}
-
-/// Serializes `payload` and hands it to a Swift callback as a C string.
-///
-/// The C string outlives the call and is freed on return: Swift copies what it needs
-/// before the callback returns.
-pub(crate) fn send_json<T: Serialize>(callback: extern "C" fn(*const c_char), payload: &T) {
-    match serde_json::to_string(payload) {
-        // serde_json escapes interior NULs, so CString::new cannot fail for its output;
-        // treat it like any other serialization failure rather than panicking into Swift.
-        Ok(json) => match CString::new(json) {
-            Ok(c_str) => callback(c_str.as_ptr()),
-            Err(e) => debug!("Callback payload contained NUL: {}", e),
-        },
-        Err(e) => debug!("Failed to serialize callback payload: {:?}", e),
-    }
 }
 
 /// Connection observation delivered as a C struct. Pointers are valid only for the
@@ -367,6 +351,11 @@ pub(crate) fn ffi_owned_string(
     ffi_catch(export, std::ptr::null_mut(), work)
 }
 
+/// Defined fallback when an owned-pointer export panics: a null pointer.
+pub(crate) fn ffi_owned_ptr<T>(export: &'static str, work: impl FnOnce() -> *mut T) -> *mut T {
+    ffi_catch(export, std::ptr::null_mut(), work)
+}
+
 /// Defined fallback when a void export panics: a no-op completion.
 pub(crate) fn ffi_void(export: &'static str, work: impl FnOnce()) {
     ffi_catch(export, (), work)
@@ -401,9 +390,10 @@ pub extern "C" fn aural_playback_free_string(s: *mut c_char) {
     })
 }
 
-/// Registers a callback to receive queue updates (as JSON string).
+/// Registers a callback to receive queue updates as a C snapshot.
+/// String and nested pointers are valid only for the call.
 #[no_mangle]
-pub extern "C" fn aural_playback_register_queue_callback(callback: extern "C" fn(*const c_char)) {
+pub extern "C" fn aural_playback_register_queue_callback(callback: QueueSnapshotCallback) {
     ffi_void("aural_playback_register_queue_callback", || {
         *CONTROL_CALLBACKS
             .queue

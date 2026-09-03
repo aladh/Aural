@@ -51,7 +51,7 @@ nonisolated protocol LocalPlaybackEngine: Sendable {
     func resumePositionMilliseconds() -> UInt32
     func resumeContextURI() -> String?
     func resumeTrackURI() -> String?
-    func queueSnapshotJSON() -> String?
+    func queueSnapshot() -> RustQueueState?
     func configureHighQualityPlayback()
     func shutdown() -> PlaybackEngineResult
     func cleanup()
@@ -64,6 +64,7 @@ extension LocalPlaybackEngine {
     func resumePositionMilliseconds() -> UInt32 { 0 }
     func resumeContextURI() -> String? { nil }
     func resumeTrackURI() -> String? { nil }
+    func queueSnapshot() -> RustQueueState? { nil }
 }
 
 nonisolated protocol RemotePlaybackClient: Sendable {
@@ -399,7 +400,7 @@ actor PlaybackCoordinator {
     func configureHighQualityPlayback() { local.configureHighQualityPlayback() }
     func positionMilliseconds() -> UInt32 { local.positionMilliseconds() }
     func resumePositionMilliseconds() -> UInt32 { local.resumePositionMilliseconds() }
-    func queueSnapshotJSON() -> String? { local.queueSnapshotJSON() }
+    func queueSnapshot() -> RustQueueState? { local.queueSnapshot() }
     func disconnect() async -> PlaybackEngineResult {
         local.disconnect()
     }

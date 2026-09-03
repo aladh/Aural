@@ -25,7 +25,7 @@ private final class RecordingLocalEngine: LocalPlaybackEngine, @unchecked Sendab
         return .ok
     }
     func positionMilliseconds() -> UInt32 { 0 }
-    func queueSnapshotJSON() -> String? { nil }
+    func queueSnapshot() -> RustQueueState? { nil }
     func configureHighQualityPlayback() {}
     func shutdown() -> PlaybackEngineResult { .ok }
     func cleanup() {}
@@ -257,7 +257,7 @@ private final class WorkflowEngine: LocalPlaybackEngine, @unchecked Sendable {
     func initialize() -> PlaybackEngineResult { record("initialize"); return .ok }
     func execute(_: LocalPlaybackOperation) -> PlaybackEngineResult { record("execute"); return .ok }
     func positionMilliseconds() -> UInt32 { 0 }
-    func queueSnapshotJSON() -> String? { nil }
+    func queueSnapshot() -> RustQueueState? { nil }
     func configureHighQualityPlayback() { record("configure") }
     func shutdown() -> PlaybackEngineResult { record("shutdown"); return .ok }
     func cleanup() { record("cleanup") }

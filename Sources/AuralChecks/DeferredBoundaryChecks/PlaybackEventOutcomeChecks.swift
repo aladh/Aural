@@ -28,7 +28,7 @@ private final class GatedPositionEngine: LocalPlaybackEngine, @unchecked Sendabl
         gate.wait()
         return milliseconds
     }
-    func queueSnapshotJSON() -> String? { nil }
+    func queueSnapshot() -> RustQueueState? { nil }
     func configureHighQualityPlayback() {}
     func shutdown() -> PlaybackEngineResult { .ok }
     func cleanup() {}
@@ -45,7 +45,7 @@ private final class GatedQueueSnapshotEngine: LocalPlaybackEngine, @unchecked Se
     private let lock = NSLock()
     private let gate = DispatchSemaphore(value: 0)
     private var didStart = false
-    private var json: String?
+    private var snapshot: RustQueueState?
 
     var hasStarted: Bool {
         lock.lock()
@@ -61,14 +61,14 @@ private final class GatedQueueSnapshotEngine: LocalPlaybackEngine, @unchecked Se
     func initialize() -> PlaybackEngineResult { .ok }
     func execute(_: LocalPlaybackOperation) -> PlaybackEngineResult { .ok }
     func positionMilliseconds() -> UInt32 { 0 }
-    func queueSnapshotJSON() -> String? {
+    func queueSnapshot() -> RustQueueState? {
         lock.lock()
         didStart = true
         lock.unlock()
         gate.wait()
         lock.lock()
         defer { lock.unlock() }
-        return json
+        return snapshot
     }
     func configureHighQualityPlayback() {}
     func shutdown() -> PlaybackEngineResult { .ok }
@@ -77,9 +77,9 @@ private final class GatedQueueSnapshotEngine: LocalPlaybackEngine, @unchecked Se
     func disconnect() -> PlaybackEngineResult { .ok }
     func forceReconnect() -> Int32 { 0 }
 
-    func release(_ json: String) {
+    func release(_ snapshot: RustQueueState) {
         lock.lock()
-        self.json = json
+        self.snapshot = snapshot
         lock.unlock()
         gate.signal()
     }
@@ -93,7 +93,7 @@ private final class IdleLocalEngine: LocalPlaybackEngine, @unchecked Sendable {
     func initialize() -> PlaybackEngineResult { .ok }
     func execute(_: LocalPlaybackOperation) -> PlaybackEngineResult { .ok }
     func positionMilliseconds() -> UInt32 { 0 }
-    func queueSnapshotJSON() -> String? { nil }
+    func queueSnapshot() -> RustQueueState? { nil }
     func configureHighQualityPlayback() {}
     func shutdown() -> PlaybackEngineResult { .ok }
     func cleanup() {}
@@ -329,17 +329,21 @@ private func seedReadyLocalPlayback(
     )
 }
 
-private func queueSnapshotJSON(
+private func queueSnapshot(
     uri: String,
-    name: String = "",
-    artist: String = "",
     revision: UInt64 = 1,
-    sessionGeneration: UInt64? = nil
-) -> String {
-    let generationField = sessionGeneration.map { ",\"session_generation\":\($0)" } ?? ""
-    return """
-        {"track":{"uri":"\(uri)","name":"\(name)","artist":"\(artist)","image_url":"","duration_ms":180000},"next_tracks":[],"revision":\(revision)\(generationField)}
-        """
+    sessionGeneration: UInt64 = 1
+) -> RustQueueState {
+    RustQueueState(
+        revision: revision,
+        sessionGeneration: sessionGeneration,
+        track: RustQueueState.Item(uri: uri, provider: "context", uid: "occ-now"),
+        protocolNextTracks: [],
+        protocolPrevTracks: [],
+        queueRevision: "",
+        disallowSetQueue: false,
+        disallowRemovingFromNextTracks: false
+    )
 }
 
 @MainActor
@@ -672,8 +676,9 @@ func runPlaybackEventOutcomeChecks(_ runner: CheckRunner) async {
         named.refreshQueueSnapshot()
         runner.check("named queue snapshot fetch starts", await waitUntil { namedEngine.hasStarted })
         let namedSnapshot = named.effects.settlement(of: .queueSnapshot)
+        let staleNamedGeneration = named.engineGeneration
         bumpEngine(named)
-        namedEngine.release(queueSnapshotJSON(uri: uri, name: "Stale snapshot", artist: "Stale artist"))
+        namedEngine.release(queueSnapshot(uri: uri, sessionGeneration: staleNamedGeneration))
         await awaitCapturedEffect(
             namedSnapshot,
             runner,
@@ -697,8 +702,9 @@ func runPlaybackEventOutcomeChecks(_ runner: CheckRunner) async {
         missing.refreshQueueSnapshot()
         runner.check("nameless queue snapshot fetch starts", await waitUntil { missingEngine.hasStarted })
         let missingSnapshot = missing.effects.settlement(of: .queueSnapshot)
+        let staleMissingGeneration = missing.engineGeneration
         bumpEngine(missing)
-        missingEngine.release(queueSnapshotJSON(uri: uri))
+        missingEngine.release(queueSnapshot(uri: uri, sessionGeneration: staleMissingGeneration))
         await awaitCapturedEffect(
             missingSnapshot,
             runner,
@@ -723,8 +729,11 @@ func runPlaybackEventOutcomeChecks(_ runner: CheckRunner) async {
         watermarkStore.refreshQueueSnapshot()
         runner.check("watermark snapshot fetch starts", await waitUntil { watermarkEngine.hasStarted })
         let watermarkSnapshot = watermarkStore.effects.settlement(of: .queueSnapshot)
+        let staleWatermarkGeneration = watermarkStore.engineGeneration
         bumpEngine(watermarkStore)
-        watermarkEngine.release(queueSnapshotJSON(uri: uri, name: "Stale snapshot", revision: 9))
+        watermarkEngine.release(
+            queueSnapshot(uri: uri, revision: 9, sessionGeneration: staleWatermarkGeneration)
+        )
         await awaitCapturedEffect(
             watermarkSnapshot,
             runner,
@@ -760,10 +769,8 @@ func runPlaybackEventOutcomeChecks(_ runner: CheckRunner) async {
         payloadStore.refreshQueueSnapshot()
         runner.check("payload-generation snapshot fetch starts", await waitUntil { payloadEngine.hasStarted })
         payloadEngine.release(
-            queueSnapshotJSON(
+            queueSnapshot(
                 uri: uri,
-                name: "Payload generation",
-                artist: "Payload artist",
                 revision: 3,
                 sessionGeneration: payloadGeneration
             )
@@ -772,10 +779,16 @@ func runPlaybackEventOutcomeChecks(_ runner: CheckRunner) async {
             "decoded payload generation stamps reducer state before playback catches up",
             await waitUntil { payloadStore.state.engineEpoch == payloadGeneration }
         )
-        runner.equal("decoded payload generation stamps presentation", payloadStore.engineGeneration, payloadGeneration)
         runner.equal(
-            "decoded payload generation updates now-playing title", payloadStore.state.currentTrack?.title,
-            "Payload generation")
+            "decoded payload generation stamps presentation",
+            payloadStore.engineGeneration,
+            payloadGeneration
+        )
+        runner.equal(
+            "decoded payload generation keeps now-playing title",
+            payloadStore.state.currentTrack?.title,
+            "Now"
+        )
         runner.check(
             "decoded payload generation stamps the mutation snapshot",
             await waitUntil { payloadStore.queueMutation?.engineEpoch == payloadGeneration }
@@ -800,17 +813,15 @@ func runPlaybackEventOutcomeChecks(_ runner: CheckRunner) async {
         let liveGeneration = bumpedStore.engineGeneration
         runner.check("playback adopted a newer engine epoch during the snapshot await", liveGeneration > beforeBump)
         bumpedEngine.release(
-            queueSnapshotJSON(
+            queueSnapshot(
                 uri: uri,
-                name: "Live generation",
-                artist: "Live artist",
                 revision: 4,
                 sessionGeneration: liveGeneration
             )
         )
         runner.check(
             "a snapshot decoded after a live engine bump still stamps the payload generation",
-            await waitUntil { bumpedStore.state.currentTrack?.title == "Live generation" }
+            await waitUntil { bumpedStore.state.engineEpoch == liveGeneration }
         )
         runner.equal(
             "a live-generation snapshot keeps reducer epoch aligned", bumpedStore.state.engineEpoch, liveGeneration)
@@ -831,10 +842,8 @@ func runPlaybackEventOutcomeChecks(_ runner: CheckRunner) async {
         let stalePayloadSnapshot = stalePayload.effects.settlement(of: .queueSnapshot)
         bumpEngine(stalePayload)
         stalePayloadEngine.release(
-            queueSnapshotJSON(
+            queueSnapshot(
                 uri: uri,
-                name: "Stale payload",
-                artist: "Stale artist",
                 revision: 5,
                 sessionGeneration: staleBefore
             )

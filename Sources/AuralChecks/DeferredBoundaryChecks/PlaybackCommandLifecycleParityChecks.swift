@@ -76,7 +76,7 @@ private final class LifecycleLocalEngine: LocalPlaybackEngine, @unchecked Sendab
         return result
     }
     func positionMilliseconds() -> UInt32 { 0 }
-    func queueSnapshotJSON() -> String? { nil }
+    func queueSnapshot() -> RustQueueState? { nil }
     func configureHighQualityPlayback() {}
     func shutdown() -> PlaybackEngineResult { .ok }
     func cleanup() {}

@@ -384,7 +384,7 @@ pub(crate) fn cleanup_player_globals() {
     // snapshot makes that read as "this is the queue", and a freshly logged-in account gets
     // the previous one's. The device list is a dedup cache, so a stale entry would suppress
     // the first update after a login as unchanged.
-    *LAST_QUEUE_JSON.lock().unwrap_or_else(|e| e.into_inner()) = None;
+    *LAST_QUEUE.lock().unwrap_or_else(|e| e.into_inner()) = None;
     *LAST_DEVICES_FINGERPRINT
         .lock()
         .unwrap_or_else(|e| e.into_inner()) = None;

@@ -558,13 +558,14 @@ fn control_snapshot_stamps_are_monotonic_and_session_scoped() {
 #[test]
 fn exported_c_function_signatures_are_stable() {
     let _: extern "C" fn(*mut c_char) = aural_playback_free_string;
+    let _: extern "C" fn(*mut AuralQueueSnapshot) = aural_playback_free_queue_snapshot;
     let _: extern "C" fn() = aural_playback_clear_streaming_credentials;
     let _: extern "C" fn() = aural_playback_cleanup;
-    let _: [extern "C" fn() -> *mut c_char; 3] = [
-        aural_playback_get_queue_snapshot,
+    let _: [extern "C" fn() -> *mut c_char; 2] = [
         aural_playback_get_resume_context_uri,
         aural_playback_get_resume_track_uri,
     ];
+    let _: extern "C" fn() -> *mut AuralQueueSnapshot = aural_playback_get_queue_snapshot;
 
     let _: [extern "C" fn() -> i32; 8] = [
         aural_playback_force_reconnect,
@@ -594,7 +595,7 @@ fn exported_c_function_signatures_are_stable() {
     let _: extern "C" fn(bool) -> i32 = aural_playback_set_repeat_track;
     let _: extern "C" fn(bool) = aural_playback_set_gapless;
 
-    let _: extern "C" fn(extern "C" fn(*const c_char)) = aural_playback_register_queue_callback;
+    let _: extern "C" fn(QueueSnapshotCallback) = aural_playback_register_queue_callback;
     let _: extern "C" fn(PlaybackSnapshotCallback) =
         aural_playback_register_playback_state_callback;
     let _: extern "C" fn(DevicesSnapshotCallback) = aural_playback_register_devices_callback;
@@ -1027,6 +1028,7 @@ const FFI_PANIC_BARRIERS: &[&str] = &[
     "ffi_query_u8",
     "ffi_query_bool",
     "ffi_owned_string",
+    "ffi_owned_ptr",
     "ffi_void",
 ];
 

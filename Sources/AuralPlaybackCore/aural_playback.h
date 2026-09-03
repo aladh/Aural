@@ -133,11 +133,63 @@ char* _Nullable aural_playback_get_resume_context_uri(void);
 /// Caller frees with `aural_playback_free_string`. Empty string is a valid context hint.
 char* _Nullable aural_playback_get_resume_track_uri(void);
 
-/// Callback function type for queue updates.
-/// Receives a JSON string containing the queue state.
-typedef void (*QueueCallback)(const char* queue_json);
+/// One Connect metadata pair. Pointers are valid only for the callback or until
+/// `aural_playback_free_queue_snapshot`. NULL means missing.
+typedef struct AuralStringPair {
+    const char* _Nullable key;
+    const char* _Nullable value;
+} AuralStringPair;
 
-/// Registers a callback to receive queue updates.
+/// One restriction key with its reason list.
+typedef struct AuralRestriction {
+    const char* _Nullable key;
+    const char* _Nullable const* _Nullable reasons;
+    size_t reason_count;
+} AuralRestriction;
+
+/// Unfiltered Connect queue row. String and nested pointers are valid only for the
+/// callback or until `aural_playback_free_queue_snapshot`. NULL means missing.
+typedef struct AuralProtocolQueueTrack {
+    const char* _Nullable uri;
+    const char* _Nullable uid;
+    const char* _Nullable provider;
+    const AuralStringPair* _Nullable metadata;
+    size_t metadata_count;
+    const char* _Nullable const* _Nullable removed;
+    size_t removed_count;
+    const char* _Nullable const* _Nullable blocked;
+    size_t blocked_count;
+    const AuralRestriction* _Nullable restrictions;
+    size_t restriction_count;
+    const char* _Nullable album_uri;
+    const char* _Nullable const* _Nullable disallow_reasons;
+    size_t disallow_reason_count;
+    const char* _Nullable artist_uri;
+} AuralProtocolQueueTrack;
+
+/// Queue observation. Pointers are valid only for the callback or until
+/// `aural_playback_free_queue_snapshot`. NULL `next_tracks`/`prev_tracks` with count 0
+/// is an empty list. A missing current track is three NULL track fields.
+typedef struct AuralQueueSnapshot {
+    uint64_t revision;
+    uint64_t session_generation;
+    const char* _Nullable track_uri;
+    const char* _Nullable track_provider;
+    const char* _Nullable track_uid;
+    const AuralProtocolQueueTrack* _Nullable next_tracks;
+    size_t next_count;
+    const AuralProtocolQueueTrack* _Nullable prev_tracks;
+    size_t prev_count;
+    const char* _Nullable queue_revision;
+    uint8_t disallow_set_queue;
+    uint8_t disallow_removing_from_next_tracks;
+} AuralQueueSnapshot;
+
+/// Callback function type for queue updates.
+/// Receives a typed snapshot. Pointers are valid only for the callback.
+typedef void (*QueueCallback)(const AuralQueueSnapshot* snapshot);
+
+/// Registers a callback to receive queue updates from cluster snapshots.
 void aural_playback_register_queue_callback(QueueCallback callback);
 
 /// Playback observation. `track_uri` and `context_uri` are valid only for the callback;
@@ -172,10 +224,13 @@ void aural_playback_register_playback_state_callback(PlaybackStateCallback callb
 ///   2 = No session initialized (nothing to reconnect)
 int32_t aural_playback_force_reconnect(void);
 
-/// Returns the last queue the Connect cluster described, as JSON, or NULL if no cluster
-/// update has arrived yet. Caller owns the string and must free it with aural_playback_free_string.
+/// Returns the last queue the Connect cluster described, or NULL if no cluster update has
+/// arrived yet. Caller must copy strings before calling `aural_playback_free_queue_snapshot`.
 /// Replaces the Web API's /me/player and /me/player/queue for Swift's bootstrap.
-char* _Nullable aural_playback_get_queue_snapshot(void);
+AuralQueueSnapshot* _Nullable aural_playback_get_queue_snapshot(void);
+
+/// Frees a queue snapshot allocated by `aural_playback_get_queue_snapshot`. Tolerates NULL.
+void aural_playback_free_queue_snapshot(AuralQueueSnapshot* _Nullable snapshot);
 
 /// One cluster member. String pointers are valid only for the callback. NULL means missing.
 typedef struct AuralProtocolDevice {

@@ -12,7 +12,3 @@ func boundaryFixture(named name: String, subdirectory: String = "Fixtures") thro
     }
     return try Data(contentsOf: url)
 }
-
-func enginePayloadFixture(named name: String) throws -> Data {
-    try boundaryFixture(named: name, subdirectory: "Fixtures/engine")
-}

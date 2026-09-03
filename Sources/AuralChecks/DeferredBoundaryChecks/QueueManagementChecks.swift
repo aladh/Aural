@@ -29,7 +29,7 @@ private final class QueueLocalEngine: LocalPlaybackEngine, @unchecked Sendable {
         return result
     }
     func positionMilliseconds() -> UInt32 { 0 }
-    func queueSnapshotJSON() -> String? { nil }
+    func queueSnapshot() -> RustQueueState? { nil }
     func configureHighQualityPlayback() {}
     func shutdown() -> PlaybackEngineResult { .ok }
     func cleanup() {}
@@ -332,35 +332,20 @@ private func connectQueueState(revision: UInt64, sessionGeneration: UInt64) -> R
         ("spotify:track:other", "q2"),
     ]
     return RustQueueState(
+        revision: revision,
+        sessionGeneration: sessionGeneration,
         track: RustQueueState.Item(
             uri: "spotify:track:now",
-            name: "Now",
-            artist: "Artist",
-            imageURL: "",
-            durationMS: 1,
             provider: "context",
             uid: "occ-now"
         ),
         protocolNextTracks: next.map {
-            RustQueueState.ProtocolTrack(
-                uri: $0.0,
-                uid: $0.1,
-                provider: "queue",
-                metadata: [:],
-                removed: [],
-                blocked: [],
-                restrictions: [:],
-                albumURI: "",
-                disallowReasons: [],
-                artistURI: ""
-            )
+            QueueProtocolTrack(uri: $0.0, uid: $0.1, provider: "queue")
         },
         protocolPrevTracks: [],
         queueRevision: "rev-\(revision)",
         disallowSetQueue: false,
-        disallowRemovingFromNextTracks: false,
-        revision: revision,
-        sessionGeneration: sessionGeneration
+        disallowRemovingFromNextTracks: false
     )
 }
 
@@ -374,7 +359,9 @@ func runQueueManagementChecks(_ runner: CheckRunner) async {
                         uri: "spotify:track:keep",
                         uid: "q0",
                         provider: "queue",
-                        metadata: ["aural.sentinel": "keep-me", "is_queued": "true"]
+                        metadata: ["aural.sentinel": "keep-me", "is_queued": "true"],
+                        albumURI: "spotify:album:fixture",
+                        artistURI: "spotify:artist:fixture"
                     ),
                     QueueProtocolTrack(
                         uri: "spotify:delimiter",
@@ -394,7 +381,8 @@ func runQueueManagementChecks(_ runner: CheckRunner) async {
                         uri: "spotify:track:prev",
                         uid: "p0",
                         provider: "context",
-                        metadata: ["aural.sentinel": "prev-keep"]
+                        metadata: ["aural.sentinel": "prev-keep"],
+                        removed: ["removed-reason"]
                     )
                 ],
                 queueRevision: "rev-9"
@@ -434,90 +422,21 @@ func runQueueManagementChecks(_ runner: CheckRunner) async {
                 jsonStringMap(prev?.first?["metadata"])["aural.sentinel"] ?? "",
                 "prev-keep"
             )
-        }
-    }
-
-    runner.suite("Rust protocol JSON round-trips metadata into set_queue") {
-        runner.noThrow("sentinel metadata survives Rust JSON, Swift decode, and Connect encode") {
-            let rustJSON = """
-                {
-                  "protocol_next_tracks": [
-                    {
-                      "uri": "spotify:track:keep",
-                      "uid": "q0",
-                      "provider": "queue",
-                      "metadata": {"aural.sentinel": "keep-me", "is_queued": "true"},
-                      "album_uri": "spotify:album:fixture",
-                      "artist_uri": "spotify:artist:fixture"
-                    },
-                    {
-                      "uri": "spotify:delimiter",
-                      "uid": "",
-                      "provider": "delimiter",
-                      "metadata": {"aural.sentinel": "delimiter-keep"}
-                    },
-                    {
-                      "uri": "spotify:track:autoplay",
-                      "uid": "a0",
-                      "provider": "autoplay",
-                      "metadata": {"aural.sentinel": "autoplay-keep"}
-                    }
-                  ],
-                  "protocol_prev_tracks": [
-                    {
-                      "uri": "spotify:track:prev",
-                      "uid": "p0",
-                      "provider": "context",
-                      "metadata": {"aural.sentinel": "prev-keep"},
-                      "removed": ["removed-reason"]
-                    }
-                  ],
-                  "queue_revision": "rev-roundtrip"
-                }
-                """
-            let state = try JSONDecoder().decode(
-                RustQueueState.self,
-                from: Data(rustJSON.utf8)
-            )
-            let next = (state.protocolNextTracks ?? []).map { $0.domainTrack() }
-            let prev = (state.protocolPrevTracks ?? []).map { $0.domainTrack() }
-            runner.equal("decoded next sentinel", next.first?.metadata["aural.sentinel"] ?? "", "keep-me")
-            runner.equal("decoded album_uri", next.first?.albumURI ?? "", "spotify:album:fixture")
-            runner.equal("decoded prev removed", prev.first?.removed ?? [], ["removed-reason"])
-            let encoded = try JSONEncoder().encode(
-                SpotifyConnectCommand.setQueue(
-                    next: next,
-                    prev: prev,
-                    queueRevision: state.queueRevision ?? ""
-                )
-            )
-            let object = try JSONSerialization.jsonObject(with: encoded) as? [String: Any]
-            let encodedNext = object?["next_tracks"] as? [[String: Any]]
-            let encodedPrev = object?["prev_tracks"] as? [[String: Any]]
             runner.equal(
-                "round-trip next sentinel",
-                jsonStringMap(encodedNext?.first?["metadata"])["aural.sentinel"] ?? "",
-                "keep-me"
+                "next_tracks encodes album_uri",
+                next?.first?["album_uri"] as? String,
+                "spotify:album:fixture"
             )
             runner.equal(
-                "round-trip delimiter sentinel",
-                jsonStringMap(encodedNext?[1]["metadata"])["aural.sentinel"] ?? "",
-                "delimiter-keep"
+                "next_tracks encodes artist_uri",
+                next?.first?["artist_uri"] as? String,
+                "spotify:artist:fixture"
             )
             runner.equal(
-                "round-trip autoplay sentinel",
-                jsonStringMap(encodedNext?.last?["metadata"])["aural.sentinel"] ?? "",
-                "autoplay-keep"
+                "prev_tracks encodes removed",
+                prev?.first?["removed"] as? [String] ?? [],
+                ["removed-reason"]
             )
-            runner.equal(
-                "round-trip prev sentinel",
-                jsonStringMap(encodedPrev?.first?["metadata"])["aural.sentinel"] ?? "",
-                "prev-keep"
-            )
-            runner.equal(
-                "round-trip prev removed", encodedPrev?.first?["removed"] as? [String] ?? [], ["removed-reason"])
-            runner.equal(
-                "round-trip album_uri", encodedNext?.first?["album_uri"] as? String ?? "", "spotify:album:fixture")
         }
     }
 
@@ -952,7 +871,15 @@ func runQueueManagementChecks(_ runner: CheckRunner) async {
             await waitUntil { player.state.engineEpoch == payloadGeneration }
         )
         runner.equal("G+1 queue presentation stamps the payload generation", player.engineGeneration, payloadGeneration)
-        runner.equal("G+1 queue presentation keeps the payload track", player.state.currentTrack?.title, "Now")
+        runner.equal(
+            "G+1 queue presentation keeps the payload track URI",
+            player.state.currentTrack?.uri,
+            "spotify:track:now"
+        )
+        runner.check(
+            "G+1 queue hydrates catalog names after URI-only identity",
+            await waitUntil { player.state.currentTrack?.title == "Metadata" }
+        )
         runner.check(
             "G+1 queue mutation snapshot uses the payload generation",
             await waitUntil { player.queueMutation?.engineEpoch == payloadGeneration }
@@ -1408,7 +1335,8 @@ func runQueueManagementChecks(_ runner: CheckRunner) async {
             runner.check(
                 "queue snapshot refresh stamps decoded payload generation",
                 containsToken(queue, "engineEpoch: state.sessionGeneration")
-                    && containsToken(queue, "if state.sessionGeneration == nil")
+                    && containsToken(queue, "generation: state.sessionGeneration")
+                    && !containsToken(queue, "if state.sessionGeneration == nil")
             )
             runner.check(
                 "Connect queue accept is registered on the effect registry",
@@ -1421,7 +1349,9 @@ func runQueueManagementChecks(_ runner: CheckRunner) async {
                 "Connect queue callbacks stamp payload sessionGeneration rather than the engineGeneration mirror",
                 containsToken(
                     engineEvents, "receive(state, revision: state.revision, engineEpoch: state.sessionGeneration)")
-                    && containsToken(engineEvents, "capturedEngineEpoch ?? state.sessionGeneration ?? engineGeneration")
+                    && containsToken(engineEvents, "capturedEngineEpoch ?? state.sessionGeneration")
+                    && !containsToken(
+                        engineEvents, "capturedEngineEpoch ?? state.sessionGeneration ?? engineGeneration")
             )
             runner.check(
                 "typed occurrence crosses queue merge and presentation without reparsing identity",
@@ -1435,7 +1365,7 @@ func runQueueManagementChecks(_ runner: CheckRunner) async {
             runner.check(
                 "local engine still has no set_queue operation",
                 !containsToken(engine, "setQueue")
-                    && !containsToken(control, "set_queue")
+                    && !containsToken(control, "aural_playback_set_queue")
                     && containsToken(control, "aural_playback_add_to_queue")
             )
         }

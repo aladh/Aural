@@ -5,7 +5,6 @@
 
 import Foundation
 @testable import AuralCore
-import enum AuralDomain.QueueProtocolProjection
 import struct AuralDomain.QueueProtocolTrack
 
 @MainActor
@@ -328,27 +327,26 @@ func runPlaybackPanelChecks(_ check: CheckRunner) {
     }
 
     check.suite("Queue and device decoding") {
-        // Engine queue snapshots carry current-track identity and unfiltered protocol
-        // rows. Swift projects the upcoming rail and catalog supplies labels.
-        let queueJSON = """
-            {"track":{"uri":"spotify:track:now","provider":"context","uid":"occ-now"},
-             "protocol_next_tracks":[
-              {"uri":"spotify:track:next1","provider":"queue","uid":"q0"},
-              {"uri":"spotify:delimiter","provider":"delimiter","uid":""},
-              {"uri":"spotify:track:autoplay","provider":"autoplay","uid":""}]}
-            """
-        do {
-            let decoded = try JSONDecoder().decode(RustQueueState.self, from: Data(queueJSON.utf8))
-            check.equal("current track keeps identity", decoded.track?.uri, "spotify:track:now")
-            let upcoming = QueueProtocolProjection.upcomingEntries(
-                from: (decoded.protocolNextTracks ?? []).map { $0.domainTrack() }
-            )
-            check.equal("upcoming projection keeps providers", upcoming.first?.provider, "queue")
-            check.equal("delimiter is hidden from the upcoming rail", upcoming.count, 1)
-            check.equal("protocol transport keeps delimiter and autoplay", decoded.protocolNextTracks?.count, 3)
-        } catch {
-            check.check("queue state decodes: \(error)", false)
-        }
+        // DTO-shape smoke: current-track identity is uri/provider/uid, not catalog labels.
+        // Upcoming presentation lives in the QueueProtocolProjection domain suite; wire
+        // coverage is Rust layout/callback/getter tests (`TST-QUE-001`).
+        let decoded = RustQueueState(
+            revision: 1,
+            sessionGeneration: 1,
+            track: RustQueueState.Item(
+                uri: "spotify:track:now",
+                provider: "context",
+                uid: "occ-now"
+            ),
+            protocolNextTracks: [],
+            protocolPrevTracks: [],
+            queueRevision: "",
+            disallowSetQueue: false,
+            disallowRemovingFromNextTracks: false
+        )
+        check.equal("current track keeps identity", decoded.track?.uri, "spotify:track:now")
+        check.equal("current track keeps provider", decoded.track?.provider, "context")
+        check.equal("current track keeps uid", decoded.track?.uid, "occ-now")
 
         let devicesJSON = """
             [{"id":"abc123","name":"Living Room","type":"speaker","is_active":false,

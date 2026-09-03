@@ -23,79 +23,22 @@ nonisolated struct RustPlaybackState: Sendable {
     let repeatContext: Bool
 }
 
-nonisolated struct RustQueueState: Decodable, Sendable {
+nonisolated struct RustQueueState: Sendable {
     /// Current-track identity from the engine. Catalog enrichment supplies names.
-    /// Optional label fields remain decodable for older snapshots and check fixtures.
-    struct Item: Decodable, Sendable {
+    struct Item: Sendable {
         let uri: String
-        var name: String?
-        var artist: String?
-        var imageURL: String?
-        var durationMS: UInt32?
-        var provider: String?
-        var uid: String?
-
-        enum CodingKeys: String, CodingKey {
-            case uri, name, artist, provider, uid
-            case imageURL = "image_url"
-            case durationMS = "duration_ms"
-        }
-    }
-
-    struct ProtocolTrack: Decodable, Sendable {
-        let uri: String
-        let uid: String
         let provider: String
-        var metadata: [String: String]?
-        var removed: [String]?
-        var blocked: [String]?
-        var restrictions: [String: [String]]?
-        var albumURI: String?
-        var disallowReasons: [String]?
-        var artistURI: String?
-
-        enum CodingKeys: String, CodingKey {
-            case uri, uid, provider, metadata, removed, blocked, restrictions
-            case albumURI = "album_uri"
-            case disallowReasons = "disallow_reasons"
-            case artistURI = "artist_uri"
-        }
-
-        func domainTrack() -> QueueProtocolTrack {
-            QueueProtocolTrack(
-                uri: uri,
-                uid: uid,
-                provider: provider,
-                metadata: metadata ?? [:],
-                removed: removed ?? [],
-                blocked: blocked ?? [],
-                restrictions: restrictions ?? [:],
-                albumURI: albumURI ?? "",
-                disallowReasons: disallowReasons ?? [],
-                artistURI: artistURI ?? ""
-            )
-        }
+        let uid: String
     }
 
+    let revision: UInt64
+    let sessionGeneration: UInt64
     let track: Item?
-    var protocolNextTracks: [ProtocolTrack]?
-    var protocolPrevTracks: [ProtocolTrack]?
-    var queueRevision: String?
-    var disallowSetQueue: Bool?
-    var disallowRemovingFromNextTracks: Bool?
-    var revision: UInt64?
-    var sessionGeneration: UInt64?
-
-    enum CodingKeys: String, CodingKey {
-        case track
-        case protocolNextTracks = "protocol_next_tracks"
-        case protocolPrevTracks = "protocol_prev_tracks"
-        case queueRevision = "queue_revision"
-        case disallowSetQueue = "disallow_set_queue"
-        case disallowRemovingFromNextTracks = "disallow_removing_from_next_tracks"
-        case revision
-        case sessionGeneration = "session_generation"
-    }
+    let protocolNextTracks: [QueueProtocolTrack]
+    let protocolPrevTracks: [QueueProtocolTrack]
+    let queueRevision: String
+    let disallowSetQueue: Bool
+    let disallowRemovingFromNextTracks: Bool
 }
 
 nonisolated struct RustConnectionState: Sendable {
