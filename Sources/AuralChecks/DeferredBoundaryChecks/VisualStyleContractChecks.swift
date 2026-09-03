@@ -108,8 +108,8 @@ func runVisualStyleContractChecks(_ runner: CheckRunner) {
                 palette.contains(
                     "static let playerShelf = Color(red: 0.035, green: 0.035, blue: 0.035)"
                 )
-                    && palette.contains("static let playerPrimary = Color.white.opacity(0.92)")
-                    && palette.contains("static let playerSecondary = Color.white.opacity(0.62)")
+                    && palette.contains("static let playerPrimary = Color.primary.opacity(0.92)")
+                    && palette.contains("static let playerSecondary = Color.secondary.opacity(0.92)")
                     && playerBar.contains(".fill(AuralPalette.playerShelf)")
                     && playerBar.contains("player.hasCurrentTrack ? 64 : 60")
                     && playerBar.contains(".frame(minWidth: 500, maxWidth: 520)")
