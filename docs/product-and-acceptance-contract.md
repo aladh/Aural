@@ -117,13 +117,14 @@ ADRs; historical measurements belong in the performance baseline.
   is playing. A paused current URI keeps its green display ordinal; selected rows retain native
   selection foregrounds. Both current states expose the position to accessibility.
   Playlist row durations round each track to the nearest second for display, and the hero's total
-  sums those same rounded per-track seconds; player and progress formatting retain their existing
-  floor-to-second behavior.
+  sums those same rounded per-track seconds. Totals of at least one hour use `hr`/`min` units;
+  player and progress formatting retain their existing floor-to-second behavior.
   Shared search, library, and album tables retain their separate Artist, Popularity, BPM, Key, and
   Time columns.
 - Playlist tables initially present newest Date Added first to match Spotify's Recently added
   presentation. This is a local display projection and never mutates the playlist store's source
-  order; clearing table sorting restores that authoritative playlist order.
+  order. The native **Restore Playlist Order** toolbar command clears that projection and restores
+  the authoritative playlist order; it is disabled when the table is already in source order.
 - Clicking **Date Added** sorts directly and reverses the order on the next click through native
   table sorting; it must never open a picker or menu. Clearing table sorting restores playlist
   order.

@@ -86,6 +86,11 @@ func runVisualStyleContractChecks(_ runner: CheckRunner) {
                 from: "            if variant == .playlist {",
                 through: "            } else {"
             )
+            let playlistTitleCell = try visualStyleSourceSection(
+                table,
+                from: "    private func playlistTitleCell",
+                through: "    private func titleCell"
+            )
             let playerBar = try visualStyleSourceFile("Aural/Views/NowPlayingBar.swift")
             let playerComponents = try visualStyleSourceFile("Aural/Views/NowPlayingComponents.swift")
             let trailingControls = try visualStyleSourceSection(
@@ -131,10 +136,9 @@ func runVisualStyleContractChecks(_ runner: CheckRunner) {
             )
             runner.check(
                 "playlist tables start with a local newest-date projection",
-                playlistDetail.contains("initialSortOrder: newestFirstDateAdded")
-                    && playlistDetail.contains(".id(item.uri)")
-                    && table.contains("initialSortOrder: [KeyPathComparator<TrackTableRow>] = []")
-                    && table.contains("_sortOrder = State(initialValue: initialSortOrder)")
+                playlistDetail.contains("variant: .playlist")
+                    && table.contains("let initialSortOrder = variant.initialSortOrder")
+                    && table.contains("case .playlist:")
                     && table.contains("sortOrder: initialSortOrder")
             )
             runner.check(
@@ -151,7 +155,7 @@ func runVisualStyleContractChecks(_ runner: CheckRunner) {
                     && !playlistTableColumns.contains("TableColumn(\"Popularity\"")
                     && !playlistTableColumns.contains("TableColumn(\"BPM\"")
                     && !playlistTableColumns.contains("TableColumn(\"Key\"")
-                    && table.contains("RemoteArtwork(")
+                    && playlistTitleCell.contains("RemoteArtwork(")
             )
             runner.check(
                 "playlist table rows use cached display positions and semantic current-track labels",
@@ -162,7 +166,8 @@ func runVisualStyleContractChecks(_ runner: CheckRunner) {
                     && table.contains("playlistRowMinimumHeight")
                     && table.contains("Current track, track \\(position) of \\(total)")
                     && table.contains("formatCatalogDuration(row.track.duration)")
-                    && table.contains("kind: .track")
+                    && playlistTitleCell.contains("kind: .track")
+                    && playlistTitleCell.contains("pointSize: 30")
             )
             runner.check(
                 "playlist hero title is a responsive accessibility heading",
@@ -173,9 +178,21 @@ func runVisualStyleContractChecks(_ runner: CheckRunner) {
             )
             runner.check(
                 "playlist actions keep one green circular play control",
-                playlistDetail.contains("PlaylistPlayButton(action: play, isEnabled: canPlay)")
-                    && playlistDetail.contains("background(AuralPalette.mediaGreen, in: Circle())")
-                    && !playlistDetail.contains("CircularPlayButton(action: play)")
+                playlistDetail.contains("CircularPlayButton(action: play, isEnabled: canPlay)")
+                    && table.contains("struct CircularPlayButton")
+                    && table.contains(".buttonBorderShape(.circle)")
+                    && table.contains(".opacity(isEnabled ? 1 : 0.45)")
+                    && table.contains(".disabled(!isEnabled)")
+                    && table.contains(".help(\"Play\")")
+                    && !playlistDetail.contains("PlaylistPlayButton")
+            )
+            runner.check(
+                "playlist source order has a native accessible restore path",
+                table.contains(".toolbar {")
+                    && table.contains("Button(\"Restore Playlist Order\", systemImage: \"arrow.uturn.backward\")")
+                    && table.contains("sortOrder = []")
+                    && table.contains(".disabled(sortOrder.isEmpty)")
+                    && table.contains(".accessibilityHint(\"Show tracks in the playlist's saved order\")")
             )
             runner.check(
                 "the persistent player uses a compact near-black shelf",

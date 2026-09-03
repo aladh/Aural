@@ -31,6 +31,8 @@ func runFormattingChecks(_ check: CheckRunner) {
         check.equal("playlist duration uses Spotify-style units", formatPlaylistDuration(2_564), "42 min 44 sec")
         check.equal("playlist duration omits a zero seconds component", formatPlaylistDuration(60), "1 min")
         check.equal("playlist duration clamps invalid values", formatPlaylistDuration(-5), "0 sec")
+        check.equal("playlist duration uses hours without trailing minutes", formatPlaylistDuration(3_600), "1 hr")
+        check.equal("playlist duration uses hours and minutes", formatPlaylistDuration(3_661), "1 hr 1 min")
         check.equal(
             "playlist durations reject finite values outside Int range",
             formatPlaylistDuration(.greatestFiniteMagnitude),

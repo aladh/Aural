@@ -49,6 +49,12 @@ struct CatalogTableDivider: View {
 /// A compact, unambiguous primary action for artwork-led detail headers.
 struct CircularPlayButton: View {
     let action: () -> Void
+    let isEnabled: Bool
+
+    init(action: @escaping () -> Void, isEnabled: Bool = true) {
+        self.action = action
+        self.isEnabled = isEnabled
+    }
 
     var body: some View {
         Button(action: action) {
@@ -62,6 +68,8 @@ struct CircularPlayButton: View {
         .buttonBorderShape(.circle)
         .controlSize(.large)
         .tint(AuralPalette.mediaGreen)
+        .opacity(isEnabled ? 1 : 0.45)
+        .disabled(!isEnabled)
         .help("Play")
         .accessibilityLabel("Play")
     }
@@ -203,8 +211,7 @@ struct MediaDetailHeader: View {
                     .lineLimit(2)
             }
 
-            CircularPlayButton(action: play)
-                .disabled(!canPlay)
+            CircularPlayButton(action: play, isEnabled: canPlay)
                 .accessibilityHint("Starts this \(item.kind.rawValue.lowercased())")
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -221,6 +228,15 @@ struct MediaDetailHeader: View {
 enum TrackTableVariant: Equatable {
     case catalog
     case playlist
+
+    var initialSortOrder: [KeyPathComparator<TrackTableRow>] {
+        switch self {
+        case .catalog:
+            []
+        case .playlist:
+            [KeyPathComparator(\TrackTableRow.dateAddedSortValue, order: .reverse)]
+        }
+    }
 }
 
 /// A native macOS table shared by playlists, search results, and track libraries.
@@ -230,9 +246,7 @@ struct TrackTable: View {
     let tracks: CatalogTrackCollection
     let metadata: CatalogMetadataRepository
     let playback: CatalogPlaybackAccess
-    var showsDateAdded = false
     let variant: TrackTableVariant
-    let initialSortOrder: [KeyPathComparator<TrackTableRow>]
     var playlistActions: TrackPlaylistActions?
     @State private var selection: Set<CatalogTrack.ID> = []
     @State private var sortOrder: [KeyPathComparator<TrackTableRow>] = []
@@ -242,18 +256,15 @@ struct TrackTable: View {
         tracks: CatalogTrackCollection,
         metadata: CatalogMetadataRepository,
         playback: CatalogPlaybackAccess,
-        showsDateAdded: Bool = false,
         variant: TrackTableVariant = .catalog,
-        initialSortOrder: [KeyPathComparator<TrackTableRow>] = [],
         playlistActions: TrackPlaylistActions? = nil
     ) {
         self.tracks = tracks
         self.metadata = metadata
         self.playback = playback
-        self.showsDateAdded = showsDateAdded
         self.variant = variant
-        self.initialSortOrder = initialSortOrder
         self.playlistActions = playlistActions
+        let initialSortOrder = variant.initialSortOrder
         _sortOrder = State(initialValue: initialSortOrder)
         _displayCache = State(
             initialValue: TrackTableDisplayCache(
@@ -336,14 +347,6 @@ struct TrackTable: View {
                 }
                 .width(38)
 
-                if showsDateAdded {
-                    TableColumn("Date Added", value: \.dateAddedSortValue) { row in
-                        Text(formatDateAdded(row.track.addedAt))
-                            .foregroundStyle(.secondary)
-                    }
-                    .width(90)
-                }
-
                 TableColumn("Time", value: \.duration) { row in
                     Text(formatDuration(row.track.duration))
                         .monospacedDigit()
@@ -425,6 +428,18 @@ struct TrackTable: View {
         }
         .scrollContentBackground(.hidden)
         .background(Color.clear)
+        .toolbar {
+            if variant == .playlist {
+                ToolbarItem {
+                    Button("Restore Playlist Order", systemImage: "arrow.uturn.backward") {
+                        sortOrder = []
+                    }
+                    .disabled(sortOrder.isEmpty)
+                    .help("Restore the playlist's saved order")
+                    .accessibilityHint("Show tracks in the playlist's saved order")
+                }
+            }
+        }
     }
 
     private var displayInputs: TrackTableDisplayInputs {

@@ -16,7 +16,7 @@ public struct TrackTableDisplayCache: Sendable {
     /// `sourceIndex` remains the identity used for deterministic tie-breaking and mutation
     /// ordering; this separate projection lets table cells render their current sorted position
     /// without scanning the displayed rows for every cell.
-    public private(set) var displayPositions: [Int: Int]
+    private var displayPositions: [Int: Int]
     private var version: UUID
     private var sortValuesRevision: UInt64
     private var sortOrder: [KeyPathComparator<TrackTableRow>]

@@ -202,7 +202,9 @@ func runTrackTableDisplayCacheChecks(_ check: CheckRunner) {
         )
         check.equal(
             "display positions map back to source occurrences",
-            dateCache.displayPositions,
+            dateCache.rows.reduce(into: [Int: Int]()) { positions, row in
+                positions[row.sourceIndex] = dateCache.displayPosition(for: row)
+            },
             [2: 1, 1: 2, 0: 3]
         )
         check.check("clearing the projection restores source order", dateCache.update(dated, sortOrder: []))

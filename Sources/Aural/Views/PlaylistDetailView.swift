@@ -85,7 +85,6 @@ struct PlaylistDetailView: View {
                     metadata: metadata,
                     playback: playback,
                     variant: .playlist,
-                    initialSortOrder: newestFirstDateAdded,
                     playlistActions: playlistActions
                 )
                 .id(item.uri)
@@ -152,9 +151,6 @@ struct PlaylistDetailView: View {
         return values.isEmpty ? nil : values.joined(separator: " · ")
     }
 
-    private var newestFirstDateAdded: [KeyPathComparator<TrackTableRow>] {
-        [KeyPathComparator(\TrackTableRow.dateAddedSortValue, order: .reverse)]
-    }
 }
 
 private struct PlaylistDetailHero: View {
@@ -263,7 +259,7 @@ private struct PlaylistDetailActionStrip: View {
 
     var body: some View {
         HStack {
-            PlaylistPlayButton(action: play, isEnabled: canPlay)
+            CircularPlayButton(action: play, isEnabled: canPlay)
             Spacer(minLength: 0)
         }
         .padding(.horizontal, CatalogLayout.contentPadding)
@@ -272,28 +268,13 @@ private struct PlaylistDetailActionStrip: View {
     }
 }
 
-private struct PlaylistPlayButton: View {
-    let action: () -> Void
-    let isEnabled: Bool
-
-    var body: some View {
-        Button(action: action) {
-            Image(systemName: "play.fill")
-                .font(.system(size: 16, weight: .bold))
-                .foregroundStyle(Color.black)
-                .frame(width: 44, height: 44)
-                .contentShape(Circle())
-        }
-        .buttonStyle(.plain)
-        .background(AuralPalette.mediaGreen, in: Circle())
-        .disabled(!isEnabled)
-        .accessibilityLabel("Play")
-        .accessibilityHint("Starts this playlist")
-    }
-}
-
 func formatPlaylistDuration(_ interval: TimeInterval) -> String {
     let totalSeconds = roundedCatalogDurationSeconds(interval)
+    let hours = totalSeconds / 3_600
+    if hours > 0 {
+        let minutes = (totalSeconds % 3_600) / 60
+        return minutes == 0 ? "\(hours) hr" : "\(hours) hr \(minutes) min"
+    }
     let minutes = totalSeconds / 60
     let seconds = totalSeconds % 60
     if minutes == 0 {
