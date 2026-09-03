@@ -101,12 +101,29 @@ ADRs; historical measurements belong in the performance baseline.
 
 ## Playlist behavior
 
-- The playlist hero begins close to the content edge, keeps a compact prominent Play button, and
-  preserves readable foreground contrast when the window is inactive.
-- The author and song count share the metadata line beside the artwork. Song count does not belong
-  in the track table.
-- Track rows contain no artwork. Title, Artist, Album, Popularity, BPM, Key, Date Added, and Time are
-  distinct native table columns.
+- The playlist hero begins close to the content edge and uses a compact approximately 230-point
+  dark blue-gray gradient surface with approximately 170-point artwork and a responsive, prominent
+  title. At approximately 840 points and wider, the title uses the large 64-point treatment while
+  retaining compact breakpoints and long-title scaling. It shows the loaded plain-text description
+  plus known owner, song count, and aggregate duration metadata without inferring public/private
+  visibility. A thin action strip contains the existing Play action as the only persistent playlist
+  action, and all foregrounds remain readable when the window is inactive.
+- The owner, song count, and total duration share the metadata line beside the artwork when the
+  current playlist snapshot is authoritative. Song count does not belong in the track table.
+- Playlist rows use the Spotify-familiar native columns `#`, `Title` (with 30–32-point track
+  artwork beside the stacked Artist), `Album`, `Date Added`, and `Duration`; artwork belongs in
+  the Title cell rather than a separate column. The `#` cell shows the one-based position in the
+  current display projection and becomes the current-track speaker indicator only while that URI
+  is playing. A paused current URI keeps its green display ordinal; selected rows retain native
+  selection foregrounds. Both current states expose the position to accessibility.
+  Playlist row durations round each track to the nearest second for display, and the hero's total
+  sums those same rounded per-track seconds; player and progress formatting retain their existing
+  floor-to-second behavior.
+  Shared search, library, and album tables retain their separate Artist, Popularity, BPM, Key, and
+  Time columns.
+- Playlist tables initially present newest Date Added first to match Spotify's Recently added
+  presentation. This is a local display projection and never mutates the playlist store's source
+  order; clearing table sorting restores that authoritative playlist order.
 - Clicking **Date Added** sorts directly and reverses the order on the next click through native
   table sorting; it must never open a picker or menu. Clearing table sorting restores playlist
   order.

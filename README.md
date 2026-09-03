@@ -46,7 +46,8 @@ music streaming only for Premium subscribers; review the current
   permits queue edits, preserving duplicates; Spotify Connect confirms a successful removal before
   the displayed queue changes.
 - Home, Search, profile, Liked Songs, playlists, albums, and artists from the signed-in account.
-- Sortable playlist metadata including Date Added, Popularity, BPM, and Camelot Key.
+- Sortable track metadata: playlist detail exposes Date Added, while shared catalog tables expose
+  Popularity, BPM, and Camelot Key where applicable.
 - Add selected tracks to an owned library playlist, and remove selected occurrences from an open
   owned playlist, with shared transient success and failure feedback.
 - Bounded artwork caching and local operational Unified Logging.

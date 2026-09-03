@@ -16,6 +16,7 @@ struct CatalogPlaybackAccess {
     var accountEpoch: UInt64 { player.state.accountEpoch }
     var canStartPlayback: Bool { player.canStartPlayback }
     var hasCurrentTrack: Bool { player.hasCurrentTrack }
+    var isPlaying: Bool { player.isPlaying }
     var currentTrackURI: String { player.trackURI }
     var statusText: String { player.statusText }
 

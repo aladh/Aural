@@ -178,6 +178,54 @@ func runTrackTableDisplayCacheChecks(_ check: CheckRunner) {
             dateCache.rows.map(\.id),
             ["old", "new", "undated"]
         )
+        check.check(
+            "the playlist's recently-added projection is newest first",
+            dateCache.update(
+                dated,
+                sortOrder: [KeyPathComparator(\TrackTableRow.dateAddedSortValue, order: .reverse)]
+            )
+        )
+        check.equal(
+            "newest date-added rows precede older rows",
+            dateCache.rows.map(\.id),
+            ["new", "old", "undated"]
+        )
+        check.equal(
+            "playlist source positions stay attached after sorting",
+            dateCache.rows.map(\.sourceIndex),
+            [2, 1, 0]
+        )
+        check.equal(
+            "sorted playlist rows receive one-based display positions",
+            dateCache.rows.map { dateCache.displayPosition(for: $0) },
+            [1, 2, 3]
+        )
+        check.equal(
+            "display positions map back to source occurrences",
+            dateCache.displayPositions,
+            [2: 1, 1: 2, 0: 3]
+        )
+        check.check("clearing the projection restores source order", dateCache.update(dated, sortOrder: []))
+        check.equal(
+            "the source collection remains oldest-to-newest",
+            dated.tracks.map(\.id),
+            ["undated", "old", "new"]
+        )
+        check.equal(
+            "clearing sorting restores the source order",
+            dateCache.rows.map(\.id),
+            ["undated", "old", "new"]
+        )
+        check.equal(
+            "clearing sorting restores playlist source positions",
+            dateCache.rows.map(\.sourceIndex),
+            [0, 1, 2]
+        )
+        check.equal(
+            "clearing sorting restores one-based display positions",
+            dateCache.rows.map { dateCache.displayPosition(for: $0) },
+            [1, 2, 3]
+        )
 
         let first = track(id: "uid-a", title: "Zebra")
         let second = CatalogTrack(

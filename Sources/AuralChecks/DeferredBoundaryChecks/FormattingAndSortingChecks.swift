@@ -15,6 +15,12 @@ func runFormattingChecks(_ check: CheckRunner) {
         check.equal("crossing the minute", formatDuration(61), "1:01")
         // Long tracks are not wrapped into hours.
         check.equal("hour-plus duration", formatDuration(3_661), "61:01")
+        check.equal("catalog durations round to nearest second", formatCatalogDuration(3.5), "0:04")
+        check.equal("catalog durations clamp invalid values", formatCatalogDuration(-0.5), "0:00")
+        check.equal("catalog duration seconds use the same rounded value", roundedCatalogDurationSeconds(61.6), 62)
+        check.equal("playlist duration uses Spotify-style units", formatPlaylistDuration(2_564), "42 min 44 sec")
+        check.equal("playlist duration omits a zero seconds component", formatPlaylistDuration(60), "1 min")
+        check.equal("playlist duration clamps invalid values", formatPlaylistDuration(-5), "0 sec")
         check.equal("missing date renders an em dash", formatDateAdded(nil), "—")
         check.equal(
             "playlist descriptions discard Spotify markup",
