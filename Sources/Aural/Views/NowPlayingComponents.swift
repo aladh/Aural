@@ -8,7 +8,7 @@ struct NowPlayingTrackIdentity: View {
         HStack(spacing: 12) {
             Group {
                 if player.hasCurrentTrack {
-                    RemoteArtwork(url: player.displayedArtworkURL, kind: .track, cornerRadius: 7, pointSize: 48)
+                    RemoteArtwork(url: player.displayedArtworkURL, kind: .track, cornerRadius: 5, pointSize: 52)
                 } else {
                     ZStack {
                         RoundedRectangle(cornerRadius: 7, style: .continuous).fill(.quaternary)
@@ -20,7 +20,7 @@ struct NowPlayingTrackIdentity: View {
                     .accessibilityHidden(true)
                 }
             }
-            .frame(width: 48, height: 48)
+            .frame(width: 52, height: 52)
 
             VStack(alignment: .leading, spacing: 3) {
                 Text(player.displayedTrackTitle)
@@ -52,7 +52,7 @@ struct NowPlayingProgress: View {
                 ZStack(alignment: .leading) {
                     Capsule().fill(.quaternary).frame(height: height)
                     if player.hasCurrentTrack {
-                        Capsule().fill(AuralPalette.mediaGreen)
+                        Capsule().fill(isHovering ? AuralPalette.mediaGreen : Color.primary)
                             .frame(width: proxy.size.width * fraction(at: timeline.date), height: height)
                     }
                 }
@@ -110,9 +110,7 @@ struct NowPlayingTransportControls: View {
                 symbol: "backward.end.fill", label: "Previous", disabled: !player.canSkipTrack, action: player.previous)
             Button(action: player.togglePlayback) {
                 ZStack {
-                    Circle().fill(
-                        player.canTogglePlayback ? AuralPalette.mediaGreen : Color.secondary.opacity(0.28)
-                    )
+                    Circle().fill(player.canTogglePlayback ? Color.primary : Color.secondary.opacity(0.28))
                     Image(systemName: player.showsPauseControl ? "pause.fill" : "play.fill")
                         .contentTransition(.symbolEffect(.replace))
                         .symbolRenderingMode(.monochrome)

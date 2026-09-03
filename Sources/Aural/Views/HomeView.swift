@@ -1,6 +1,15 @@
 import AuralDomain
 import SwiftUI
 
+enum HomeSectionPresentation: Equatable {
+    case quickAccess
+    case shelf
+}
+
+func homeSectionPresentation(at index: Int) -> HomeSectionPresentation {
+    index == 0 ? .quickAccess : .shelf
+}
+
 struct HomeView: View {
     let store: HomeLibraryStore
     let playback: CatalogPlaybackAccess
@@ -8,7 +17,7 @@ struct HomeView: View {
 
     var body: some View {
         ScrollView {
-            LazyVStack(alignment: .leading, spacing: 26) {
+            LazyVStack(alignment: .leading, spacing: 30) {
                 if store.isLoading(.home) && store.homeSections.isEmpty {
                     LoadingState(label: "Loading your Spotify home")
                 } else if !playback.isConnected {
@@ -52,16 +61,89 @@ struct HomeView: View {
                     }
                     .padding(.bottom, -6)
 
-                    ForEach(store.homeSections) { section in
-                        MediaShelf(section: section, onSelect: onSelect)
+                    ForEach(Array(store.homeSections.enumerated()), id: \.element.id) { index, section in
+                        switch homeSectionPresentation(at: index) {
+                        case .quickAccess:
+                            QuickAccessShelf(section: section, onSelect: onSelect)
+                        case .shelf:
+                            MediaShelf(section: section, onSelect: onSelect)
+                        }
                     }
                 }
             }
             .padding(.horizontal, CatalogLayout.contentPadding)
-            .padding(.top, 22)
+            .padding(.top, 18)
             .padding(.bottom, 24)
         }
         .navigationTitle("Home")
+    }
+}
+
+struct QuickAccessShelf: View {
+    let section: CatalogSection
+    let onSelect: (CatalogItem) -> Void
+
+    private let columns = [
+        GridItem(.adaptive(minimum: 220, maximum: 340), spacing: 10)
+    ]
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text(section.title)
+                .font(.title3.weight(.bold))
+
+            LazyVGrid(columns: columns, alignment: .leading, spacing: 10) {
+                ForEach(section.items.prefix(8)) { item in
+                    QuickAccessCard(item: item) { onSelect(item) }
+                }
+            }
+        }
+    }
+}
+
+private struct QuickAccessCard: View {
+    let item: CatalogItem
+    let action: () -> Void
+    @State private var isHovering = false
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 12) {
+                RemoteArtwork(
+                    url: item.artworkURL,
+                    kind: item.kind,
+                    cornerRadius: item.kind == .artist ? 28 : 4,
+                    pointSize: 56
+                )
+                .frame(width: 56, height: 56)
+
+                Text(item.title)
+                    .font(.callout.weight(.semibold))
+                    .foregroundStyle(.primary)
+                    .lineLimit(2)
+
+                Spacer(minLength: 4)
+
+                Image(systemName: "chevron.right")
+                    .font(.caption.weight(.bold))
+                    .foregroundStyle(.secondary)
+                    .opacity(isHovering ? 1 : 0)
+                    .accessibilityHidden(true)
+            }
+            .padding(.trailing, 14)
+            .frame(maxWidth: .infinity, minHeight: 56, alignment: .leading)
+            .background(
+                isHovering ? AuralPalette.quickAccessSurfaceHover : AuralPalette.quickAccessSurface,
+                in: RoundedRectangle(cornerRadius: 5, style: .continuous)
+            )
+            .contentShape(RoundedRectangle(cornerRadius: 5, style: .continuous))
+        }
+        .buttonStyle(.plain)
+        .onHover { isHovering = $0 }
+        .onDisappear { isHovering = false }
+        .help(item.kind == .track ? "Play \(item.title)" : "Open \(item.title)")
+        .accessibilityLabel(item.title)
+        .accessibilityHint(item.kind == .track ? "Starts playback" : "Opens details")
     }
 }
 
@@ -106,14 +188,15 @@ struct MediaCard: View {
                 .shadow(color: .black.opacity(isHovering ? 0.18 : 0.08), radius: isHovering ? 10 : 5, y: 4)
 
                 Text(item.title)
-                    .font(.headline)
+                    .font(.callout.weight(.semibold))
                     .foregroundStyle(.primary)
                     .lineLimit(1)
 
                 Text(item.subtitle.isEmpty ? item.kind.rawValue : item.subtitle)
                     .font(.caption)
                     .foregroundStyle(.secondary)
-                    .lineLimit(1)
+                    .lineLimit(2)
+                    .frame(minHeight: 30, alignment: .topLeading)
             }
             .frame(width: CatalogLayout.cardWidth, alignment: .leading)
             .padding(CatalogLayout.cardPadding)
@@ -122,13 +205,12 @@ struct MediaCard: View {
                 AuralPalette.mediaCardSurface(isHovering: isHovering),
                 in: RoundedRectangle(cornerRadius: CatalogLayout.cardCornerRadius, style: .continuous)
             )
-            .scaleEffect(isHovering && !reduceMotion ? 1.015 : 1)
         }
         .buttonStyle(.plain)
         .onHover { isHovering = $0 }
         // A card scrolled away under a resting cursor keeps no highlight.
         .onDisappear { isHovering = false }
-        .animation(reduceMotion ? nil : .snappy(duration: 0.18), value: isHovering)
+        .animation(reduceMotion ? nil : .easeOut(duration: 0.15), value: isHovering)
         .help(item.kind == .track ? "Play \(item.title)" : "Open \(item.title)")
         .accessibilityLabel("\(item.title), \(item.subtitle.isEmpty ? item.kind.rawValue : item.subtitle)")
         .accessibilityHint(item.kind == .track ? "Starts playback" : "Opens details")

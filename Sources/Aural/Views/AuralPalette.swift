@@ -11,9 +11,12 @@ enum AuralPalette {
     static let catalogCanvas = Color(red: 0.071, green: 0.071, blue: 0.071)
     static let mediaSurface = Color(red: 0.094, green: 0.094, blue: 0.094)
     static let mediaSurfaceHover = Color(red: 0.141, green: 0.141, blue: 0.141)
+    static let quickAccessSurface = Color(red: 0.16, green: 0.16, blue: 0.16)
+    static let quickAccessSurfaceHover = Color(red: 0.22, green: 0.22, blue: 0.22)
+    static let playerShelf = Color(red: 0.094, green: 0.094, blue: 0.094)
 
     static func mediaCardSurface(isHovering: Bool) -> Color {
-        isHovering ? mediaSurfaceHover : mediaSurface
+        isHovering ? mediaSurfaceHover : .clear
     }
 
     static let artworkPlaceholderColors = [

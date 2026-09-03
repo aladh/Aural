@@ -57,6 +57,7 @@ enum BoundaryChecksMain {
             RegisteredCheckSuite(name: "playlist-mutation") { await runPlaylistMutationChecks($0) },
             RegisteredCheckSuite(name: "queue-management") { await runQueueManagementChecks($0) },
             RegisteredCheckSuite(name: "transient-feedback") { await runTransientFeedbackChecks($0) },
+            RegisteredCheckSuite(name: "visual-style-contract") { runVisualStyleContractChecks($0) },
             RegisteredCheckSuite(name: "wait-until") { await runWaitUntilChecks($0) },
             RegisteredCheckSuite(name: "check-suite-selection") { runner in
                 runCheckSuiteSelectionChecks(runner, catalog: BoundaryChecksMain.suiteNames)
