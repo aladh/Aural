@@ -296,3 +296,45 @@ fn queue_snapshot_getter_copies_then_frees() {
     }
     assert!(aural_playback_get_queue_snapshot().is_null());
 }
+
+#[test]
+fn process_and_send_queue_caches_snapshot_without_a_callback() {
+    let _guard = lock_lifecycle_test_globals();
+    *CONTROL_CALLBACKS
+        .queue
+        .lock()
+        .unwrap_or_else(|e| e.into_inner()) = None;
+    *LAST_QUEUE.lock().unwrap_or_else(|e| e.into_inner()) = None;
+
+    let mut player = PlayerState::new();
+    let track = player.track.mut_or_insert_default();
+    track.uri = "spotify:track:cachedNow".to_string();
+    track.provider = "context".to_string();
+    track.uid = "occ-now".to_string();
+    player.queue_revision = "cached-rev".to_string();
+    player.next_tracks.push(ProvidedTrack {
+        uri: "spotify:track:next".to_string(),
+        uid: "q0".to_string(),
+        provider: "queue".to_string(),
+        ..Default::default()
+    });
+
+    process_and_send_queue(player);
+
+    let pointer = aural_playback_get_queue_snapshot();
+    assert!(!pointer.is_null());
+    {
+        let snapshot = unsafe { &*pointer };
+        assert_eq!(
+            cstr_text(snapshot.track_uri).as_deref(),
+            Some("spotify:track:cachedNow")
+        );
+        assert_eq!(snapshot.next_count, 1);
+        assert_eq!(
+            cstr_text(snapshot.queue_revision).as_deref(),
+            Some("cached-rev")
+        );
+    }
+    aural_playback_free_queue_snapshot(pointer);
+    *LAST_QUEUE.lock().unwrap_or_else(|e| e.into_inner()) = None;
+}

@@ -612,11 +612,6 @@ pub(crate) fn process_and_send_queue(player_state: PlayerState) {
         update_current_context_uri(&player_state.context_uri);
     }
 
-    let Some(callback) = registered_callback(&CONTROL_CALLBACKS.queue) else {
-        debug!("No callback registered, skipping queue update");
-        return;
-    };
-
     let protocol_next_tracks = collect_protocol_tracks(&player_state.next_tracks);
     let protocol_prev_tracks = collect_protocol_tracks(&player_state.prev_tracks);
     let queue_revision = player_state.queue_revision.clone();
@@ -649,15 +644,22 @@ pub(crate) fn process_and_send_queue(player_state: PlayerState) {
         disallow_removing_from_next_tracks,
     });
 
-    // Remembered as well as sent. A callback is a one-shot, and Swift has recovery paths that
-    // need to ask "what is playing?" at a moment of their own choosing — a provisional
-    // SetQueue from librespot being the awkward one, since it arrives carrying no queue at
-    // all. That question used to go to `/me/player/queue`; now it comes back here.
-    send_queue_snapshot(callback, &state);
+    // Cache even when Swift has not registered a callback yet. The getter replaces
+    // `/me/player/queue` for bootstrap after a provisional empty SetQueue, so a cluster
+    // tick that arrives before registration must still be recoverable. Send first, then
+    // move into LAST_QUEUE so the callback does not run with that lock held.
+    if let Some(callback) = registered_callback(&CONTROL_CALLBACKS.queue) {
+        send_queue_snapshot(callback, &state);
+    } else {
+        debug!("No queue callback registered; caching snapshot for getter recovery");
+    }
     *LAST_QUEUE.lock().unwrap_or_else(|e| e.into_inner()) = Some(state);
 }
 
 /// The last queue the cluster described, or null if no cluster update has arrived.
+///
+/// Cached independently of callback registration so a getter after late registration still
+/// recovers a tick that arrived while Swift was not listening.
 ///
 /// Replaces `/me/player/queue` and `/me/player` for Swift's bootstrap. Deliberately a snapshot
 /// of what was already pushed rather than a fresh request: the cluster is the only source now,

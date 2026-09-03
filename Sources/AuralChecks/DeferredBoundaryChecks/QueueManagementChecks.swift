@@ -359,7 +359,9 @@ func runQueueManagementChecks(_ runner: CheckRunner) async {
                         uri: "spotify:track:keep",
                         uid: "q0",
                         provider: "queue",
-                        metadata: ["aural.sentinel": "keep-me", "is_queued": "true"]
+                        metadata: ["aural.sentinel": "keep-me", "is_queued": "true"],
+                        albumURI: "spotify:album:fixture",
+                        artistURI: "spotify:artist:fixture"
                     ),
                     QueueProtocolTrack(
                         uri: "spotify:delimiter",
@@ -379,7 +381,8 @@ func runQueueManagementChecks(_ runner: CheckRunner) async {
                         uri: "spotify:track:prev",
                         uid: "p0",
                         provider: "context",
-                        metadata: ["aural.sentinel": "prev-keep"]
+                        metadata: ["aural.sentinel": "prev-keep"],
+                        removed: ["removed-reason"]
                     )
                 ],
                 queueRevision: "rev-9"
@@ -419,75 +422,21 @@ func runQueueManagementChecks(_ runner: CheckRunner) async {
                 jsonStringMap(prev?.first?["metadata"])["aural.sentinel"] ?? "",
                 "prev-keep"
             )
-        }
-    }
-
-    runner.suite("Protocol tracks round-trip metadata into set_queue") {
-        runner.noThrow("sentinel metadata survives Connect encode") {
-            let next = [
-                QueueProtocolTrack(
-                    uri: "spotify:track:keep",
-                    uid: "q0",
-                    provider: "queue",
-                    metadata: ["aural.sentinel": "keep-me", "is_queued": "true"],
-                    albumURI: "spotify:album:fixture",
-                    artistURI: "spotify:artist:fixture"
-                ),
-                QueueProtocolTrack(
-                    uri: "spotify:delimiter",
-                    provider: "delimiter",
-                    metadata: ["aural.sentinel": "delimiter-keep"]
-                ),
-                QueueProtocolTrack(
-                    uri: "spotify:track:autoplay",
-                    uid: "a0",
-                    provider: "autoplay",
-                    metadata: ["aural.sentinel": "autoplay-keep"]
-                ),
-            ]
-            let prev = [
-                QueueProtocolTrack(
-                    uri: "spotify:track:prev",
-                    uid: "p0",
-                    provider: "context",
-                    metadata: ["aural.sentinel": "prev-keep"],
-                    removed: ["removed-reason"]
-                )
-            ]
-            let encoded = try JSONEncoder().encode(
-                SpotifyConnectCommand.setQueue(
-                    next: next,
-                    prev: prev,
-                    queueRevision: "rev-roundtrip"
-                )
-            )
-            let object = try JSONSerialization.jsonObject(with: encoded) as? [String: Any]
-            let encodedNext = object?["next_tracks"] as? [[String: Any]]
-            let encodedPrev = object?["prev_tracks"] as? [[String: Any]]
             runner.equal(
-                "round-trip next sentinel",
-                jsonStringMap(encodedNext?.first?["metadata"])["aural.sentinel"] ?? "",
-                "keep-me"
+                "next_tracks encodes album_uri",
+                next?.first?["album_uri"] as? String,
+                "spotify:album:fixture"
             )
             runner.equal(
-                "round-trip delimiter sentinel",
-                jsonStringMap(encodedNext?[1]["metadata"])["aural.sentinel"] ?? "",
-                "delimiter-keep"
+                "next_tracks encodes artist_uri",
+                next?.first?["artist_uri"] as? String,
+                "spotify:artist:fixture"
             )
             runner.equal(
-                "round-trip autoplay sentinel",
-                jsonStringMap(encodedNext?.last?["metadata"])["aural.sentinel"] ?? "",
-                "autoplay-keep"
+                "prev_tracks encodes removed",
+                prev?.first?["removed"] as? [String] ?? [],
+                ["removed-reason"]
             )
-            runner.equal(
-                "round-trip prev sentinel",
-                jsonStringMap(encodedPrev?.first?["metadata"])["aural.sentinel"] ?? "",
-                "prev-keep"
-            )
-            runner.equal(
-                "round-trip prev removed", encodedPrev?.first?["removed"] as? [String] ?? [], ["removed-reason"])
-            runner.equal(
-                "round-trip album_uri", encodedNext?.first?["album_uri"] as? String ?? "", "spotify:album:fixture")
         }
     }
 
