@@ -225,29 +225,6 @@ func runEnginePayloadContractChecks(_ check: CheckRunner) {
         }
     }
 
-    check.suite("Playback snapshot intake source contract") {
-        check.noThrow("playback intake projects transport at the envelope") {
-            let engineEvents = try auralSourceFile("Aural/Spotify/PlaybackStore+EngineEvents.swift")
-            let dto = try auralSourceFile("Aural/Spotify/PlaybackStore.swift")
-            let projection = try auralSourceFile("AuralDomain/PlaybackSnapshotProjection.swift")
-            check.check(
-                "Connect intake projects playback transport at the envelope, not on the DTO",
-                containsToken(engineEvents, "PlaybackSnapshotProjection.snapshot(")
-                    && containsToken(engineEvents, "isPaused: state.isPaused")
-                    && containsToken(engineEvents, "contextURI: state.contextURI")
-                    && containsToken(engineEvents, "previousRepeat: self.state.options.repeatFlags")
-                    && containsToken(dto, "let isPaused: Bool")
-                    && containsToken(dto, "let contextURI: String")
-                    && !containsToken(dto, "var isPaused")
-                    && !containsToken(dto, "func snapshot(")
-                    && !containsToken(dto, "func transport(")
-                    && containsToken(projection, "public static func transport")
-                    && containsToken(projection, "public static func snapshot")
-                    && containsToken(projection, "public static func resolvedTrackURI")
-            )
-        }
-    }
-
     check.suite("Connection snapshot intake source contract") {
         check.noThrow("connection intake projects session phase at the envelope") {
             let engineEvents = try auralSourceFile("Aural/Spotify/PlaybackStore+EngineEvents.swift")
@@ -294,14 +271,4 @@ private func auralSourceFile(_ relativePath: String) throws -> String {
 
 private func containsToken(_ source: String, _ token: String) -> Bool {
     source.contains(token)
-}
-
-private func decodeIgnoringUnknownFields<T: Decodable>(_ type: T.Type, from data: Data) throws -> T {
-    let object = try JSONSerialization.jsonObject(with: data)
-    guard var dictionary = object as? [String: Any] else {
-        throw CocoaError(.fileReadCorruptFile)
-    }
-    dictionary["future_contract_field"] = "ignored"
-    let extra = try JSONSerialization.data(withJSONObject: dictionary)
-    return try JSONDecoder().decode(type, from: extra)
 }

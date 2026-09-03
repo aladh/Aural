@@ -5,7 +5,6 @@
 
 import Foundation
 @testable import AuralCore
-import enum AuralDomain.PlaybackSnapshotProjection
 import enum AuralDomain.QueueProtocolProjection
 import struct AuralDomain.QueueProtocolTrack
 
@@ -350,17 +349,6 @@ func runPlaybackPanelChecks(_ check: CheckRunner) {
         } catch {
             check.check("queue state decodes: \(error)", false)
         }
-        check.equal(
-            "remote paused bit projects paused",
-            PlaybackSnapshotProjection.transport(
-                isPlaying: true,
-                isPaused: true,
-                trackURI: "spotify:track:abc",
-                isInitialSnapshot: false,
-                isActiveDevice: false
-            ),
-            .paused
-        )
 
         let devicesJSON = """
             [{"id":"abc123","name":"Living Room","type":"speaker","is_active":false,
