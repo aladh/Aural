@@ -18,6 +18,10 @@ public enum PlaybackSnapshotProjection: Sendable {
     /// The first snapshot on this device must not present playing: cluster state can
     /// still say the local player is active while audio has not started, and treating
     /// that as live would interpolate a stale playhead.
+    ///
+    /// Audible flags outrank a missing track URI. Cluster `PlayerState` can omit `track`
+    /// while `is_playing` is already true; flashing `.stopped` would hide live audio
+    /// until identity arrives.
     public static func transport(
         isPlaying: Bool,
         isPaused: Bool,

@@ -81,6 +81,17 @@ func runPlaybackSnapshotProjectionChecks(_ check: CheckRunner) {
             .stopped
         )
         check.equal(
+            "audible playback with an empty URI stays playing",
+            PlaybackSnapshotProjection.transport(
+                isPlaying: true,
+                isPaused: false,
+                trackURI: "",
+                isInitialSnapshot: false,
+                isActiveDevice: false
+            ),
+            .playing
+        )
+        check.equal(
             "a paused track is paused",
             PlaybackSnapshotProjection.transport(
                 isPlaying: false,
