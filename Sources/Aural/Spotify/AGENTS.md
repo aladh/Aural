@@ -36,6 +36,9 @@ boundaries. Read the relevant ADRs and the
   `ConnectionSnapshotProjection` owns session phase and empty-device-ID fallback. Local display
   name is Swift-owned; do not move presentation policy, `device_name`, or write-only reconnect
   bookkeeping into Rust.
+- `PlaybackSnapshotProjection` owns engine playback transport, empty-URI identity, timestamp
+  correction, and omitted-repeat fallback. The engine sends protocol playing/paused flags; do not
+  move that presentation policy into Rust.
 - Keep read-only catalog access separate from playlist mutation. Writes use `PlaylistMutating` and
   `PlaylistMutationController`; Pathfinder mutation DTOs do not enter views.
 - PCM goes directly from the engine adapter to `AudioRenderer`, never observable UI state. Keep

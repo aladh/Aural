@@ -4,11 +4,13 @@ import Foundation
 import Observation
 import OSLog
 
+/// Decode-only engine playback JSON. Transport, empty-URI identity, and option
+/// fallbacks are projected at intake (`PlaybackSnapshotProjection`).
 nonisolated struct RustPlaybackState: Decodable, Sendable {
     var revision: UInt64?
     var sessionGeneration: UInt64?
     let isPlaying: Bool
-    var isPaused: Bool?
+    let isPaused: Bool
     let trackURI: String
     let positionMS: Int64
     let durationMS: Int64

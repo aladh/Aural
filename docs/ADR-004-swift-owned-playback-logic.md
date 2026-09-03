@@ -63,6 +63,17 @@ still lives in `ConnectConfig` for protocol identity. `reconnect_attempt`,
 `ConnectionState` and are removed; reconnect backoff is a loop-local counter in
 `session_lifecycle.rs`.
 
+### Fourth slice
+
+Playback-snapshot presentation is Swift-owned (`PlaybackSnapshotProjection`). The engine
+snapshot carries protocol playing/paused flags, track URI, timing, and shuffle/repeat
+options plus stamp fields. Swift derives transport (including the first-local-snapshot
+suppression), treats an empty `track_uri` as missing, corrects playing positions from the
+snapshot timestamp, and fills omitted repeat flags from the last accepted pair.
+`is_paused` is a required decode field: a missing key must fail intake and keep the last
+accepted snapshot. Local `PlayerEvent` still has one bit; Rust shapes that as the same
+playing/paused pair.
+
 ## Consequences
 
 - Upcoming-queue UI and `QueueService.acceptConnect` entries come from one Swift
@@ -74,6 +85,9 @@ still lives in `ConnectConfig` for protocol identity. `reconnect_attempt`,
 - Connection session phase and empty-device-id handling come from one Swift projection.
   Local display name is Swift-owned. Reconnect backoff is a loop-local counter in
   `session_lifecycle.rs`, not a `ConnectionState` field.
+- Engine playback transport, empty-track-URI identity, and timestamp correction come from
+  one Swift projection. Rust still forwards protocol playing/paused bits (and shapes local
+  `PlayerEvent` as that pair).
 - Cluster apply, resume-load fallbacks, and session reconnect remain in Rust until a later
   slice can forward protocol observations without duplicating protobuf ownership in Swift.
 - [ADR 001](ADR-001-playback-engine.md) is not superseded: the C leaf and librespot stay.

@@ -22,10 +22,11 @@ across the Swift/Rust boundary.
 - Map panics to the defined sentinel. Do not replace the process panic hook, hold Rust locks while
   invoking Swift, or assume the barrier makes invalid foreign pointers safe.
 - Rust emits bounded PCM and immutable protocol/state envelopes. Keep callbacks non-blocking. Queue
-  and device rows plus connection observations remain protocol/runtime truth; Swift owns queue,
-  device-list, connection-phase, local-label, and metadata presentation. Do not reintroduce
-  `device_name`, `reconnect_attempt`, `connected_since_ms`, or `session_connection_id` into
-  `ConnectionState` or its envelope; reconnect backoff remains loop-local.
+  and device rows plus connection and playback observations remain protocol/runtime truth; Swift owns
+  queue, device-list, connection-phase, local-label, playback-transport, and metadata presentation.
+  Do not reintroduce `device_name`, `reconnect_attempt`, `connected_since_ms`, or
+  `session_connection_id` into `ConnectionState` or its envelope; reconnect backoff remains
+  loop-local. Do not synthesize transport presentation in Rust; send protocol playing/paused flags.
 - Keep the checked-in C header, exported symbol set, signatures, ownership, allocation, callback
   lifetime, and JSON contracts aligned with Swift fixtures.
 - Treat librespot changes as protocol migrations. Preserve the ownership classification instead of

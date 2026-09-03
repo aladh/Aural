@@ -75,36 +75,23 @@ extension PlaybackStore {
         guard !isTearingDown else { return }
         let isInitialSnapshot = !hasReceivedPlaybackSnapshot
         let previousTrackURI = trackURI
-        let snapshotIsPlaying = state.isPlaying && !(state.isPaused ?? false)
-        let transport: PlaybackTransportState =
-            (snapshotIsPlaying && !(isInitialSnapshot && isActiveDevice))
-            ? .playing : (state.trackURI.isEmpty ? .stopped : .paused)
-        let snapshotPosition = playbackSnapshotPosition(
+        let snapshot = PlaybackSnapshotProjection.snapshot(
+            isPlaying: state.isPlaying,
+            isPaused: state.isPaused,
+            trackURI: state.trackURI,
             positionMilliseconds: state.positionMS,
             durationMilliseconds: state.durationMS,
             timestampMilliseconds: state.timestampMS,
-            isPlaying: transport == .playing,
-            now: receivedAt
+            shuffle: state.shuffle,
+            repeatContext: state.repeatContext,
+            repeatTrack: state.repeatTrack,
+            previousRepeat: self.state.options.repeatFlags,
+            isInitialSnapshot: isInitialSnapshot,
+            isActiveDevice: isActiveDevice,
+            receivedAt: receivedAt
         )
-        let flags = RepeatFlags(
-            context: state.repeatContext ?? self.state.options.repeatFlags.context,
-            track: state.repeatTrack ?? self.state.options.repeatFlags.track
-        )
-        let repeatSnapshot = RepeatMode(context: flags.context, track: flags.track)
         let accepted = send(
-            .enginePlayback(
-                EnginePlaybackSnapshot(
-                    transport: transport,
-                    trackURI: state.trackURI.isEmpty ? nil : state.trackURI,
-                    timing: PlaybackTiming(
-                        position: snapshotPosition,
-                        duration: TimeInterval(max(0, state.durationMS)) / 1_000,
-                        anchoredAt: receivedAt
-                    ),
-                    shuffle: state.shuffle,
-                    repeatMode: repeatSnapshot,
-                    repeatFlags: flags
-                )),
+            .enginePlayback(snapshot),
             source: .enginePlayback,
             revision: revision,
             engineEpoch: state.sessionGeneration,
@@ -113,9 +100,9 @@ extension PlaybackStore {
         guard accepted else { return }
         hasReceivedPlaybackSnapshot = true
 
-        if !state.trackURI.isEmpty, state.trackURI != previousTrackURI {
-            adoptTrackMetadata(for: state.trackURI, force: true)
-        } else if state.trackURI.isEmpty {
+        if let trackURI = snapshot.trackURI, trackURI != previousTrackURI {
+            adoptTrackMetadata(for: trackURI, force: true)
+        } else if snapshot.trackURI == nil {
             effects.cancel(.trackMetadata)
         }
 
@@ -123,11 +110,11 @@ extension PlaybackStore {
         // the initial account snapshot into fresh listening history merely because the app opened.
         if !isInitialSnapshot,
             isActiveDevice,
-            transport == .playing,
-            !state.trackURI.isEmpty,
-            state.trackURI != previousTrackURI
+            snapshot.transport == .playing,
+            let trackURI = snapshot.trackURI,
+            trackURI != previousTrackURI
         {
-            recordPlayed(state.trackURI)
+            recordPlayed(trackURI)
         }
     }
 

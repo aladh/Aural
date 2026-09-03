@@ -13,10 +13,11 @@ changing state transitions, queue/device policy, parsing, sorting, or lifetime s
   mutation entrance. Keep transitions deterministic and explicit; do not add partial in-place writers.
 - Reducer acceptance and lifetime values are behavior, not implementation trivia. Preserve stale,
   superseded, teardown, cancellation, epoch, and revision semantics when adding events or effects.
-- Queue, device, and connection-snapshot projection policy belongs here when it is pure. Preserve
-  occurrence identity, authoritative ordering/provenance, the distinction between protocol state and
-  metadata labels, and the session-phase/empty-device-ID semantics in
-  `ConnectionSnapshotProjection`.
+- Queue, device, connection-snapshot, and playback-snapshot projection policy belongs here when it
+  is pure. Preserve occurrence identity, authoritative ordering/provenance, the distinction between
+  protocol state and metadata labels, the session-phase/empty-device-ID semantics in
+  `ConnectionSnapshotProjection`, and transport/empty-URI/timestamp semantics in
+  `PlaybackSnapshotProjection`.
 - Prefer immutable `Sendable` values, typed state, exhaustive switches, and pure functions. Match the
   surrounding naming and comment density; document only non-obvious invariants.
 
