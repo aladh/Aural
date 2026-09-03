@@ -203,13 +203,18 @@ fi
 # the product contract do not fail the gate.
 aural_app_source="$project_root/Sources/Aural/AuralApp.swift"
 dark_appearance_assignment_pattern='^[[:space:]]*NSApplication\.shared\.appearance[[:space:]]*=[[:space:]]*NSAppearance\(named:[[:space:]]*\.darkAqua\)[[:space:]]*$'
-if ! rg -q "$dark_appearance_assignment_pattern" "$aural_app_source"; then
+strip_noncode_appearance_text() {
+    perl -0pe 's{""".*?"""}{}gs; s{/\*.*?\*/}{}gs; s{//[^\n]*}{}g'
+}
+aural_app_code="$(strip_noncode_appearance_text < "$aural_app_source")"
+if ! rg -q "$dark_appearance_assignment_pattern" <<< "$aural_app_code"; then
     print -u2 "AuralApp must pin the application to native dark Aqua"
     exit 1
 fi
-if rg -q "$dark_appearance_assignment_pattern" \
-    <<< '    // NSApplication.shared.appearance = NSAppearance(named: .darkAqua)'; then
-    print -u2 "Dark appearance assignment check must reject a commented-out statement"
+dark_appearance_noncode_fixture=$'// NSApplication.shared.appearance = NSAppearance(named: .darkAqua)\n/*\nNSApplication.shared.appearance = NSAppearance(named: .darkAqua)\n*/\nlet example = """\nNSApplication.shared.appearance = NSAppearance(named: .darkAqua)\n"""'
+dark_appearance_fixture_code="$(strip_noncode_appearance_text <<< "$dark_appearance_noncode_fixture")"
+if rg -q "$dark_appearance_assignment_pattern" <<< "$dark_appearance_fixture_code"; then
+    print -u2 "Dark appearance assignment check must reject comments and multiline strings"
     exit 1
 fi
 if rg -n '@Environment\(\.colorScheme\)|\.preferredColorScheme\(|\.effectiveAppearance\b|colorScheme[[:space:]]*(==|!=)|NSAppearance\(named:[[:space:]]*\.aqua\)' \
