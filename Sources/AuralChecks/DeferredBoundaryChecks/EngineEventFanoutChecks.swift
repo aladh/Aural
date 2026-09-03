@@ -436,14 +436,14 @@ private func playbackEvent() -> RustPlaybackEvent {
 private func queueEvent() -> RustPlaybackEvent {
     .queue(
         RustQueueState(
+            revision: 1,
+            sessionGeneration: 1,
             track: nil,
             protocolNextTracks: [],
             protocolPrevTracks: [],
             queueRevision: "",
             disallowSetQueue: false,
-            disallowRemovingFromNextTracks: false,
-            revision: 1,
-            sessionGeneration: 1
+            disallowRemovingFromNextTracks: false
         )
     )
 }
