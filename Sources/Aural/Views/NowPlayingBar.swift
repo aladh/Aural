@@ -7,37 +7,38 @@ struct NowPlayingBar: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            HStack(spacing: 22) {
+            HStack(spacing: 18) {
                 NowPlayingTrackIdentity(player: player)
-                    .frame(minWidth: 210, maxWidth: .infinity, alignment: .leading)
+                    .frame(minWidth: 190, maxWidth: .infinity, alignment: .leading)
 
                 VStack(spacing: 5) {
                     NowPlayingTransportControls(player: player)
 
                     HStack(spacing: 8) {
-                        Text(player.hasCurrentTrack ? formatDuration(player.position) : "—:—")
-                            .foregroundStyle(.secondary)
-                            .frame(width: 38, alignment: .trailing)
+                        playerTimeLabel(
+                            player.hasCurrentTrack ? formatDuration(player.position) : "—:—",
+                            alignment: .trailing
+                        )
 
                         NowPlayingProgress(player: player)
 
-                        Text(remainingTime)
-                            .foregroundStyle(.secondary)
-                            .frame(width: 38, alignment: .leading)
+                        playerTimeLabel(remainingTime, alignment: .leading)
                     }
-                    .font(.caption2.monospacedDigit())
+                    .font(.system(size: 9, weight: .regular, design: .rounded).monospacedDigit())
                 }
-                .frame(maxWidth: 460)
+                .frame(minWidth: 500, maxWidth: 520)
 
                 NowPlayingTimeControls(player: player, showsSidePanel: $showsSidePanel)
-                    .frame(minWidth: 210, maxWidth: .infinity, alignment: .trailing)
+                    .frame(minWidth: 190, maxWidth: .infinity, alignment: .trailing)
             }
-            .padding(.horizontal, 20)
-            .frame(height: player.hasCurrentTrack ? 78 : 72)
+            .padding(.horizontal, 12)
+            .frame(height: player.hasCurrentTrack ? 64 : 60)
             .background {
                 Rectangle()
                     .fill(AuralPalette.playerShelf)
-                    .overlay(alignment: .top) { Divider() }
+                    .overlay(alignment: .top) {
+                        Rectangle().fill(AuralPalette.playerDivider).frame(height: 1)
+                    }
             }
 
             if let banner = player.remotePlaybackBanner {
@@ -62,6 +63,15 @@ struct NowPlayingBar: View {
     private var remainingTime: String {
         guard player.hasCurrentTrack, player.duration > 0 else { return "—:—" }
         return "−\(formatDuration(max(0, player.duration - player.position)))"
+    }
+
+    private func playerTimeLabel(_ value: String, alignment: Alignment) -> some View {
+        Text(value)
+            .foregroundStyle(AuralPalette.playerSecondary)
+            .lineLimit(1)
+            .allowsTightening(true)
+            .minimumScaleFactor(0.7)
+            .frame(width: 44, alignment: alignment)
     }
 }
 

@@ -80,6 +80,16 @@ func runVisualStyleContractChecks(_ runner: CheckRunner) {
             let palette = try visualStyleSourceFile("Aural/Views/AuralPalette.swift")
             let playerBar = try visualStyleSourceFile("Aural/Views/NowPlayingBar.swift")
             let playerComponents = try visualStyleSourceFile("Aural/Views/NowPlayingComponents.swift")
+            let trailingControls = try visualStyleSourceSection(
+                playerComponents,
+                from: "struct NowPlayingTimeControls: View",
+                through: "    private var devicesMenu: some View"
+            )
+            let deviceControl = try visualStyleSourceSection(
+                playerComponents,
+                from: "    private var devicesMenu: some View",
+                through: "    private func deviceName"
+            )
 
             runner.check(
                 "Home leads with a bounded compact shortcut shelf",
@@ -94,15 +104,36 @@ func runVisualStyleContractChecks(_ runner: CheckRunner) {
                 palette.contains("isHovering ? mediaSurfaceHover : .clear")
             )
             runner.check(
-                "the persistent player uses a neutral opaque shelf",
-                palette.contains("static let playerShelf")
+                "the persistent player uses a compact near-black shelf",
+                palette.contains(
+                    "static let playerShelf = Color(red: 0.035, green: 0.035, blue: 0.035)"
+                )
+                    && palette.contains("static let playerPrimary = Color.primary.opacity(0.92)")
+                    && palette.contains("static let playerSecondary = Color.secondary.opacity(0.92)")
+                    && palette.contains("static let playerDivider = Color.primary.opacity(0.10)")
                     && playerBar.contains(".fill(AuralPalette.playerShelf)")
+                    && playerBar.contains(".frame(width: 44, alignment: alignment)")
+                    && playerBar.contains(".minimumScaleFactor(0.7)")
                     && !playerBar.contains(".fill(.bar)")
             )
             runner.check(
                 "primary transport and resting progress remain neutral",
-                playerComponents.contains("player.canTogglePlayback ? Color.primary")
-                    && playerComponents.contains("isHovering ? AuralPalette.mediaGreen : Color.primary")
+                playerComponents.contains("player.canTogglePlayback ? AuralPalette.playerPrimary")
+                    && playerComponents.contains("isHovering ? AuralPalette.mediaGreen : AuralPalette.playerPrimary")
+            )
+            runner.check(
+                "the trailing player controls stay limited to queue and devices",
+                visualStyleControlDeclarationCount(in: trailingControls) == 1
+                    && visualStyleOccurrenceCount("Button {", in: trailingControls) == 1
+                    && visualStyleOccurrenceCount("devicesMenu", in: trailingControls) == 2
+                    && visualStyleOccurrenceCount("Image(systemName:", in: trailingControls) == 1
+                    && trailingControls.contains("Image(systemName: \"list.bullet\")")
+                    && visualStyleOccurrenceCount("Menu {", in: deviceControl) == 1
+                    && visualStyleOccurrenceCount("Image(systemName:", in: deviceControl) == 1
+                    && deviceControl.contains("Image(systemName: \"display.2\")")
+                    && deviceControl.contains(
+                        "player.isActiveDevice ? AuralPalette.mediaGreen : AuralPalette.playerSecondary"
+                    )
             )
             runner.check(
                 "identified remote playback gets a Spotify-familiar green footer",
@@ -123,4 +154,28 @@ private func visualStyleSourceFile(_ relativePath: String) throws -> String {
         .deletingLastPathComponent()
         .deletingLastPathComponent()
     return try String(contentsOf: repositoryRoot.appendingPathComponent(relativePath), encoding: .utf8)
+}
+
+private func visualStyleSourceSection(_ source: String, from start: String, through end: String) throws -> String {
+    guard let startRange = source.range(of: start),
+        let endRange = source.range(of: end, range: startRange.upperBound..<source.endIndex)
+    else {
+        throw CocoaError(.fileReadCorruptFile)
+    }
+    return String(source[startRange.lowerBound..<endRange.upperBound])
+}
+
+private func visualStyleOccurrenceCount(_ token: String, in source: String) -> Int {
+    source.components(separatedBy: token).count - 1
+}
+
+private func visualStyleControlDeclarationCount(in source: String) -> Int {
+    [
+        "Button {", "Button(",
+        "Link {", "Link(",
+        "Menu {", "Menu(",
+        "Toggle {", "Toggle(",
+        "Slider(",
+        "Picker {", "Picker(",
+    ].reduce(0) { $0 + visualStyleOccurrenceCount($1, in: source) }
 }
