@@ -104,10 +104,6 @@ pub(crate) static SLEEPING: AtomicBool = AtomicBool::new(false);
 /// transitions — ready from one, connection metadata from another. Keeping them
 /// together makes every published snapshot internally consistent by construction.
 ///
-/// `connected_since_ms` uses 0 for "never connected". Reconnect bookkeeping
-/// (`reconnect_attempt`, `session_connection_id`, `connected_since_ms`) stays here
-/// and is not sent on the FFI snapshot.
-///
 /// `is_active_device` also lives here rather than in a separate atomic. It used to be
 /// tracked in `IS_ACTIVE_DEVICE`, written from fourteen scattered command and event sites
 /// and never reconciled against the cluster, while Swift separately tracked activity from
@@ -116,12 +112,9 @@ pub(crate) static SLEEPING: AtomicBool = AtomicBool::new(false);
 #[derive(Default, Clone)]
 pub(crate) struct ConnectionState {
     pub(crate) session_connected: bool,
-    pub(crate) session_connection_id: Option<String>,
     pub(crate) spirc_ready: bool,
     pub(crate) device_id: Option<String>,
-    pub(crate) reconnect_attempt: u32,
     pub(crate) last_error: Option<String>,
-    pub(crate) connected_since_ms: u64,
     pub(crate) is_active_device: bool,
 }
 

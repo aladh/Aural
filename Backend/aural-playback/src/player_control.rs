@@ -218,8 +218,6 @@ pub extern "C" fn aural_playback_shutdown() -> i32 {
         with_connection(|c| {
             c.spirc_ready = false;
             c.session_connected = false;
-            c.session_connection_id = None;
-            c.connected_since_ms = 0;
             c.last_error = Some("Shutdown requested".to_string());
         });
         notify_connection_state_change();
@@ -374,14 +372,10 @@ pub(crate) fn cleanup_player_globals() {
     discard_retained_cluster_offers();
 
     // Reset the connection snapshot: not ready, not connected, no device ID.
-    // reconnect_attempt is deliberately preserved - it drives exponential backoff and
-    // is only reset on a successful connect (in the SessionConnected handler).
     with_connection(|c| {
         c.spirc_ready = false;
         c.session_connected = false;
-        c.session_connection_id = None;
         c.device_id = None;
-        c.connected_since_ms = 0;
     });
 
     // Notify connection state change

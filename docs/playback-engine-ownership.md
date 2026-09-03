@@ -41,9 +41,10 @@ in the [enforcement inventory](architecture-enforcement.md).
 Remaining control callbacks are JSON envelopes with `revision` and `session_generation`.
 Queue snapshots no longer carry presentation `next_tracks` / `prev_tracks` or catalog
 labels. Device snapshots no longer carry `is_active` or unused Web API volume/restriction
-fields; they send protocol members plus `active_device_id`. Connection snapshots no longer
-carry hardcoded `device_name` or unused reconnect bookkeeping; they send session flags plus
-`device_id` and `last_error`. Later slices should prefer typed payloads or rawer protocol
+fields; they send protocol members plus `active_device_id`. Connection snapshots send
+session flags plus `device_id` and `last_error`. Hardcoded `device_name` is gone, and
+write-only `reconnect_attempt`, `connected_since_ms`, and `session_connection_id` were
+removed from `ConnectionState`. Later slices should prefer typed payloads or rawer protocol
 rows over new Aural-only fields.
 
 `aural_playback_get_queue_snapshot` still returns the last serialized cluster queue so

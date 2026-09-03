@@ -355,11 +355,10 @@ pub(crate) fn applied_cluster_ids() -> Vec<String> {
 /// Builds the current connection observation, stamped with a fresh revision.
 ///
 /// Presentation (session phase, local display name) is Swift-owned
-/// (`ConnectionSnapshotProjection`). Reconnect bookkeeping stays in `ConnectionState`
-/// and is not sent. Reading the state and assigning the revision happen together, so
-/// two concurrent publishers cannot end up with revisions that contradict the order they
-/// read state in. Delivery is deliberately left outside: `send_json` re-enters Swift,
-/// which must never happen while a lock is held.
+/// (`ConnectionSnapshotProjection`). Reading the state and assigning the revision happen
+/// together, so two concurrent publishers cannot end up with revisions that contradict
+/// the order they read state in. Delivery is deliberately left outside: `send_json`
+/// re-enters Swift, which must never happen while a lock is held.
 pub(crate) fn build_connection_state_info() -> ConnectionStateInfo {
     stamped_snapshot(|stamp| {
         let state = with_connection(|c| c.clone());
@@ -379,8 +378,6 @@ pub(crate) fn build_connection_state_info() -> ConnectionStateInfo {
 pub(crate) fn mark_disconnected(reason: &str) {
     with_connection(|c| {
         c.session_connected = false;
-        c.session_connection_id = None;
-        c.connected_since_ms = 0;
         c.last_error = Some(reason.to_string());
     });
     notify_connection_state_change();

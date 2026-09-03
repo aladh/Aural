@@ -56,10 +56,12 @@ read those fields. Rust still uses `is_active_in_cluster` for this engine's Conn
 Connection-snapshot presentation is Swift-owned (`ConnectionSnapshotProjection`). The engine
 snapshot carries session flags (`session_connected`, `spirc_ready`, `is_active_device`,
 `device_id`, `last_error`) plus stamp fields. Swift derives session phase and treats an
-empty `device_id` as missing. Unused reconnect bookkeeping (`reconnect_attempt`,
-`connected_since_ms`, `session_connection_id`) and the hardcoded `device_name` ("Aural")
-are not sent: the local display name is Swift-owned (`thisDeviceName`), and the Connect
-advertised name still lives in `ConnectConfig` for protocol identity.
+empty `device_id` as missing. The hardcoded `device_name` ("Aural") is not sent: the
+local display name is Swift-owned (`thisDeviceName`), and the Connect advertised name
+still lives in `ConnectConfig` for protocol identity. `reconnect_attempt`,
+`connected_since_ms`, and `session_connection_id` were write-only leftovers on
+`ConnectionState` and are removed; reconnect backoff is a loop-local counter in
+`session_lifecycle.rs`.
 
 ## Consequences
 
@@ -70,8 +72,8 @@ advertised name still lives in `ConnectConfig` for protocol identity.
 - Engine JSON fixtures pin the slimmer envelopes. Older check JSON may still include
   optional current-track labels or Web API device fields; production Connect callbacks do not.
 - Connection session phase and empty-device-id handling come from one Swift projection.
-  Local display name is Swift-owned. Reconnect backoff still uses Rust-internal
-  `ConnectionState` fields that are not on the FFI snapshot.
+  Local display name is Swift-owned. Reconnect backoff is a loop-local counter in
+  `session_lifecycle.rs`, not a `ConnectionState` field.
 - Cluster apply, resume-load fallbacks, and session reconnect remain in Rust until a later
   slice can forward protocol observations without duplicating protobuf ownership in Swift.
 - [ADR 001](ADR-001-playback-engine.md) is not superseded: the C leaf and librespot stay.
@@ -100,4 +102,6 @@ Rejected. Nothing read volume or restriction fields. Activity belongs next to th
 ### Keep reconnect bookkeeping on the connection snapshot “for compatibility”
 
 Rejected. Swift never decoded `reconnect_attempt`, `connected_since_ms`, or
-`session_connection_id`. The hardcoded `device_name` overwrote Swift's local label.
+`session_connection_id`. They were write-only in Rust as well (backoff is a loop-local
+counter), so they were deleted from `ConnectionState`. The hardcoded `device_name`
+overwrote Swift's local label.

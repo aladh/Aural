@@ -3,8 +3,6 @@ import Foundation
 /// App-facing connection session from engine session flags.
 ///
 /// The engine reports connected/ready/error observations. Local display name is Swift-owned.
-/// Reconnect bookkeeping (`reconnect_attempt`, `connected_since_ms`, `session_connection_id`)
-/// stays in Rust and is not part of this snapshot.
 public enum ConnectionSnapshotProjection: Sendable {
     /// Empty wire IDs are missing, not a distinct device.
     public static func resolvedDeviceID(wire: String?, fallback: String?) -> String? {
