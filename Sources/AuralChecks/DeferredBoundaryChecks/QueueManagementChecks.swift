@@ -29,7 +29,7 @@ private final class QueueLocalEngine: LocalPlaybackEngine, @unchecked Sendable {
         return result
     }
     func positionMilliseconds() -> UInt32 { 0 }
-    func queueSnapshotJSON() -> String? { nil }
+    func queueSnapshot() -> RustQueueState? { nil }
     func configureHighQualityPlayback() {}
     func shutdown() -> PlaybackEngineResult { .ok }
     func cleanup() {}
@@ -332,35 +332,20 @@ private func connectQueueState(revision: UInt64, sessionGeneration: UInt64) -> R
         ("spotify:track:other", "q2"),
     ]
     return RustQueueState(
+        revision: revision,
+        sessionGeneration: sessionGeneration,
         track: RustQueueState.Item(
             uri: "spotify:track:now",
-            name: "Now",
-            artist: "Artist",
-            imageURL: "",
-            durationMS: 1,
             provider: "context",
             uid: "occ-now"
         ),
         protocolNextTracks: next.map {
-            RustQueueState.ProtocolTrack(
-                uri: $0.0,
-                uid: $0.1,
-                provider: "queue",
-                metadata: [:],
-                removed: [],
-                blocked: [],
-                restrictions: [:],
-                albumURI: "",
-                disallowReasons: [],
-                artistURI: ""
-            )
+            QueueProtocolTrack(uri: $0.0, uid: $0.1, provider: "queue")
         },
         protocolPrevTracks: [],
         queueRevision: "rev-\(revision)",
         disallowSetQueue: false,
-        disallowRemovingFromNextTracks: false,
-        revision: revision,
-        sessionGeneration: sessionGeneration
+        disallowRemovingFromNextTracks: false
     )
 }
 
@@ -437,58 +422,46 @@ func runQueueManagementChecks(_ runner: CheckRunner) async {
         }
     }
 
-    runner.suite("Rust protocol JSON round-trips metadata into set_queue") {
-        runner.noThrow("sentinel metadata survives Rust JSON, Swift decode, and Connect encode") {
-            let rustJSON = """
-                {
-                  "protocol_next_tracks": [
-                    {
-                      "uri": "spotify:track:keep",
-                      "uid": "q0",
-                      "provider": "queue",
-                      "metadata": {"aural.sentinel": "keep-me", "is_queued": "true"},
-                      "album_uri": "spotify:album:fixture",
-                      "artist_uri": "spotify:artist:fixture"
-                    },
-                    {
-                      "uri": "spotify:delimiter",
-                      "uid": "",
-                      "provider": "delimiter",
-                      "metadata": {"aural.sentinel": "delimiter-keep"}
-                    },
-                    {
-                      "uri": "spotify:track:autoplay",
-                      "uid": "a0",
-                      "provider": "autoplay",
-                      "metadata": {"aural.sentinel": "autoplay-keep"}
-                    }
-                  ],
-                  "protocol_prev_tracks": [
-                    {
-                      "uri": "spotify:track:prev",
-                      "uid": "p0",
-                      "provider": "context",
-                      "metadata": {"aural.sentinel": "prev-keep"},
-                      "removed": ["removed-reason"]
-                    }
-                  ],
-                  "queue_revision": "rev-roundtrip"
-                }
-                """
-            let state = try JSONDecoder().decode(
-                RustQueueState.self,
-                from: Data(rustJSON.utf8)
-            )
-            let next = (state.protocolNextTracks ?? []).map { $0.domainTrack() }
-            let prev = (state.protocolPrevTracks ?? []).map { $0.domainTrack() }
-            runner.equal("decoded next sentinel", next.first?.metadata["aural.sentinel"] ?? "", "keep-me")
-            runner.equal("decoded album_uri", next.first?.albumURI ?? "", "spotify:album:fixture")
-            runner.equal("decoded prev removed", prev.first?.removed ?? [], ["removed-reason"])
+    runner.suite("Protocol tracks round-trip metadata into set_queue") {
+        runner.noThrow("sentinel metadata survives Connect encode") {
+            let next = [
+                QueueProtocolTrack(
+                    uri: "spotify:track:keep",
+                    uid: "q0",
+                    provider: "queue",
+                    metadata: ["aural.sentinel": "keep-me", "is_queued": "true"],
+                    albumURI: "spotify:album:fixture",
+                    artistURI: "spotify:artist:fixture"
+                ),
+                QueueProtocolTrack(
+                    uri: "spotify:delimiter",
+                    provider: "delimiter",
+                    metadata: ["aural.sentinel": "delimiter-keep"]
+                ),
+                QueueProtocolTrack(
+                    uri: "spotify:track:autoplay",
+                    uid: "a0",
+                    provider: "autoplay",
+                    metadata: ["aural.sentinel": "autoplay-keep"]
+                ),
+            ]
+            let prev = [
+                QueueProtocolTrack(
+                    uri: "spotify:track:prev",
+                    uid: "p0",
+                    provider: "context",
+                    metadata: ["aural.sentinel": "prev-keep"],
+                    removed: ["removed-reason"]
+                )
+            ]
+            runner.equal("next sentinel", next.first?.metadata["aural.sentinel"] ?? "", "keep-me")
+            runner.equal("album_uri", next.first?.albumURI ?? "", "spotify:album:fixture")
+            runner.equal("prev removed", prev.first?.removed ?? [], ["removed-reason"])
             let encoded = try JSONEncoder().encode(
                 SpotifyConnectCommand.setQueue(
                     next: next,
                     prev: prev,
-                    queueRevision: state.queueRevision ?? ""
+                    queueRevision: "rev-roundtrip"
                 )
             )
             let object = try JSONSerialization.jsonObject(with: encoded) as? [String: Any]

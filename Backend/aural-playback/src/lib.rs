@@ -48,7 +48,6 @@ pub(crate) use librespot_protocol::connect::{Cluster, ClusterUpdate, MemberType,
 pub(crate) use librespot_protocol::player::{PlayerState, ProvidedTrack};
 pub(crate) use log::debug;
 pub(crate) use once_cell::sync::Lazy;
-pub(crate) use serde::Serialize;
 pub(crate) use std::ffi::{c_char, CStr, CString};
 pub(crate) use std::sync::atomic::{
     AtomicBool, AtomicU16, AtomicU32, AtomicU64, AtomicU8, Ordering,
@@ -60,8 +59,6 @@ pub(crate) use tokio::sync::mpsc;
 
 #[cfg(test)]
 mod connect_cluster_apply_tests;
-#[cfg(test)]
-mod json_contract_tests;
 #[cfg(test)]
 mod lifecycle_serialization_tests;
 #[cfg(test)]

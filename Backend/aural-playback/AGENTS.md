@@ -26,15 +26,15 @@ across the Swift/Rust boundary.
   queue, device-list, connection-phase, local-label, playback-transport, and metadata presentation.
   Do not reintroduce `device_name`, `reconnect_attempt`, `connected_since_ms`, or
   `session_connection_id` into `ConnectionState` or its envelope; reconnect backoff remains
-  loop-local. Connection, playback, and device-list observations are typed C snapshots, not JSON. Do not synthesize
+  loop-local. Connection, playback, device-list, and queue observations are typed C snapshots, not JSON. Do not synthesize
   transport presentation in Rust; send protocol playing/paused flags.
   Cluster playback snapshots send protocol `context_uri`; local `PlayerEvent` snapshots send an
   empty context. User resume reads sticky `CURRENT_CONTEXT_URI` / `CURRENT_TRACK_URI` through
   FFI getters and issues seek-capable `aural_playback_load` from Swift targets.
   Reconnect rehydration still uses `resume_via_load` from those session globals. Do not widen
   `aural_playback_resume`. Do not send sticky context on local PlayerEvent snapshots.
-- Keep the checked-in C header, exported symbol set, signatures, ownership, allocation, callback
-  lifetime, and JSON contracts aligned with Swift fixtures.
+- Keep the checked-in C header, exported symbol set, signatures, ownership, allocation, and callback
+  lifetime aligned.
 - Treat librespot changes as protocol migrations. Preserve the ownership classification instead of
   opportunistically expanding the Rust leaf.
 
@@ -50,5 +50,5 @@ paired Rust/Swift boundary evidence.
 
 Add Rust coverage beside the owning module. Focused Cargo commands are acceptable for iteration; the
 completion gate for Rust, lifecycle, FFI, dependency, or archive changes is
-`./Scripts/check-clean.sh` from the repository root. Inspect C-header/export parity and synthetic JSON
-fixtures. Live playback is never required for unit or ABI proof.
+`./Scripts/check-clean.sh` from the repository root. Inspect C-header/export parity.
+Live playback is never required for unit or ABI proof.

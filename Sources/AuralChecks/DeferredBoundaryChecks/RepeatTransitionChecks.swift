@@ -52,7 +52,7 @@ private final class RepeatLocalEngine: LocalPlaybackEngine, @unchecked Sendable 
         }
     }
     func positionMilliseconds() -> UInt32 { 0 }
-    func queueSnapshotJSON() -> String? { nil }
+    func queueSnapshot() -> RustQueueState? { nil }
     func configureHighQualityPlayback() {}
     func shutdown() -> PlaybackEngineResult { .ok }
     func cleanup() {}

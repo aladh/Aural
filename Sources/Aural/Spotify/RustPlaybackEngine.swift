@@ -62,7 +62,7 @@ nonisolated final class RustPlaybackEngine: LocalPlaybackEngine, @unchecked Send
     func resumePositionMilliseconds() -> UInt32 { PlaybackCore.resumePositionMilliseconds() }
     func resumeContextURI() -> String? { PlaybackCore.resumeContextURI() }
     func resumeTrackURI() -> String? { PlaybackCore.resumeTrackURI() }
-    func queueSnapshotJSON() -> String? { PlaybackCore.queueSnapshotJSON() }
+    func queueSnapshot() -> RustQueueState? { PlaybackCore.queueSnapshot() }
     func configureHighQualityPlayback() { PlaybackCore.configureHighQualityPlayback() }
     func shutdown() -> PlaybackEngineResult {
         engineResult(PlaybackCore.shutdown())
@@ -133,9 +133,8 @@ nonisolated final class RustPlaybackEngine: LocalPlaybackEngine, @unchecked Send
             RustPlaybackEngine.shared.emit(.playback(state))
         }
         PlaybackCore.registerQueueCallback { pointer in
-            RustPlaybackEngine.shared.decodeAndEmit(pointer, as: RustQueueState.self) {
-                .queue($0)
-            }
+            guard let state = PlaybackCore.queueState(from: pointer) else { return }
+            RustPlaybackEngine.shared.emit(.queue(state))
         }
         PlaybackCore.registerConnectionStateCallback { pointer in
             guard let state = PlaybackCore.connectionState(from: pointer) else { return }
@@ -144,22 +143,6 @@ nonisolated final class RustPlaybackEngine: LocalPlaybackEngine, @unchecked Send
         PlaybackCore.registerDevicesCallback { pointer in
             guard let state = PlaybackCore.devicesState(from: pointer) else { return }
             RustPlaybackEngine.shared.emit(.devices(state))
-        }
-    }
-
-    private func decodeAndEmit<T: Decodable & Sendable>(
-        _ pointer: UnsafePointer<CChar>?,
-        as type: T.Type,
-        event: (T) -> RustPlaybackEvent
-    ) {
-        guard let pointer, let data = String(cString: pointer).data(using: .utf8) else { return }
-        do {
-            emit(event(try JSONDecoder().decode(type, from: data)))
-        } catch {
-            debugLog(
-                "RustPlaybackEngine",
-                "callback payload did not decode as \(type): \(error.localizedDescription)"
-            )
         }
     }
 

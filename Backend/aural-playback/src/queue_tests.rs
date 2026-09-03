@@ -129,35 +129,6 @@ fn protocol_queue_tracks_preserve_incoming_provided_track_metadata() {
         prev_protocol.disallow_reasons,
         vec!["disallow-reason".to_string()]
     );
-
-    let json = serde_json::to_value(QueueState {
-        revision: 1,
-        session_generation: 1,
-        track: None,
-        protocol_next_tracks: next,
-        protocol_prev_tracks: vec![prev_protocol],
-        queue_revision: "rev-1".to_string(),
-        disallow_set_queue: false,
-        disallow_removing_from_next_tracks: false,
-    })
-    .expect("serialize queue snapshot");
-    assert_eq!(
-        json["protocol_next_tracks"][0]["metadata"]["aural.sentinel"],
-        "keep-me"
-    );
-    assert_eq!(json["protocol_next_tracks"][1]["uri"], "spotify:delimiter");
-    assert_eq!(
-        json["protocol_next_tracks"][2]["metadata"]["aural.sentinel"],
-        "autoplay-keep"
-    );
-    assert_eq!(
-        json["protocol_prev_tracks"][0]["metadata"]["aural.sentinel"],
-        "prev-keep"
-    );
-    assert_eq!(
-        json["protocol_prev_tracks"][0]["removed"][0],
-        "removed-reason"
-    );
 }
 
 #[test]

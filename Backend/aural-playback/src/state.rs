@@ -34,8 +34,6 @@ impl Drop for ResumeGuard {
 pub(crate) static PLAYER_EVENT_TX: Lazy<Mutex<Option<mpsc::UnboundedSender<()>>>> =
     Lazy::new(|| Mutex::new(None));
 
-pub(crate) type JsonCallback = extern "C" fn(*const c_char);
-
 /// Process-lifetime control callback registry.
 ///
 /// Each slot keeps an independent lock, so a callback on one event stream cannot block another.
@@ -44,7 +42,7 @@ pub(crate) type JsonCallback = extern "C" fn(*const c_char);
 /// this registry or any of these locks.
 #[derive(Default)]
 pub(crate) struct ControlCallbacks {
-    pub(crate) queue: Mutex<Option<JsonCallback>>,
+    pub(crate) queue: Mutex<Option<QueueSnapshotCallback>>,
     pub(crate) playback_state: Mutex<Option<PlaybackSnapshotCallback>>,
     pub(crate) devices: Mutex<Option<DevicesSnapshotCallback>>,
     pub(crate) connection_state: Mutex<Option<ConnectionSnapshotCallback>>,
@@ -65,7 +63,7 @@ pub(crate) static LAST_DEVICES_FINGERPRINT: Lazy<Mutex<Option<DevicesFingerprint
     Lazy::new(|| Mutex::new(None));
 /// The last queue the cluster described, so Swift can ask again rather than re-deriving it
 /// from the Web API. See `aural_playback_get_queue_snapshot`.
-pub(crate) static LAST_QUEUE_JSON: Lazy<Mutex<Option<String>>> = Lazy::new(|| Mutex::new(None));
+pub(crate) static LAST_QUEUE: Lazy<Mutex<Option<QueueState>>> = Lazy::new(|| Mutex::new(None));
 /// Serializes snapshot building so a revision always orders snapshots by the state they
 /// actually saw. Held only across the build, never across delivery into Swift.
 pub(crate) static SNAPSHOT_REVISION: Mutex<u64> = Mutex::new(0);
@@ -398,7 +396,7 @@ pub(crate) static GAPLESS_SETTING: AtomicBool = AtomicBool::new(true);
 pub(crate) static INITIAL_VOLUME_SETTING: AtomicU16 = AtomicU16::new(65535 / 2);
 
 /// Current-track identity on a queue snapshot. Presentation labels are Swift-owned.
-#[derive(Serialize)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct QueueItem {
     pub(crate) uri: String,
     /// Track provider: "context", "queue", "autoplay", or "unavailable"
@@ -411,28 +409,21 @@ pub(crate) struct QueueItem {
 /// Fields match `ProvidedTrack` in player.proto at librespot 9c7d756, except
 /// `disallow_setting_modes` / `disallow_signals` maps which are omitted when empty
 /// (no evidence they appear on queue rows in official `set_queue` JSON).
-#[derive(Serialize, Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct ProtocolQueueTrack {
     pub(crate) uri: String,
     pub(crate) uid: String,
     pub(crate) provider: String,
-    #[serde(default, skip_serializing_if = "HashMap::is_empty")]
     pub(crate) metadata: HashMap<String, String>,
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub(crate) removed: Vec<String>,
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub(crate) blocked: Vec<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub(crate) restrictions: Option<serde_json::Map<String, serde_json::Value>>,
-    #[serde(skip_serializing_if = "String::is_empty")]
+    pub(crate) restrictions: HashMap<String, Vec<String>>,
     pub(crate) album_uri: String,
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub(crate) disallow_reasons: Vec<String>,
-    #[serde(skip_serializing_if = "String::is_empty")]
     pub(crate) artist_uri: String,
 }
 
-#[derive(Serialize)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct QueueState {
     pub(crate) revision: u64,
     pub(crate) session_generation: u64,

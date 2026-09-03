@@ -28,7 +28,7 @@ if [[ "$check_scope" != rust ]]; then
     "$project_root/Scripts/format-swift.sh" --check
 fi
 
-# The Rust suite owns lifecycle, generation, queue conversion, JSON envelopes,
+# The Rust suite owns lifecycle, generation, queue conversion, typed C snapshots,
 # and compile-time C signature checks. Prefer the developer's normal toolchain;
 # the fallback is the project-local toolchain provisioned by the development
 # bootstrap on this workspace.

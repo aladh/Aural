@@ -127,13 +127,13 @@ extension PlaybackStore {
         engineEpoch capturedEngineEpoch: UInt64? = nil
     ) {
         guard !isTearingDown else { return }
-        let protocolNext = (state.protocolNextTracks ?? []).map { $0.domainTrack() }
-        let protocolPrev = (state.protocolPrevTracks ?? []).map { $0.domainTrack() }
+        let protocolNext = state.protocolNextTracks
+        let protocolPrev = state.protocolPrevTracks
         let entries = QueueProtocolProjection.upcomingEntries(from: protocolNext)
         let epoch = capturedAccountEpoch ?? accountEpoch
         // Stamp from the payload generation. `engineGeneration` is only a fallback when the
-        // snapshot omitted `sessionGeneration`; it must not override a newer decoded epoch.
-        let engineEpoch = capturedEngineEpoch ?? state.sessionGeneration ?? engineGeneration
+        // caller omitted a captured epoch; it must not override a newer decoded epoch.
+        let engineEpoch = capturedEngineEpoch ?? state.sessionGeneration
         effects.replace(
             .connectQueueAccept,
             with: Task { [weak self] in
@@ -147,9 +147,9 @@ extension PlaybackStore {
                     engineEpoch: engineEpoch,
                     protocolNext: protocolNext,
                     protocolPrev: protocolPrev,
-                    queueRevision: state.queueRevision ?? "",
-                    disallowSetQueue: state.disallowSetQueue ?? false,
-                    disallowRemovingFromNextTracks: state.disallowRemovingFromNextTracks ?? false
+                    queueRevision: state.queueRevision,
+                    disallowSetQueue: state.disallowSetQueue,
+                    disallowRemovingFromNextTracks: state.disallowRemovingFromNextTracks
                 )
                 guard !Task.isCancelled, !self.isTearingDown else { return }
                 guard self.accountEpoch == epoch, self.engineGeneration <= engineEpoch else { return }
@@ -175,46 +175,7 @@ extension PlaybackStore {
         }
 
         let changedTrack = track.uri != trackURI
-        let name = track.name ?? ""
-        let artist = track.artist ?? ""
-        let imageURL = track.imageURL ?? ""
-        let durationMS = track.durationMS ?? 0
-
-        if !name.isEmpty || !artist.isEmpty || !imageURL.isEmpty {
-            // A check fixture or older snapshot supplied labels; production Connect
-            // queue rows do not. Catalog enrichment is the live metadata owner.
-            let trackDuration =
-                durationMS > 0
-                ? TimeInterval(durationMS) / 1_000
-                : duration
-            let current = CurrentTrack(
-                uri: track.uri,
-                title: name.isEmpty ? nil : name,
-                artist: artist.isEmpty ? nil : artist,
-                artworkURL: imageURL.isEmpty ? nil : URL(string: imageURL),
-                duration: trackDuration,
-                metadataSource: .engine
-            )
-            let accepted = setPresentation(
-                track: current,
-                timing: PlaybackTiming(
-                    position: changedTrack ? 0 : position,
-                    duration: trackDuration,
-                    anchoredAt: environment.clock.now()
-                ),
-                source: .engineQueue,
-                accountEpoch: epoch,
-                engineEpoch: engineEpoch
-            )
-            if accepted {
-                history.applyMetadata(
-                    uri: track.uri,
-                    title: name,
-                    artist: artist,
-                    artworkURL: imageURL.isEmpty ? nil : URL(string: imageURL)
-                )
-            }
-        } else if changedTrack || !hasCurrentTrackMetadata {
+        if changedTrack || !hasCurrentTrackMetadata {
             // Cluster updates deliberately ship uris without names; resolve against
             // whatever the catalog already loaded so the bar never stays blank.
             if changedTrack {

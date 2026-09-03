@@ -23,7 +23,7 @@ boundaries. Read the relevant ADRs and the
 
 - `PlaybackCore.swift` is the only Swift importer of `AuralPlaybackCore`;
   `RustPlaybackEngine.swift` is its only caller. Keep the C header, Rust exports, ownership, pointer
-  lifetimes, callback threading, remaining JSON fixtures, and typed C snapshots aligned.
+  lifetimes, callback threading, and typed C snapshots aligned.
 - Track identity is the market/requested Spotify track ID. Relinked decode IDs and metadata may
   enrich it but never replace it or create a second identity model.
 - Ordered sources carry revisions; account and engine generations reject stale callbacks and
@@ -38,6 +38,7 @@ boundaries. Read the relevant ADRs and the
   bookkeeping into Rust. Connection observations arrive as `AuralConnectionSnapshot`, not JSON.
   Playback observations arrive as `AuralPlaybackSnapshot`, not JSON.
   Device-list observations arrive as `AuralDevicesSnapshot`, not JSON.
+  Queue observations arrive as `AuralQueueSnapshot`, not JSON.
 - `PlaybackSnapshotProjection` owns engine playback transport, empty-URI identity, timestamp
   correction, and omitted-repeat fallback. The engine sends protocol playing/paused flags and
   cluster `context_uri`. User resume captures sticky resume-load URIs through FFI and

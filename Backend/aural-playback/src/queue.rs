@@ -1,4 +1,5 @@
 use crate::*;
+use std::collections::HashMap;
 
 pub(crate) fn send_playback_state(player_state: &PlayerState) {
     debug!("send_playback_state called");
@@ -150,11 +151,11 @@ pub(crate) fn to_protocol_track(track: &ProvidedTrack) -> ProtocolQueueTrack {
     }
 }
 
-fn protocol_restrictions(
-    track: &ProvidedTrack,
-) -> Option<serde_json::Map<String, serde_json::Value>> {
-    let restrictions = track.restrictions.as_ref()?;
-    let mut map = serde_json::Map::new();
+fn protocol_restrictions(track: &ProvidedTrack) -> HashMap<String, Vec<String>> {
+    let Some(restrictions) = track.restrictions.as_ref() else {
+        return HashMap::new();
+    };
+    let mut map = HashMap::new();
     let fields: [(&str, &[String]); 25] = [
         (
             "disallow_pausing_reasons",
@@ -259,14 +260,10 @@ fn protocol_restrictions(
     ];
     for (key, values) in fields {
         if !values.is_empty() {
-            map.insert(key.to_string(), serde_json::json!(values));
+            map.insert(key.to_string(), values.to_vec());
         }
     }
-    if map.is_empty() {
-        None
-    } else {
-        Some(map)
-    }
+    map
 }
 
 pub(crate) fn collect_protocol_tracks(tracks: &[ProvidedTrack]) -> Vec<ProtocolQueueTrack> {
@@ -340,26 +337,30 @@ pub(crate) fn process_and_send_queue(player_state: PlayerState) {
     // need to ask "what is playing?" at a moment of their own choosing — a provisional
     // SetQueue from librespot being the awkward one, since it arrives carrying no queue at
     // all. That question used to go to `/me/player/queue`; now it comes back here.
-    if let Ok(json) = serde_json::to_string(&state) {
-        *LAST_QUEUE_JSON.lock().unwrap_or_else(|e| e.into_inner()) = Some(json);
-    }
-
-    send_json(callback, &state);
+    *LAST_QUEUE.lock().unwrap_or_else(|e| e.into_inner()) = Some(state.clone());
+    send_queue_snapshot(callback, &state);
 }
 
-/// The last queue the cluster described, as JSON, or null if no cluster update has arrived.
+/// The last queue the cluster described, or null if no cluster update has arrived.
 ///
 /// Replaces `/me/player/queue` and `/me/player` for Swift's bootstrap. Deliberately a snapshot
 /// of what was already pushed rather than a fresh request: the cluster is the only source now,
 /// so there is nothing newer to fetch, and a caller that gets null has genuinely not been told
 /// anything yet rather than having been told there is nothing.
+///
+/// Pointers remain valid until `aural_playback_free_queue_snapshot`.
 #[no_mangle]
-pub extern "C" fn aural_playback_get_queue_snapshot() -> *mut c_char {
-    ffi_owned_string("aural_playback_get_queue_snapshot", || {
-        let snapshot = LAST_QUEUE_JSON
-            .lock()
-            .unwrap_or_else(|e| e.into_inner())
-            .clone();
-        snapshot.map_or(std::ptr::null_mut(), into_owned_c_string)
+pub extern "C" fn aural_playback_get_queue_snapshot() -> *mut AuralQueueSnapshot {
+    ffi_owned_ptr("aural_playback_get_queue_snapshot", || {
+        let snapshot = LAST_QUEUE.lock().unwrap_or_else(|e| e.into_inner()).clone();
+        snapshot.map_or(std::ptr::null_mut(), |state| alloc_queue_snapshot(&state))
+    })
+}
+
+/// Frees a queue snapshot allocated by `aural_playback_get_queue_snapshot`.
+#[no_mangle]
+pub extern "C" fn aural_playback_free_queue_snapshot(snapshot: *mut AuralQueueSnapshot) {
+    ffi_void("aural_playback_free_queue_snapshot", || {
+        free_queue_snapshot(snapshot);
     })
 }

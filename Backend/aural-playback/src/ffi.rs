@@ -91,22 +91,6 @@ fn optional_callback_c_string(value: Option<&str>) -> Option<CString> {
         .and_then(c_string_from_text)
 }
 
-/// Serializes `payload` and hands it to a Swift callback as a C string.
-///
-/// The C string outlives the call and is freed on return: Swift copies what it needs
-/// before the callback returns.
-pub(crate) fn send_json<T: Serialize>(callback: extern "C" fn(*const c_char), payload: &T) {
-    match serde_json::to_string(payload) {
-        // serde_json escapes interior NULs, so CString::new cannot fail for its output;
-        // treat it like any other serialization failure rather than panicking into Swift.
-        Ok(json) => match CString::new(json) {
-            Ok(c_str) => callback(c_str.as_ptr()),
-            Err(e) => debug!("Callback payload contained NUL: {}", e),
-        },
-        Err(e) => debug!("Failed to serialize callback payload: {:?}", e),
-    }
-}
-
 /// Connection observation delivered as a C struct. Pointers are valid only for the
 /// callback; Swift must copy before returning. Interior NULs become null fields.
 #[repr(C)]
@@ -280,6 +264,322 @@ pub(crate) fn send_devices_snapshot(
     callback(&snapshot);
 }
 
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct AuralStringPair {
+    pub key: *const c_char,
+    pub value: *const c_char,
+}
+
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct AuralRestriction {
+    pub key: *const c_char,
+    pub reasons: *const *const c_char,
+    pub reason_count: usize,
+}
+
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct AuralProtocolQueueTrack {
+    pub uri: *const c_char,
+    pub uid: *const c_char,
+    pub provider: *const c_char,
+    pub metadata: *const AuralStringPair,
+    pub metadata_count: usize,
+    pub removed: *const *const c_char,
+    pub removed_count: usize,
+    pub blocked: *const *const c_char,
+    pub blocked_count: usize,
+    pub restrictions: *const AuralRestriction,
+    pub restriction_count: usize,
+    pub album_uri: *const c_char,
+    pub disallow_reasons: *const *const c_char,
+    pub disallow_reason_count: usize,
+    pub artist_uri: *const c_char,
+}
+
+#[repr(C)]
+pub struct AuralQueueSnapshot {
+    pub revision: u64,
+    pub session_generation: u64,
+    pub track_uri: *const c_char,
+    pub track_provider: *const c_char,
+    pub track_uid: *const c_char,
+    pub next_tracks: *const AuralProtocolQueueTrack,
+    pub next_count: usize,
+    pub prev_tracks: *const AuralProtocolQueueTrack,
+    pub prev_count: usize,
+    pub queue_revision: *const c_char,
+    pub disallow_set_queue: u8,
+    pub disallow_removing_from_next_tracks: u8,
+}
+
+pub(crate) type QueueSnapshotCallback = extern "C" fn(*const AuralQueueSnapshot);
+
+struct CStringList {
+    _values: Vec<Option<CString>>,
+    pointers: Vec<*const c_char>,
+}
+
+impl CStringList {
+    fn from_strings(items: &[String]) -> Self {
+        let values: Vec<Option<CString>> = items
+            .iter()
+            .map(|item| optional_callback_c_string(Some(item)))
+            .collect();
+        let pointers = values
+            .iter()
+            .map(|value| {
+                value
+                    .as_ref()
+                    .map(|c_string| c_string.as_ptr())
+                    .unwrap_or(std::ptr::null())
+            })
+            .collect();
+        Self {
+            _values: values,
+            pointers,
+        }
+    }
+
+    fn as_ptr(&self) -> *const *const c_char {
+        if self.pointers.is_empty() {
+            std::ptr::null()
+        } else {
+            self.pointers.as_ptr()
+        }
+    }
+
+    fn len(&self) -> usize {
+        self.pointers.len()
+    }
+}
+
+struct RestrictionBacking {
+    key: Option<CString>,
+    reasons: CStringList,
+}
+
+struct ProtocolTrackBacking {
+    uri: Option<CString>,
+    uid: Option<CString>,
+    provider: Option<CString>,
+    /// Keeps metadata CStrings alive for `metadata_rows` pointers.
+    #[allow(dead_code)]
+    metadata: Vec<(Option<CString>, Option<CString>)>,
+    metadata_rows: Vec<AuralStringPair>,
+    removed: CStringList,
+    blocked: CStringList,
+    /// Keeps restriction keys and reason lists alive for `restriction_rows`.
+    #[allow(dead_code)]
+    restrictions: Vec<RestrictionBacking>,
+    restriction_rows: Vec<AuralRestriction>,
+    album_uri: Option<CString>,
+    disallow_reasons: CStringList,
+    artist_uri: Option<CString>,
+}
+
+struct QueueSnapshotBacking {
+    track_uri: Option<CString>,
+    track_provider: Option<CString>,
+    track_uid: Option<CString>,
+    queue_revision: Option<CString>,
+    next: Vec<ProtocolTrackBacking>,
+    prev: Vec<ProtocolTrackBacking>,
+    next_rows: Vec<AuralProtocolQueueTrack>,
+    prev_rows: Vec<AuralProtocolQueueTrack>,
+}
+
+#[repr(C)]
+struct OwnedQueueSnapshot {
+    snapshot: AuralQueueSnapshot,
+    backing: QueueSnapshotBacking,
+}
+
+fn c_ptr(value: &Option<CString>) -> *const c_char {
+    value
+        .as_ref()
+        .map(|c_string| c_string.as_ptr())
+        .unwrap_or(std::ptr::null())
+}
+
+fn protocol_track_backing(track: &ProtocolQueueTrack) -> ProtocolTrackBacking {
+    let metadata: Vec<(Option<CString>, Option<CString>)> = track
+        .metadata
+        .iter()
+        .map(|(key, value)| {
+            (
+                optional_callback_c_string(Some(key)),
+                optional_callback_c_string(Some(value)),
+            )
+        })
+        .collect();
+    let metadata_rows = metadata
+        .iter()
+        .map(|(key, value)| AuralStringPair {
+            key: c_ptr(key),
+            value: c_ptr(value),
+        })
+        .collect();
+    let restrictions: Vec<RestrictionBacking> = track
+        .restrictions
+        .iter()
+        .map(|(key, reasons)| RestrictionBacking {
+            key: optional_callback_c_string(Some(key)),
+            reasons: CStringList::from_strings(reasons),
+        })
+        .collect();
+    let restriction_rows = restrictions
+        .iter()
+        .map(|restriction| AuralRestriction {
+            key: c_ptr(&restriction.key),
+            reasons: restriction.reasons.as_ptr(),
+            reason_count: restriction.reasons.len(),
+        })
+        .collect();
+    ProtocolTrackBacking {
+        uri: optional_callback_c_string(Some(track.uri.as_str())),
+        uid: optional_callback_c_string(Some(track.uid.as_str())),
+        provider: optional_callback_c_string(Some(track.provider.as_str())),
+        metadata,
+        metadata_rows,
+        removed: CStringList::from_strings(&track.removed),
+        blocked: CStringList::from_strings(&track.blocked),
+        restrictions,
+        restriction_rows,
+        album_uri: optional_callback_c_string(Some(track.album_uri.as_str())),
+        disallow_reasons: CStringList::from_strings(&track.disallow_reasons),
+        artist_uri: optional_callback_c_string(Some(track.artist_uri.as_str())),
+    }
+}
+
+fn protocol_track_row(backing: &ProtocolTrackBacking) -> AuralProtocolQueueTrack {
+    AuralProtocolQueueTrack {
+        uri: c_ptr(&backing.uri),
+        uid: c_ptr(&backing.uid),
+        provider: c_ptr(&backing.provider),
+        metadata: if backing.metadata_rows.is_empty() {
+            std::ptr::null()
+        } else {
+            backing.metadata_rows.as_ptr()
+        },
+        metadata_count: backing.metadata_rows.len(),
+        removed: backing.removed.as_ptr(),
+        removed_count: backing.removed.len(),
+        blocked: backing.blocked.as_ptr(),
+        blocked_count: backing.blocked.len(),
+        restrictions: if backing.restriction_rows.is_empty() {
+            std::ptr::null()
+        } else {
+            backing.restriction_rows.as_ptr()
+        },
+        restriction_count: backing.restriction_rows.len(),
+        album_uri: c_ptr(&backing.album_uri),
+        disallow_reasons: backing.disallow_reasons.as_ptr(),
+        disallow_reason_count: backing.disallow_reasons.len(),
+        artist_uri: c_ptr(&backing.artist_uri),
+    }
+}
+
+fn queue_snapshot_backing(state: &QueueState) -> QueueSnapshotBacking {
+    let (track_uri, track_provider, track_uid) = match &state.track {
+        Some(track) => (
+            optional_callback_c_string(Some(track.uri.as_str())),
+            optional_callback_c_string(Some(track.provider.as_str())),
+            optional_callback_c_string(Some(track.uid.as_str())),
+        ),
+        None => (None, None, None),
+    };
+    let mut backing = QueueSnapshotBacking {
+        track_uri,
+        track_provider,
+        track_uid,
+        queue_revision: optional_callback_c_string(Some(state.queue_revision.as_str())),
+        next: state
+            .protocol_next_tracks
+            .iter()
+            .map(protocol_track_backing)
+            .collect(),
+        prev: state
+            .protocol_prev_tracks
+            .iter()
+            .map(protocol_track_backing)
+            .collect(),
+        next_rows: Vec::new(),
+        prev_rows: Vec::new(),
+    };
+    backing.next_rows = backing.next.iter().map(protocol_track_row).collect();
+    backing.prev_rows = backing.prev.iter().map(protocol_track_row).collect();
+    backing
+}
+
+fn queue_snapshot_from_backing(
+    backing: &QueueSnapshotBacking,
+    state: &QueueState,
+) -> AuralQueueSnapshot {
+    AuralQueueSnapshot {
+        revision: state.revision,
+        session_generation: state.session_generation,
+        track_uri: c_ptr(&backing.track_uri),
+        track_provider: c_ptr(&backing.track_provider),
+        track_uid: c_ptr(&backing.track_uid),
+        next_tracks: if backing.next_rows.is_empty() {
+            std::ptr::null()
+        } else {
+            backing.next_rows.as_ptr()
+        },
+        next_count: backing.next_rows.len(),
+        prev_tracks: if backing.prev_rows.is_empty() {
+            std::ptr::null()
+        } else {
+            backing.prev_rows.as_ptr()
+        },
+        prev_count: backing.prev_rows.len(),
+        queue_revision: c_ptr(&backing.queue_revision),
+        disallow_set_queue: u8::from(state.disallow_set_queue),
+        disallow_removing_from_next_tracks: u8::from(state.disallow_removing_from_next_tracks),
+    }
+}
+
+pub(crate) fn send_queue_snapshot(callback: QueueSnapshotCallback, state: &QueueState) {
+    let backing = queue_snapshot_backing(state);
+    let snapshot = queue_snapshot_from_backing(&backing, state);
+    callback(&snapshot);
+}
+
+pub(crate) fn alloc_queue_snapshot(state: &QueueState) -> *mut AuralQueueSnapshot {
+    let backing = queue_snapshot_backing(state);
+    let mut owned = Box::new(OwnedQueueSnapshot {
+        snapshot: AuralQueueSnapshot {
+            revision: 0,
+            session_generation: 0,
+            track_uri: std::ptr::null(),
+            track_provider: std::ptr::null(),
+            track_uid: std::ptr::null(),
+            next_tracks: std::ptr::null(),
+            next_count: 0,
+            prev_tracks: std::ptr::null(),
+            prev_count: 0,
+            queue_revision: std::ptr::null(),
+            disallow_set_queue: 0,
+            disallow_removing_from_next_tracks: 0,
+        },
+        backing,
+    });
+    owned.snapshot = queue_snapshot_from_backing(&owned.backing, state);
+    Box::into_raw(owned) as *mut AuralQueueSnapshot
+}
+
+pub(crate) fn free_queue_snapshot(snapshot: *mut AuralQueueSnapshot) {
+    if snapshot.is_null() {
+        return;
+    }
+    unsafe {
+        drop(Box::from_raw(snapshot as *mut OwnedQueueSnapshot));
+    }
+}
+
 /// The current Spirc, or `None` after logging that there is none.
 ///
 /// Handed out as a clone rather than behind the guard: several callers go on to publish a
@@ -367,6 +667,11 @@ pub(crate) fn ffi_owned_string(
     ffi_catch(export, std::ptr::null_mut(), work)
 }
 
+/// Defined fallback when an owned-pointer export panics: a null pointer.
+pub(crate) fn ffi_owned_ptr<T>(export: &'static str, work: impl FnOnce() -> *mut T) -> *mut T {
+    ffi_catch(export, std::ptr::null_mut(), work)
+}
+
 /// Defined fallback when a void export panics: a no-op completion.
 pub(crate) fn ffi_void(export: &'static str, work: impl FnOnce()) {
     ffi_catch(export, (), work)
@@ -401,9 +706,10 @@ pub extern "C" fn aural_playback_free_string(s: *mut c_char) {
     })
 }
 
-/// Registers a callback to receive queue updates (as JSON string).
+/// Registers a callback to receive queue updates as a C snapshot.
+/// String and nested pointers are valid only for the call.
 #[no_mangle]
-pub extern "C" fn aural_playback_register_queue_callback(callback: extern "C" fn(*const c_char)) {
+pub extern "C" fn aural_playback_register_queue_callback(callback: QueueSnapshotCallback) {
     ffi_void("aural_playback_register_queue_callback", || {
         *CONTROL_CALLBACKS
             .queue
