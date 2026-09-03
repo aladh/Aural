@@ -125,9 +125,15 @@ MIT-licensed Spotifly commits `35991ac25a04aa14f8839d88f46129da6c6b59c0` and
 
 See [LICENSE](LICENSE), [NOTICE](NOTICE), and [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
 
-## Contributing
+## Agent-first maintenance
 
-Focused bug fixes, tests, documentation, and small maintainability improvements are welcome. Start
-with [CONTRIBUTING.md](CONTRIBUTING.md) and the [product and acceptance contract](docs/product-and-acceptance-contract.md).
-Accepted architecture boundaries are indexed in
+Aural is developed, reviewed, tested, and maintained exclusively by autonomous coding agents; the
+repository does not rely on a human contribution or review path. [AGENTS.md](AGENTS.md) is the global
+operating contract, with scoped `AGENTS.md` files beside specialized code. `CLAUDE.md` files import
+the same guidance instead of duplicating it. Reusable commands and pull-request/release procedures
+live in [CONTRIBUTING.md](CONTRIBUTING.md), while accepted architecture is indexed in the
 [architecture decision records](docs/architecture-decisions.md).
+
+Changes are expected to leave machine-verifiable evidence, an explicit risk account, and no invented
+human handoff. External issue reports may describe observed behavior, but implementation, semantic
+review, automated-review resolution, and repository mutation remain agent-owned.

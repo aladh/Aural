@@ -14,7 +14,9 @@ linking errors, not to silently change its decision.
 | [ADR 003: Keep PlaybackEffectRegistry; reject TCA and a generic Effect type](ADR-003-playback-command-effects.md) | Accepted | Keep store-level `PlaybackEffectRegistry`; do not adopt TCA or a generic Effect type. Reducer acceptance normally gates follow-ups; a captured same-lifetime transport resolution and matching-snapshot reconciliation are the documented exceptions, and consume-only acceptance cannot report coordinator failure. |
 | [ADR 004: Move Aural-owned playback logic into Swift incrementally](ADR-004-swift-owned-playback-logic.md) | Accepted | Keep librespot as the protocol leaf; move Aural-owned queue/state policy into Swift in reviewable slices. Live module classification is [playback engine ownership](playback-engine-ownership.md). |
 
-Related index: [Architecture enforcement inventory](architecture-enforcement.md) records the canonical source, primary owner, and disposition of each hard rule. It is a registry, not another ADR.
+Related index: [Architecture enforcement inventory](architecture-enforcement.md) routes hard-rule
+families to their canonical decision, strongest proof, scoped agent guidance, and known enforcement
+gaps. It is a registry, not another ADR.
 
 ## Maintaining the index
 
