@@ -1,6 +1,15 @@
 import AuralDomain
 import SwiftUI
 
+enum HomeSectionPresentation {
+    case quickAccess
+    case shelf
+}
+
+func homeSectionPresentation(at index: Int) -> HomeSectionPresentation {
+    index == 0 ? .quickAccess : .shelf
+}
+
 struct HomeView: View {
     let store: HomeLibraryStore
     let playback: CatalogPlaybackAccess
@@ -53,9 +62,10 @@ struct HomeView: View {
                     .padding(.bottom, -6)
 
                     ForEach(Array(store.homeSections.enumerated()), id: \.element.id) { index, section in
-                        if index == 0 {
+                        switch homeSectionPresentation(at: index) {
+                        case .quickAccess:
                             QuickAccessShelf(section: section, onSelect: onSelect)
-                        } else {
+                        case .shelf:
                             MediaShelf(section: section, onSelect: onSelect)
                         }
                     }
