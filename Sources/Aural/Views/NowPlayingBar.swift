@@ -31,10 +31,10 @@ struct NowPlayingBar: View {
                 .frame(minWidth: 210, maxWidth: .infinity, alignment: .trailing)
         }
         .padding(.horizontal, 20)
-        .frame(height: player.hasCurrentTrack ? 72 : 68)
+        .frame(height: player.hasCurrentTrack ? 78 : 72)
         .background {
             Rectangle()
-                .fill(.bar)
+                .fill(AuralPalette.playerShelf)
                 .overlay(alignment: .top) { Divider() }
         }
         .animation(.snappy(duration: 0.2), value: player.hasCurrentTrack)
