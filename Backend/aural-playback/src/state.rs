@@ -437,6 +437,8 @@ pub(crate) struct QueueState {
     pub(crate) disallow_removing_from_next_tracks: bool,
 }
 
+/// Protocol playing/paused flags plus timing and options. Transport presentation
+/// (audible vs paused vs stopped, initial-local suppression) is Swift-owned.
 #[derive(Serialize)]
 pub(crate) struct PlaybackStateUpdate {
     pub(crate) revision: u64,

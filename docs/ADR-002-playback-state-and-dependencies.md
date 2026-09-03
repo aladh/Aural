@@ -14,7 +14,8 @@ could still combine values from different account, engine, command, queue, or se
   activity, display sort, and empty-type fallback are projected into that snapshot in Swift
   (`ConnectDeviceProjection`) from unfiltered cluster members plus `active_device_id`.
   Connection session phase and empty-device-id fallback are projected in Swift
-  (`ConnectionSnapshotProjection`).
+  (`ConnectionSnapshotProjection`). Engine playback transport, empty-URI identity, and
+  timestamp correction are projected in Swift (`PlaybackSnapshotProjection`).
 - `PlaybackReducer` is the only mutation mechanism for that snapshot. External callbacks enter as
   account/engine/source-stamped events; ordered sources also carry revisions.
 - `PlaybackStore` is a `@MainActor` compatibility and action surface. `PlaybackCoordinator`

@@ -23,6 +23,17 @@ func runEnginePayloadContractChecks(_ check: CheckRunner) {
             check.equal("minimal shuffle", state.shuffle, false)
             check.equal("minimal repeat track", state.repeatTrack, false)
             check.equal("minimal repeat context", state.repeatContext, false)
+            check.equal(
+                "minimal playback projects stopped",
+                PlaybackSnapshotProjection.transport(
+                    isPlaying: state.isPlaying,
+                    isPaused: state.isPaused,
+                    trackURI: state.trackURI,
+                    isInitialSnapshot: false,
+                    isActiveDevice: false
+                ),
+                .stopped
+            )
         }
 
         check.noThrow("playback-full decodes a live playing snapshot and options") {
@@ -41,6 +52,17 @@ func runEnginePayloadContractChecks(_ check: CheckRunner) {
             check.equal("full shuffle", state.shuffle, true)
             check.equal("full repeat track", state.repeatTrack, false)
             check.equal("full repeat context", state.repeatContext, true)
+            check.equal(
+                "full playback projects playing",
+                PlaybackSnapshotProjection.transport(
+                    isPlaying: state.isPlaying,
+                    isPaused: state.isPaused,
+                    trackURI: state.trackURI,
+                    isInitialSnapshot: false,
+                    isActiveDevice: false
+                ),
+                .playing
+            )
 
             _ = try decodeIgnoringUnknownFields(
                 RustPlaybackState.self,
@@ -320,6 +342,27 @@ func runEnginePayloadContractChecks(_ check: CheckRunner) {
                     && !containsToken(dto, "func devices(")
                     && containsToken(projection, "public static func isActive")
                     && containsToken(projection, "public static func devices(")
+            )
+        }
+    }
+
+    check.suite("Playback snapshot intake source contract") {
+        check.noThrow("playback intake projects transport at the envelope") {
+            let engineEvents = try auralSourceFile("Aural/Spotify/PlaybackStore+EngineEvents.swift")
+            let dto = try auralSourceFile("Aural/Spotify/PlaybackStore.swift")
+            let projection = try auralSourceFile("AuralDomain/PlaybackSnapshotProjection.swift")
+            check.check(
+                "Connect intake projects playback transport at the envelope, not on the DTO",
+                containsToken(engineEvents, "PlaybackSnapshotProjection.snapshot(")
+                    && containsToken(engineEvents, "isPaused: state.isPaused")
+                    && containsToken(engineEvents, "previousRepeat: self.state.options.repeatFlags")
+                    && containsToken(dto, "let isPaused: Bool")
+                    && !containsToken(dto, "var isPaused")
+                    && !containsToken(dto, "func snapshot(")
+                    && !containsToken(dto, "func transport(")
+                    && containsToken(projection, "public static func transport")
+                    && containsToken(projection, "public static func snapshot")
+                    && containsToken(projection, "public static func resolvedTrackURI")
             )
         }
     }

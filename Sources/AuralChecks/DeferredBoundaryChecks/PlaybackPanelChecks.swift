@@ -355,7 +355,7 @@ func runPlaybackPanelChecks(_ check: CheckRunner) {
             """
         do {
             let state = try JSONDecoder().decode(RustPlaybackState.self, from: Data(pausedPlaybackJSON.utf8))
-            check.check("remote paused bit decodes", state.isPlaying && state.isPaused == true)
+            check.check("remote paused bit decodes", state.isPlaying && state.isPaused)
             check.equal("remote snapshot timestamp decodes", state.timestampMS, 1_000_000)
         } catch {
             check.check("playback state decodes: \(error)", false)

@@ -29,6 +29,7 @@ pub(crate) fn send_playback_state(player_state: &PlayerState) {
     let repeat_context = options.map(|o| o.repeating_context).unwrap_or(false);
     update_playback_options(shuffle, repeat_track, repeat_context);
 
+    // Forward protocol playing/paused bits. Swift projects transport presentation.
     let update = stamped_snapshot(|stamp| PlaybackStateUpdate {
         revision: stamp.revision,
         session_generation: stamp.session_generation,
@@ -86,6 +87,7 @@ pub(crate) fn send_local_playback_state(is_playing: bool, position_ms: u32) {
         revision: stamp.revision,
         session_generation: stamp.session_generation,
         is_playing,
+        // Local PlayerEvent has one bit; shape it as the protocol pair Swift already projects.
         is_paused: !is_playing,
         track_uri,
         position_ms: position_ms as i64,

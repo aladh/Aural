@@ -34,6 +34,9 @@ enum AuralChecksMain {
             RegisteredCheckSuite(name: "connection-snapshot-projection") {
                 runConnectionSnapshotProjectionChecks($0)
             },
+            RegisteredCheckSuite(name: "playback-snapshot-projection") {
+                runPlaybackSnapshotProjectionChecks($0)
+            },
             RegisteredCheckSuite(name: "check-suite-selection") { runner in
                 runCheckSuiteSelectionChecks(runner, catalog: AuralChecksMain.suiteNames)
             },
