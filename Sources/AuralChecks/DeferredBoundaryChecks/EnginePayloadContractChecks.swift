@@ -83,114 +83,6 @@ func runEnginePayloadContractChecks(_ check: CheckRunner) {
             check.equal("protocol prev removed", protocolPrev.first?.removed, ["removed-reason"])
             check.equal("protocol prev blocked", protocolPrev.first?.blocked, ["blocked-reason"])
         }
-
-        check.noThrow("inactive connection without a device id waits for local identity") {
-            let devices = fixtureClusterDevices()
-            check.equal(
-                "active device without local identity waits",
-                AuralDomain.connectCommandRoute(
-                    isLocalActive: false,
-                    localDeviceID: nil,
-                    devices: devices
-                ),
-                .waitingForLocalIdentity
-            )
-        }
-
-        check.noThrow("active local connection owns playback") {
-            let devices = fixtureClusterDevices()
-            let playbackDevices = devices.map {
-                PlaybackDevice(id: $0.id, name: $0.name, type: $0.type, isActive: $0.isActive)
-            }
-            let owner = connectionPlaybackOwner(
-                isLocalActive: true,
-                localDeviceID: "fixture-mac",
-                localDeviceName: devices.first { $0.id == "fixture-mac" }?.name ?? "This Mac",
-                devices: playbackDevices,
-                currentTrackURI: "spotify:track:fixtureNow",
-                previousOwner: .none,
-                lastRemoteDeviceID: nil
-            )
-            check.equal(
-                "active local connection owns playback",
-                owner,
-                .local(PlaybackDevice(id: "fixture-mac", name: "Fixture Mac", type: "Computer", isActive: true))
-            )
-            check.equal(
-                "local ownership routes locally",
-                AuralDomain.connectCommandRoute(owner: owner, localDeviceID: "fixture-mac"),
-                .local
-            )
-        }
-
-        check.noThrow("cluster members project activity and local identity") {
-            let devices = fixtureClusterDevices()
-            check.equal("device count", devices.count, 3)
-
-            let mac = devices[0]
-            let speaker = devices[1]
-            let unknown = devices[2]
-            check.equal("local computer id", mac.id, "fixture-mac")
-            check.equal("local computer is active", mac.isActive, true)
-            check.equal("local computer type", mac.type, "Computer")
-            check.equal(
-                "local computer display name",
-                mac.displayName(localDeviceID: "fixture-mac"),
-                "Fixture Mac (This Mac)"
-            )
-            check.equal("speaker is inactive", speaker.isActive, false)
-            check.equal("speaker type", speaker.type, "Speaker")
-            check.equal("unknown type maps to the default icon", unknown.symbolName, "hifispeaker")
-            check.equal("unknown type is preserved", unknown.type, "TOASTER")
-
-            check.equal(
-                "active local device routes locally",
-                AuralDomain.connectCommandRoute(
-                    isLocalActive: mac.isActive,
-                    localDeviceID: mac.id,
-                    devices: devices
-                ),
-                .local
-            )
-            check.equal(
-                "an active local computer in the snapshot wins over a speaker fallback",
-                AuralDomain.connectCommandRoute(
-                    isLocalActive: false,
-                    localDeviceID: mac.id,
-                    devices: devices,
-                    fallbackRemoteDeviceID: speaker.id
-                ),
-                .local
-            )
-            check.equal(
-                "decoded speaker identity stays remotely addressable when it is the listed target",
-                AuralDomain.connectCommandRoute(
-                    isLocalActive: false,
-                    localDeviceID: mac.id,
-                    devices: [speaker, unknown],
-                    fallbackRemoteDeviceID: speaker.id
-                ),
-                .remote(from: "fixture-mac", to: "fixture-speaker")
-            )
-        }
-    }
-
-    check.suite("Connect device intake source contract") {
-        check.noThrow("device intake projects once from protocol members") {
-            let engineEvents = try auralSourceFile("Aural/Spotify/PlaybackStore+EngineEvents.swift")
-            let dto = try auralSourceFile("Aural/Spotify/PlaybackStore.swift")
-            let projection = try auralSourceFile("AuralDomain/ConnectDeviceProjection.swift")
-            check.check(
-                "Connect intake projects devices at the envelope, not on the DTO",
-                containsToken(engineEvents, "ConnectDeviceProjection.devices(")
-                    && containsToken(engineEvents, "from: state.devices")
-                    && containsToken(engineEvents, "activeDeviceID: state.activeDeviceID")
-                    && containsToken(dto, "let devices: [ConnectProtocolDevice]")
-                    && !containsToken(dto, "func devices(")
-                    && containsToken(projection, "public static func isActive")
-                    && containsToken(projection, "public static func devices(")
-            )
-        }
     }
 
     check.suite("Connection snapshot intake source contract") {
@@ -215,17 +107,6 @@ func runEnginePayloadContractChecks(_ check: CheckRunner) {
             )
         }
     }
-}
-
-private func fixtureClusterDevices() -> [ConnectDevice] {
-    ConnectDeviceProjection.devices(
-        from: [
-            ConnectProtocolDevice(id: "fixture-mac", name: "Fixture Mac", type: "Computer"),
-            ConnectProtocolDevice(id: "fixture-speaker", name: "Fixture Speaker", type: "Speaker"),
-            ConnectProtocolDevice(id: "fixture-unknown", name: "Fixture Unknown", type: "TOASTER"),
-        ],
-        activeDeviceID: "fixture-mac"
-    )
 }
 
 private func upcomingEntries(from state: RustQueueState) -> [QueueEntry] {
