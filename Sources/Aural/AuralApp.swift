@@ -103,7 +103,7 @@ struct AuralApp: App {
     }
 
     var body: some Scene {
-        Window("Aural", id: "main") {
+        Window("Spotty", id: "main") {
             RootView(player: player, catalog: player.catalog, feedback: feedback)
                 .frame(minWidth: 960, minHeight: 640)
                 .task {

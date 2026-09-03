@@ -306,7 +306,7 @@ final class AccountStore {
             return true
         }
         if reportFailure {
-            phase = .failed("Aural Connect could not start (\(result.rawValue))")
+            phase = .failed("Spotty Connect could not start (\(result.rawValue))")
         }
         return false
     }

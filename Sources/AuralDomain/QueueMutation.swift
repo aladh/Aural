@@ -102,7 +102,7 @@ public enum QueueMutationRefusal: Equatable, Sendable, Error {
         case .notConnected:
             "Connect Spotify before changing the queue."
         case .joiningConnect:
-            "Aural is still joining Spotify Connect."
+            "Spotty is still joining Spotify Connect."
         case .incompleteProvenance, .provisional:
             "The queue isn’t complete enough to edit safely."
         case .restricted:

@@ -96,7 +96,7 @@ extension PlaybackStore {
             )
         case .waitingForLocalIdentity:
             AuralLog.commands.notice("Command delayed while local Connect identity is unavailable")
-            showTransientCommandError("Aural is still joining Spotify Connect.")
+            showTransientCommandError("Spotty is still joining Spotify Connect.")
             completion(false)
         case let .remote(from, to):
             AuralLog.commands.info(

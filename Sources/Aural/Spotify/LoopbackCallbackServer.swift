@@ -242,7 +242,7 @@ actor LoopbackCallbackServer {
                     return
                 }
 
-                let body = "<html><body>Aural is authorized. You can close this tab.</body></html>"
+                let body = "<html><body>Spotty is authorized. You can close this tab.</body></html>"
                 reply(on: connection, status: "200 OK", body: body, contentType: "text/html; charset=utf-8")
                 completion(.success(components))
             }

@@ -47,10 +47,10 @@ private func queue(
     )
 }
 
-private let localComputer = PlaybackDevice(id: "local", name: "Aural", type: "computer")
+private let localComputer = PlaybackDevice(id: "local", name: "Spotty", type: "computer")
 private let inactivePhone = PlaybackDevice(id: "phone", name: "Phone", type: "smartphone")
 private let activePhone = PlaybackDevice(id: "phone", name: "Phone", type: "smartphone", isActive: true)
-private let activeLocal = PlaybackDevice(id: "local", name: "Aural", type: "computer", isActive: true)
+private let activeLocal = PlaybackDevice(id: "local", name: "Spotty", type: "computer", isActive: true)
 
 @discardableResult
 private func reduceDevices(

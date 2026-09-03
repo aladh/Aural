@@ -398,11 +398,11 @@ func runPlaybackPanelChecks(_ check: CheckRunner) {
         ]
         check.check("duplicate queue tracks have distinct row identities", repeated[0].id != repeated[1].id)
 
-        let local = ConnectDevice(id: "local", name: "Aural", type: "computer", isActive: false)
+        let local = ConnectDevice(id: "local", name: "Spotty", type: "computer", isActive: false)
         let remote = ConnectDevice(id: "phone", name: "Phone", type: "smartphone", isActive: true)
         check.equal(
             "local device is identified even while inactive", local.displayName(localDeviceID: "local"),
-            "Aural (This Mac)")
+            "Spotty (This Mac)")
         check.equal(
             "active remote device is identified as playing", remote.displayName(localDeviceID: "local"),
             "Phone (Playing)")

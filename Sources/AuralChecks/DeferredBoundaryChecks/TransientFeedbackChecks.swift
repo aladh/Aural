@@ -385,7 +385,7 @@ func runTransientFeedbackChecks(_ runner: CheckRunner) async {
         runner.equal(
             "waiting for Connect identity is a mutation failure",
             joiningFeedback.message?.text,
-            "Aural is still joining Spotify Connect."
+            "Spotty is still joining Spotify Connect."
         )
         runner.nil_("joining add is not a playback notice", joining.transientCommandError)
         await joining.shutdownForTermination()

@@ -32,7 +32,7 @@ extension PlaybackStore {
 
         switch commandRoute {
         case .waitingForLocalIdentity:
-            feedback.failure("Aural is still joining Spotify Connect.")
+            feedback.failure("Spotty is still joining Spotify Connect.")
             return
         case let .remote(from, to):
             let effectID = PlaybackEffectID.queueCommand(UUID())
