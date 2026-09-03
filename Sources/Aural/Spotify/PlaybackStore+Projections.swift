@@ -109,7 +109,39 @@ extension PlaybackStore {
         return nil
     }
 
+    var remotePlaybackBanner: RemotePlaybackBannerPresentation? {
+        remotePlaybackBannerPresentation(
+            phase: phase,
+            owner: state.owner,
+            hasCurrentTrack: hasCurrentTrack,
+            isPlaying: isPlaying
+        )
+    }
+
     var commandRoute: ConnectCommandRoute {
         connectCommandRoute(owner: state.owner, localDeviceID: localDeviceID)
     }
+}
+
+struct RemotePlaybackBannerPresentation: Equatable {
+    let device: ConnectDevice
+    let isPlaying: Bool
+}
+
+func remotePlaybackBannerPresentation(
+    phase: PlaybackSessionPhase,
+    owner: PlaybackOwner,
+    hasCurrentTrack: Bool,
+    isPlaying: Bool
+) -> RemotePlaybackBannerPresentation? {
+    guard phase == .ready, hasCurrentTrack, case let .remote(device) = owner else { return nil }
+    return RemotePlaybackBannerPresentation(
+        device: ConnectDevice(
+            id: device.id,
+            name: device.name,
+            type: device.type,
+            isActive: device.isActive
+        ),
+        isPlaying: isPlaying
+    )
 }
