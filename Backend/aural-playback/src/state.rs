@@ -46,7 +46,7 @@ pub(crate) type JsonCallback = extern "C" fn(*const c_char);
 pub(crate) struct ControlCallbacks {
     pub(crate) queue: Mutex<Option<JsonCallback>>,
     pub(crate) playback_state: Mutex<Option<PlaybackSnapshotCallback>>,
-    pub(crate) devices: Mutex<Option<JsonCallback>>,
+    pub(crate) devices: Mutex<Option<DevicesSnapshotCallback>>,
     pub(crate) connection_state: Mutex<Option<ConnectionSnapshotCallback>>,
 }
 
@@ -55,7 +55,14 @@ pub(crate) static CONTROL_CALLBACKS: Lazy<ControlCallbacks> = Lazy::new(ControlC
 /// unchanged cluster update stays silent. Cluster updates arrive for every playback tick,
 /// and the device list changes far more rarely. Activity changes still fire because the
 /// active id is part of the fingerprint.
-pub(crate) static LAST_DEVICES_JSON: Lazy<Mutex<String>> = Lazy::new(|| Mutex::new(String::new()));
+#[derive(Clone, PartialEq, Eq)]
+pub(crate) struct DevicesFingerprint {
+    pub(crate) active_device_id: String,
+    pub(crate) devices: Vec<ProtocolConnectDevice>,
+}
+
+pub(crate) static LAST_DEVICES_FINGERPRINT: Lazy<Mutex<Option<DevicesFingerprint>>> =
+    Lazy::new(|| Mutex::new(None));
 /// The last queue the cluster described, so Swift can ask again rather than re-deriving it
 /// from the Web API. See `aural_playback_get_queue_snapshot`.
 pub(crate) static LAST_QUEUE_JSON: Lazy<Mutex<Option<String>>> = Lazy::new(|| Mutex::new(None));
@@ -439,20 +446,11 @@ pub(crate) struct QueueState {
 
 /// One cluster member as observed on the wire. Activity and unused Web API fields
 /// are Swift-owned (`ConnectDeviceProjection`).
-#[derive(Serialize, Clone, PartialEq, Eq)]
+#[derive(Clone, PartialEq, Eq)]
 pub(crate) struct ProtocolConnectDevice {
     pub(crate) id: String,
     pub(crate) name: String,
-    #[serde(rename = "type")]
     pub(crate) device_type: String,
-}
-
-#[derive(Serialize)]
-pub(crate) struct DevicesState {
-    pub(crate) revision: u64,
-    pub(crate) session_generation: u64,
-    pub(crate) active_device_id: String,
-    pub(crate) devices: Vec<ProtocolConnectDevice>,
 }
 
 /// Get current timestamp in milliseconds since UNIX epoch

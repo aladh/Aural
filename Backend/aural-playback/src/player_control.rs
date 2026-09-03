@@ -385,10 +385,9 @@ pub(crate) fn cleanup_player_globals() {
     // the previous one's. The device list is a dedup cache, so a stale entry would suppress
     // the first update after a login as unchanged.
     *LAST_QUEUE_JSON.lock().unwrap_or_else(|e| e.into_inner()) = None;
-    LAST_DEVICES_JSON
+    *LAST_DEVICES_FINGERPRINT
         .lock()
-        .unwrap_or_else(|e| e.into_inner())
-        .clear();
+        .unwrap_or_else(|e| e.into_inner()) = None;
     discard_retained_cluster_offers();
 
     // Reset the connection snapshot: not ready, not connected, no device ID.

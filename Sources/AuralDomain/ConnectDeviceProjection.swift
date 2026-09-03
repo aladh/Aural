@@ -2,7 +2,7 @@ import Foundation
 
 /// One cluster member as the engine observes it: identity and protobuf type name only.
 /// Activity, sort, and unused Web API fields are not part of this row.
-public struct ConnectProtocolDevice: Equatable, Sendable, Decodable {
+public struct ConnectProtocolDevice: Equatable, Sendable {
     public let id: String
     public let name: String
     public let type: String

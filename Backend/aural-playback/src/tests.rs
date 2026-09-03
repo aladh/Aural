@@ -592,7 +592,7 @@ fn exported_c_function_signatures_are_stable() {
     let _: extern "C" fn(extern "C" fn(*const c_char)) = aural_playback_register_queue_callback;
     let _: extern "C" fn(PlaybackSnapshotCallback) =
         aural_playback_register_playback_state_callback;
-    let _: extern "C" fn(extern "C" fn(*const c_char)) = aural_playback_register_devices_callback;
+    let _: extern "C" fn(DevicesSnapshotCallback) = aural_playback_register_devices_callback;
     let _: extern "C" fn(ConnectionSnapshotCallback) =
         aural_playback_register_connection_state_callback;
     let _: extern "C" fn(extern "C" fn(*const f32, usize)) =
@@ -817,6 +817,116 @@ fn playback_snapshot_callback_copies_nullable_fields() {
             repeat_context: false,
             timestamp_ms: 0,
         },
+    );
+}
+
+#[test]
+fn devices_snapshot_repr_c_layout_matches_header() {
+    assert_eq!(std::mem::size_of::<AuralProtocolDevice>(), 24);
+    assert_eq!(std::mem::align_of::<AuralProtocolDevice>(), 8);
+    assert_eq!(std::mem::offset_of!(AuralProtocolDevice, id), 0);
+    assert_eq!(std::mem::offset_of!(AuralProtocolDevice, name), 8);
+    assert_eq!(std::mem::offset_of!(AuralProtocolDevice, device_type), 16);
+    assert_eq!(std::mem::size_of::<AuralDevicesSnapshot>(), 40);
+    assert_eq!(std::mem::align_of::<AuralDevicesSnapshot>(), 8);
+    assert_eq!(std::mem::offset_of!(AuralDevicesSnapshot, revision), 0);
+    assert_eq!(
+        std::mem::offset_of!(AuralDevicesSnapshot, session_generation),
+        8
+    );
+    assert_eq!(
+        std::mem::offset_of!(AuralDevicesSnapshot, active_device_id),
+        16
+    );
+    assert_eq!(std::mem::offset_of!(AuralDevicesSnapshot, devices), 24);
+    assert_eq!(std::mem::offset_of!(AuralDevicesSnapshot, device_count), 32);
+}
+
+#[test]
+fn devices_snapshot_callback_copies_nullable_fields() {
+    extern "C" fn capture(snapshot: *const AuralDevicesSnapshot) {
+        let snapshot = unsafe { &*snapshot };
+        assert_eq!(snapshot.revision, 15);
+        assert_eq!(snapshot.session_generation, 6);
+        assert!(!snapshot.active_device_id.is_null());
+        assert_eq!(
+            unsafe { CStr::from_ptr(snapshot.active_device_id) }
+                .to_str()
+                .unwrap(),
+            "fixture-mac"
+        );
+        assert_eq!(snapshot.device_count, 2);
+        assert!(!snapshot.devices.is_null());
+        let rows = unsafe { std::slice::from_raw_parts(snapshot.devices, snapshot.device_count) };
+        assert!(!rows[0].id.is_null());
+        assert_eq!(
+            unsafe { CStr::from_ptr(rows[0].id) }.to_str().unwrap(),
+            "fixture-mac"
+        );
+        assert_eq!(
+            unsafe { CStr::from_ptr(rows[0].name) }.to_str().unwrap(),
+            "Fixture Mac"
+        );
+        assert_eq!(
+            unsafe { CStr::from_ptr(rows[0].device_type) }
+                .to_str()
+                .unwrap(),
+            "Computer"
+        );
+        assert_eq!(
+            unsafe { CStr::from_ptr(rows[1].id) }.to_str().unwrap(),
+            "fixture-speaker"
+        );
+    }
+
+    send_devices_snapshot(
+        capture,
+        SnapshotStamp {
+            revision: 15,
+            session_generation: 6,
+        },
+        "fixture-mac",
+        &[
+            ProtocolConnectDevice {
+                id: "fixture-mac".to_string(),
+                name: "Fixture Mac".to_string(),
+                device_type: "Computer".to_string(),
+            },
+            ProtocolConnectDevice {
+                id: "fixture-speaker".to_string(),
+                name: "Fixture Speaker".to_string(),
+                device_type: "Speaker".to_string(),
+            },
+        ],
+    );
+
+    extern "C" fn capture_empty_and_nul(snapshot: *const AuralDevicesSnapshot) {
+        let snapshot = unsafe { &*snapshot };
+        assert!(snapshot.active_device_id.is_null());
+        assert_eq!(snapshot.device_count, 1);
+        let rows = unsafe { std::slice::from_raw_parts(snapshot.devices, snapshot.device_count) };
+        assert!(rows[0].id.is_null());
+        assert!(rows[0].name.is_null());
+        assert_eq!(
+            unsafe { CStr::from_ptr(rows[0].device_type) }
+                .to_str()
+                .unwrap(),
+            "Computer"
+        );
+    }
+
+    send_devices_snapshot(
+        capture_empty_and_nul,
+        SnapshotStamp {
+            revision: 1,
+            session_generation: 1,
+        },
+        "",
+        &[ProtocolConnectDevice {
+            id: String::new(),
+            name: "bad\0name".to_string(),
+            device_type: "Computer".to_string(),
+        }],
     );
 }
 

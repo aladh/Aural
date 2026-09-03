@@ -108,18 +108,11 @@ nonisolated struct RustConnectionState: Sendable {
     let deviceID: String?
 }
 
-nonisolated struct RustDevicesState: Decodable, Sendable {
+nonisolated struct RustDevicesState: Sendable {
     let revision: UInt64
     let sessionGeneration: UInt64
     let activeDeviceID: String
     let devices: [ConnectProtocolDevice]
-
-    enum CodingKeys: String, CodingKey {
-        case revision
-        case sessionGeneration = "session_generation"
-        case activeDeviceID = "active_device_id"
-        case devices
-    }
 }
 
 nonisolated let auralAudioRendererResult: Result<AudioRenderer, AudioRendererError> = {
