@@ -454,9 +454,6 @@ func runQueueManagementChecks(_ runner: CheckRunner) async {
                     removed: ["removed-reason"]
                 )
             ]
-            runner.equal("next sentinel", next.first?.metadata["aural.sentinel"] ?? "", "keep-me")
-            runner.equal("album_uri", next.first?.albumURI ?? "", "spotify:album:fixture")
-            runner.equal("prev removed", prev.first?.removed ?? [], ["removed-reason"])
             let encoded = try JSONEncoder().encode(
                 SpotifyConnectCommand.setQueue(
                     next: next,

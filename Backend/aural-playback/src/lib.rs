@@ -62,6 +62,8 @@ mod connect_cluster_apply_tests;
 #[cfg(test)]
 mod lifecycle_serialization_tests;
 #[cfg(test)]
+mod queue_snapshot_tests;
+#[cfg(test)]
 mod queue_tests;
 #[cfg(test)]
 mod spirc_command_error_tests;
