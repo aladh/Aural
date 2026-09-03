@@ -212,7 +212,9 @@ struct NowPlayingTimeControls: View {
         } label: {
             Image(systemName: "display.2")
                 .font(.system(size: 12, weight: .medium))
-                .foregroundStyle(AuralPalette.playerSecondary)
+                .foregroundStyle(
+                    player.isActiveDevice ? AuralPalette.mediaGreen : AuralPalette.playerSecondary
+                )
                 .frame(width: 28, height: 28)
         }
         .menuStyle(.borderlessButton)

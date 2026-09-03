@@ -133,6 +133,9 @@ func runVisualStyleContractChecks(_ runner: CheckRunner) {
                     && visualStyleOccurrenceCount("Menu {", in: deviceControl) == 1
                     && visualStyleOccurrenceCount("Image(systemName:", in: deviceControl) == 1
                     && deviceControl.contains("Image(systemName: \"display.2\")")
+                    && deviceControl.contains(
+                        "player.isActiveDevice ? AuralPalette.mediaGreen : AuralPalette.playerSecondary"
+                    )
             )
             runner.check(
                 "identified remote playback gets a Spotify-familiar green footer",
