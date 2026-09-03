@@ -676,8 +676,9 @@ func runPlaybackEventOutcomeChecks(_ runner: CheckRunner) async {
         named.refreshQueueSnapshot()
         runner.check("named queue snapshot fetch starts", await waitUntil { namedEngine.hasStarted })
         let namedSnapshot = named.effects.settlement(of: .queueSnapshot)
+        let staleNamedGeneration = named.engineGeneration
         bumpEngine(named)
-        namedEngine.release(queueSnapshot(uri: uri))
+        namedEngine.release(queueSnapshot(uri: uri, sessionGeneration: staleNamedGeneration))
         await awaitCapturedEffect(
             namedSnapshot,
             runner,
@@ -701,8 +702,9 @@ func runPlaybackEventOutcomeChecks(_ runner: CheckRunner) async {
         missing.refreshQueueSnapshot()
         runner.check("nameless queue snapshot fetch starts", await waitUntil { missingEngine.hasStarted })
         let missingSnapshot = missing.effects.settlement(of: .queueSnapshot)
+        let staleMissingGeneration = missing.engineGeneration
         bumpEngine(missing)
-        missingEngine.release(queueSnapshot(uri: uri))
+        missingEngine.release(queueSnapshot(uri: uri, sessionGeneration: staleMissingGeneration))
         await awaitCapturedEffect(
             missingSnapshot,
             runner,
@@ -727,8 +729,11 @@ func runPlaybackEventOutcomeChecks(_ runner: CheckRunner) async {
         watermarkStore.refreshQueueSnapshot()
         runner.check("watermark snapshot fetch starts", await waitUntil { watermarkEngine.hasStarted })
         let watermarkSnapshot = watermarkStore.effects.settlement(of: .queueSnapshot)
+        let staleWatermarkGeneration = watermarkStore.engineGeneration
         bumpEngine(watermarkStore)
-        watermarkEngine.release(queueSnapshot(uri: uri, revision: 9))
+        watermarkEngine.release(
+            queueSnapshot(uri: uri, revision: 9, sessionGeneration: staleWatermarkGeneration)
+        )
         await awaitCapturedEffect(
             watermarkSnapshot,
             runner,

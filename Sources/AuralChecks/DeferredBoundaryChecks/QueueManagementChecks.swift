@@ -871,7 +871,15 @@ func runQueueManagementChecks(_ runner: CheckRunner) async {
             await waitUntil { player.state.engineEpoch == payloadGeneration }
         )
         runner.equal("G+1 queue presentation stamps the payload generation", player.engineGeneration, payloadGeneration)
-        runner.equal("G+1 queue presentation keeps the payload track", player.state.currentTrack?.title, "Now")
+        runner.equal(
+            "G+1 queue presentation keeps the payload track URI",
+            player.state.currentTrack?.uri,
+            "spotify:track:now"
+        )
+        runner.check(
+            "G+1 queue hydrates catalog names after URI-only identity",
+            await waitUntil { player.state.currentTrack?.title == "Metadata" }
+        )
         runner.check(
             "G+1 queue mutation snapshot uses the payload generation",
             await waitUntil { player.queueMutation?.engineEpoch == payloadGeneration }
@@ -1327,7 +1335,8 @@ func runQueueManagementChecks(_ runner: CheckRunner) async {
             runner.check(
                 "queue snapshot refresh stamps decoded payload generation",
                 containsToken(queue, "engineEpoch: state.sessionGeneration")
-                    && containsToken(queue, "if state.sessionGeneration == nil")
+                    && containsToken(queue, "generation: state.sessionGeneration")
+                    && !containsToken(queue, "if state.sessionGeneration == nil")
             )
             runner.check(
                 "Connect queue accept is registered on the effect registry",
@@ -1340,7 +1349,9 @@ func runQueueManagementChecks(_ runner: CheckRunner) async {
                 "Connect queue callbacks stamp payload sessionGeneration rather than the engineGeneration mirror",
                 containsToken(
                     engineEvents, "receive(state, revision: state.revision, engineEpoch: state.sessionGeneration)")
-                    && containsToken(engineEvents, "capturedEngineEpoch ?? state.sessionGeneration ?? engineGeneration")
+                    && containsToken(engineEvents, "capturedEngineEpoch ?? state.sessionGeneration")
+                    && !containsToken(
+                        engineEvents, "capturedEngineEpoch ?? state.sessionGeneration ?? engineGeneration")
             )
             runner.check(
                 "typed occurrence crosses queue merge and presentation without reparsing identity",
