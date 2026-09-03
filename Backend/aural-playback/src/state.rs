@@ -456,19 +456,6 @@ pub(crate) struct PlaybackStateUpdate {
     pub(crate) timestamp_ms: i64,
 }
 
-#[derive(Serialize)]
-pub(crate) struct ConnectionStateInfo {
-    /// Monotonic, assigned while the snapshot is built. Lets Swift discard a snapshot that
-    /// reaches the main actor after a newer one.
-    pub(crate) revision: u64,
-    pub(crate) session_generation: u64,
-    pub(crate) session_connected: bool,
-    pub(crate) spirc_ready: bool,
-    pub(crate) device_id: Option<String>,
-    pub(crate) last_error: Option<String>,
-    pub(crate) is_active_device: bool,
-}
-
 /// One cluster member as observed on the wire. Activity and unused Web API fields
 /// are Swift-owned (`ConnectDeviceProjection`).
 #[derive(Serialize, Clone, PartialEq, Eq)]

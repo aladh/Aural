@@ -70,9 +70,25 @@ pub(crate) fn registered_callback<F: Copy>(slot: &Mutex<Option<F>>) -> Option<F>
 /// A string carrying an interior NUL cannot cross the boundary, and every caller already
 /// treats null as "nothing to report", so that is what it becomes.
 pub(crate) fn into_owned_c_string(value: String) -> *mut c_char {
-    CString::new(value)
+    c_string_from_text(&value)
         .map(CString::into_raw)
         .unwrap_or(std::ptr::null_mut())
+}
+
+fn c_string_from_text(text: &str) -> Option<CString> {
+    match CString::new(text) {
+        Ok(c_str) => Some(c_str),
+        Err(e) => {
+            debug!("C string contained interior NUL: {}", e);
+            None
+        }
+    }
+}
+
+fn optional_callback_c_string(value: Option<&str>) -> Option<CString> {
+    value
+        .filter(|text| !text.is_empty())
+        .and_then(c_string_from_text)
 }
 
 /// Serializes `payload` and hands it to a Swift callback as a C string.
@@ -108,16 +124,17 @@ pub(crate) type ConnectionSnapshotCallback = extern "C" fn(*const AuralConnectio
 
 pub(crate) fn send_connection_snapshot(
     callback: ConnectionSnapshotCallback,
-    info: &ConnectionStateInfo,
+    stamp: SnapshotStamp,
+    state: &ConnectionState,
 ) {
-    let device_id = c_string_or_none(info.device_id.as_deref());
-    let last_error = c_string_or_none(info.last_error.as_deref());
+    let device_id = optional_callback_c_string(state.device_id.as_deref());
+    let last_error = optional_callback_c_string(state.last_error.as_deref());
     let snapshot = AuralConnectionSnapshot {
-        revision: info.revision,
-        session_generation: info.session_generation,
-        session_connected: u8::from(info.session_connected),
-        spirc_ready: u8::from(info.spirc_ready),
-        is_active_device: u8::from(info.is_active_device),
+        revision: stamp.revision,
+        session_generation: stamp.session_generation,
+        session_connected: u8::from(state.session_connected),
+        spirc_ready: u8::from(state.spirc_ready),
+        is_active_device: u8::from(state.is_active_device),
         device_id: device_id
             .as_ref()
             .map(|value| value.as_ptr())
@@ -128,18 +145,6 @@ pub(crate) fn send_connection_snapshot(
             .unwrap_or(std::ptr::null()),
     };
     callback(&snapshot);
-}
-
-fn c_string_or_none(value: Option<&str>) -> Option<CString> {
-    value
-        .filter(|text| !text.is_empty())
-        .and_then(|text| match CString::new(text) {
-            Ok(c_str) => Some(c_str),
-            Err(e) => {
-                debug!("Connection snapshot field contained NUL: {}", e);
-                None
-            }
-        })
 }
 
 /// The current Spirc, or `None` after logging that there is none.

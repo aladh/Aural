@@ -649,9 +649,11 @@ fn connection_snapshot_callback_copies_nullable_fields() {
 
     send_connection_snapshot(
         capture,
-        &ConnectionStateInfo {
+        SnapshotStamp {
             revision: 14,
             session_generation: 5,
+        },
+        &ConnectionState {
             session_connected: true,
             spirc_ready: true,
             device_id: Some("fixture-mac".to_string()),
@@ -674,9 +676,11 @@ fn connection_snapshot_callback_copies_nullable_fields() {
 
     send_connection_snapshot(
         capture_missing,
-        &ConnectionStateInfo {
+        SnapshotStamp {
             revision: 2,
             session_generation: 1,
+        },
+        &ConnectionState {
             session_connected: false,
             spirc_ready: false,
             device_id: None,
@@ -693,9 +697,11 @@ fn connection_snapshot_callback_copies_nullable_fields() {
 
     send_connection_snapshot(
         capture_empty_and_nul,
-        &ConnectionStateInfo {
+        SnapshotStamp {
             revision: 3,
             session_generation: 1,
+        },
+        &ConnectionState {
             session_connected: false,
             spirc_ready: false,
             device_id: Some(String::new()),
