@@ -94,15 +94,25 @@ func runVisualStyleContractChecks(_ runner: CheckRunner) {
                 palette.contains("isHovering ? mediaSurfaceHover : .clear")
             )
             runner.check(
-                "the persistent player uses a neutral opaque shelf",
-                palette.contains("static let playerShelf")
+                "the persistent player uses a compact near-black shelf",
+                palette.contains("static let playerShelf = Color(red: 0.035")
+                    && palette.contains("static let playerPrimary")
+                    && palette.contains("static let playerSecondary")
                     && playerBar.contains(".fill(AuralPalette.playerShelf)")
+                    && playerBar.contains("player.hasCurrentTrack ? 64 : 60")
+                    && playerBar.contains(".frame(minWidth: 500, maxWidth: 520)")
                     && !playerBar.contains(".fill(.bar)")
             )
             runner.check(
                 "primary transport and resting progress remain neutral",
-                playerComponents.contains("player.canTogglePlayback ? Color.primary")
-                    && playerComponents.contains("isHovering ? AuralPalette.mediaGreen : Color.primary")
+                playerComponents.contains("player.canTogglePlayback ? AuralPalette.playerPrimary")
+                    && playerComponents.contains("isHovering ? AuralPalette.mediaGreen : AuralPalette.playerPrimary")
+            )
+            runner.check(
+                "the trailing player controls stay limited to queue and devices",
+                playerComponents.contains("Image(systemName: \"list.bullet\")")
+                    && playerComponents.contains("Image(systemName: \"display.2\")")
+                    && !playerComponents.contains("Image(systemName: \"sidebar.right\")")
             )
             runner.check(
                 "identified remote playback gets a Spotify-familiar green footer",

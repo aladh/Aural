@@ -5,30 +5,31 @@ struct NowPlayingTrackIdentity: View {
     let player: PlaybackStore
 
     var body: some View {
-        HStack(spacing: 12) {
+        HStack(spacing: 10) {
             Group {
                 if player.hasCurrentTrack {
-                    RemoteArtwork(url: player.displayedArtworkURL, kind: .track, cornerRadius: 5, pointSize: 52)
+                    RemoteArtwork(url: player.displayedArtworkURL, kind: .track, cornerRadius: 3, pointSize: 44)
                 } else {
                     ZStack {
-                        RoundedRectangle(cornerRadius: 7, style: .continuous).fill(.quaternary)
+                        RoundedRectangle(cornerRadius: 4, style: .continuous).fill(.quaternary)
                         Image(systemName: "music.note")
-                            .font(.system(size: 20, weight: .medium))
-                            .foregroundStyle(.secondary)
+                            .font(.system(size: 17, weight: .medium))
+                            .foregroundStyle(AuralPalette.playerSecondary)
                     }
-                    .overlay { RoundedRectangle(cornerRadius: 7).strokeBorder(.separator.opacity(0.35)) }
+                    .overlay { RoundedRectangle(cornerRadius: 4).strokeBorder(AuralPalette.playerDivider) }
                     .accessibilityHidden(true)
                 }
             }
-            .frame(width: 52, height: 52)
+            .frame(width: 44, height: 44)
 
-            VStack(alignment: .leading, spacing: 3) {
+            VStack(alignment: .leading, spacing: 2) {
                 Text(player.displayedTrackTitle)
-                    .font(.callout.weight(.semibold))
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(AuralPalette.playerPrimary)
                     .lineLimit(1)
                 Text(player.displayedArtistName)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                    .font(.system(size: 10, weight: .regular))
+                    .foregroundStyle(AuralPalette.playerSecondary)
                     .lineLimit(1)
             }
             .contentTransition(.opacity)
@@ -50,9 +51,9 @@ struct NowPlayingProgress: View {
         TimelineView(.animation(minimumInterval: 1.0 / 30.0, paused: !player.showsPauseControl)) { timeline in
             GeometryReader { proxy in
                 ZStack(alignment: .leading) {
-                    Capsule().fill(.quaternary).frame(height: height)
+                    Capsule().fill(Color.white.opacity(0.20)).frame(height: height)
                     if player.hasCurrentTrack {
-                        Capsule().fill(isHovering ? AuralPalette.mediaGreen : Color.primary)
+                        Capsule().fill(isHovering ? AuralPalette.mediaGreen : AuralPalette.playerPrimary)
                             .frame(width: proxy.size.width * fraction(at: timeline.date), height: height)
                     }
                 }
@@ -98,7 +99,7 @@ struct NowPlayingTransportControls: View {
     let player: PlaybackStore
 
     var body: some View {
-        HStack(spacing: 18) {
+        HStack(spacing: 16) {
             optionButton(
                 symbol: "shuffle",
                 active: player.isShuffleEnabled,
@@ -110,11 +111,11 @@ struct NowPlayingTransportControls: View {
                 symbol: "backward.end.fill", label: "Previous", disabled: !player.canSkipTrack, action: player.previous)
             Button(action: player.togglePlayback) {
                 ZStack {
-                    Circle().fill(player.canTogglePlayback ? Color.primary : Color.secondary.opacity(0.28))
+                    Circle().fill(player.canTogglePlayback ? AuralPalette.playerPrimary : Color.white.opacity(0.20))
                     Image(systemName: player.showsPauseControl ? "pause.fill" : "play.fill")
                         .contentTransition(.symbolEffect(.replace))
                         .symbolRenderingMode(.monochrome)
-                        .font(.system(size: 16, weight: .bold))
+                        .font(.system(size: 13, weight: .bold))
                         .foregroundStyle(
                             player.canTogglePlayback
                                 ? Color.black
@@ -122,7 +123,7 @@ struct NowPlayingTransportControls: View {
                         )
                         .offset(x: player.showsPauseControl ? 0 : 1)
                 }
-                .frame(width: 32, height: 32)
+                .frame(width: 28, height: 28)
                 .contentShape(Circle())
             }
             .buttonStyle(.plain)
@@ -150,12 +151,16 @@ struct NowPlayingTransportControls: View {
     ) -> some View {
         Button(action: action) {
             Image(systemName: symbol)
-                .font(.system(size: 14, weight: .semibold))
+                .font(.system(size: 12, weight: .semibold))
                 .foregroundStyle(
-                    active ? AuralPalette.mediaGreen : Color(nsColor: .secondaryLabelColor)
+                    active ? AuralPalette.mediaGreen : AuralPalette.playerSecondary
                 )
-                .frame(width: 30, height: 30)
-                .background { Circle().fill(active ? AuralPalette.mediaGreen.opacity(0.10) : .clear) }
+                .frame(width: 26, height: 26)
+                .overlay(alignment: .bottom) {
+                    if active {
+                        Circle().fill(AuralPalette.mediaGreen).frame(width: 3, height: 3)
+                    }
+                }
         }
         .buttonStyle(.plain)
         .disabled(!player.canStartPlayback)
@@ -169,22 +174,22 @@ struct NowPlayingTimeControls: View {
     @Binding var showsSidePanel: Bool
 
     var body: some View {
-        HStack(spacing: 12) {
-            devicesMenu
+        HStack(spacing: 8) {
             Button {
                 withAnimation(.snappy(duration: 0.2)) { showsSidePanel.toggle() }
             } label: {
-                Image(systemName: "sidebar.right")
-                    .font(.system(size: 14, weight: .semibold))
+                Image(systemName: "list.bullet")
+                    .font(.system(size: 13, weight: .semibold))
                     .foregroundStyle(
-                        showsSidePanel ? Color.primary : Color(nsColor: .secondaryLabelColor)
+                        showsSidePanel ? AuralPalette.playerPrimary : AuralPalette.playerSecondary
                     )
-                    .frame(width: 30, height: 30)
+                    .frame(width: 28, height: 28)
                     .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
             .help(showsSidePanel ? "Hide queue and history" : "Show queue and history")
             .accessibilityLabel(showsSidePanel ? "Hide queue and history panel" : "Show queue and history panel")
+            devicesMenu
         }
         .font(.caption2.monospacedDigit())
         .accessibilityElement(children: .contain)
@@ -205,14 +210,10 @@ struct NowPlayingTimeControls: View {
                 if player.connectDevices.isEmpty { Text("No devices found") }
             }
         } label: {
-            Image(systemName: "airplayaudio")
-                .font(.system(size: 13, weight: .semibold))
-                .foregroundStyle(
-                    player.isActiveDevice || player.activeRemoteDevice != nil
-                        ? AuralPalette.mediaGreen
-                        : Color(nsColor: .secondaryLabelColor)
-                )
-                .frame(width: 26, height: 26)
+            Image(systemName: "display.2")
+                .font(.system(size: 12, weight: .medium))
+                .foregroundStyle(AuralPalette.playerSecondary)
+                .frame(width: 28, height: 28)
         }
         .menuStyle(.borderlessButton)
         .menuIndicator(.hidden)
@@ -238,7 +239,11 @@ private struct TransportIconButton: View {
     let action: () -> Void
     var body: some View {
         Button(action: action) {
-            Image(systemName: symbol).frame(width: 28, height: 28).contentShape(Rectangle())
+            Image(systemName: symbol)
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundStyle(AuralPalette.playerSecondary)
+                .frame(width: 26, height: 26)
+                .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .disabled(disabled)
