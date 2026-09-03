@@ -1,6 +1,7 @@
 # Private extended-metadata protocol
 
-Aural uses a reverse-engineered Spotify endpoint to populate the Popularity, BPM, and Key columns.
+Aural uses a reverse-engineered Spotify endpoint to populate the Popularity, BPM, and Key columns
+in shared catalog track tables.
 This is not a supported Spotify API; it may change without notice, and using it may violate
 Spotify's Terms of Use. This document records the wire format so the integration can be maintained
 without reverse-engineering it again from scratch.

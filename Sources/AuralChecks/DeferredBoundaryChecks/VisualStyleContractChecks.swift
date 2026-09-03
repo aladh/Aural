@@ -75,9 +75,22 @@ func runVisualStyleContractChecks(_ runner: CheckRunner) {
             )
         )
 
-        runner.noThrow("Home and player style sources are readable") {
+        runner.noThrow("Home, playlist, and player style sources are readable") {
             let home = try visualStyleSourceFile("Aural/Views/HomeView.swift")
             let palette = try visualStyleSourceFile("Aural/Views/AuralPalette.swift")
+            let playlistDetail = try visualStyleSourceFile("Aural/Views/PlaylistDetailView.swift")
+            let table = try visualStyleSourceFile("Aural/Views/SharedComponents.swift")
+            let catalogPlaybackAccess = try visualStyleSourceFile("Aural/CatalogPlaybackAccess.swift")
+            let playlistTableColumns = try visualStyleSourceSection(
+                table,
+                from: "            if variant == .playlist {",
+                through: "            } else {"
+            )
+            let playlistTitleCell = try visualStyleSourceSection(
+                table,
+                from: "    private func playlistTitleCell",
+                through: "    private func titleCell"
+            )
             let playerBar = try visualStyleSourceFile("Aural/Views/NowPlayingBar.swift")
             let playerComponents = try visualStyleSourceFile("Aural/Views/NowPlayingComponents.swift")
             let trailingControls = try visualStyleSourceSection(
@@ -102,6 +115,84 @@ func runVisualStyleContractChecks(_ runner: CheckRunner) {
             runner.check(
                 "media cards are flat until hover",
                 palette.contains("isHovering ? mediaSurfaceHover : .clear")
+            )
+            runner.check(
+                "playlist details keep a dedicated compact hero and action strip",
+                playlistDetail.contains("PlaylistDetailHero(")
+                    && playlistDetail.contains("PlaylistDetailActionStrip")
+                    && playlistDetail.contains("pointSize: size")
+                    && playlistDetail.contains("LinearGradient(")
+                    && playlistDetail.contains("AuralPalette.playlistHeroGradient")
+                    && palette.contains("static let playlistHeroGradient")
+                    && !playlistDetail.contains("MediaDetailHeader(")
+            )
+            runner.check(
+                "playlist metadata stays truthful and duration is explicit",
+                playlistDetail.contains("store.description")
+                    && playlistDetail.contains("ownerText")
+                    && playlistDetail.contains("songCountText")
+                    && playlistDetail.contains("formatPlaylistDuration(totalDuration)")
+                    && playlistDetail.contains("item.subtitle")
+            )
+            runner.check(
+                "playlist tables start with a local newest-date projection",
+                playlistDetail.contains("variant: .playlist")
+                    && table.contains("let initialSortOrder = variant.initialSortOrder")
+                    && table.contains("case .playlist:")
+                    && table.contains("sortOrder: initialSortOrder")
+            )
+            runner.check(
+                "playlist tables match Spotify's compact column structure",
+                playlistDetail.contains("variant: .playlist")
+                    && table.contains("enum TrackTableVariant")
+                    && playlistTableColumns.contains("TableColumn(\"#\")")
+                    && playlistTableColumns.contains("playlistIndexCell(row)")
+                    && playlistTableColumns.contains("playlistTitleCell(row.track)")
+                    && playlistTableColumns.contains("TableColumn(\"Album\", value: \\.album)")
+                    && playlistTableColumns.contains("TableColumn(\"Date Added\", value: \\.dateAddedSortValue)")
+                    && playlistTableColumns.contains("TableColumn(\"Duration\", value: \\.duration)")
+                    && !playlistTableColumns.contains("TableColumn(\"Artist\"")
+                    && !playlistTableColumns.contains("TableColumn(\"Popularity\"")
+                    && !playlistTableColumns.contains("TableColumn(\"BPM\"")
+                    && !playlistTableColumns.contains("TableColumn(\"Key\"")
+                    && playlistTitleCell.contains("RemoteArtwork(")
+            )
+            runner.check(
+                "playlist table rows use cached display positions and semantic current-track labels",
+                table.contains("displayCache.displayPosition(for: row)")
+                    && table.contains("speaker.wave.2.fill")
+                    && table.contains("if isCurrentTrack && playback.isPlaying")
+                    && catalogPlaybackAccess.contains("var isPlaying: Bool { player.isPlaying }")
+                    && table.contains("playlistRowMinimumHeight")
+                    && table.contains("Current track, track \\(position) of \\(total)")
+                    && table.contains("formatCatalogDuration(row.track.duration)")
+                    && playlistTitleCell.contains("kind: .track")
+                    && playlistTitleCell.contains("pointSize: 30")
+            )
+            runner.check(
+                "playlist hero title is a responsive accessibility heading",
+                playlistDetail.contains("return 64")
+                    && playlistDetail.contains("case ..<840:")
+                    && playlistDetail.contains("accessibilityAddTraits(.isHeader)")
+                    && playlistDetail.contains("horizontalPadding")
+            )
+            runner.check(
+                "playlist actions keep one green circular play control",
+                playlistDetail.contains("CircularPlayButton(action: play, isEnabled: canPlay)")
+                    && table.contains("struct CircularPlayButton")
+                    && table.contains(".buttonBorderShape(.circle)")
+                    && table.contains(".opacity(isEnabled ? 1 : 0.45)")
+                    && table.contains(".disabled(!isEnabled)")
+                    && table.contains(".help(\"Play\")")
+                    && !playlistDetail.contains("PlaylistPlayButton")
+            )
+            runner.check(
+                "playlist source order has a native accessible restore path",
+                table.contains(".toolbar {")
+                    && table.contains("Button(\"Restore Playlist Order\", systemImage: \"arrow.uturn.backward\")")
+                    && table.contains("sortOrder = []")
+                    && table.contains(".disabled(sortOrder.isEmpty)")
+                    && table.contains(".accessibilityHint(\"Show tracks in the playlist's saved order\")")
             )
             runner.check(
                 "the persistent player uses a compact near-black shelf",
