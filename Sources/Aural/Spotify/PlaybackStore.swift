@@ -174,7 +174,7 @@ final class PlaybackStore {
     /// Read-only projection of `AccountStore.epoch`. Do not increment or assign this value.
     var accountEpoch: UInt64 { accountStore.epoch }
     /// Swift-owned local display name. The engine no longer sends a hardcoded `device_name`.
-    var thisDeviceName = "This Mac"
+    let thisDeviceName = "This Mac"
     @ObservationIgnored var lastRemoteDeviceID: String?
     /// The first Connect snapshot describes state that predates this process. It seeds the UI,
     /// but must not be counted as something the listener just played in this Aural session.

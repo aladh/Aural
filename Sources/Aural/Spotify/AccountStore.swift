@@ -71,12 +71,10 @@ final class AccountStore {
         )
     }
 
-    func receiveEngineConnection(connected: Bool, ready: Bool, error: String?) {
+    func receiveEngineConnection(_ session: PlaybackSessionPhase?) {
         guard !teardown.isActive, connectionTask == nil else { return }
-        if connected, ready {
-            phase = .ready
-        } else if let error, !error.isEmpty {
-            phase = .failed(error)
+        if let session {
+            phase = session
         }
     }
 

@@ -395,11 +395,7 @@ extension PlaybackStore {
             receivedAt: receivedAt
         )
         guard accepted else { return }
-        accountStore.receiveEngineConnection(
-            connected: state.sessionConnected,
-            ready: state.spircReady,
-            error: state.lastError
-        )
+        accountStore.receiveEngineConnection(session)
     }
 
 }
