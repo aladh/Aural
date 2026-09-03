@@ -123,8 +123,8 @@ process and can disturb an authenticated session.
 3. Add or update deterministic coverage at the closest ownership boundary. A green build alone is not
    evidence for behavior that can be expressed as a transition or boundary check.
 4. Run proportional verification from the repository root:
-   - Documentation only: validate links and commands, inspect rendered Markdown where layout matters,
-     stage the intended files, and run `git diff --check HEAD`.
+   - Documentation only: follow the
+     [documentation-only procedure](CONTRIBUTING.md#clean-and-risk-specific-verification).
    - Normal Swift/domain/UI behavior: run the nearest focused suites while iterating, then
      `./Scripts/check.sh`.
    - Rust, lifecycle, FFI, dependencies, build, signing, packaging, CI, or release mechanics: run
