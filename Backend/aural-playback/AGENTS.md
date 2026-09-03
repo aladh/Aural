@@ -26,7 +26,7 @@ across the Swift/Rust boundary.
   queue, device-list, connection-phase, local-label, playback-transport, and metadata presentation.
   Do not reintroduce `device_name`, `reconnect_attempt`, `connected_since_ms`, or
   `session_connection_id` into `ConnectionState` or its envelope; reconnect backoff remains
-  loop-local. Connection observations are a typed C snapshot, not JSON. Do not synthesize
+  loop-local. Connection and playback observations are typed C snapshots, not JSON. Do not synthesize
   transport presentation in Rust; send protocol playing/paused flags.
   Cluster playback snapshots send protocol `context_uri`; local `PlayerEvent` snapshots send an
   empty context. User resume reads sticky `CURRENT_CONTEXT_URI` / `CURRENT_TRACK_URI` through

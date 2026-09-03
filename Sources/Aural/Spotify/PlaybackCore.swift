@@ -22,6 +22,27 @@ nonisolated enum PlaybackCore {
         aural_playback_register_playback_state_callback(callback)
     }
 
+    static func playbackState(
+        from pointer: UnsafePointer<AuralPlaybackSnapshot>?
+    ) -> RustPlaybackState? {
+        guard let pointer else { return nil }
+        let snapshot = pointer.pointee
+        return RustPlaybackState(
+            revision: snapshot.revision,
+            sessionGeneration: snapshot.session_generation,
+            isPlaying: snapshot.is_playing != 0,
+            isPaused: snapshot.is_paused != 0,
+            trackURI: optionalCString(snapshot.track_uri) ?? "",
+            contextURI: optionalCString(snapshot.context_uri) ?? "",
+            positionMS: snapshot.position_ms,
+            durationMS: snapshot.duration_ms,
+            timestampMS: snapshot.timestamp_ms,
+            shuffle: snapshot.shuffle != 0,
+            repeatTrack: snapshot.repeat_track != 0,
+            repeatContext: snapshot.repeat_context != 0
+        )
+    }
+
     static func registerQueueCallback(_ callback: QueueCallback) {
         aural_playback_register_queue_callback(callback)
     }

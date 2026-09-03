@@ -45,7 +45,7 @@ pub(crate) type JsonCallback = extern "C" fn(*const c_char);
 #[derive(Default)]
 pub(crate) struct ControlCallbacks {
     pub(crate) queue: Mutex<Option<JsonCallback>>,
-    pub(crate) playback_state: Mutex<Option<JsonCallback>>,
+    pub(crate) playback_state: Mutex<Option<PlaybackSnapshotCallback>>,
     pub(crate) devices: Mutex<Option<JsonCallback>>,
     pub(crate) connection_state: Mutex<Option<ConnectionSnapshotCallback>>,
 }
@@ -435,25 +435,6 @@ pub(crate) struct QueueState {
     pub(crate) queue_revision: String,
     pub(crate) disallow_set_queue: bool,
     pub(crate) disallow_removing_from_next_tracks: bool,
-}
-
-/// Protocol playing/paused flags plus timing, options, and context URI. Transport
-/// presentation and resume-load target order are Swift-owned.
-#[derive(Serialize)]
-pub(crate) struct PlaybackStateUpdate {
-    pub(crate) revision: u64,
-    pub(crate) session_generation: u64,
-    pub(crate) is_playing: bool,
-    pub(crate) is_paused: bool,
-    pub(crate) track_uri: String,
-    pub(crate) context_uri: String,
-    pub(crate) position_ms: i64,
-    pub(crate) duration_ms: i64,
-    pub(crate) shuffle: bool,
-    pub(crate) repeat_track: bool,
-    pub(crate) repeat_context: bool,
-    /// Timestamp (ms since epoch) when position_ms was recorded - for computing current position
-    pub(crate) timestamp_ms: i64,
 }
 
 /// One cluster member as observed on the wire. Activity and unused Web API fields

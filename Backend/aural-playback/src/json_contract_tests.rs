@@ -61,40 +61,6 @@ fn provided_track(uri: &str, provider: &str, uid: &str) -> ProvidedTrack {
     }
 }
 
-fn playback_minimal() -> PlaybackStateUpdate {
-    PlaybackStateUpdate {
-        revision: 1,
-        session_generation: 1,
-        is_playing: false,
-        is_paused: false,
-        track_uri: String::new(),
-        context_uri: String::new(),
-        position_ms: 0,
-        duration_ms: 0,
-        shuffle: false,
-        repeat_track: false,
-        repeat_context: false,
-        timestamp_ms: 0,
-    }
-}
-
-fn playback_full() -> PlaybackStateUpdate {
-    PlaybackStateUpdate {
-        revision: 12,
-        session_generation: 4,
-        is_playing: true,
-        is_paused: false,
-        track_uri: "spotify:track:fixtureNow".to_string(),
-        context_uri: "spotify:playlist:fixtureContext".to_string(),
-        position_ms: 1_250,
-        duration_ms: 180_000,
-        shuffle: true,
-        repeat_track: false,
-        repeat_context: true,
-        timestamp_ms: 1_700_000_000_000,
-    }
-}
-
 fn protocol_identity(uri: &str, provider: &str, uid: &str) -> ProtocolQueueTrack {
     to_protocol_track(&provided_track(uri, provider, uid))
 }
@@ -198,8 +164,6 @@ fn devices_full() -> DevicesState {
 
 #[test]
 fn canonical_engine_json_matches_pinned_structs() {
-    assert_canonical_fixture("playback-minimal", &playback_minimal());
-    assert_canonical_fixture("playback-full", &playback_full());
     assert_canonical_fixture("queue-minimal", &queue_minimal());
     assert_canonical_fixture("queue-full", &queue_full());
     assert_canonical_fixture("devices-full", &devices_full());
@@ -219,8 +183,6 @@ fn canonical_engine_fixture_dir_is_the_swift_boundary_resource() {
 #[test]
 #[ignore = "rewrites checked-in canonical engine JSON"]
 fn write_engine_json_contract_fixtures() {
-    write_canonical_fixture("playback-minimal", &playback_minimal());
-    write_canonical_fixture("playback-full", &playback_full());
     write_canonical_fixture("queue-minimal", &queue_minimal());
     write_canonical_fixture("queue-full", &queue_full());
     write_canonical_fixture("devices-full", &devices_full());

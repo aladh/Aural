@@ -140,9 +140,26 @@ typedef void (*QueueCallback)(const char* queue_json);
 /// Registers a callback to receive queue updates.
 void aural_playback_register_queue_callback(QueueCallback callback);
 
+/// Playback observation. `track_uri` and `context_uri` are valid only for the callback;
+/// Swift must copy them before returning. NULL means missing. Flags are 0 or 1.
+typedef struct AuralPlaybackSnapshot {
+    uint64_t revision;
+    uint64_t session_generation;
+    int64_t position_ms;
+    int64_t duration_ms;
+    int64_t timestamp_ms;
+    uint8_t is_playing;
+    uint8_t is_paused;
+    uint8_t shuffle;
+    uint8_t repeat_track;
+    uint8_t repeat_context;
+    const char* _Nullable track_uri;
+    const char* _Nullable context_uri;
+} AuralPlaybackSnapshot;
+
 /// Callback function type for playback state updates.
-/// Receives a JSON string containing playback state (is_playing, is_paused, track_uri, etc.).
-typedef void (*PlaybackStateCallback)(const char* state_json);
+/// Receives a typed snapshot. String pointers are valid only for the callback.
+typedef void (*PlaybackStateCallback)(const AuralPlaybackSnapshot* snapshot);
 
 /// Registers a callback to receive playback state updates from Mercury/Spirc.
 void aural_playback_register_playback_state_callback(PlaybackStateCallback callback);
