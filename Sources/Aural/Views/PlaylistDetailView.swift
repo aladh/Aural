@@ -293,8 +293,7 @@ private struct PlaylistPlayButton: View {
 }
 
 func formatPlaylistDuration(_ interval: TimeInterval) -> String {
-    guard interval.isFinite else { return "0 sec" }
-    let totalSeconds = max(0, Int(interval.rounded(.down)))
+    let totalSeconds = roundedCatalogDurationSeconds(interval)
     let minutes = totalSeconds / 60
     let seconds = totalSeconds % 60
     if minutes == 0 {
