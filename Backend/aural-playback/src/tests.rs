@@ -1,5 +1,10 @@
 use super::*;
 
+#[test]
+fn connect_config_advertises_spotty_device_name() {
+    assert_eq!(create_connect_config().name, "Spotty");
+}
+
 // Recovery must start from transport evidence, not from Connect activity. These cover
 // the distinction that P0.1 was about: librespot emits the same deactivation event for
 // an ordinary handoff and for an unexpected Spirc shutdown.

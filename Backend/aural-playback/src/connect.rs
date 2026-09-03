@@ -428,7 +428,7 @@ pub(crate) fn notify_devices(
 pub(crate) fn create_connect_config() -> ConnectConfig {
     let initial_volume = INITIAL_VOLUME_SETTING.load(Ordering::SeqCst);
     ConnectConfig {
-        name: "Aural".to_string(),
+        name: "Spotty".to_string(),
         device_type: DeviceType::Computer,
         initial_volume,
         emit_set_queue_events: true,
