@@ -31,7 +31,7 @@ playback services, plus artwork hosts returned by Spotify. It has no Aural-opera
   potentially sensitive and review them before sharing.
 
 Generated data remains on the Mac unless the user deliberately shares it. Aural does not include
-analytics, advertising, crash-reporting SDKs, or telemetry sent to the project maintainers.
+analytics, advertising, crash-reporting SDKs, or project-operated telemetry.
 
 ## Diagnostics
 
