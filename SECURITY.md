@@ -4,12 +4,13 @@
 
 Do not open a public issue with vulnerability details, credentials, OAuth callbacks, or account
 data. Use GitHub's **Security → Report a vulnerability** flow for this repository. If private
-vulnerability reporting is unavailable, contact the maintainer through the contact method on their
-GitHub profile and include only a request for a private channel until one is established.
+vulnerability reporting is unavailable, open a public issue containing only a request to enable a
+private reporting channel; include no vulnerability details until that channel exists.
 
 Reports should include the affected commit/version, impact, reproduction conditions, and a minimal
-proof of concept with all Spotify account data and tokens removed. You should receive an initial
-response within seven days.
+proof of concept with all Spotify account data and tokens removed. Security triage and remediation
+are agent-owned and best-effort; this experimental personal project does not promise a response or
+fix timeline.
 
 ## Supported versions
 
@@ -32,5 +33,5 @@ interfaces are not security vulnerabilities. See the warning in [README.md](READ
 
 ## Disclosure
 
-Please allow reasonable time to investigate and prepare a fix before public disclosure. Never send
-working Spotify credentials or another person's account data with a report.
+Allow reasonable time for agent-driven investigation and remediation before public disclosure. Never
+send working Spotify credentials or another person's account data with a report.

@@ -1,16 +1,29 @@
-## Summary
+## Outcome
 
-Describe the behavior and why the change is needed.
+State the user-visible or repository outcome and why it is needed.
+
+## Design and risk
+
+Name the canonical owner, important design choice, affected failure modes, and remaining risk.
 
 ## Verification
 
-- [ ] `./Scripts/check.sh`
-- [ ] Tests cover changed behavior, or the absence of a new test is explained below
-- [ ] No credentials, OAuth callbacks, diagnostics, real account payloads, or private screenshots
-      are included
-- [ ] Public docs are updated for changed requirements, behavior, storage, or permissions
+List every command and result exactly; do not claim unperformed checks.
 
-## Manual testing
+- [ ] Closest deterministic coverage was added or the absence of new coverage is explained
+- [ ] Proportional repository gate passed, or the exact failure/constraint is recorded
+- [ ] `git diff` / `git status --short` were inspected for unrelated, generated, or private files
+- [ ] Canonical public/product/architecture/setup/security docs were updated when behavior changed
+- [ ] No credentials, OAuth callbacks, diagnostics, real account payloads, or private screenshots are included
 
-List the macOS version, build configuration, and scenarios exercised. State explicitly whether any
-Spotify playback or account mutation occurred.
+## Live and manual activity
+
+State the macOS/build configuration and scenarios exercised. Explicitly say whether Aural was
+launched and whether any Spotify playback, queue, device, library, playlist, follow, or account
+mutation occurred. For authorized mutations, record scope and restoration.
+
+## Review state
+
+Reference issues in plain language such as `Contributes to #13`; never use issue-closing keywords.
+Record how every actionable automated-review finding was fixed or explicitly declined, and leave no
+valid review thread unresolved.
