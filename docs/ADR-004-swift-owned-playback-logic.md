@@ -104,16 +104,23 @@ engine still sends session flags plus `device_id` and `last_error`; Swift copies
 struct in `PlaybackCore` and `ConnectionSnapshotProjection` remains the presentation
 owner. Queue, playback, and device callbacks stay JSON.
 
+### Eighth slice
+
+Playback observations cross FFI as `AuralPlaybackSnapshot` rather than JSON. The engine
+still sends protocol playing/paused flags, track URI, context URI, timing, and options;
+Swift copies the struct in `PlaybackCore` and `PlaybackSnapshotProjection` remains the
+presentation owner. Queue and device callbacks stay JSON.
+
 ## Consequences
 
 - Upcoming-queue UI and `QueueService.acceptConnect` entries come from one Swift
   projection. Mutation snapshots still need the unfiltered protocol lists for `set_queue`.
 - Device-list activity, display sort, and empty-type fallback come from one Swift
   projection. Rust still uses `is_active_in_cluster` for this engine's Connect role.
-- Engine JSON fixtures pin the remaining slimmer envelopes (queue, playback, devices).
+- Engine JSON fixtures pin the remaining slimmer envelopes (queue, devices).
   Older check JSON may still include optional current-track labels or Web API device
-  fields; production Connect callbacks do not. Connection observations are a typed C
-  snapshot, not a JSON fixture.
+  fields; production Connect callbacks do not. Connection and playback observations are
+  typed C snapshots, not JSON fixtures.
 - Connection session phase and empty-device-id handling come from one Swift projection.
   Local display name is Swift-owned. Reconnect backoff is a loop-local counter in
   `session_lifecycle.rs`, not a `ConnectionState` field. The connection callback is a typed
@@ -121,7 +128,8 @@ owner. Queue, playback, and device callbacks stay JSON.
 - Engine playback transport, empty-track-URI identity, and timestamp correction come from
   one Swift projection. Rust still forwards protocol playing/paused bits (and shapes local
   `PlayerEvent` as that pair). Protocol `context_uri` is forwarded as playlist/album/artist
-  identity on cluster snapshots. Local player-event snapshots send an empty context.
+  identity on cluster snapshots. Local player-event snapshots send an empty context. The
+  playback callback is a typed C snapshot, not JSON.
 - Resume-load target order for user resume comes from Swift `ResumeLoadPlan` issued through
   `aural_playback_load`, using sticky resume-load URIs rather than presentation context.
   Reconnect rehydration still loads from session globals in the engine.
@@ -159,6 +167,12 @@ iterate Swift targets. Reconnect rehydration still uses the engine-side plan.
 
 Rejected for this slice. That would expand the C ABI before a tighter payload exists
 and would still leave playing-event waits and reconnect rehydration in the engine.
+
+### Keep playback snapshots as JSON until every callback moves together
+
+Rejected. Playback is a flat protocol observation with a production callback, the same
+shape as the connection snapshot. A typed C struct shrinks that FFI surface without
+waiting on queue or device payloads.
 
 ### Keep connection snapshots as JSON until every callback moves together
 

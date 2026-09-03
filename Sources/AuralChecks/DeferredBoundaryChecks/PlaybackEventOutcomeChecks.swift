@@ -369,7 +369,7 @@ private func startTrackResolution(_ player: PlaybackStore, uri: String) {
             contextURI: "",
             positionMS: 1_000,
             durationMS: 180_000,
-            timestampMS: nil,
+            timestampMS: 0,
             shuffle: false,
             repeatTrack: false,
             repeatContext: false
@@ -990,14 +990,14 @@ func runPlaybackEventOutcomeChecks(_ runner: CheckRunner) async {
         player.receive(
             RustPlaybackState(
                 revision: 2,
-                sessionGeneration: nil,
+                sessionGeneration: player.engineGeneration,
                 isPlaying: true,
                 isPaused: false,
                 trackURI: "spotify:track:clocked",
                 contextURI: "",
                 positionMS: 40_000,
                 durationMS: 200_000,
-                timestampMS: nil,
+                timestampMS: 0,
                 shuffle: false,
                 repeatTrack: false,
                 repeatContext: false

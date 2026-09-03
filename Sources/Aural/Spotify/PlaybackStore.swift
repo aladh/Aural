@@ -4,39 +4,23 @@ import Foundation
 import Observation
 import OSLog
 
-/// Decode-only engine playback JSON. Transport, empty-URI identity, and option
+/// Engine playback observation. Transport, empty-URI identity, and option
 /// fallbacks are projected at intake (`PlaybackSnapshotProjection`). Protocol
 /// `context_uri` is forwarded as playlist/album/artist identity, not QueueService
 /// mutation identity.
-nonisolated struct RustPlaybackState: Decodable, Sendable {
-    var revision: UInt64?
-    var sessionGeneration: UInt64?
+nonisolated struct RustPlaybackState: Sendable {
+    let revision: UInt64
+    let sessionGeneration: UInt64
     let isPlaying: Bool
     let isPaused: Bool
     let trackURI: String
     let contextURI: String
     let positionMS: Int64
     let durationMS: Int64
-    var timestampMS: Int64?
-    /// Absent in payloads from backend versions that predate repeat/shuffle reporting.
-    var shuffle: Bool?
-    var repeatTrack: Bool?
-    var repeatContext: Bool?
-
-    enum CodingKeys: String, CodingKey {
-        case revision
-        case sessionGeneration = "session_generation"
-        case isPlaying = "is_playing"
-        case isPaused = "is_paused"
-        case trackURI = "track_uri"
-        case contextURI = "context_uri"
-        case positionMS = "position_ms"
-        case durationMS = "duration_ms"
-        case timestampMS = "timestamp_ms"
-        case shuffle
-        case repeatTrack = "repeat_track"
-        case repeatContext = "repeat_context"
-    }
+    let timestampMS: Int64
+    let shuffle: Bool
+    let repeatTrack: Bool
+    let repeatContext: Bool
 }
 
 nonisolated struct RustQueueState: Decodable, Sendable {

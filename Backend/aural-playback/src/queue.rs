@@ -30,34 +30,37 @@ pub(crate) fn send_playback_state(player_state: &PlayerState) {
     update_playback_options(shuffle, repeat_track, repeat_context);
 
     // Forward protocol playing/paused bits. Swift projects transport presentation.
-    let update = stamped_snapshot(|stamp| PlaybackStateUpdate {
-        revision: stamp.revision,
-        session_generation: stamp.session_generation,
-        is_playing: player_state.is_playing,
-        is_paused: player_state.is_paused,
-        track_uri,
-        context_uri: player_state.context_uri.clone(),
-        position_ms: player_state.position_as_of_timestamp,
-        duration_ms: player_state.duration,
-        shuffle,
-        repeat_track,
-        repeat_context,
-        timestamp_ms: player_state.timestamp,
+    let (stamp, observation) = stamped_snapshot(|stamp| {
+        (
+            stamp,
+            PlaybackObservation {
+                is_playing: player_state.is_playing,
+                is_paused: player_state.is_paused,
+                track_uri,
+                context_uri: player_state.context_uri.clone(),
+                position_ms: player_state.position_as_of_timestamp,
+                duration_ms: player_state.duration,
+                shuffle,
+                repeat_track,
+                repeat_context,
+                timestamp_ms: player_state.timestamp,
+            },
+        )
     });
 
     debug!(
         "PlaybackState: playing={}, paused={}, position={}ms, duration={}ms, timestamp={}ms, shuffle={}, repeat_track={}, repeat_context={}",
-        update.is_playing,
-        update.is_paused,
-        update.position_ms,
-        update.duration_ms,
-        update.timestamp_ms,
-        update.shuffle,
-        update.repeat_track,
-        update.repeat_context
+        observation.is_playing,
+        observation.is_paused,
+        observation.position_ms,
+        observation.duration_ms,
+        observation.timestamp_ms,
+        observation.shuffle,
+        observation.repeat_track,
+        observation.repeat_context
     );
 
-    send_json(callback, &update);
+    send_playback_snapshot(callback, stamp, &observation);
 }
 
 /// Send playback state update from local player events (Playing, Paused)
@@ -84,37 +87,40 @@ pub(crate) fn send_local_playback_state(is_playing: bool, position_ms: u32) {
     let duration_ms = CURRENT_DURATION_MS.load(Ordering::SeqCst);
     let (shuffle, repeat_track, repeat_context) = current_playback_options();
 
-    let update = stamped_snapshot(|stamp| PlaybackStateUpdate {
-        revision: stamp.revision,
-        session_generation: stamp.session_generation,
-        is_playing,
-        // Local PlayerEvent has one bit; shape it as the protocol pair Swift already projects.
-        is_paused: !is_playing,
-        track_uri,
-        // Local PlayerEvent has no protocol context. Sticky CURRENT_CONTEXT_URI is
-        // resume-load input only; publishing it here would restore a session-lifetime
-        // playlist after a cluster snapshot cleared Swift's playbackContextURI.
-        context_uri: String::new(),
-        position_ms: position_ms as i64,
-        duration_ms: duration_ms as i64,
-        shuffle,
-        repeat_track,
-        repeat_context,
-        timestamp_ms: current_timestamp_ms() as i64,
+    let (stamp, observation) = stamped_snapshot(|stamp| {
+        (
+            stamp,
+            PlaybackObservation {
+                is_playing,
+                // Local PlayerEvent has one bit; shape it as the protocol pair Swift already projects.
+                is_paused: !is_playing,
+                track_uri,
+                // Local PlayerEvent has no protocol context. Sticky CURRENT_CONTEXT_URI is
+                // resume-load input only; publishing it here would restore a session-lifetime
+                // playlist after a cluster snapshot cleared Swift's playbackContextURI.
+                context_uri: String::new(),
+                position_ms: position_ms as i64,
+                duration_ms: duration_ms as i64,
+                shuffle,
+                repeat_track,
+                repeat_context,
+                timestamp_ms: current_timestamp_ms() as i64,
+            },
+        )
     });
 
     debug!(
         "Local PlaybackState: playing={}, paused={}, position={}ms, duration={}ms, shuffle={}, repeat_track={}, repeat_context={}",
-        update.is_playing,
-        update.is_paused,
-        update.position_ms,
-        update.duration_ms,
-        update.shuffle,
-        update.repeat_track,
-        update.repeat_context
+        observation.is_playing,
+        observation.is_paused,
+        observation.position_ms,
+        observation.duration_ms,
+        observation.shuffle,
+        observation.repeat_track,
+        observation.repeat_context
     );
 
-    send_json(callback, &update);
+    send_playback_snapshot(callback, stamp, &observation);
 }
 
 /// Converts a Connect-state track into current-track identity for a queue snapshot.

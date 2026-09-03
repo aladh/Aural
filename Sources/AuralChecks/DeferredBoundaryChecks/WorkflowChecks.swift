@@ -901,7 +901,7 @@ func runWorkflowChecks(_ runner: CheckRunner) async {
                         contextURI: "",
                         positionMS: 1_000,
                         durationMS: 10_000,
-                        timestampMS: nil,
+                        timestampMS: 0,
                         shuffle: false,
                         repeatTrack: false,
                         repeatContext: false

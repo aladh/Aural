@@ -590,7 +590,7 @@ fn exported_c_function_signatures_are_stable() {
     let _: extern "C" fn(bool) = aural_playback_set_gapless;
 
     let _: extern "C" fn(extern "C" fn(*const c_char)) = aural_playback_register_queue_callback;
-    let _: extern "C" fn(extern "C" fn(*const c_char)) =
+    let _: extern "C" fn(PlaybackSnapshotCallback) =
         aural_playback_register_playback_state_callback;
     let _: extern "C" fn(extern "C" fn(*const c_char)) = aural_playback_register_devices_callback;
     let _: extern "C" fn(ConnectionSnapshotCallback) =
@@ -707,6 +707,115 @@ fn connection_snapshot_callback_copies_nullable_fields() {
             device_id: Some(String::new()),
             last_error: Some("err\0or".to_string()),
             is_active_device: false,
+        },
+    );
+}
+
+#[test]
+fn playback_snapshot_repr_c_layout_matches_header() {
+    assert_eq!(std::mem::size_of::<AuralPlaybackSnapshot>(), 64);
+    assert_eq!(std::mem::align_of::<AuralPlaybackSnapshot>(), 8);
+    assert_eq!(std::mem::offset_of!(AuralPlaybackSnapshot, revision), 0);
+    assert_eq!(
+        std::mem::offset_of!(AuralPlaybackSnapshot, session_generation),
+        8
+    );
+    assert_eq!(std::mem::offset_of!(AuralPlaybackSnapshot, position_ms), 16);
+    assert_eq!(std::mem::offset_of!(AuralPlaybackSnapshot, duration_ms), 24);
+    assert_eq!(
+        std::mem::offset_of!(AuralPlaybackSnapshot, timestamp_ms),
+        32
+    );
+    assert_eq!(std::mem::offset_of!(AuralPlaybackSnapshot, is_playing), 40);
+    assert_eq!(std::mem::offset_of!(AuralPlaybackSnapshot, is_paused), 41);
+    assert_eq!(std::mem::offset_of!(AuralPlaybackSnapshot, shuffle), 42);
+    assert_eq!(
+        std::mem::offset_of!(AuralPlaybackSnapshot, repeat_track),
+        43
+    );
+    assert_eq!(
+        std::mem::offset_of!(AuralPlaybackSnapshot, repeat_context),
+        44
+    );
+    assert_eq!(std::mem::offset_of!(AuralPlaybackSnapshot, track_uri), 48);
+    assert_eq!(std::mem::offset_of!(AuralPlaybackSnapshot, context_uri), 56);
+}
+
+#[test]
+fn playback_snapshot_callback_copies_nullable_fields() {
+    extern "C" fn capture(snapshot: *const AuralPlaybackSnapshot) {
+        let snapshot = unsafe { &*snapshot };
+        assert_eq!(snapshot.revision, 12);
+        assert_eq!(snapshot.session_generation, 4);
+        assert_eq!(snapshot.is_playing, 1);
+        assert_eq!(snapshot.is_paused, 0);
+        assert_eq!(snapshot.shuffle, 1);
+        assert_eq!(snapshot.repeat_track, 0);
+        assert_eq!(snapshot.repeat_context, 1);
+        assert_eq!(snapshot.position_ms, 1_250);
+        assert_eq!(snapshot.duration_ms, 180_000);
+        assert_eq!(snapshot.timestamp_ms, 1_700_000_000_000);
+        assert!(!snapshot.track_uri.is_null());
+        assert_eq!(
+            unsafe { CStr::from_ptr(snapshot.track_uri) }
+                .to_str()
+                .unwrap(),
+            "spotify:track:fixtureNow"
+        );
+        assert!(!snapshot.context_uri.is_null());
+        assert_eq!(
+            unsafe { CStr::from_ptr(snapshot.context_uri) }
+                .to_str()
+                .unwrap(),
+            "spotify:playlist:fixtureContext"
+        );
+    }
+
+    send_playback_snapshot(
+        capture,
+        SnapshotStamp {
+            revision: 12,
+            session_generation: 4,
+        },
+        &PlaybackObservation {
+            is_playing: true,
+            is_paused: false,
+            track_uri: "spotify:track:fixtureNow".to_string(),
+            context_uri: "spotify:playlist:fixtureContext".to_string(),
+            position_ms: 1_250,
+            duration_ms: 180_000,
+            shuffle: true,
+            repeat_track: false,
+            repeat_context: true,
+            timestamp_ms: 1_700_000_000_000,
+        },
+    );
+
+    extern "C" fn capture_empty_and_nul(snapshot: *const AuralPlaybackSnapshot) {
+        let snapshot = unsafe { &*snapshot };
+        assert!(snapshot.track_uri.is_null());
+        assert!(snapshot.context_uri.is_null());
+        assert_eq!(snapshot.is_playing, 0);
+        assert_eq!(snapshot.is_paused, 0);
+    }
+
+    send_playback_snapshot(
+        capture_empty_and_nul,
+        SnapshotStamp {
+            revision: 1,
+            session_generation: 1,
+        },
+        &PlaybackObservation {
+            is_playing: false,
+            is_paused: false,
+            track_uri: String::new(),
+            context_uri: "ctx\0uri".to_string(),
+            position_ms: 0,
+            duration_ms: 0,
+            shuffle: false,
+            repeat_track: false,
+            repeat_context: false,
+            timestamp_ms: 0,
         },
     );
 }

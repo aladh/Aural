@@ -147,6 +147,69 @@ pub(crate) fn send_connection_snapshot(
     callback(&snapshot);
 }
 
+/// Protocol playing/paused flags, URIs, timing, and options. Transport presentation
+/// is Swift-owned. Not a JSON DTO.
+pub(crate) struct PlaybackObservation {
+    pub is_playing: bool,
+    pub is_paused: bool,
+    pub track_uri: String,
+    pub context_uri: String,
+    pub position_ms: i64,
+    pub duration_ms: i64,
+    pub shuffle: bool,
+    pub repeat_track: bool,
+    pub repeat_context: bool,
+    pub timestamp_ms: i64,
+}
+
+#[repr(C)]
+pub struct AuralPlaybackSnapshot {
+    pub revision: u64,
+    pub session_generation: u64,
+    pub position_ms: i64,
+    pub duration_ms: i64,
+    pub timestamp_ms: i64,
+    pub is_playing: u8,
+    pub is_paused: u8,
+    pub shuffle: u8,
+    pub repeat_track: u8,
+    pub repeat_context: u8,
+    pub track_uri: *const c_char,
+    pub context_uri: *const c_char,
+}
+
+pub(crate) type PlaybackSnapshotCallback = extern "C" fn(*const AuralPlaybackSnapshot);
+
+pub(crate) fn send_playback_snapshot(
+    callback: PlaybackSnapshotCallback,
+    stamp: SnapshotStamp,
+    observation: &PlaybackObservation,
+) {
+    let track_uri = optional_callback_c_string(Some(observation.track_uri.as_str()));
+    let context_uri = optional_callback_c_string(Some(observation.context_uri.as_str()));
+    let snapshot = AuralPlaybackSnapshot {
+        revision: stamp.revision,
+        session_generation: stamp.session_generation,
+        position_ms: observation.position_ms,
+        duration_ms: observation.duration_ms,
+        timestamp_ms: observation.timestamp_ms,
+        is_playing: u8::from(observation.is_playing),
+        is_paused: u8::from(observation.is_paused),
+        shuffle: u8::from(observation.shuffle),
+        repeat_track: u8::from(observation.repeat_track),
+        repeat_context: u8::from(observation.repeat_context),
+        track_uri: track_uri
+            .as_ref()
+            .map(|value| value.as_ptr())
+            .unwrap_or(std::ptr::null()),
+        context_uri: context_uri
+            .as_ref()
+            .map(|value| value.as_ptr())
+            .unwrap_or(std::ptr::null()),
+    };
+    callback(&snapshot);
+}
+
 /// The current Spirc, or `None` after logging that there is none.
 ///
 /// Handed out as a clone rather than behind the guard: several callers go on to publish a
@@ -279,10 +342,11 @@ pub extern "C" fn aural_playback_register_queue_callback(callback: extern "C" fn
     })
 }
 
-/// Registers a callback to receive playback state updates (as JSON string).
+/// Registers a callback to receive playback state updates as a C snapshot.
+/// String pointers are valid only for the call.
 #[no_mangle]
 pub extern "C" fn aural_playback_register_playback_state_callback(
-    callback: extern "C" fn(*const c_char),
+    callback: PlaybackSnapshotCallback,
 ) {
     ffi_void("aural_playback_register_playback_state_callback", || {
         *CONTROL_CALLBACKS
