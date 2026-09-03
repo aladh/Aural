@@ -288,7 +288,7 @@ func runEnginePayloadContractChecks(_ check: CheckRunner) {
                 "Connect intake projects devices at the envelope, not on the DTO",
                 containsToken(engineEvents, "ConnectDeviceProjection.devices(")
                     && containsToken(engineEvents, "from: state.devices")
-                    && containsToken(engineEvents, "activeDeviceID: state.activeDeviceID ?? \"\"")
+                    && containsToken(engineEvents, "activeDeviceID: state.activeDeviceID")
                     && containsToken(dto, "let devices: [ConnectProtocolDevice]")
                     && !containsToken(dto, "func devices(")
                     && containsToken(projection, "public static func isActive")
@@ -301,7 +301,7 @@ func runEnginePayloadContractChecks(_ check: CheckRunner) {
 private func projectedDevices(from state: RustDevicesState) -> [ConnectDevice] {
     ConnectDeviceProjection.devices(
         from: state.devices,
-        activeDeviceID: state.activeDeviceID ?? ""
+        activeDeviceID: state.activeDeviceID
     )
 }
 

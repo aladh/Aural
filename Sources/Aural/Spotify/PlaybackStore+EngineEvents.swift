@@ -37,7 +37,7 @@ extension PlaybackStore {
             receive(
                 ConnectDeviceProjection.devices(
                     from: state.devices,
-                    activeDeviceID: state.activeDeviceID ?? ""
+                    activeDeviceID: state.activeDeviceID
                 ),
                 revision: state.revision,
                 engineEpoch: state.sessionGeneration
