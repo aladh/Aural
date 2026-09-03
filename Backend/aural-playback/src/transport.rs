@@ -16,11 +16,10 @@ pub(crate) const REHYDRATE_PLAYING_TIMEOUT: Duration = Duration::from_secs(3);
 
 /// Context and track URIs captured for a resume load, with the seek position they share.
 ///
-/// Canonical target order is Swift `ResumeLoadPlan`. This type still issues `LoadRequest`
-/// from session globals because `aural_playback_play_uri` always seeks to 0 and
-/// `aural_playback_resume` must not grow arguments. Keep this executor in lockstep with
-/// the Swift policy tests. Empty strings are missing: that is how the session globals
-/// read after cleanup, not a URI Spirc can load.
+/// Target order and `LoadRequest` issuance stay in this crate: `aural_playback_play_uri`
+/// always seeks to 0, reconnect rehydration calls `resume_via_load` without Swift, and
+/// `aural_playback_resume` must not grow arguments. Empty strings are missing: that is how
+/// the session globals read after cleanup, not a URI Spirc can load.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct ResumeLoadPlan {
     pub(crate) position_ms: u32,

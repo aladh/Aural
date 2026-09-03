@@ -13,11 +13,11 @@ func runPlaybackSnapshotProjectionChecks(_ check: CheckRunner) {
         )
         check.nil_(
             "an empty context URI is missing",
-            PlaybackSnapshotProjection.resolvedContextURI("")
+            PlaybackSnapshotProjection.resolvedTrackURI("")
         )
         check.equal(
             "a nonempty context URI is kept",
-            PlaybackSnapshotProjection.resolvedContextURI("spotify:playlist:ctx"),
+            PlaybackSnapshotProjection.resolvedTrackURI("spotify:playlist:ctx"),
             "spotify:playlist:ctx"
         )
 

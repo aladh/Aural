@@ -6,7 +6,8 @@ import OSLog
 
 /// Decode-only engine playback JSON. Transport, empty-URI identity, and option
 /// fallbacks are projected at intake (`PlaybackSnapshotProjection`). Protocol
-/// `context_uri` is forwarded so Swift can name resume-load targets.
+/// `context_uri` is forwarded as playlist/album/artist identity, not QueueService
+/// mutation identity.
 nonisolated struct RustPlaybackState: Decodable, Sendable {
     var revision: UInt64?
     var sessionGeneration: UInt64?

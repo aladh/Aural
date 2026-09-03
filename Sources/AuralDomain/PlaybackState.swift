@@ -508,8 +508,9 @@ public struct PlaybackState: Equatable, Sendable {
     public var owner: PlaybackOwner
     public var transport: PlaybackTransportState
     public var currentTrack: CurrentTrack?
-    /// Playlist/album/artist URI from the engine playback observation. Distinct from
-    /// `queue.contextURI`, which is QueueService mutation identity (often the current track).
+    /// Playlist/album/artist URI from an authoritative engine playback observation.
+    /// Distinct from `queue.contextURI`, which is QueueService mutation identity
+    /// (often the current track). Optimistic-play holds must not adopt this field.
     public var playbackContextURI: String?
     public var timing: PlaybackTiming
     public var options: PlaybackOptions
@@ -606,11 +607,11 @@ public enum PlaybackReducer {
         case let .transport(transport):
             reconcileTransport(transport, incomingTrackURI: nil, in: &candidate)
         case let .enginePlayback(snapshot):
-            candidate.playbackContextURI = snapshot.contextURI
             let incomingURI = playbackTrackURI(snapshot.trackURI)
             if shouldHoldOptimisticPlayTarget(incomingURI: incomingURI, in: candidate) {
                 applyEnginePlaybackOptions(snapshot, in: &candidate)
             } else {
+                candidate.playbackContextURI = snapshot.contextURI
                 supersedeOptimisticPlayTargetIfNeeded(incomingURI: incomingURI, in: &candidate)
                 let previousURI = candidate.currentTrack?.uri
                 reconcileSeekTiming(snapshot.timing, incomingTrackURI: incomingURI, in: &candidate)

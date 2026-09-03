@@ -26,10 +26,10 @@ across the Swift/Rust boundary.
   queue, device-list, connection-phase, local-label, playback-transport, and metadata presentation.
   Do not reintroduce `device_name`, `reconnect_attempt`, `connected_since_ms`, or
   `session_connection_id` into `ConnectionState` or its envelope; reconnect backoff remains
-  loop-local. Do not synthesize transport presentation in Rust; send protocol playing/paused flags
-  and protocol `context_uri`. Keep resume `LoadRequest` execution here until play FFI can seek;
-  do not widen `aural_playback_resume`. The Rust resume-load executor must stay in lockstep with
-  Swift `ResumeLoadPlan`.
+  loop-local. Do not synthesize transport presentation in Rust; send protocol playing/paused flags.
+  Cluster playback snapshots send protocol `context_uri`; local `PlayerEvent` snapshots send an
+  empty context. Keep resume `LoadRequest` execution and target order here until Swift can issue
+  seek-capable loads; do not widen `aural_playback_resume`.
 - Keep the checked-in C header, exported symbol set, signatures, ownership, allocation, callback
   lifetime, and JSON contracts aligned with Swift fixtures.
 - Treat librespot changes as protocol migrations. Preserve the ownership classification instead of

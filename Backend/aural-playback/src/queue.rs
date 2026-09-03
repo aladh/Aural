@@ -91,11 +91,10 @@ pub(crate) fn send_local_playback_state(is_playing: bool, position_ms: u32) {
         // Local PlayerEvent has one bit; shape it as the protocol pair Swift already projects.
         is_paused: !is_playing,
         track_uri,
-        context_uri: CURRENT_CONTEXT_URI
-            .lock()
-            .unwrap_or_else(|e| e.into_inner())
-            .clone()
-            .unwrap_or_default(),
+        // Local PlayerEvent has no protocol context. Sticky CURRENT_CONTEXT_URI is
+        // resume-load input only; publishing it here would restore a session-lifetime
+        // playlist after a cluster snapshot cleared Swift's playbackContextURI.
+        context_uri: String::new(),
         position_ms: position_ms as i64,
         duration_ms: duration_ms as i64,
         shuffle,

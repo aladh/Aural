@@ -671,6 +671,7 @@ func runPlaybackCommandPresentationChecks(_ check: CheckRunner) {
             session: .ready,
             transport: .playing,
             currentTrack: trackA,
+            playbackContextURI: "spotify:playlist:a",
             timing: priorPlayingTiming
         )
         startPlay(&playingA, id: playID)
@@ -696,11 +697,22 @@ func runPlaybackCommandPresentationChecks(_ check: CheckRunner) {
                     EnginePlaybackSnapshot(
                         transport: .playing,
                         trackURI: trackA.uri,
+                        contextURI: "spotify:playlist:stale",
                         timing: laggingATiming
                     ))
             )
         )
         check.equal("a lagging A snapshot keeps the optimistic B track", playingA.currentTrack, trackB)
+        check.equal(
+            "a lagging A snapshot does not adopt protocol context",
+            playingA.playbackContextURI,
+            "spotify:playlist:a"
+        )
+        check.equal(
+            "a lagging A snapshot does not adopt protocol context",
+            playingA.playbackContextURI,
+            "spotify:playlist:a"
+        )
         check.equal("a lagging A snapshot keeps B timing", playingA.timing, optimisticTiming)
         check.equal("a lagging A snapshot does not confirm B", playingA.pendingCommands[.transport]?.id, playID)
         check.nil_("a lagging A snapshot is not a confirmation", playingA.transportCommandResolutions[playID])
@@ -717,6 +729,11 @@ func runPlaybackCommandPresentationChecks(_ check: CheckRunner) {
             )
         )
         check.equal("a rejected play restores track A", playingA.currentTrack, trackA)
+        check.equal(
+            "a rejected play keeps the pre-command playback context",
+            playingA.playbackContextURI,
+            "spotify:playlist:a"
+        )
         check.equal("a rejected play restores playing", playingA.transport, .playing)
         check.equal("a rejected play restores exact prior timing", playingA.timing, priorPlayingTiming)
         check.nil_("a rejected play clears its pending command", playingA.pendingCommands[.transport])

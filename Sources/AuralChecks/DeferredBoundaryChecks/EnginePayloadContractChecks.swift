@@ -395,31 +395,6 @@ func runEnginePayloadContractChecks(_ check: CheckRunner) {
                     && containsToken(projection, "public static func transport")
                     && containsToken(projection, "public static func snapshot")
                     && containsToken(projection, "public static func resolvedTrackURI")
-                    && containsToken(projection, "public static func resolvedContextURI")
-            )
-        }
-    }
-
-    check.suite("Resume-load policy source contract") {
-        check.noThrow("Swift owns resume-load target order; Rust still executes loads") {
-            let plan = try auralSourceFile("AuralDomain/ResumeLoadPlan.swift")
-            let playbackCore = try auralSourceFile("Aural/Spotify/PlaybackCore.swift")
-            let repoRoot = URL(fileURLWithPath: #filePath)
-                .deletingLastPathComponent()
-                .deletingLastPathComponent()
-                .deletingLastPathComponent()
-                .deletingLastPathComponent()
-            let transport = try String(
-                contentsOf: repoRoot.appending(path: "Backend/aural-playback/src/transport.rs"),
-                encoding: .utf8
-            )
-            check.check(
-                "resume-load policy is a domain type and resume FFI is still argument-free",
-                containsToken(plan, "public static func capture(")
-                    && containsToken(plan, "public func targets()")
-                    && containsToken(playbackCore, "static func resume() -> Result { aural_playback_resume() }")
-                    && containsToken(transport, "fn from_saved_playback()")
-                    && containsToken(transport, "LoadRequest::from_context_uri")
             )
         }
     }

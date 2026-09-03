@@ -76,16 +76,17 @@ playing/paused pair.
 
 ### Fifth slice
 
-Resume-load target order is Swift-owned (`ResumeLoadPlan`). The engine snapshot carries
-protocol `context_uri` (empty string means missing; the key is required). Swift stores
-that as `PlaybackState.playbackContextURI` and does not treat it as QueueService
-mutation identity. Position preference, empty-URI skipping, and context-then-track
-fallbacks live in the Swift type.
+Protocol `context_uri` is forwarded on engine playback snapshots (empty string means
+missing; the key is required). Swift stores that as `PlaybackState.playbackContextURI`
+and does not treat it as QueueService mutation identity. Empty-as-missing uses the same
+URI helper as `track_uri`. Authoritative engine-playback samples adopt context; an
+optimistic-play hold must not. Local `PlayerEvent` snapshots send an empty context: a
+local event has no protocol context, and sticky `CURRENT_CONTEXT_URI` is resume-load
+input only.
 
-Rust still issues `LoadRequest` from session globals: `aural_playback_play_uri` always
-seeks to 0, and this slice does not widen `aural_playback_resume`. Playing-event waits
-stay in the engine. The Rust `ResumeLoadPlan` executor must stay in lockstep with the
-Swift policy tests until a seek-capable load can run from Swift.
+Resume-load target order and `LoadRequest` execution stay in Rust. `aural_playback_play_uri`
+always seeks to 0, `aural_playback_resume` is not widened, and reconnect rehydration
+calls `resume_via_load` without Swift.
 
 ## Consequences
 
@@ -100,10 +101,10 @@ Swift policy tests until a seek-capable load can run from Swift.
   `session_lifecycle.rs`, not a `ConnectionState` field.
 - Engine playback transport, empty-track-URI identity, and timestamp correction come from
   one Swift projection. Rust still forwards protocol playing/paused bits (and shapes local
-  `PlayerEvent` as that pair). Protocol `context_uri` is forwarded so Swift can name
-  resume-load targets without widening `aural_playback_resume`.
-- Resume-load target order comes from one Swift `ResumeLoadPlan`. Rust still executes
-  those loads from session globals because play FFI cannot seek.
+  `PlayerEvent` as that pair). Protocol `context_uri` is forwarded as playlist/album/artist
+  identity on cluster snapshots. Local player-event snapshots send an empty context.
+- Resume-load target order and `LoadRequest` execution stay in the engine. Reconnect
+  rehydration uses that path without Swift.
 - Cluster apply and session reconnect remain in Rust until a later slice can forward
   protocol observations without duplicating protobuf ownership in Swift.
 - [ADR 001](ADR-001-playback-engine.md) is not superseded: the C leaf and librespot stay.
@@ -129,17 +130,16 @@ for occurrence-safe removal.
 Rejected. Nothing read volume or restriction fields. Activity belongs next to the cluster's
 `active_device_id`, not as a second copy on each member.
 
-### Keep resume-load target order only in Rust “until play can seek”
+### Keep resume-load target order only in Swift without a load caller
 
-Rejected as the sole owner. Swift can already name targets from protocol `context_uri`
-without widening `aural_playback_resume`. Execution stays in Rust until play FFI can
-seek; duplicating the policy only in Rust would leave presentation state unable to
-describe the same fallbacks.
+Rejected. A Swift `ResumeLoadPlan` with no production caller is a second copy of the
+Rust executor. Reconnect rehydration also calls `resume_via_load` without Swift. Port
+target order only together with a seek-capable load export that Swift can issue.
 
 ### Widen `aural_playback_resume` with URIs and a seek position
 
 Rejected for this slice. That would expand the C ABI before a tighter payload exists
-and would still leave playing-event waits in the engine.
+and would still leave playing-event waits and reconnect rehydration in the engine.
 
 ### Keep reconnect bookkeeping on the connection snapshot “for compatibility”
 
