@@ -40,11 +40,12 @@ in the [enforcement inventory](architecture-enforcement.md).
 
 ## JSON / FFI surface
 
-Remaining control callbacks are JSON envelopes with `revision` and `session_generation`.
-Queue snapshots no longer carry presentation `next_tracks` / `prev_tracks` or catalog
+Remaining control callbacks for queue, playback, and devices are JSON envelopes with
+`revision` and `session_generation`. Connection observations use a typed C snapshot
+(`AuralConnectionSnapshot`) with the same stamps plus session flags, `device_id`, and
+`last_error`. Queue snapshots no longer carry presentation `next_tracks` / `prev_tracks` or catalog
 labels. Device snapshots no longer carry `is_active` or unused Web API volume/restriction
-fields; they send protocol members plus `active_device_id`. Connection snapshots send
-session flags plus `device_id` and `last_error`. Playback snapshots send protocol
+fields; they send protocol members plus `active_device_id`. Playback snapshots send protocol
 playing/paused flags, track URI, context URI, timing, and options; Swift projects transport.
 Local player-event snapshots send an empty `context_uri`. Hardcoded `device_name` is gone, and
 write-only `reconnect_attempt`, `connected_since_ms`, and `session_connection_id` were removed
@@ -57,8 +58,9 @@ adapter convenience, not a second app-facing store.
 
 ## Later slices (not this change)
 
-- Replacing JSON callbacks with a tighter ABI
+- Replacing remaining JSON callbacks (queue, playback, devices) with a tighter ABI
 - Moving reconnect rehydration loads onto Swift targets without duplicating session globals
+  (reconnect must still rehydrate before announcing readiness)
 
 Do not move PCM, Spirc, session connect, or dealer cluster fetch into Swift in order to
 satisfy this inventory.

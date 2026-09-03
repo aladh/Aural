@@ -91,6 +91,57 @@ pub(crate) fn send_json<T: Serialize>(callback: extern "C" fn(*const c_char), pa
     }
 }
 
+/// Connection observation delivered as a C struct. Pointers are valid only for the
+/// callback; Swift must copy before returning. Interior NULs become null fields.
+#[repr(C)]
+pub struct AuralConnectionSnapshot {
+    pub revision: u64,
+    pub session_generation: u64,
+    pub session_connected: u8,
+    pub spirc_ready: u8,
+    pub is_active_device: u8,
+    pub device_id: *const c_char,
+    pub last_error: *const c_char,
+}
+
+pub(crate) type ConnectionSnapshotCallback = extern "C" fn(*const AuralConnectionSnapshot);
+
+pub(crate) fn send_connection_snapshot(
+    callback: ConnectionSnapshotCallback,
+    info: &ConnectionStateInfo,
+) {
+    let device_id = c_string_or_none(info.device_id.as_deref());
+    let last_error = c_string_or_none(info.last_error.as_deref());
+    let snapshot = AuralConnectionSnapshot {
+        revision: info.revision,
+        session_generation: info.session_generation,
+        session_connected: u8::from(info.session_connected),
+        spirc_ready: u8::from(info.spirc_ready),
+        is_active_device: u8::from(info.is_active_device),
+        device_id: device_id
+            .as_ref()
+            .map(|value| value.as_ptr())
+            .unwrap_or(std::ptr::null()),
+        last_error: last_error
+            .as_ref()
+            .map(|value| value.as_ptr())
+            .unwrap_or(std::ptr::null()),
+    };
+    callback(&snapshot);
+}
+
+fn c_string_or_none(value: Option<&str>) -> Option<CString> {
+    value
+        .filter(|text| !text.is_empty())
+        .and_then(|text| match CString::new(text) {
+            Ok(c_str) => Some(c_str),
+            Err(e) => {
+                debug!("Connection snapshot field contained NUL: {}", e);
+                None
+            }
+        })
+}
+
 /// The current Spirc, or `None` after logging that there is none.
 ///
 /// Handed out as a clone rather than behind the guard: several callers go on to publish a
@@ -253,10 +304,10 @@ pub extern "C" fn aural_playback_register_devices_callback(callback: extern "C" 
 
 /// Registers a callback to receive connection state change notifications.
 /// Called whenever the connection state changes (connect, disconnect, error, etc.).
-/// The callback receives JSON with full connection state.
+/// The callback receives a C snapshot; string pointers are valid only for the call.
 #[no_mangle]
 pub extern "C" fn aural_playback_register_connection_state_callback(
-    callback: extern "C" fn(*const c_char),
+    callback: ConnectionSnapshotCallback,
 ) {
     ffi_void("aural_playback_register_connection_state_callback", || {
         *CONTROL_CALLBACKS

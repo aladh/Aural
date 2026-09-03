@@ -177,10 +177,15 @@ func runEnginePayloadContractChecks(_ check: CheckRunner) {
             check.equal("protocol prev blocked", protocolPrev.first?.blocked, ["blocked-reason"])
         }
 
-        check.noThrow("connection-minimal decodes disconnected identity") {
-            let state = try decoder.decode(
-                RustConnectionState.self,
-                from: enginePayloadFixture(named: "connection-minimal")
+        check.noThrow("connection-minimal projects disconnected identity") {
+            let state = RustConnectionState(
+                revision: 2,
+                sessionGeneration: 1,
+                sessionConnected: false,
+                spircReady: false,
+                isActiveDevice: false,
+                lastError: "fixture-session-timeout",
+                deviceID: nil
             )
             check.equal("minimal connection revision", state.revision, 2)
             check.equal("minimal connection session generation", state.sessionGeneration, 1)
@@ -197,17 +202,6 @@ func runEnginePayloadContractChecks(_ check: CheckRunner) {
                     lastError: state.lastError
                 ),
                 .failed("fixture-session-timeout")
-            )
-            let raw =
-                try JSONSerialization.jsonObject(
-                    with: enginePayloadFixture(named: "connection-minimal")
-                ) as? [String: Any]
-            check.check(
-                "connection snapshot omits unused reconnect bookkeeping",
-                raw?["reconnect_attempt"] == nil
-                    && raw?["connected_since_ms"] == nil
-                    && raw?["session_connection_id"] == nil
-                    && raw?["device_name"] == nil
             )
 
             let devices = projectedDevices(
@@ -227,10 +221,15 @@ func runEnginePayloadContractChecks(_ check: CheckRunner) {
             )
         }
 
-        check.noThrow("connection-full decodes local ownership") {
-            let state = try decoder.decode(
-                RustConnectionState.self,
-                from: enginePayloadFixture(named: "connection-full")
+        check.noThrow("connection-full projects local ownership") {
+            let state = RustConnectionState(
+                revision: 14,
+                sessionGeneration: 5,
+                sessionConnected: true,
+                spircReady: true,
+                isActiveDevice: true,
+                lastError: nil,
+                deviceID: "fixture-mac"
             )
             check.equal("full connection revision", state.revision, 14)
             check.equal("full connection session generation", state.sessionGeneration, 5)
@@ -276,11 +275,6 @@ func runEnginePayloadContractChecks(_ check: CheckRunner) {
                 "local ownership routes locally",
                 AuralDomain.connectCommandRoute(owner: owner, localDeviceID: state.deviceID),
                 .local
-            )
-
-            _ = try decodeIgnoringUnknownFields(
-                RustConnectionState.self,
-                from: enginePayloadFixture(named: "connection-full")
             )
         }
 
@@ -403,6 +397,8 @@ func runEnginePayloadContractChecks(_ check: CheckRunner) {
         check.noThrow("connection intake projects session phase at the envelope") {
             let engineEvents = try auralSourceFile("Aural/Spotify/PlaybackStore+EngineEvents.swift")
             let dto = try auralSourceFile("Aural/Spotify/PlaybackStore.swift")
+            let core = try auralSourceFile("Aural/Spotify/PlaybackCore.swift")
+            let rustEngine = try auralSourceFile("Aural/Spotify/RustPlaybackEngine.swift")
             let account = try auralSourceFile("Aural/Spotify/AccountStore.swift")
             let projection = try auralSourceFile("AuralDomain/ConnectionSnapshotProjection.swift")
             check.check(
@@ -412,8 +408,13 @@ func runEnginePayloadContractChecks(_ check: CheckRunner) {
                     && containsToken(engineEvents, "localDeviceName: thisDeviceName")
                     && containsToken(engineEvents, "accountStore.receiveEngineConnection(session)")
                     && containsToken(dto, "let thisDeviceName = \"This Mac\"")
+                    && containsToken(dto, "nonisolated struct RustConnectionState: Sendable")
+                    && !containsToken(dto, "RustConnectionState: Decodable")
                     && !containsToken(dto, "var thisDeviceName")
                     && !containsToken(dto, "deviceName")
+                    && containsToken(core, "static func connectionState(")
+                    && containsToken(rustEngine, "PlaybackCore.connectionState(from: pointer)")
+                    && !containsToken(rustEngine, "as: RustConnectionState.self")
                     && containsToken(account, "func receiveEngineConnection(_ session: PlaybackSessionPhase?)")
                     && !containsToken(account, "if connected, ready")
                     && containsToken(projection, "public static func sessionPhase")

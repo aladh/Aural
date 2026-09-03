@@ -357,8 +357,8 @@ pub(crate) fn applied_cluster_ids() -> Vec<String> {
 /// Presentation (session phase, local display name) is Swift-owned
 /// (`ConnectionSnapshotProjection`). Reading the state and assigning the revision happen
 /// together, so two concurrent publishers cannot end up with revisions that contradict
-/// the order they read state in. Delivery is deliberately left outside: `send_json`
-/// re-enters Swift, which must never happen while a lock is held.
+/// the order they read state in. Delivery is deliberately left outside: the C snapshot
+/// callback re-enters Swift, which must never happen while a lock is held.
 pub(crate) fn build_connection_state_info() -> ConnectionStateInfo {
     stamped_snapshot(|stamp| {
         let state = with_connection(|c| c.clone());
@@ -452,7 +452,7 @@ pub(crate) fn notify_devices(
 /// Sends connection state update to the registered callback
 pub(crate) fn notify_connection_state_change() {
     if let Some(callback) = registered_callback(&CONTROL_CALLBACKS.connection_state) {
-        send_json(callback, &build_connection_state_info());
+        send_connection_snapshot(callback, &build_connection_state_info());
     }
 }
 

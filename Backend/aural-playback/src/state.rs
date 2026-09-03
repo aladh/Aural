@@ -47,7 +47,7 @@ pub(crate) struct ControlCallbacks {
     pub(crate) queue: Mutex<Option<JsonCallback>>,
     pub(crate) playback_state: Mutex<Option<JsonCallback>>,
     pub(crate) devices: Mutex<Option<JsonCallback>>,
-    pub(crate) connection_state: Mutex<Option<JsonCallback>>,
+    pub(crate) connection_state: Mutex<Option<ConnectionSnapshotCallback>>,
 }
 
 pub(crate) static CONTROL_CALLBACKS: Lazy<ControlCallbacks> = Lazy::new(ControlCallbacks::default);
@@ -459,7 +459,7 @@ pub(crate) struct PlaybackStateUpdate {
 #[derive(Serialize)]
 pub(crate) struct ConnectionStateInfo {
     /// Monotonic, assigned while the snapshot is built. Lets Swift discard a snapshot that
-    /// reaches the main actor after a newer one — see `handleConnectionStateCallback`.
+    /// reaches the main actor after a newer one.
     pub(crate) revision: u64,
     pub(crate) session_generation: u64,
     pub(crate) session_connected: bool,

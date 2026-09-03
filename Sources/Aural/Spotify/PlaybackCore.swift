@@ -30,6 +30,22 @@ nonisolated enum PlaybackCore {
         aural_playback_register_connection_state_callback(callback)
     }
 
+    static func connectionState(
+        from pointer: UnsafePointer<AuralConnectionSnapshot>?
+    ) -> RustConnectionState? {
+        guard let pointer else { return nil }
+        let snapshot = pointer.pointee
+        return RustConnectionState(
+            revision: snapshot.revision,
+            sessionGeneration: snapshot.session_generation,
+            sessionConnected: snapshot.session_connected != 0,
+            spircReady: snapshot.spirc_ready != 0,
+            isActiveDevice: snapshot.is_active_device != 0,
+            lastError: optionalCString(snapshot.last_error),
+            deviceID: optionalCString(snapshot.device_id)
+        )
+    }
+
     static func registerDevicesCallback(_ callback: DevicesCallback) {
         aural_playback_register_devices_callback(callback)
     }
@@ -92,6 +108,11 @@ nonisolated enum PlaybackCore {
     private static func takeOwnedString(_ pointer: UnsafeMutablePointer<CChar>?) -> String? {
         guard let pointer else { return nil }
         defer { aural_playback_free_string(pointer) }
+        return String(cString: pointer)
+    }
+
+    private static func optionalCString(_ pointer: UnsafePointer<CChar>?) -> String? {
+        guard let pointer else { return nil }
         return String(cString: pointer)
     }
 

@@ -168,9 +168,20 @@ typedef void (*DevicesCallback)(const char* devices_json);
 /// Fires only when the list actually changes, not on every cluster tick.
 void aural_playback_register_devices_callback(DevicesCallback callback);
 
+/// Connection observation. `device_id` and `last_error` are valid only for the callback;
+/// Swift must copy them before returning. NULL means missing. Flags are 0 or 1.
+typedef struct AuralConnectionSnapshot {
+    uint64_t revision;
+    uint64_t session_generation;
+    uint8_t session_connected;
+    uint8_t spirc_ready;
+    uint8_t is_active_device;
+    const char* _Nullable device_id;
+    const char* _Nullable last_error;
+} AuralConnectionSnapshot;
+
 /// Callback function type for connection state change notifications.
-/// Receives a JSON string containing full connection state.
-typedef void (*ConnectionStateCallback)(const char* state_json);
+typedef void (*ConnectionStateCallback)(const AuralConnectionSnapshot* snapshot);
 
 /// Registers a callback to receive connection state change notifications.
 /// Called whenever the connection state changes (connect, disconnect, error, etc.).
