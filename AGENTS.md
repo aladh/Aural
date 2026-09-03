@@ -151,7 +151,8 @@ lifetime, or foreign-boundary failures:
   from Connect protocol tracks (`QueueProtocolProjection`); metadata may enrich labels but must not
   reorder or erase newer authoritative state. Device-list activity, display sort, and empty-type
   fallback are projected in Swift (`ConnectDeviceProjection`) from cluster members plus
-  `active_device_id`. Playlist writes use `PlaylistMutating` and
+  `active_device_id`. Connection session phase and empty-device-id fallback are projected in
+  Swift (`ConnectionSnapshotProjection`). Playlist writes use `PlaylistMutating` and
   `PlaylistMutationController`; keep read-only catalog access separate and mutation DTOs out of
   views.
 - `Sources/Aural/Spotify/PlaybackCore.swift` is the only Swift importer of `AuralPlaybackCore`, and

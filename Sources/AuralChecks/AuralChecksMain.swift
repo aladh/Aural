@@ -31,6 +31,9 @@ enum AuralChecksMain {
             RegisteredCheckSuite(name: "playlist-editability") { runPlaylistEditabilityChecks($0) },
             RegisteredCheckSuite(name: "queue-mutation") { runQueueMutationChecks($0) },
             RegisteredCheckSuite(name: "connect-device-projection") { runConnectDeviceProjectionChecks($0) },
+            RegisteredCheckSuite(name: "connection-snapshot-projection") {
+                runConnectionSnapshotProjectionChecks($0)
+            },
             RegisteredCheckSuite(name: "check-suite-selection") { runner in
                 runCheckSuiteSelectionChecks(runner, catalog: AuralChecksMain.suiteNames)
             },

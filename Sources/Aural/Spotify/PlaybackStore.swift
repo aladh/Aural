@@ -116,7 +116,6 @@ nonisolated struct RustConnectionState: Decodable, Sendable {
     let isActiveDevice: Bool
     let lastError: String?
     var deviceID: String?
-    var deviceName: String?
 
     enum CodingKeys: String, CodingKey {
         case revision
@@ -126,7 +125,6 @@ nonisolated struct RustConnectionState: Decodable, Sendable {
         case isActiveDevice = "is_active_device"
         case lastError = "last_error"
         case deviceID = "device_id"
-        case deviceName = "device_name"
     }
 }
 
@@ -175,7 +173,8 @@ final class PlaybackStore {
     @ObservationIgnored let catalogSession: CatalogSessionAvailability
     /// Read-only projection of `AccountStore.epoch`. Do not increment or assign this value.
     var accountEpoch: UInt64 { accountStore.epoch }
-    var thisDeviceName = "This Mac"
+    /// Swift-owned local display name. The engine no longer sends a hardcoded `device_name`.
+    let thisDeviceName = "This Mac"
     @ObservationIgnored var lastRemoteDeviceID: String?
     /// The first Connect snapshot describes state that predates this process. It seeds the UI,
     /// but must not be counted as something the listener just played in this Aural session.

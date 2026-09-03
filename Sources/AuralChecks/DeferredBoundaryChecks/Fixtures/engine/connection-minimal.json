@@ -1,13 +1,9 @@
 {
-  "connected_since_ms": null,
   "device_id": null,
-  "device_name": "",
   "is_active_device": false,
   "last_error": "fixture-session-timeout",
-  "reconnect_attempt": 3,
   "revision": 2,
   "session_connected": false,
-  "session_connection_id": null,
   "session_generation": 1,
   "spirc_ready": false
 }

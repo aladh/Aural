@@ -329,7 +329,6 @@ fn apply_player_event(event: PlayerEvent, event_listener_generation: u64) {
                 connection_id
             );
             set_active_device(true);
-            with_connection(|c| c.session_connection_id = Some(connection_id));
 
             // Notify connection state change
             notify_connection_state_change();

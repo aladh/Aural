@@ -360,7 +360,6 @@ pub(crate) fn spawn_reconnection_loop(intent: RecoveryIntent) {
                 attempt_number
             );
             with_connection(|c| {
-                c.reconnect_attempt = attempt_number;
                 c.last_error = Some(format!("Reconnecting (attempt {})", attempt_number));
             });
             notify_connection_state_change();
@@ -527,8 +526,6 @@ pub(crate) fn do_reconnect_cleanup() {
     with_connection(|c| {
         c.device_id = None;
         c.session_connected = false;
-        c.session_connection_id = None;
-        c.connected_since_ms = 0;
     });
 
     debug!("do_reconnect_cleanup complete");
@@ -840,8 +837,6 @@ pub(crate) async fn build_player_async(
             with_connection(|c| {
                 c.spirc_ready = true;
                 c.session_connected = true;
-                c.connected_since_ms = current_timestamp_ms();
-                c.reconnect_attempt = 0;
                 c.last_error = None;
             });
             notify_connection_state_change();

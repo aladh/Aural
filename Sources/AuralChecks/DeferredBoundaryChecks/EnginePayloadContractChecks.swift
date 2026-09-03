@@ -136,8 +136,27 @@ func runEnginePayloadContractChecks(_ check: CheckRunner) {
             check.equal("minimal spirc is not ready", state.spircReady, false)
             check.equal("minimal device is not active", state.isActiveDevice, false)
             check.nil_("minimal device id is omitted as null", state.deviceID)
-            check.equal("minimal device name is empty", state.deviceName, "")
             check.equal("minimal last error", state.lastError, "fixture-session-timeout")
+            check.equal(
+                "disconnected with an error is failed",
+                ConnectionSnapshotProjection.sessionPhase(
+                    connected: state.sessionConnected,
+                    spircReady: state.spircReady,
+                    lastError: state.lastError
+                ),
+                .failed("fixture-session-timeout")
+            )
+            let raw =
+                try JSONSerialization.jsonObject(
+                    with: enginePayloadFixture(named: "connection-minimal")
+                ) as? [String: Any]
+            check.check(
+                "connection snapshot omits unused reconnect bookkeeping",
+                raw?["reconnect_attempt"] == nil
+                    && raw?["connected_since_ms"] == nil
+                    && raw?["session_connection_id"] == nil
+                    && raw?["device_name"] == nil
+            )
 
             let devices = projectedDevices(
                 from: try decoder.decode(
@@ -167,8 +186,16 @@ func runEnginePayloadContractChecks(_ check: CheckRunner) {
             check.equal("full spirc is ready", state.spircReady, true)
             check.equal("full device is locally active", state.isActiveDevice, true)
             check.equal("full local device id", state.deviceID, "fixture-mac")
-            check.equal("full local device name", state.deviceName, "Fixture Mac")
             check.nil_("full last error is null", state.lastError)
+            check.equal(
+                "connected and ready is ready",
+                ConnectionSnapshotProjection.sessionPhase(
+                    connected: state.sessionConnected,
+                    spircReady: state.spircReady,
+                    lastError: state.lastError
+                ),
+                .ready
+            )
 
             let devices = projectedDevices(
                 from: try decoder.decode(
@@ -182,7 +209,7 @@ func runEnginePayloadContractChecks(_ check: CheckRunner) {
             let owner = connectionPlaybackOwner(
                 isLocalActive: state.isActiveDevice,
                 localDeviceID: state.deviceID,
-                localDeviceName: state.deviceName ?? "",
+                localDeviceName: devices.first { $0.id == state.deviceID }?.name ?? "This Mac",
                 devices: playbackDevices,
                 currentTrackURI: "spotify:track:fixtureNow",
                 previousOwner: .none,
@@ -293,6 +320,29 @@ func runEnginePayloadContractChecks(_ check: CheckRunner) {
                     && !containsToken(dto, "func devices(")
                     && containsToken(projection, "public static func isActive")
                     && containsToken(projection, "public static func devices(")
+            )
+        }
+    }
+
+    check.suite("Connection snapshot intake source contract") {
+        check.noThrow("connection intake projects session phase at the envelope") {
+            let engineEvents = try auralSourceFile("Aural/Spotify/PlaybackStore+EngineEvents.swift")
+            let dto = try auralSourceFile("Aural/Spotify/PlaybackStore.swift")
+            let account = try auralSourceFile("Aural/Spotify/AccountStore.swift")
+            let projection = try auralSourceFile("AuralDomain/ConnectionSnapshotProjection.swift")
+            check.check(
+                "Connect intake projects connection session at the envelope, not on the DTO",
+                containsToken(engineEvents, "ConnectionSnapshotProjection.sessionPhase(")
+                    && containsToken(engineEvents, "ConnectionSnapshotProjection.resolvedDeviceID(")
+                    && containsToken(engineEvents, "localDeviceName: thisDeviceName")
+                    && containsToken(engineEvents, "accountStore.receiveEngineConnection(session)")
+                    && containsToken(dto, "let thisDeviceName = \"This Mac\"")
+                    && !containsToken(dto, "var thisDeviceName")
+                    && !containsToken(dto, "deviceName")
+                    && containsToken(account, "func receiveEngineConnection(_ session: PlaybackSessionPhase?)")
+                    && !containsToken(account, "if connected, ready")
+                    && containsToken(projection, "public static func sessionPhase")
+                    && containsToken(projection, "public static func resolvedDeviceID")
             )
         }
     }

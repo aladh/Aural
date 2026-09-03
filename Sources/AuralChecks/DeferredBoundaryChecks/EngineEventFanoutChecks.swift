@@ -456,8 +456,7 @@ private func connectionEvent() -> RustPlaybackEvent {
             spircReady: true,
             isActiveDevice: false,
             lastError: nil,
-            deviceID: "local",
-            deviceName: "Aural"
+            deviceID: "local"
         )
     )
 }

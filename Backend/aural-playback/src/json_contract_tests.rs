@@ -174,13 +174,9 @@ fn connection_minimal() -> ConnectionStateInfo {
         revision: 2,
         session_generation: 1,
         session_connected: false,
-        session_connection_id: None,
         spirc_ready: false,
         device_id: None,
-        device_name: String::new(),
-        reconnect_attempt: 3,
         last_error: Some("fixture-session-timeout".to_string()),
-        connected_since_ms: None,
         is_active_device: false,
     }
 }
@@ -190,13 +186,9 @@ fn connection_full() -> ConnectionStateInfo {
         revision: 14,
         session_generation: 5,
         session_connected: true,
-        session_connection_id: Some("fixture-connection".to_string()),
         spirc_ready: true,
         device_id: Some("fixture-mac".to_string()),
-        device_name: "Fixture Mac".to_string(),
-        reconnect_attempt: 0,
         last_error: None,
-        connected_since_ms: Some(1_700_000_000_000),
         is_active_device: true,
     }
 }

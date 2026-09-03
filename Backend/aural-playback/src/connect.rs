@@ -352,12 +352,13 @@ pub(crate) fn applied_cluster_ids() -> Vec<String> {
         .clone()
 }
 
-/// Builds the current connection state info struct, stamped with a fresh revision.
+/// Builds the current connection observation, stamped with a fresh revision.
 ///
-/// Reading the state and assigning the revision happen together, so two concurrent
-/// publishers cannot end up with revisions that contradict the order they read state in.
-/// Delivery is deliberately left outside: `send_json` re-enters Swift, which must never
-/// happen while a lock is held.
+/// Presentation (session phase, local display name) is Swift-owned
+/// (`ConnectionSnapshotProjection`). Reading the state and assigning the revision happen
+/// together, so two concurrent publishers cannot end up with revisions that contradict
+/// the order they read state in. Delivery is deliberately left outside: `send_json`
+/// re-enters Swift, which must never happen while a lock is held.
 pub(crate) fn build_connection_state_info() -> ConnectionStateInfo {
     stamped_snapshot(|stamp| {
         let state = with_connection(|c| c.clone());
@@ -365,13 +366,9 @@ pub(crate) fn build_connection_state_info() -> ConnectionStateInfo {
             revision: stamp.revision,
             session_generation: stamp.session_generation,
             session_connected: state.session_connected,
-            session_connection_id: state.session_connection_id,
             spirc_ready: state.spirc_ready,
             device_id: state.device_id,
-            device_name: "Aural".to_string(),
-            reconnect_attempt: state.reconnect_attempt,
             last_error: state.last_error,
-            connected_since_ms: (state.connected_since_ms > 0).then_some(state.connected_since_ms),
             is_active_device: state.is_active_device,
         }
     })
@@ -381,8 +378,6 @@ pub(crate) fn build_connection_state_info() -> ConnectionStateInfo {
 pub(crate) fn mark_disconnected(reason: &str) {
     with_connection(|c| {
         c.session_connected = false;
-        c.session_connection_id = None;
-        c.connected_since_ms = 0;
         c.last_error = Some(reason.to_string());
     });
     notify_connection_state_change();
