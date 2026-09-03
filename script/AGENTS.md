@@ -17,5 +17,8 @@ This directory owns the build, sign, terminate, and launch entry point. Read
 - Packaging, notarization, tag, release, credential, or repository-setting actions remain outside
   this script's routine verification authority.
 
-For changes here, run `./Scripts/check-clean.sh` plus the affected non-publishing verification mode.
-State whether a launch occurred and whether any live Spotify action was performed.
+For changes here, run `./Scripts/check-clean.sh`, then use
+`./Scripts/package-app.sh --debug` as the standard non-publishing packaging verification. Use
+`./Scripts/package-app.sh --release` when the affected change requires a release build. Both modes
+package, sign, and validate Aural without terminating or launching it. State whether a launch occurred
+and whether any live Spotify action was performed.
