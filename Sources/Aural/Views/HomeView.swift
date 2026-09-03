@@ -1,7 +1,7 @@
 import AuralDomain
 import SwiftUI
 
-enum HomeSectionPresentation {
+enum HomeSectionPresentation: Equatable {
     case quickAccess
     case shelf
 }
