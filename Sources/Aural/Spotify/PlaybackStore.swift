@@ -133,11 +133,13 @@ nonisolated struct RustConnectionState: Decodable, Sendable {
 nonisolated struct RustDevicesState: Decodable, Sendable {
     let revision: UInt64
     let sessionGeneration: UInt64
-    let devices: [ConnectDevice]
+    var activeDeviceID: String?
+    let devices: [ConnectProtocolDevice]
 
     enum CodingKeys: String, CodingKey {
         case revision
         case sessionGeneration = "session_generation"
+        case activeDeviceID = "active_device_id"
         case devices
     }
 }

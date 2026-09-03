@@ -205,36 +205,22 @@ fn devices_full() -> DevicesState {
     DevicesState {
         revision: 15,
         session_generation: 6,
+        active_device_id: "fixture-mac".to_string(),
         devices: vec![
-            ConnectDeviceInfo {
+            ProtocolConnectDevice {
                 id: "fixture-mac".to_string(),
                 name: "Fixture Mac".to_string(),
                 device_type: "Computer".to_string(),
-                is_active: true,
-                is_private_session: false,
-                is_restricted: false,
-                volume_percent: Some(50),
-                disable_volume: false,
             },
-            ConnectDeviceInfo {
+            ProtocolConnectDevice {
                 id: "fixture-speaker".to_string(),
                 name: "Fixture Speaker".to_string(),
                 device_type: "Speaker".to_string(),
-                is_active: false,
-                is_private_session: false,
-                is_restricted: false,
-                volume_percent: None,
-                disable_volume: true,
             },
-            ConnectDeviceInfo {
+            ProtocolConnectDevice {
                 id: "fixture-unknown".to_string(),
                 name: "Fixture Unknown".to_string(),
                 device_type: "TOASTER".to_string(),
-                is_active: false,
-                is_private_session: false,
-                is_restricted: true,
-                volume_percent: Some(0),
-                disable_volume: false,
             },
         ],
     }

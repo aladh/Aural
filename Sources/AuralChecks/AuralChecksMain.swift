@@ -30,6 +30,7 @@ enum AuralChecksMain {
             RegisteredCheckSuite(name: "session-lifetime") { runSessionLifetimeChecks($0) },
             RegisteredCheckSuite(name: "playlist-editability") { runPlaylistEditabilityChecks($0) },
             RegisteredCheckSuite(name: "queue-mutation") { runQueueMutationChecks($0) },
+            RegisteredCheckSuite(name: "connect-device-projection") { runConnectDeviceProjectionChecks($0) },
             RegisteredCheckSuite(name: "check-suite-selection") { runner in
                 runCheckSuiteSelectionChecks(runner, catalog: AuralChecksMain.suiteNames)
             },

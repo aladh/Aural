@@ -139,10 +139,10 @@ func runEnginePayloadContractChecks(_ check: CheckRunner) {
             check.equal("minimal device name is empty", state.deviceName, "")
             check.equal("minimal last error", state.lastError, "fixture-session-timeout")
 
-            let devices = try decoder.decode(
+            let devices = projectedDevices(from: try decoder.decode(
                 RustDevicesState.self,
                 from: enginePayloadFixture(named: "devices-full")
-            ).devices
+            ))
             check.equal(
                 "active device without local identity waits",
                 AuralDomain.connectCommandRoute(
@@ -168,10 +168,10 @@ func runEnginePayloadContractChecks(_ check: CheckRunner) {
             check.equal("full local device name", state.deviceName, "Fixture Mac")
             check.nil_("full last error is null", state.lastError)
 
-            let devices = try decoder.decode(
+            let devices = projectedDevices(from: try decoder.decode(
                 RustDevicesState.self,
                 from: enginePayloadFixture(named: "devices-full")
-            ).devices
+            ))
             let playbackDevices = devices.map {
                 PlaybackDevice(id: $0.id, name: $0.name, type: $0.type, isActive: $0.isActive)
             }
@@ -208,11 +208,28 @@ func runEnginePayloadContractChecks(_ check: CheckRunner) {
             )
             check.equal("devices revision", state.revision, 15)
             check.equal("devices session generation", state.sessionGeneration, 6)
-            check.equal("device count", state.devices.count, 3)
+            check.equal("cluster active device id", state.activeDeviceID, "fixture-mac")
+            let raw = try JSONSerialization.jsonObject(
+                with: enginePayloadFixture(named: "devices-full")
+            )
+            let rawDevices = (raw as? [String: Any])?["devices"] as? [[String: Any]]
+            check.equal("protocol member count", rawDevices?.count, 3)
+            check.check(
+                "protocol members omit presentation activity",
+                rawDevices?.allSatisfy { $0["is_active"] == nil } == true
+            )
+            check.check(
+                "protocol members omit unused Web API volume fields",
+                rawDevices?.allSatisfy {
+                    $0["volume_percent"] == nil && $0["disable_volume"] == nil
+                } == true
+            )
+            let devices = projectedDevices(from: state)
+            check.equal("device count", devices.count, 3)
 
-            let mac = state.devices[0]
-            let speaker = state.devices[1]
-            let unknown = state.devices[2]
+            let mac = devices[0]
+            let speaker = devices[1]
+            let unknown = devices[2]
             check.equal("local computer id", mac.id, "fixture-mac")
             check.equal("local computer is active", mac.isActive, true)
             check.equal("local computer type", mac.type, "Computer")
@@ -231,7 +248,7 @@ func runEnginePayloadContractChecks(_ check: CheckRunner) {
                 AuralDomain.connectCommandRoute(
                     isLocalActive: mac.isActive,
                     localDeviceID: mac.id,
-                    devices: state.devices
+                    devices: devices
                 ),
                 .local
             )
@@ -240,7 +257,7 @@ func runEnginePayloadContractChecks(_ check: CheckRunner) {
                 AuralDomain.connectCommandRoute(
                     isLocalActive: false,
                     localDeviceID: mac.id,
-                    devices: state.devices,
+                    devices: devices,
                     fallbackRemoteDeviceID: speaker.id
                 ),
                 .local
@@ -257,12 +274,48 @@ func runEnginePayloadContractChecks(_ check: CheckRunner) {
             )
         }
     }
+
+    check.suite("Connect device intake source contract") {
+        check.noThrow("device intake projects once from protocol members") {
+            let engineEvents = try auralSourceFile("Aural/Spotify/PlaybackStore+EngineEvents.swift")
+            let dto = try auralSourceFile("Aural/Spotify/PlaybackStore.swift")
+            let projection = try auralSourceFile("AuralDomain/ConnectDeviceProjection.swift")
+            check.check(
+                "Connect intake projects devices at the envelope, not on the DTO",
+                containsToken(engineEvents, "ConnectDeviceProjection.devices(")
+                    && containsToken(engineEvents, "from: state.devices")
+                    && containsToken(engineEvents, "activeDeviceID: state.activeDeviceID ?? \"\"")
+                    && containsToken(dto, "let devices: [ConnectProtocolDevice]")
+                    && !containsToken(dto, "func devices(")
+                    && containsToken(projection, "public static func isActive")
+                    && containsToken(projection, "public static func devices(")
+            )
+        }
+    }
+}
+
+private func projectedDevices(from state: RustDevicesState) -> [ConnectDevice] {
+    ConnectDeviceProjection.devices(
+        from: state.devices,
+        activeDeviceID: state.activeDeviceID ?? ""
+    )
 }
 
 private func upcomingEntries(from state: RustQueueState) -> [QueueEntry] {
     QueueProtocolProjection.upcomingEntries(
         from: (state.protocolNextTracks ?? []).map { $0.domainTrack() }
     )
+}
+
+private func auralSourceFile(_ relativePath: String) throws -> String {
+    let checksDirectory = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
+    let sources = checksDirectory.deletingLastPathComponent().deletingLastPathComponent()
+    let url = sources.appending(path: relativePath)
+    return try String(contentsOf: url, encoding: .utf8)
+}
+
+private func containsToken(_ source: String, _ token: String) -> Bool {
+    source.contains(token)
 }
 
 private func decodeIgnoringUnknownFields<T: Decodable>(_ type: T.Type, from data: Data) throws -> T {
