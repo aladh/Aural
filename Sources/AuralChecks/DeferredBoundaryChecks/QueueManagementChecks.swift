@@ -1365,7 +1365,7 @@ func runQueueManagementChecks(_ runner: CheckRunner) async {
             runner.check(
                 "local engine still has no set_queue operation",
                 !containsToken(engine, "setQueue")
-                    && !containsToken(control, "set_queue")
+                    && !containsToken(control, "aural_playback_set_queue")
                     && containsToken(control, "aural_playback_add_to_queue")
             )
         }
