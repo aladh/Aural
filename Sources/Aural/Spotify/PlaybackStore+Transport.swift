@@ -140,7 +140,7 @@ extension PlaybackStore {
             kind: .transport,
             expecting: targetIsPlaying,
             expectedTiming: expectedTiming,
-            local: targetIsPlaying ? .resume : .pause,
+            local: targetIsPlaying ? .resume(resumeLoadPlan()) : .pause,
             remote: targetIsPlaying ? .resume : .pause
         ) { [weak self] accepted in
             guard let self, accepted else { return }
@@ -253,6 +253,15 @@ extension PlaybackStore {
             operation: .transferToDevice(device.id),
             kind: .transfer,
             completion: announceSuccess
+        )
+    }
+
+    private func resumeLoadPlan() -> ResumeLoadPlan {
+        ResumeLoadPlan.capture(
+            savedAtDeactivation: environment.local.resumePositionMilliseconds(),
+            live: environment.local.positionMilliseconds(),
+            contextURI: environment.local.resumeContextURI(),
+            trackURI: environment.local.resumeTrackURI()
         )
     }
 

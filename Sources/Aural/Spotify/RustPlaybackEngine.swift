@@ -46,7 +46,7 @@ nonisolated final class RustPlaybackEngine: LocalPlaybackEngine, @unchecked Send
         case let .playURI(uri): engineResult(PlaybackCore.play(uri: uri))
         case let .playTracks(tracks): engineResult(PlaybackCore.play(tracks: tracks))
         case .pause: engineResult(PlaybackCore.pause())
-        case .resume: engineResult(PlaybackCore.resume())
+        case let .resume(plan): resume(plan)
         case .next: engineResult(PlaybackCore.next())
         case .previous: engineResult(PlaybackCore.previous())
         case let .seek(milliseconds): engineResult(PlaybackCore.seek(to: milliseconds))
@@ -59,6 +59,9 @@ nonisolated final class RustPlaybackEngine: LocalPlaybackEngine, @unchecked Send
     }
 
     func positionMilliseconds() -> UInt32 { PlaybackCore.positionMilliseconds() }
+    func resumePositionMilliseconds() -> UInt32 { PlaybackCore.resumePositionMilliseconds() }
+    func resumeContextURI() -> String? { PlaybackCore.resumeContextURI() }
+    func resumeTrackURI() -> String? { PlaybackCore.resumeTrackURI() }
     func queueSnapshotJSON() -> String? { PlaybackCore.queueSnapshotJSON() }
     func configureHighQualityPlayback() { PlaybackCore.configureHighQualityPlayback() }
     func shutdown() -> PlaybackEngineResult {
@@ -70,6 +73,15 @@ nonisolated final class RustPlaybackEngine: LocalPlaybackEngine, @unchecked Send
         engineResult(PlaybackCore.disconnect())
     }
     func forceReconnect() -> Int32 { PlaybackCore.forceReconnect() }
+
+    /// Activate/`play()` first. On a non-reconnect failure, iterate Swift load targets.
+    /// `PlaybackCoordinator` serializes this whole operation.
+    private func resume(_ plan: ResumeLoadPlan) -> PlaybackEngineResult {
+        UserResumeLoadSequence.completing(
+            play: engineResult(PlaybackCore.resume()),
+            targets: plan.targets()
+        ) { engineResult(PlaybackCore.load($0)) }
+    }
 
     /// Copies a non-optional FFI result into the Swift engine wrapper. Do not reconstruct
     /// `PlaybackCore.Result` from `PlaybackEngineResult.rawValue`: the imported open C enum

@@ -11,11 +11,27 @@ nonisolated struct PlaybackEngineResult: Equatable, Sendable {
     var requiresReconnect: Bool { rawValue == -2 || rawValue == -3 }
 }
 
+/// Play first; on a non-reconnect failure, try each resume-load target until one lands.
+nonisolated enum UserResumeLoadSequence {
+    static func completing(
+        play: PlaybackEngineResult,
+        targets: [ResumeLoadPlan.Target],
+        load: (ResumeLoadPlan.Target) -> PlaybackEngineResult
+    ) -> PlaybackEngineResult {
+        if play.isOK || play.requiresReconnect { return play }
+        for target in targets {
+            let loaded = load(target)
+            if loaded.isOK || loaded.requiresReconnect { return loaded }
+        }
+        return play
+    }
+}
+
 nonisolated enum LocalPlaybackOperation: Sendable {
     case playURI(String)
     case playTracks([String])
     case pause
-    case resume
+    case resume(ResumeLoadPlan)
     case next
     case previous
     case seek(UInt32)
@@ -32,6 +48,9 @@ nonisolated protocol LocalPlaybackEngine: Sendable {
     func initialize() -> PlaybackEngineResult
     func execute(_ operation: LocalPlaybackOperation) -> PlaybackEngineResult
     func positionMilliseconds() -> UInt32
+    func resumePositionMilliseconds() -> UInt32
+    func resumeContextURI() -> String?
+    func resumeTrackURI() -> String?
     func queueSnapshotJSON() -> String?
     func configureHighQualityPlayback()
     func shutdown() -> PlaybackEngineResult
@@ -39,6 +58,12 @@ nonisolated protocol LocalPlaybackEngine: Sendable {
     func clearStreamingCredentials()
     func disconnect() -> PlaybackEngineResult
     func forceReconnect() -> Int32
+}
+
+extension LocalPlaybackEngine {
+    func resumePositionMilliseconds() -> UInt32 { 0 }
+    func resumeContextURI() -> String? { nil }
+    func resumeTrackURI() -> String? { nil }
 }
 
 nonisolated protocol RemotePlaybackClient: Sendable {
@@ -373,6 +398,7 @@ actor PlaybackCoordinator {
     func clearStreamingCredentials() { local.clearStreamingCredentials() }
     func configureHighQualityPlayback() { local.configureHighQualityPlayback() }
     func positionMilliseconds() -> UInt32 { local.positionMilliseconds() }
+    func resumePositionMilliseconds() -> UInt32 { local.resumePositionMilliseconds() }
     func queueSnapshotJSON() -> String? { local.queueSnapshotJSON() }
     func disconnect() async -> PlaybackEngineResult {
         local.disconnect()

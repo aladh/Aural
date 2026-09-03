@@ -87,8 +87,20 @@ AuralPlaybackResult aural_playback_play_uri(const char* uri_or_url, int32_t trac
 /// Pauses playback.
 AuralPlaybackResult aural_playback_pause(void);
 
-/// Resumes playback.
+/// Resumes playback: activate and `play()`. If no Playing event arrives, Swift issues
+/// seek-capable load fallbacks via `aural_playback_load`. Reconnect rehydration still
+/// loads from session globals inside the engine.
 AuralPlaybackResult aural_playback_resume(void);
+
+/// Loads a context or single track at `position_ms` and waits briefly for a Playing event.
+/// Empty `track_hint` is a valid context hint. `uri` must be non-empty.
+/// @param from_context true for a context URI, false for a single track URI.
+AuralPlaybackResult aural_playback_load(
+    const char* uri,
+    const char* _Nullable track_hint,
+    uint32_t position_ms,
+    bool from_context
+);
 
 /// Shuts down the Spirc connection and sends goodbye to other devices.
 /// Call this when the app is quitting to properly disconnect from Spotify Connect.
@@ -109,6 +121,17 @@ void aural_playback_cleanup(void);
 /// reported one. Deliberately not interpolated — Swift owns display interpolation, and
 /// doing it on both sides made the two clocks disagree.
 uint32_t aural_playback_get_position_ms(void);
+
+/// Position saved at deactivation for resume-load, or 0 to use the live playhead.
+uint32_t aural_playback_get_resume_position_ms(void);
+
+/// Sticky resume-load context URI (`CURRENT_CONTEXT_URI`), or NULL if none.
+/// Caller frees with `aural_playback_free_string`. Empty string is a present empty value.
+char* _Nullable aural_playback_get_resume_context_uri(void);
+
+/// Sticky resume-load track URI (`CURRENT_TRACK_URI`), or NULL if none.
+/// Caller frees with `aural_playback_free_string`. Empty string is a valid context hint.
+char* _Nullable aural_playback_get_resume_track_uri(void);
 
 /// Callback function type for queue updates.
 /// Receives a JSON string containing the queue state.
