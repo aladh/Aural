@@ -85,12 +85,7 @@ func runEnginePayloadContractChecks(_ check: CheckRunner) {
         }
 
         check.noThrow("inactive connection without a device id waits for local identity") {
-            let devices = projectedDevices(
-                from: try decoder.decode(
-                    RustDevicesState.self,
-                    from: enginePayloadFixture(named: "devices-full")
-                )
-            )
+            let devices = fixtureClusterDevices()
             check.equal(
                 "active device without local identity waits",
                 AuralDomain.connectCommandRoute(
@@ -103,12 +98,7 @@ func runEnginePayloadContractChecks(_ check: CheckRunner) {
         }
 
         check.noThrow("active local connection owns playback") {
-            let devices = projectedDevices(
-                from: try decoder.decode(
-                    RustDevicesState.self,
-                    from: enginePayloadFixture(named: "devices-full")
-                )
-            )
+            let devices = fixtureClusterDevices()
             let playbackDevices = devices.map {
                 PlaybackDevice(id: $0.id, name: $0.name, type: $0.type, isActive: $0.isActive)
             }
@@ -133,30 +123,8 @@ func runEnginePayloadContractChecks(_ check: CheckRunner) {
             )
         }
 
-        check.noThrow("devices-full decodes activity and local identity") {
-            let state = try decoder.decode(
-                RustDevicesState.self,
-                from: enginePayloadFixture(named: "devices-full")
-            )
-            check.equal("devices revision", state.revision, 15)
-            check.equal("devices session generation", state.sessionGeneration, 6)
-            check.equal("cluster active device id", state.activeDeviceID, "fixture-mac")
-            let raw = try JSONSerialization.jsonObject(
-                with: enginePayloadFixture(named: "devices-full")
-            )
-            let rawDevices = (raw as? [String: Any])?["devices"] as? [[String: Any]]
-            check.equal("protocol member count", rawDevices?.count, 3)
-            check.check(
-                "protocol members omit presentation activity",
-                rawDevices?.allSatisfy { $0["is_active"] == nil } == true
-            )
-            check.check(
-                "protocol members omit unused Web API volume fields",
-                rawDevices?.allSatisfy {
-                    $0["volume_percent"] == nil && $0["disable_volume"] == nil
-                } == true
-            )
-            let devices = projectedDevices(from: state)
+        check.noThrow("cluster members project activity and local identity") {
+            let devices = fixtureClusterDevices()
             check.equal("device count", devices.count, 3)
 
             let mac = devices[0]
@@ -249,10 +217,14 @@ func runEnginePayloadContractChecks(_ check: CheckRunner) {
     }
 }
 
-private func projectedDevices(from state: RustDevicesState) -> [ConnectDevice] {
+private func fixtureClusterDevices() -> [ConnectDevice] {
     ConnectDeviceProjection.devices(
-        from: state.devices,
-        activeDeviceID: state.activeDeviceID
+        from: [
+            ConnectProtocolDevice(id: "fixture-mac", name: "Fixture Mac", type: "Computer"),
+            ConnectProtocolDevice(id: "fixture-speaker", name: "Fixture Speaker", type: "Speaker"),
+            ConnectProtocolDevice(id: "fixture-unknown", name: "Fixture Unknown", type: "TOASTER"),
+        ],
+        activeDeviceID: "fixture-mac"
     )
 }
 

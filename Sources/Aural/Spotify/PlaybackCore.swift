@@ -71,6 +71,32 @@ nonisolated enum PlaybackCore {
         aural_playback_register_devices_callback(callback)
     }
 
+    static func devicesState(
+        from pointer: UnsafePointer<AuralDevicesSnapshot>?
+    ) -> RustDevicesState? {
+        guard let pointer else { return nil }
+        let snapshot = pointer.pointee
+        let count = Int(snapshot.device_count)
+        let devices: [ConnectProtocolDevice]
+        if count > 0, let base = snapshot.devices {
+            devices = UnsafeBufferPointer(start: base, count: count).map { row in
+                ConnectProtocolDevice(
+                    id: optionalCString(row.id) ?? "",
+                    name: optionalCString(row.name) ?? "",
+                    type: optionalCString(row.device_type) ?? ""
+                )
+            }
+        } else {
+            devices = []
+        }
+        return RustDevicesState(
+            revision: snapshot.revision,
+            sessionGeneration: snapshot.session_generation,
+            activeDeviceID: optionalCString(snapshot.active_device_id) ?? "",
+            devices: devices
+        )
+    }
+
     static func authorizeStreaming(with accessToken: String) -> Int32 {
         accessToken.withCString { aural_playback_authorize_streaming($0) }
     }

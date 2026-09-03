@@ -37,6 +37,7 @@ boundaries. Read the relevant ADRs and the
   name is Swift-owned; do not move presentation policy, `device_name`, or write-only reconnect
   bookkeeping into Rust. Connection observations arrive as `AuralConnectionSnapshot`, not JSON.
   Playback observations arrive as `AuralPlaybackSnapshot`, not JSON.
+  Device-list observations arrive as `AuralDevicesSnapshot`, not JSON.
 - `PlaybackSnapshotProjection` owns engine playback transport, empty-URI identity, timestamp
   correction, and omitted-repeat fallback. The engine sends protocol playing/paused flags and
   cluster `context_uri`. User resume captures sticky resume-load URIs through FFI and

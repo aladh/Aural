@@ -210,6 +210,76 @@ pub(crate) fn send_playback_snapshot(
     callback(&snapshot);
 }
 
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct AuralProtocolDevice {
+    pub id: *const c_char,
+    pub name: *const c_char,
+    pub device_type: *const c_char,
+}
+
+#[repr(C)]
+pub struct AuralDevicesSnapshot {
+    pub revision: u64,
+    pub session_generation: u64,
+    pub active_device_id: *const c_char,
+    pub devices: *const AuralProtocolDevice,
+    pub device_count: usize,
+}
+
+pub(crate) type DevicesSnapshotCallback = extern "C" fn(*const AuralDevicesSnapshot);
+
+pub(crate) fn send_devices_snapshot(
+    callback: DevicesSnapshotCallback,
+    stamp: SnapshotStamp,
+    active_device_id: &str,
+    devices: &[ProtocolConnectDevice],
+) {
+    let active = optional_callback_c_string(Some(active_device_id));
+    let row_strings: Vec<(Option<CString>, Option<CString>, Option<CString>)> = devices
+        .iter()
+        .map(|device| {
+            (
+                optional_callback_c_string(Some(device.id.as_str())),
+                optional_callback_c_string(Some(device.name.as_str())),
+                optional_callback_c_string(Some(device.device_type.as_str())),
+            )
+        })
+        .collect();
+    let rows: Vec<AuralProtocolDevice> = row_strings
+        .iter()
+        .map(|(id, name, device_type)| AuralProtocolDevice {
+            id: id
+                .as_ref()
+                .map(|value| value.as_ptr())
+                .unwrap_or(std::ptr::null()),
+            name: name
+                .as_ref()
+                .map(|value| value.as_ptr())
+                .unwrap_or(std::ptr::null()),
+            device_type: device_type
+                .as_ref()
+                .map(|value| value.as_ptr())
+                .unwrap_or(std::ptr::null()),
+        })
+        .collect();
+    let snapshot = AuralDevicesSnapshot {
+        revision: stamp.revision,
+        session_generation: stamp.session_generation,
+        active_device_id: active
+            .as_ref()
+            .map(|value| value.as_ptr())
+            .unwrap_or(std::ptr::null()),
+        devices: if rows.is_empty() {
+            std::ptr::null()
+        } else {
+            rows.as_ptr()
+        },
+        device_count: rows.len(),
+    };
+    callback(&snapshot);
+}
+
 /// The current Spirc, or `None` after logging that there is none.
 ///
 /// Handed out as a clone rather than behind the guard: several callers go on to publish a
@@ -357,12 +427,10 @@ pub extern "C" fn aural_playback_register_playback_state_callback(
 }
 
 /// Registers a callback to receive the Connect device list from cluster updates.
-///
-/// The payload wraps the `/me/player/devices`-shaped array with the same revision and session
-/// generation carried by every other structured control event. It fires only when the list
-/// actually changes, not on every cluster tick.
+/// The callback receives a C snapshot; string pointers are valid only for the call.
+/// Fires only when the list actually changes, not on every cluster tick.
 #[no_mangle]
-pub extern "C" fn aural_playback_register_devices_callback(callback: extern "C" fn(*const c_char)) {
+pub extern "C" fn aural_playback_register_devices_callback(callback: DevicesSnapshotCallback) {
     ffi_void("aural_playback_register_devices_callback", || {
         *CONTROL_CALLBACKS
             .devices

@@ -405,39 +405,21 @@ pub(crate) fn notify_devices(
         active_device_id
     );
 
-    let fingerprint = match serde_json::to_string(&(active_device_id, &list)) {
-        Ok(json) => json,
-        Err(e) => {
-            debug!("Failed to serialize device fingerprint: {:?}", e);
-            return;
-        }
-    };
-
-    let mut last = LAST_DEVICES_JSON.lock().unwrap_or_else(|e| e.into_inner());
-    if *last == fingerprint {
+    let mut last = LAST_DEVICES_FINGERPRINT
+        .lock()
+        .unwrap_or_else(|e| e.into_inner());
+    if last
+        .as_ref()
+        .is_some_and(|(id, devices)| id == active_device_id && devices == &list)
+    {
         return;
     }
-    *last = fingerprint;
+    *last = Some((active_device_id.to_string(), list.clone()));
     drop(last);
 
-    let snapshot = stamped_snapshot(|stamp| DevicesState {
-        revision: stamp.revision,
-        session_generation: stamp.session_generation,
-        active_device_id: active_device_id.to_string(),
-        devices: list,
-    });
-    let json = match serde_json::to_string(&snapshot) {
-        Ok(json) => json,
-        Err(e) => {
-            debug!("Failed to serialize stamped device list: {:?}", e);
-            return;
-        }
-    };
-
     if let Some(callback) = registered_callback(&CONTROL_CALLBACKS.devices) {
-        if let Ok(c_str) = CString::new(json) {
-            callback(c_str.as_ptr());
-        }
+        let stamp = stamped_snapshot(|stamp| stamp);
+        send_devices_snapshot(callback, stamp, active_device_id, &list);
     }
 }
 

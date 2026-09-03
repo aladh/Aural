@@ -177,9 +177,25 @@ int32_t aural_playback_force_reconnect(void);
 /// Replaces the Web API's /me/player and /me/player/queue for Swift's bootstrap.
 char* _Nullable aural_playback_get_queue_snapshot(void);
 
+/// One cluster member. String pointers are valid only for the callback. NULL means missing.
+typedef struct AuralProtocolDevice {
+    const char* _Nullable id;
+    const char* _Nullable name;
+    const char* _Nullable device_type;
+} AuralProtocolDevice;
+
+/// Device-list observation. `active_device_id` and `devices` are valid only for the callback.
+/// Swift must copy them before returning. NULL `devices` with count 0 is an empty list.
+typedef struct AuralDevicesSnapshot {
+    uint64_t revision;
+    uint64_t session_generation;
+    const char* _Nullable active_device_id;
+    const AuralProtocolDevice* _Nullable devices;
+    size_t device_count;
+} AuralDevicesSnapshot;
+
 /// Callback function type for Connect device-list updates.
-/// Receives the JSON array `/me/player/devices` used to return, so the same decoder serves both.
-typedef void (*DevicesCallback)(const char* devices_json);
+typedef void (*DevicesCallback)(const AuralDevicesSnapshot* snapshot);
 
 /// Registers a callback to receive the Connect device list from cluster updates.
 /// Fires only when the list actually changes, not on every cluster tick.

@@ -78,7 +78,8 @@ root-to-nearest discovery for representative paths.
 | `TST-EPC-001`, `TST-ENV-001` | Generations, revisions, cancellation, stale-result protection, ordered callback delivery, and lock-safe fan-out | ADR 002 | Session/epoch/fan-out Swift checks plus Rust generation/listener tests |
 | `TST-LIF-001` | Rust lifecycle writes serialize; reconnect and init revalidate generations under the owner mutex | ADR 001–002 | `lifecycle_serialization_tests.rs`, `session_lifecycle.rs` tests, and related Rust suites |
 | `TST-FFI-001` | Every C export is panic-contained; nested runtime fails safely; Rust locks do not cross Swift callbacks | ADR 001 and scoped agent guidance | Rust export/runtime tests plus ABI signature coverage |
-| `TST-QUE-001`, `TST-DEV-001` | Swift owns queue/device presentation over authoritative unfiltered protocol state | ADR 002 and ADR 004 | Domain queue/device projection suites, boundary checks, and Rust serialization fixtures |
+| `TST-QUE-001` | Swift owns queue presentation over authoritative unfiltered protocol state | ADR 002 and ADR 004 | Domain queue projection suites, boundary checks, and Rust JSON fixtures |
+| `TST-DEV-001` | `ConnectDeviceProjection` owns device activity, sort, and empty-type fallback; the engine sends a typed C device-list snapshot (protocol members plus `active_device_id`) | ADR 004 | Domain suite for presentation; Rust C-snapshot layout/callback coverage for the wire |
 | `TST-CON-001` | `ConnectionSnapshotProjection` owns session phase and empty-device-ID fallback; the engine sends a typed C connection snapshot (session flags, `device_id`, `last_error`) | ADR 004 | Domain suite for presentation; Rust C-snapshot layout/callback coverage for the wire |
 | `TST-PBK-001` | `PlaybackSnapshotProjection` owns engine playback transport, empty-URI identity, timestamp correction, and omitted-repeat fallback; the engine sends a typed C playback snapshot (protocol playing/paused flags, track URI, context URI, timing, and options) | ADR 004 | Domain suite for presentation; Rust C-snapshot layout/callback coverage for the wire |
 | `TST-RES-001` | User-resume load targets come from Swift `ResumeLoadPlan` over sticky resume-load URIs issued through seek-capable `aural_playback_load`; reconnect rehydration still uses the engine plan from session globals | ADR 004 | `ResumeLoadPlanChecks.swift`, store capture vs presentation, `UserResumeLoadSequence` after play timeout, and Rust sticky-URI / empty-URI / export-signature coverage |
@@ -95,7 +96,7 @@ root-to-nearest discovery for representative paths.
 | --- | --- | --- |
 | `ABI-SYM-001`, `ABI-USE-001` | Checked-in C declarations equal archive exports and every retained export is consumed by `PlaybackCore.swift` | Header/archive comparison and export-use checks in `Scripts/check.sh` |
 | `ABI-SIG-001` | C signatures stay compile-time compatible with Rust exports | Rust signature tests |
-| `ABI-JSON-001` | Remaining JSON envelopes (queue, devices) decode under the Swift boundary contract | One synthetic fixture set written/checked from both sides |
+| `ABI-JSON-001` | Remaining JSON envelopes (queue) decode under the Swift boundary contract | One synthetic fixture set written/checked from both sides |
 | `ABI-ARC-001` | The static archive is generated, untracked, and rebuilt when missing or stale | Build script, stale detection, gitignore, and tracked-artifact check |
 
 ### Focused source and topology checks

@@ -137,36 +137,10 @@ fn queue_full() -> QueueState {
     }
 }
 
-fn devices_full() -> DevicesState {
-    DevicesState {
-        revision: 15,
-        session_generation: 6,
-        active_device_id: "fixture-mac".to_string(),
-        devices: vec![
-            ProtocolConnectDevice {
-                id: "fixture-mac".to_string(),
-                name: "Fixture Mac".to_string(),
-                device_type: "Computer".to_string(),
-            },
-            ProtocolConnectDevice {
-                id: "fixture-speaker".to_string(),
-                name: "Fixture Speaker".to_string(),
-                device_type: "Speaker".to_string(),
-            },
-            ProtocolConnectDevice {
-                id: "fixture-unknown".to_string(),
-                name: "Fixture Unknown".to_string(),
-                device_type: "TOASTER".to_string(),
-            },
-        ],
-    }
-}
-
 #[test]
 fn canonical_engine_json_matches_pinned_structs() {
     assert_canonical_fixture("queue-minimal", &queue_minimal());
     assert_canonical_fixture("queue-full", &queue_full());
-    assert_canonical_fixture("devices-full", &devices_full());
 }
 
 #[test]
@@ -185,5 +159,4 @@ fn canonical_engine_fixture_dir_is_the_swift_boundary_resource() {
 fn write_engine_json_contract_fixtures() {
     write_canonical_fixture("queue-minimal", &queue_minimal());
     write_canonical_fixture("queue-full", &queue_full());
-    write_canonical_fixture("devices-full", &devices_full());
 }
