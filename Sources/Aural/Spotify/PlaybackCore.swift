@@ -1,5 +1,6 @@
-import Foundation
+import AuralDomain
 import AuralPlaybackCore
+import Foundation
 
 /// The complete Swift-facing boundary to Aural's embedded playback engine.
 ///
@@ -56,6 +57,30 @@ nonisolated enum PlaybackCore {
 
     static func pause() -> Result { aural_playback_pause() }
     static func resume() -> Result { aural_playback_resume() }
+    static func resumePositionMilliseconds() -> UInt32 {
+        aural_playback_get_resume_position_ms()
+    }
+
+    static func load(_ target: ResumeLoadPlan.Target) -> Result {
+        switch target {
+        case let .context(uri, trackHint, positionMS):
+            uri.withCString { uriPointer in
+                (trackHint ?? "").withCString { hintPointer in
+                    aural_playback_load(
+                        uriPointer,
+                        hintPointer,
+                        positionMS,
+                        true
+                    )
+                }
+            }
+        case let .track(uri, positionMS):
+            uri.withCString { uriPointer in
+                aural_playback_load(uriPointer, nil, positionMS, false)
+            }
+        }
+    }
+
     static func next() -> Result { aural_playback_next() }
     static func previous() -> Result { aural_playback_previous() }
     static func seek(to milliseconds: UInt32) -> Result { aural_playback_seek(milliseconds) }

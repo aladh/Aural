@@ -18,7 +18,8 @@ changing state transitions, queue/device policy, parsing, sorting, or lifetime s
   protocol state and metadata labels, the session-phase/empty-device-ID semantics in
   `ConnectionSnapshotProjection`, and transport/empty-URI/timestamp semantics in
   `PlaybackSnapshotProjection`. `playbackContextURI` is protocol playlist/album/artist
-  identity from authoritative engine playback, not `queue.contextURI`.
+  identity from authoritative engine playback, not `queue.contextURI`. User-resume load
+  target order lives in `ResumeLoadPlan`.
 - Prefer immutable `Sendable` values, typed state, exhaustive switches, and pure functions. Match the
   surrounding naming and comment density; document only non-obvious invariants.
 

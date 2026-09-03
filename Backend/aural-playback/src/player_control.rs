@@ -196,6 +196,23 @@ pub extern "C" fn aural_playback_resume() -> i32 {
     ffi_command("aural_playback_resume", resume_playback)
 }
 
+/// Loads a context or track at a seek position. Used by Swift resume-load fallbacks.
+#[no_mangle]
+pub extern "C" fn aural_playback_load(
+    uri: *const c_char,
+    track_hint: *const c_char,
+    position_ms: u32,
+    from_context: bool,
+) -> i32 {
+    ffi_command("aural_playback_load", || {
+        let Some(uri) = (unsafe { c_string_arg(uri) }) else {
+            return ERROR_GENERAL;
+        };
+        let track_hint = unsafe { c_string_arg(track_hint) };
+        load_at_position(uri, track_hint, position_ms, from_context)
+    })
+}
+
 /// Shuts down the Spirc connection and sends goodbye to other devices.
 /// Call this when the app is quitting to properly disconnect from Spotify Connect.
 /// Returns 0 on success, -1 on error.
@@ -347,7 +364,10 @@ pub(crate) fn cleanup_player_globals() {
     // Spirc with no queue, `play()` produces no `Playing` event, and the fallback loads the
     // previous account's context — with its position, if this line's neighbour above had not
     // already been cleared. Reachable through the ordinary control path: with nobody active,
-    // `sendTransportCommand` takes the Web API 404 and falls back to `aural_playback_resume`.
+    // `sendTransportCommand` takes the Web API 404 and falls back to local
+    // `aural_playback_resume` plus Swift `ResumeLoadPlan` loads from presentation
+    // identity (already niled on the Swift side after cleanup). Reconnect
+    // rehydration still reads these globals through `resume_via_load`.
     //
     // Only a full cleanup clears them. The wake and reconnect paths run
     // `do_reconnect_cleanup`, which deliberately leaves playback state alone so the
@@ -396,6 +416,13 @@ pub(crate) fn current_position_ms() -> u32 {
 #[no_mangle]
 pub extern "C" fn aural_playback_get_position_ms() -> u32 {
     ffi_query_u32("aural_playback_get_position_ms", current_position_ms)
+}
+
+#[no_mangle]
+pub extern "C" fn aural_playback_get_resume_position_ms() -> u32 {
+    ffi_query_u32("aural_playback_get_resume_position_ms", || {
+        RESUME_POSITION_MS.load(Ordering::SeqCst)
+    })
 }
 
 /// Skips to the next track in the queue.

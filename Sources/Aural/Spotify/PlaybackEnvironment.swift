@@ -15,7 +15,7 @@ nonisolated enum LocalPlaybackOperation: Sendable {
     case playURI(String)
     case playTracks([String])
     case pause
-    case resume
+    case resume(ResumeLoadPlan)
     case next
     case previous
     case seek(UInt32)
@@ -32,6 +32,7 @@ nonisolated protocol LocalPlaybackEngine: Sendable {
     func initialize() -> PlaybackEngineResult
     func execute(_ operation: LocalPlaybackOperation) -> PlaybackEngineResult
     func positionMilliseconds() -> UInt32
+    func resumePositionMilliseconds() -> UInt32
     func queueSnapshotJSON() -> String?
     func configureHighQualityPlayback()
     func shutdown() -> PlaybackEngineResult
@@ -39,6 +40,10 @@ nonisolated protocol LocalPlaybackEngine: Sendable {
     func clearStreamingCredentials()
     func disconnect() -> PlaybackEngineResult
     func forceReconnect() -> Int32
+}
+
+extension LocalPlaybackEngine {
+    func resumePositionMilliseconds() -> UInt32 { 0 }
 }
 
 nonisolated protocol RemotePlaybackClient: Sendable {
@@ -373,6 +378,7 @@ actor PlaybackCoordinator {
     func clearStreamingCredentials() { local.clearStreamingCredentials() }
     func configureHighQualityPlayback() { local.configureHighQualityPlayback() }
     func positionMilliseconds() -> UInt32 { local.positionMilliseconds() }
+    func resumePositionMilliseconds() -> UInt32 { local.resumePositionMilliseconds() }
     func queueSnapshotJSON() -> String? { local.queueSnapshotJSON() }
     func disconnect() async -> PlaybackEngineResult {
         local.disconnect()

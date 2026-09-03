@@ -81,11 +81,12 @@ root-to-nearest discovery for representative paths.
 | `TST-QUE-001`, `TST-DEV-001` | Swift owns queue/device presentation over authoritative unfiltered protocol state | ADR 002 and ADR 004 | Domain queue/device projection suites, boundary checks, and Rust serialization fixtures |
 | `TST-CON-001` | `ConnectionSnapshotProjection` owns session phase and empty-device-ID fallback; the engine sends session flags plus `device_id` and `last_error` | ADR 004 | `ConnectionSnapshotProjectionChecks.swift`, engine payload contract checks, and Rust JSON fixtures |
 | `TST-PBK-001` | `PlaybackSnapshotProjection` owns engine playback transport, empty-URI identity, timestamp correction, and omitted-repeat fallback; the engine sends protocol playing/paused flags, track URI, context URI, timing, and options | ADR 004 | `PlaybackSnapshotProjectionChecks.swift`, engine payload contract checks, and Rust JSON fixtures |
+| `TST-RES-001` | User-resume load targets come from Swift `ResumeLoadPlan` issued through seek-capable `aural_playback_load`; reconnect rehydration still uses the engine plan from session globals | ADR 004 | `ResumeLoadPlanChecks.swift`, `RustPlaybackEngine` iterating `targets()`, and Rust empty-URI / export-signature coverage |
 | `TST-PCM-001` | PCM bypasses observable UI state and callbacks stay bounded | ADR 001–002 | PCM write-space/backpressure boundary checks plus semantic timing review |
 | `TST-PLM-001`, `TST-FBK-001` | Playlist writes stay behind mutation owners; transient mutation feedback stays out of playback state | ADR 002 and product contract | Playlist/editability and transient-feedback suites |
 | `TST-DEP-001` | Live dependencies are assembled at composition; views/stores use narrow injected boundaries | ADR 002 | Package/source topology plus injected workflow checks |
 | `TST-FIX-001` | Fixtures are reduced, synthetic, and non-identifying | Product/privacy contract | Fixture contract suite plus semantic privacy review |
-| `TST-RUST-001` | Locked Rust suite owns Connect recovery, protocol serialization, generations, export signatures, and resume-load target order; connection and playback presentation remain Swift-owned under `TST-CON-001` and `TST-PBK-001` | ADR 001 and ADR 004 | `cargo test --locked` in `Scripts/check.sh` |
+| `TST-RUST-001` | Locked Rust suite owns Connect recovery, protocol serialization, generations, export signatures, and reconnect `resume_via_load`; user-resume target order is Swift-owned under `TST-RES-001` | ADR 001 and ADR 004 | `cargo test --locked` in `Scripts/check.sh` |
 | `TST-GATE-001` | The complete gate runs every registered Swift suite; repeat count is bounded to 1–25 | Agent operations | `Scripts/check.sh` registration/repeat behavior |
 
 ### ABI and cross-language contracts

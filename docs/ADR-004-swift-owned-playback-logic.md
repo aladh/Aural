@@ -88,6 +88,13 @@ Resume-load target order and `LoadRequest` execution stay in Rust. `aural_playba
 always seeks to 0, `aural_playback_resume` is not widened, and reconnect rehydration
 calls `resume_via_load` without Swift.
 
+### Sixth slice
+
+User-initiated resume-load target order is Swift-owned (`ResumeLoadPlan`).
+`aural_playback_resume` activates and `play()`s only. On timeout, `RustPlaybackEngine`
+iterates Swift targets through seek-capable `aural_playback_load`. Reconnect rehydration
+still calls `resume_via_load` from session globals without Swift.
+
 ## Consequences
 
 - Upcoming-queue UI and `QueueService.acceptConnect` entries come from one Swift
@@ -103,8 +110,8 @@ calls `resume_via_load` without Swift.
   one Swift projection. Rust still forwards protocol playing/paused bits (and shapes local
   `PlayerEvent` as that pair). Protocol `context_uri` is forwarded as playlist/album/artist
   identity on cluster snapshots. Local player-event snapshots send an empty context.
-- Resume-load target order and `LoadRequest` execution stay in the engine. Reconnect
-  rehydration uses that path without Swift.
+- Resume-load target order for user resume comes from Swift `ResumeLoadPlan` issued through
+  `aural_playback_load`. Reconnect rehydration still loads from session globals in the engine.
 - Cluster apply and session reconnect remain in Rust until a later slice can forward
   protocol observations without duplicating protobuf ownership in Swift.
 - [ADR 001](ADR-001-playback-engine.md) is not superseded: the C leaf and librespot stay.
@@ -132,9 +139,8 @@ Rejected. Nothing read volume or restriction fields. Activity belongs next to th
 
 ### Keep resume-load target order only in Swift without a load caller
 
-Rejected. A Swift `ResumeLoadPlan` with no production caller is a second copy of the
-Rust executor. Reconnect rehydration also calls `resume_via_load` without Swift. Port
-target order only together with a seek-capable load export that Swift can issue.
+Rejected in the fifth slice. This slice adds `aural_playback_load` so user resume can
+iterate Swift targets. Reconnect rehydration still uses the engine-side plan.
 
 ### Widen `aural_playback_resume` with URIs and a seek position
 

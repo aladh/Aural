@@ -3,11 +3,12 @@ use crate::*;
 /// How often the playing-event waits re-read [`PLAYING_EVENT_SEQ`].
 pub(crate) const PLAYING_EVENT_POLL_INTERVAL: Duration = Duration::from_millis(25);
 
-/// How long `resume_playback` gives `Spirc::play` before falling back to a load. `play` only
-/// queues a command, so this is the window in which an accepted one produces audio.
+/// How long `resume_playback` gives `Spirc::play` before Swift may issue load fallbacks.
+/// `play` only queues a command, so this is the window in which an accepted one produces audio.
 pub(crate) const PLAY_COMMAND_PLAYING_TIMEOUT: Duration = Duration::from_millis(500);
 
-/// How long the resume fallback then gives its load, which has a context to fetch first.
+/// How long each seek-capable load waits for a Playing event before Swift may try the next
+/// target (reconnect rehydration uses [`REHYDRATE_PLAYING_TIMEOUT`] instead).
 pub(crate) const RESUME_LOAD_PLAYING_TIMEOUT: Duration = Duration::from_secs(2);
 
 /// How long rehydration waits for the Player to actually start before giving up on the
@@ -16,10 +17,10 @@ pub(crate) const REHYDRATE_PLAYING_TIMEOUT: Duration = Duration::from_secs(3);
 
 /// Context and track URIs captured for a resume load, with the seek position they share.
 ///
-/// Target order and `LoadRequest` issuance stay in this crate: `aural_playback_play_uri`
-/// always seeks to 0, reconnect rehydration calls `resume_via_load` without Swift, and
-/// `aural_playback_resume` must not grow arguments. Empty strings are missing: that is how
-/// the session globals read after cleanup, not a URI Spirc can load.
+/// Target order is the Swift `ResumeLoadPlan` policy. Reconnect rehydration still
+/// builds a plan from session globals here. User resume iterates Swift targets through
+/// [`load_at_position`]. Empty strings are missing: that is how the session globals
+/// read after cleanup, not a URI Spirc can load.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct ResumeLoadPlan {
     pub(crate) position_ms: u32,
@@ -207,6 +208,18 @@ pub(crate) async fn wait_for_playing_event_async(previous_seq: u64, timeout: Dur
     }
 }
 
+/// Queues one `LoadRequest`. `None` means try the next fallback; a closed channel is terminal.
+pub(crate) fn issue_load_target(spirc: &Spirc, target: ResumeLoadTarget) -> Option<i32> {
+    let (load_request, what) = target.into_load();
+    match spirc.load(load_request) {
+        Ok(_) => Some(0),
+        Err(e) => match spirc_error(what, &e) {
+            ERROR_NEEDS_REINIT => Some(ERROR_NEEDS_REINIT),
+            _ => None,
+        },
+    }
+}
+
 /// Reloads what was playing, at the position it stopped.
 ///
 /// **The caller must have activated the device.** `Spirc::load` only hands the command to a
@@ -216,23 +229,10 @@ pub(crate) async fn wait_for_playing_event_async(previous_seq: u64, timeout: Dur
 /// the active device and routed every later transport command to a local player that was
 /// ignoring all of them. Activity is recorded where it is actually established — by
 /// `ensure_active_for_playback` and by `init_player_async` — never inferred from a queued
-/// command. Both callers satisfy the precondition: `resume_playback` activates first, and
-/// the rehydration in `init_player_async` runs only when `should_resume()` held, which
-/// implies `was_active` and therefore that `spirc.activate()` already ran.
+/// command. The remaining caller is rehydration in `init_player_async`, which runs only when
+/// `should_resume()` held (so `was_active` and `spirc.activate()` already ran). User resume
+/// load fallbacks are Swift `ResumeLoadPlan` targets via [`load_at_position`].
 pub(crate) fn resume_via_load(spirc: &Arc<Spirc>) -> i32 {
-    /// Issues one resume load. `None` means "this one did not take, try the next fallback";
-    /// a closed channel is the one failure that is terminal, since the next load would fail
-    /// on the same channel.
-    fn try_load(spirc: &Spirc, what: &str, request: LoadRequest) -> Option<i32> {
-        match spirc.load(request) {
-            Ok(_) => Some(0),
-            Err(e) => match spirc_error(what, &e) {
-                ERROR_NEEDS_REINIT => Some(ERROR_NEEDS_REINIT),
-                _ => None,
-            },
-        }
-    }
-
     // Read rather than taken. `Spirc::load` only queues a command, so reaching this point
     // does not mean playback resumed — the load can fail on a closed channel, or be accepted
     // and never produce audio. Clearing here would throw away the only pre-deactivation
@@ -241,13 +241,55 @@ pub(crate) fn resume_via_load(spirc: &Arc<Spirc>) -> i32 {
     let plan = ResumeLoadPlan::from_saved_playback();
 
     for target in plan.targets() {
-        let (load_request, what) = target.into_load();
-        if let Some(result) = try_load(spirc, what, load_request) {
+        if let Some(result) = issue_load_target(spirc, target) {
             return result;
         }
     }
 
     ERROR_GENERAL
+}
+
+/// One seek-capable load for Swift `ResumeLoadPlan` targets. Each target is given the
+/// resume-load playing timeout; a timeout lets Swift try the next fallback.
+pub(crate) fn load_at_position(
+    uri: String,
+    track_hint: Option<String>,
+    position_ms: u32,
+    from_context: bool,
+) -> i32 {
+    if uri.is_empty() {
+        return ERROR_GENERAL;
+    }
+    if let Err(e) = require_session_connected() {
+        return e;
+    }
+    let Some(spirc) = current_spirc("Load") else {
+        return ERROR_GENERAL;
+    };
+    if let Err(e) = ensure_active_for_playback(&spirc) {
+        return e;
+    }
+    let target = if from_context {
+        ResumeLoadTarget::Context {
+            uri,
+            track_hint,
+            position_ms,
+        }
+    } else {
+        ResumeLoadTarget::Track { uri, position_ms }
+    };
+    let seq_before = PLAYING_EVENT_SEQ.load(Ordering::SeqCst);
+    match issue_load_target(&spirc, target) {
+        Some(0) => {
+            if wait_for_playing_event(seq_before, RESUME_LOAD_PLAYING_TIMEOUT) {
+                0
+            } else {
+                ERROR_GENERAL
+            }
+        }
+        Some(code) => code,
+        None => ERROR_GENERAL,
+    }
 }
 
 /// Publishes the accepted local pause so Swift does not keep interpolating time.
@@ -276,7 +318,8 @@ pub(crate) fn pause_playback() -> i32 {
     })
 }
 
-/// Resumes playback: activate, `play()`, then load the captured context/track on timeout.
+/// Resumes playback: activate, `play()`, then return so Swift can issue seek-capable
+/// load fallbacks. Reconnect rehydration still calls [`resume_via_load`].
 pub(crate) fn resume_playback() -> i32 {
     debug!("aural_playback_resume called");
     if let Err(e) = require_session_connected() {
@@ -319,17 +362,6 @@ pub(crate) fn resume_playback() -> i32 {
         return 0;
     }
 
-    debug!("Resume play() produced no Playing event within timeout; attempting load fallback");
-    let fallback_seq_before = PLAYING_EVENT_SEQ.load(Ordering::SeqCst);
-    let load_result = resume_via_load(&spirc);
-    if load_result != 0 {
-        return load_result;
-    }
-
-    if wait_for_playing_event(fallback_seq_before, RESUME_LOAD_PLAYING_TIMEOUT) {
-        0
-    } else {
-        debug!("Resume fallback load produced no Playing event within timeout");
-        ERROR_GENERAL
-    }
+    debug!("Resume play() produced no Playing event within timeout; Swift may load fallbacks");
+    ERROR_GENERAL
 }

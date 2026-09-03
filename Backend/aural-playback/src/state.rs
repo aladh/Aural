@@ -15,16 +15,15 @@ pub(crate) static PLAYING_EVENT_SEQ: AtomicU64 = AtomicU64::new(0);
 
 /// Set while a `aural_playback_resume` is working, so only one runs at a time.
 ///
-/// Resuming is not instantaneous: `Spirc::play` only queues a command, and the fallback
-/// below it waits half a second for a `Playing` event before loading the saved context and
-/// waiting two more. Swift dispatches each press to its own detached task, so without this
-/// a user pressing play repeatedly — which is exactly what an unresponsive play button
-/// provokes — stacks several play-then-load sequences, each capturing `POSITION_MS` at its
-/// own moment and restarting the track there. `IS_PLAYING` does not cover the gap: it stays
-/// false until the first sequence actually produces audio.
+/// Resuming is not instantaneous: `Spirc::play` only queues a command, then this export
+/// waits briefly for a `Playing` event. Swift `RustPlaybackEngine` then iterates
+/// `ResumeLoadPlan` targets through `aural_playback_load`. `PlaybackCoordinator`
+/// serializes that whole `execute(.resume)` so the app path does not stack play-then-load.
+/// This flag still covers overlapping C `aural_playback_resume` calls. `IS_PLAYING` does
+/// not cover the gap: it stays false until the first sequence actually produces audio.
 pub(crate) static RESUMING: AtomicBool = AtomicBool::new(false);
 
-/// Clears [`RESUMING`] however `aural_playback_resume` returns — it has six exits.
+/// Clears [`RESUMING`] however `aural_playback_resume` returns.
 pub(crate) struct ResumeGuard;
 
 impl Drop for ResumeGuard {

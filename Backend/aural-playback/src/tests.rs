@@ -211,6 +211,18 @@ fn resume_load_plan_with_only_a_track_loads_that_track() {
 }
 
 #[test]
+fn load_at_position_rejects_an_empty_uri_before_session_checks() {
+    assert_eq!(
+        load_at_position(String::new(), None, 0, false),
+        ERROR_GENERAL
+    );
+    assert_eq!(
+        load_at_position(String::new(), Some("spotify:track:x".into()), 10, true),
+        ERROR_GENERAL
+    );
+}
+
+#[test]
 fn resume_load_plan_keeps_an_empty_track_as_a_context_hint_only() {
     let plan = ResumeLoadPlan::capture(
         10,
@@ -518,8 +530,10 @@ fn exported_c_function_signatures_are_stable() {
     let _: extern "C" fn(*const c_char) -> i32 = aural_playback_transfer_playback;
     let _: extern "C" fn(*const c_char) -> i32 = aural_playback_add_to_queue;
     let _: extern "C" fn(*const c_char, i32) -> i32 = aural_playback_play_uri;
+    let _: extern "C" fn(*const c_char, *const c_char, u32, bool) -> i32 = aural_playback_load;
     let _: extern "C" fn(u32) -> i32 = aural_playback_seek;
     let _: extern "C" fn() -> u32 = aural_playback_get_position_ms;
+    let _: extern "C" fn() -> u32 = aural_playback_get_resume_position_ms;
     let _: extern "C" fn(u8) = aural_playback_set_bitrate;
     let _: extern "C" fn(u16) = aural_playback_set_initial_volume;
     let _: extern "C" fn(bool) -> i32 = aural_playback_set_shuffle;
