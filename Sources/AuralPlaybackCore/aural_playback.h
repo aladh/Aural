@@ -143,7 +143,7 @@ typedef struct AuralStringPair {
 /// One restriction key with its reason list.
 typedef struct AuralRestriction {
     const char* _Nullable key;
-    const char* const* _Nullable reasons;
+    const char* _Nullable const* _Nullable reasons;
     size_t reason_count;
 } AuralRestriction;
 
@@ -155,14 +155,14 @@ typedef struct AuralProtocolQueueTrack {
     const char* _Nullable provider;
     const AuralStringPair* _Nullable metadata;
     size_t metadata_count;
-    const char* const* _Nullable removed;
+    const char* _Nullable const* _Nullable removed;
     size_t removed_count;
-    const char* const* _Nullable blocked;
+    const char* _Nullable const* _Nullable blocked;
     size_t blocked_count;
     const AuralRestriction* _Nullable restrictions;
     size_t restriction_count;
     const char* _Nullable album_uri;
-    const char* const* _Nullable disallow_reasons;
+    const char* _Nullable const* _Nullable disallow_reasons;
     size_t disallow_reason_count;
     const char* _Nullable artist_uri;
 } AuralProtocolQueueTrack;
