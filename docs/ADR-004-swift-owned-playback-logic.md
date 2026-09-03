@@ -34,7 +34,7 @@ The live classification of each Rust module lives in
 [Playback engine ownership](playback-engine-ownership.md). That inventory is the working
 checklist for later slices; this record is the ownership rule.
 
-### First slice (this change)
+### First slice
 
 Queue presentation already had a Swift owner: `QueueProtocolProjection` (delimiter hiding,
 playable-track filtering, occurrence rows). Rust no longer sends duplicate
@@ -42,15 +42,25 @@ playable-track filtering, occurrence rows). Rust no longer sends duplicate
 engine snapshot carries unfiltered protocol tracks plus slim current-track identity
 (`uri`, `provider`, `uid`). Swift derives the upcoming rail from protocol `next` tracks.
 
+### Second slice
+
+Device-list presentation is Swift-owned (`ConnectDeviceProjection`). The engine snapshot
+carries unfiltered cluster members (`id`, `name`, protobuf type name) plus
+`active_device_id`. Swift derives activity, sorts for display, and maps an empty type to
+`UNKNOWN`. Unused Web API leftovers (`volume_percent`, `disable_volume`, `is_restricted`,
+`is_private_session`) are not sent: Aural has no in-app volume control, and nothing
+read those fields. Rust still uses `is_active_in_cluster` for this engine's Connect role.
+
 ## Consequences
 
 - Upcoming-queue UI and `QueueService.acceptConnect` entries come from one Swift
   projection. Mutation snapshots still need the unfiltered protocol lists for `set_queue`.
-- Engine JSON fixtures pin the slimmer envelope. Older check JSON may still include
-  optional current-track labels; production Connect callbacks do not.
-- Cluster apply, resume-load fallbacks, Connect device mapping, and session reconnect
-  remain in Rust until a later slice can forward protocol observations without duplicating
-  protobuf ownership in Swift.
+- Device-list activity, display sort, and empty-type fallback come from one Swift
+  projection. Rust still uses `is_active_in_cluster` for this engine's Connect role.
+- Engine JSON fixtures pin the slimmer envelopes. Older check JSON may still include
+  optional current-track labels or Web API device fields; production Connect callbacks do not.
+- Cluster apply, resume-load fallbacks, and session reconnect remain in Rust until a later
+  slice can forward protocol observations without duplicating protobuf ownership in Swift.
 - [ADR 001](ADR-001-playback-engine.md) is not superseded: the C leaf and librespot stay.
 
 ## Options considered
@@ -68,3 +78,8 @@ one step. Queue presentation could move without that.
 
 Rejected. Two lists of the same queue invite drift. Swift already had the projection used
 for occurrence-safe removal.
+
+### Keep Web API-shaped device rows “for compatibility”
+
+Rejected. Nothing read volume or restriction fields. Activity belongs next to the cluster's
+`active_device_id`, not as a second copy on each member.

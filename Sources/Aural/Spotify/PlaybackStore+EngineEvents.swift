@@ -35,7 +35,10 @@ extension PlaybackStore {
             receive(state, revision: state.revision, receivedAt: envelope.receivedAt)
         case let .devices(state):
             receive(
-                state.devices,
+                ConnectDeviceProjection.devices(
+                    from: state.devices,
+                    activeDeviceID: state.activeDeviceID
+                ),
                 revision: state.revision,
                 engineEpoch: state.sessionGeneration
             )

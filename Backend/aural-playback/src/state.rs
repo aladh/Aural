@@ -52,8 +52,10 @@ pub(crate) struct ControlCallbacks {
 }
 
 pub(crate) static CONTROL_CALLBACKS: Lazy<ControlCallbacks> = Lazy::new(ControlCallbacks::default);
-/// The last device list sent to Swift, so an unchanged cluster update stays silent. Cluster
-/// updates arrive for every playback tick, and the device list changes far more rarely.
+/// Fingerprint of the last `(active_device_id, protocol members)` sent to Swift, so an
+/// unchanged cluster update stays silent. Cluster updates arrive for every playback tick,
+/// and the device list changes far more rarely. Activity changes still fire because the
+/// active id is part of the fingerprint.
 pub(crate) static LAST_DEVICES_JSON: Lazy<Mutex<String>> = Lazy::new(|| Mutex::new(String::new()));
 /// The last queue the cluster described, so Swift can ask again rather than re-deriving it
 /// from the Web API. See `aural_playback_get_queue_snapshot`.
@@ -121,11 +123,11 @@ pub(crate) struct ConnectionState {
     pub(crate) is_active_device: bool,
 }
 
-/// Derives whether this device is the active one from a cluster update.
+/// Whether this engine's device is the cluster's active member.
 ///
-/// An empty active-device ID means nothing is active anywhere. That is a real state and
-/// must clear activity rather than be ignored, otherwise the last active device stays
-/// displayed forever once playback stops.
+/// Presentation of the device *list* uses the same rule in Swift
+/// (`ConnectDeviceProjection.isActive`). An empty active-device ID means nothing is
+/// active anywhere and must clear activity rather than be ignored.
 pub(crate) fn is_active_in_cluster(active_device_id: &str, own_device_id: Option<&str>) -> bool {
     !active_device_id.is_empty() && own_device_id == Some(active_device_id)
 }
@@ -473,37 +475,22 @@ pub(crate) struct ConnectionStateInfo {
     pub(crate) is_active_device: bool,
 }
 
-/// One Spotify Connect device, in the shape `Device` in Swift already holds.
-///
-/// The Web API's `/me/player/devices` is what this replaces, and the field names match its
-/// JSON rather than the protobuf's so the Swift decoder did not have to change: `is_active`
-/// is derived here by comparing against the cluster's active device rather than being a field
-/// of its own, because the protobuf has no such flag — the cluster names one active device and
-/// every `DeviceInfo` is otherwise identical.
-#[derive(Serialize)]
-pub(crate) struct ConnectDeviceInfo {
+/// One cluster member as observed on the wire. Activity and unused Web API fields
+/// are Swift-owned (`ConnectDeviceProjection`).
+#[derive(Serialize, Clone, PartialEq, Eq)]
+pub(crate) struct ProtocolConnectDevice {
     pub(crate) id: String,
     pub(crate) name: String,
     #[serde(rename = "type")]
     pub(crate) device_type: String,
-    pub(crate) is_active: bool,
-    pub(crate) is_private_session: bool,
-    pub(crate) is_restricted: bool,
-    pub(crate) volume_percent: Option<i32>,
-    /// Whether the device refuses remote volume changes.
-    ///
-    /// An iPhone sets this: iOS does not let an app set system volume on another app's
-    /// behalf, so the command comes back `400 DEVICE_DOES_NOT_SUPPORT_COMMAND`. The cluster
-    /// says so up front, and forwarding it is what lets the slider grey out rather than fail
-    /// after the user has already dragged it.
-    pub(crate) disable_volume: bool,
 }
 
 #[derive(Serialize)]
 pub(crate) struct DevicesState {
     pub(crate) revision: u64,
     pub(crate) session_generation: u64,
-    pub(crate) devices: Vec<ConnectDeviceInfo>,
+    pub(crate) active_device_id: String,
+    pub(crate) devices: Vec<ProtocolConnectDevice>,
 }
 
 /// Get current timestamp in milliseconds since UNIX epoch

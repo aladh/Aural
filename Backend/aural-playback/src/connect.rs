@@ -388,47 +388,28 @@ pub(crate) fn mark_disconnected(reason: &str) {
     notify_connection_state_change();
 }
 
-/// Sends the cluster's device list to Swift, skipping an update that says nothing new.
+/// Sends cluster members to Swift, skipping an update that says nothing new.
 ///
-/// Volume is 0..=65535 on the wire and 0..=100 in the app, matching what
-/// `/me/player/devices` returned — the conversion belongs here rather than in Swift, so the
-/// entity keeps meaning one thing.
+/// Presentation (activity, empty-type fallback, unused Web API fields) is Swift-owned.
+/// This sorts by id only so the protobuf map cannot look like a new list every tick.
 pub(crate) fn notify_devices(
     devices: &std::collections::HashMap<String, librespot_protocol::connect::DeviceInfo>,
     active_device_id: &str,
 ) {
-    let mut list: Vec<ConnectDeviceInfo> = devices
+    let mut list: Vec<ProtocolConnectDevice> = devices
         .iter()
-        .map(|(id, info)| ConnectDeviceInfo {
+        .map(|(id, info)| ProtocolConnectDevice {
             id: id.clone(),
             name: info.name.clone(),
-            // `DeviceType` is an open enum on the wire, so an unknown value has no variant to
-            // name. `/me/player/devices` answered "Unknown" for the same case.
+            // `DeviceType` is an open enum. An unknown value has no variant name.
             device_type: info
                 .device_type
                 .enum_value()
-                .map(|kind| format!("{kind:?}").to_uppercase())
-                .unwrap_or_else(|_| "UNKNOWN".to_string()),
-            is_active: !active_device_id.is_empty() && id == active_device_id,
-            is_private_session: info.is_private_session,
-            // The protobuf has no equivalent, and nothing in the app reads it for a
-            // connect device. False rather than a guess.
-            is_restricted: false,
-            volume_percent: Some(((info.volume as f64) / 65535.0 * 100.0).round() as i32),
-            // Absent capabilities mean "nothing declared", which is not the same as declaring
-            // volume disabled — so the default is false, and only an explicit true greys the
-            // slider out. `volume_steps` is the other field that bears on this and is
-            // deliberately left alone: it describes granularity, not permission.
-            disable_volume: info
-                .capabilities
-                .as_ref()
-                .map(|capabilities| capabilities.disable_volume)
-                .unwrap_or(false),
+                .map(|kind| format!("{kind:?}"))
+                .unwrap_or_default(),
         })
         .collect();
 
-    // The protobuf map has no order, so without this the same devices would look like a new
-    // list on every update and the change check below would never fire.
     list.sort_by(|a, b| a.id.cmp(&b.id));
 
     debug!(
@@ -437,24 +418,25 @@ pub(crate) fn notify_devices(
         active_device_id
     );
 
-    let list_json = match serde_json::to_string(&list) {
+    let fingerprint = match serde_json::to_string(&(active_device_id, &list)) {
         Ok(json) => json,
         Err(e) => {
-            debug!("Failed to serialize device list: {:?}", e);
+            debug!("Failed to serialize device fingerprint: {:?}", e);
             return;
         }
     };
 
     let mut last = LAST_DEVICES_JSON.lock().unwrap_or_else(|e| e.into_inner());
-    if *last == list_json {
+    if *last == fingerprint {
         return;
     }
-    *last = list_json;
+    *last = fingerprint;
     drop(last);
 
     let snapshot = stamped_snapshot(|stamp| DevicesState {
         revision: stamp.revision,
         session_generation: stamp.session_generation,
+        active_device_id: active_device_id.to_string(),
         devices: list,
     });
     let json = match serde_json::to_string(&snapshot) {

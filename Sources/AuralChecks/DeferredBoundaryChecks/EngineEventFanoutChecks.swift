@@ -467,8 +467,9 @@ private func devicesEvent() -> RustPlaybackEvent {
         RustDevicesState(
             revision: 1,
             sessionGeneration: 1,
+            activeDeviceID: "local",
             devices: [
-                ConnectDevice(id: "local", name: "Aural", type: "computer", isActive: true)
+                ConnectProtocolDevice(id: "local", name: "Aural", type: "computer")
             ]
         )
     )
