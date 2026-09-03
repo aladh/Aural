@@ -12,7 +12,7 @@ use crate::{
         spclient::TransferRequest,
     },
     model::{LoadRequest, PlayingTrack, SpircPlayStatus},
-    // Aural patch: see PATCHES.md. `Player` no longer names the field type; `SpircPlayer` does.
+    // Spotty patch: see PATCHES.md. `Player` no longer names the field type; `SpircPlayer` does.
     player_bridge::SpircPlayer,
     playback::{
         mixer::Mixer,

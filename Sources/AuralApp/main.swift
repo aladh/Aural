@@ -1,3 +1,0 @@
-import AuralCore
-
-runAuralApplication()

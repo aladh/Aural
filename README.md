@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="Assets/AuralIcon.png" width="112" height="112" alt="Spotty">
+  <img src="Assets/SpottyIcon.png" width="112" height="112" alt="Spotty">
 </p>
 
 # Spotty
@@ -28,10 +28,10 @@ design reference, not a pixel copy or an indication of affiliation with Spotify.
 > violate Spotify's [Developer Terms](https://developer.spotify.com/terms) or other terms and can
 > stop working at any time. Use it only with an account you control and at your own risk.
 
-> **Naming note:** Spotty is the product name. Repository and build identifiers remain Aural-named
-> for compatibility, including the `Aural` repository path, `Aural.app`, executable `Aural`,
-> `Sources/Aural`, `AuralCore`, and `AURAL_*` environment variables. Those technical identifiers
-> do not imply affiliation with Spotify.
+> **Naming note:** Spotty is the product and technical identity throughout the repository, app
+> bundle, executable, Swift and Rust modules, C ABI, local storage, diagnostics, build tooling, and
+> release artifacts. A one-way first-launch migration carries forward state from installations that
+> predate the complete rename. The name does not imply affiliation with Spotify.
 
 The MIT license covers this repository's code; it does not grant rights to Spotify's service,
 content, trademarks, or private interfaces. Spotty is intended for personal, non-commercial
@@ -81,13 +81,13 @@ locally and ignored by Git.
 Clone the repository and launch a local development build:
 
 ```bash
-git clone https://github.com/aladh/Aural.git
-cd Aural
+git clone https://github.com/aladh/Spotty.git
+cd Spotty
 ./script/build_and_run.sh
 ```
 
 The script compiles the Rust backend when needed, builds the SwiftPM executable, creates and signs a
-local `Aural.app`, replaces any running development copy, and launches it. The first build downloads
+local `Spotty.app`, replaces any running development copy, and launches it. The first build downloads
 the locked Rust dependencies and takes longer than subsequent builds. On first launch, choose
 Connect and complete Spotify authorization in the browser.
 

@@ -1,6 +1,6 @@
 //
 //  stb_vorbis.h
-//  Aural
+//  Spotty
 //
 //  Public header for the vendored stb_vorbis single-file decoder (see ../UPSTREAM.md for the
 //  pinned commit). stb_vorbis.c supports being included with only its declarations visible via
@@ -8,8 +8,8 @@
 //  compiled definitions live in one place only, stb_vorbis_impl.c.
 //
 
-#ifndef AURAL_STB_VORBIS_H
-#define AURAL_STB_VORBIS_H
+#ifndef SPOTTY_STB_VORBIS_H
+#define SPOTTY_STB_VORBIS_H
 
 // Keep this in sync with stb_vorbis_impl.c: STB_VORBIS_NO_STDIO removes the FILE*-based open
 // functions from both the declarations Swift sees here and the definitions compiled there, so
@@ -23,4 +23,4 @@
 #include "../stb_vorbis.c"
 #undef STB_VORBIS_HEADER_ONLY
 
-#endif // AURAL_STB_VORBIS_H
+#endif // SPOTTY_STB_VORBIS_H

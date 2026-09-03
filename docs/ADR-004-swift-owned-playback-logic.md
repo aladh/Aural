@@ -15,7 +15,7 @@ at risk, so application policy moves to Swift one owner at a time.
 
 ## Decision
 
-- `AuralDomain.PlaybackState` remains the authoritative app-facing playback snapshot, with
+- `SpottyDomain.PlaybackState` remains the authoritative app-facing playback snapshot, with
   `PlaybackReducer` as its only mutation entrance
   ([ADR 002](ADR-002-playback-state-and-dependencies.md)).
 - Rust remains a protocol/runtime adapter: session, Spirc, cluster subscribe/bootstrap, PCM

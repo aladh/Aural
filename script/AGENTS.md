@@ -5,7 +5,7 @@ This directory owns the build, sign, terminate, and launch entry point. Read
 [development setup](../docs/development-setup.md) before changing it.
 
 - `build_and_run.sh` is not a compile-only helper: it can rebuild Rust, package and sign the app,
-  terminate a running Aural executable process, launch a replacement, and touch an authenticated
+  terminate a running Spotty executable process, launch a replacement, and touch an authenticated
   session.
   Require explicit current-request authorization for launch or interactive acceptance.
 - Authenticated launches require an Apple-issued development identity with a stable Team ID. Do not
@@ -21,6 +21,6 @@ This directory owns the build, sign, terminate, and launch entry point. Read
 For changes here, run `./Scripts/check-clean.sh`, then use
 `./Scripts/package-app.sh --debug` as the standard non-publishing packaging verification. Use
 `./Scripts/package-app.sh --release` when the affected change requires a release build. Both modes
-package, sign, and validate the Aural executable bundle without terminating or launching it. State
+package, sign, and validate the Spotty executable bundle without terminating or launching it. State
 whether a launch occurred
 and whether any live Spotify action was performed.

@@ -10,12 +10,12 @@ use librespot_protocol as protocol;
 
 mod context_resolver;
 mod model;
-mod player_bridge; // Aural patch: see PATCHES.md.
+mod player_bridge; // Spotty patch: see PATCHES.md.
 mod shuffle_vec;
 mod spirc;
 mod state;
 
 pub use model::*;
-pub use player_bridge::SpircPlayer; // Aural patch: see PATCHES.md.
+pub use player_bridge::SpircPlayer; // Spotty patch: see PATCHES.md.
 pub use spirc::*;
 pub use state::*;

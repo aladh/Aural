@@ -2,7 +2,7 @@
 set -euo pipefail
 
 validation_mode="${1:---local}"
-app_path="${2:-${0:A:h:h}/Aural.app}"
+app_path="${2:-${0:A:h:h}/Spotty.app}"
 
 case "$validation_mode" in
     --local|local)
@@ -29,7 +29,7 @@ if [[ ! -d "$app_path" ]]; then
 fi
 
 info_plist="$app_path/Contents/Info.plist"
-app_binary="$app_path/Contents/MacOS/Aural"
+app_binary="$app_path/Contents/MacOS/Spotty"
 third_party_notices="$app_path/Contents/Resources/ThirdPartyNotices.md"
 
 plutil -lint "$info_plist"

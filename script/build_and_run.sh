@@ -2,13 +2,15 @@
 set -euo pipefail
 
 mode="${1:-run}"
-app_name="Aural"
-bundle_id="dev.aural.app"
+app_name="Spotty"
+previous_app_name="$(printf '\101\165\162\141\154')"
+bundle_id="dev.spotty.app"
 root_dir="${0:A:h:h}"
-app_bundle="$root_dir/Aural.app"
-app_binary="$app_bundle/Contents/MacOS/Aural"
-staged_app_bundle="$root_dir/.build/aural-launch/Aural.app"
-rollback_app_bundle="$root_dir/.build/aural-launch/Aural.previous.app"
+app_bundle="$root_dir/Spotty.app"
+previous_app_bundle="$root_dir/$previous_app_name.app"
+app_binary="$app_bundle/Contents/MacOS/Spotty"
+staged_app_bundle="$root_dir/.build/spotty-launch/Spotty.app"
+rollback_app_bundle="$root_dir/.build/spotty-launch/Spotty.previous.app"
 
 case "$mode" in
     --release|release|--verify-release|verify-release)
@@ -27,34 +29,37 @@ case "$mode" in
         ;;
 esac
 
-if [[ -z "${AURAL_SIGNING_IDENTITY:-}" && -z "${AURAL_DEVELOPMENT_SIGNING_IDENTITY:-}" ]]; then
+if [[ -z "${SPOTTY_SIGNING_IDENTITY:-}" && -z "${SPOTTY_DEVELOPMENT_SIGNING_IDENTITY:-}" ]]; then
     apple_development_identities="$(
         security find-identity -p codesigning -v 2>/dev/null \
             | sed -nE 's/^[[:space:]]*[0-9]+\) [[:xdigit:]]+ "(Apple Development:[^"]+)"$/\1/p'
     )"
     identity_count="$(print -r -- "$apple_development_identities" | sed '/^$/d' | wc -l | tr -d ' ')"
     if [[ "$identity_count" == "1" ]]; then
-        export AURAL_DEVELOPMENT_SIGNING_IDENTITY="$(print -r -- "$apple_development_identities" | head -n 1)"
+        export SPOTTY_DEVELOPMENT_SIGNING_IDENTITY="$(print -r -- "$apple_development_identities" | head -n 1)"
     elif [[ "$identity_count" == "0" ]]; then
         print -u2 "Authenticated Spotty development requires an Apple Development signing identity."
         print -u2 "Create one in Xcode Accounts, or package without launching via ./Scripts/package-app.sh."
         exit 1
     else
         print -u2 "Multiple Apple Development identities are available."
-        print -u2 "Set AURAL_DEVELOPMENT_SIGNING_IDENTITY to the exact identity to use."
+        print -u2 "Set SPOTTY_DEVELOPMENT_SIGNING_IDENTITY to the exact identity to use."
         exit 1
     fi
 fi
 
-AURAL_APP_PATH="$staged_app_bundle" "$root_dir/Scripts/package-app.sh" "$package_mode"
+SPOTTY_APP_PATH="$staged_app_bundle" "$root_dir/Scripts/package-app.sh" "$package_mode"
 "$root_dir/Scripts/validate-app.sh" --keychain-stable "$staged_app_bundle"
 pkill -x "$app_name" >/dev/null 2>&1 || true
+pkill -x "$previous_app_name" >/dev/null 2>&1 || true
 for _ in {1..20}; do
-    pgrep -x "$app_name" >/dev/null || break
+    if ! pgrep -x "$app_name" >/dev/null && ! pgrep -x "$previous_app_name" >/dev/null; then
+        break
+    fi
     sleep 0.1
 done
-if pgrep -x "$app_name" >/dev/null; then
-    print -u2 "Spotty did not terminate; leaving the existing Aural.app bundle in place"
+if pgrep -x "$app_name" >/dev/null || pgrep -x "$previous_app_name" >/dev/null; then
+    print -u2 "A development app did not terminate; leaving existing bundles in place"
     exit 1
 fi
 had_existing_bundle=false
@@ -76,7 +81,8 @@ if ! mv "$staged_app_bundle" "$app_bundle"; then
     exit 1
 fi
 rm -rf "$rollback_app_bundle"
-rmdir "$root_dir/.build/aural-launch" 2>/dev/null || true
+rm -rf "$previous_app_bundle"
+rmdir "$root_dir/.build/spotty-launch" 2>/dev/null || true
 
 open_app() {
     /usr/bin/open -n "$app_bundle"

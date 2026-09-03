@@ -10,8 +10,8 @@ Install the prerequisites listed in [README.md](../README.md#requirements), then
 repository:
 
 ```bash
-git clone https://github.com/aladh/Aural.git
-cd Aural
+git clone https://github.com/aladh/Spotty.git
+cd Spotty
 ```
 
 Confirm the local toolchains before a long first build:
@@ -30,7 +30,7 @@ Run the complete non-playback quality gate:
 ```
 
 The first run downloads the exact Rust toolchain and locked Cargo dependencies, compiles the
-contained Rust/librespot backend, generates `Backend/lib/libaural_playback.a`, builds the Swift
+contained Rust/librespot backend, generates `Backend/lib/libspotty_playback.a`, builds the Swift
 products, and runs all deterministic checks. No Spotify sign-in or playback occurs.
 
 For authenticated development, sign in to Xcode with an Apple Account and select its free Personal
@@ -43,7 +43,7 @@ multiple Apple Development identities, select one explicitly using the exact nam
 `security find-identity -p codesigning -v`:
 
 ```bash
-export AURAL_DEVELOPMENT_SIGNING_IDENTITY='Apple Development: Your Name (TEAMID)'
+export SPOTTY_DEVELOPMENT_SIGNING_IDENTITY='Apple Development: Your Name (TEAMID)'
 ```
 
 Then build, package, sign, and launch the development app:
@@ -58,9 +58,9 @@ self-signed certificate cannot provide that invariant on current macOS: Keychain
 changing CDHash in the password item's partition ACL and prompts again after later rebuilds.
 
 `Scripts/package-app.sh` can still create a build-only self-signed bundle using an isolated identity
-and keychain under `.build/aural-signing/`. That path exists for deterministic packaging checks; it
+and keychain under `.build/spotty-signing/`. That path exists for deterministic packaging checks; it
 is local-only, unsuitable for distribution, and must not be used to sign in. `build_and_run.sh`
-fails before terminating or launching the Aural executable when no Apple-issued team identity is
+fails before terminating or launching the Spotty executable when no Apple-issued team identity is
 available.
 
 Sandboxed development tools may require permission for the packaging or launch script to invoke
@@ -68,23 +68,23 @@ macOS `security` and `codesign`. Grant the script as a unit instead of approving
 commands. Signing with an Apple Development identity can require the identity's private-key access
 once; it must not require Spotty to reauthorize its stored Spotify credential after every rebuild.
 
-If this checkout previously signed in using the self-signed build, the first team-signed launch may
-ask once for permission to read the existing item. Enter the login-keychain password and choose
-**Always Allow**. Later builds signed by the same Apple team must reuse that authorization without
-prompting.
+The first launch after the complete Spotty identity rename migrates the prior installation's
+Keychain grant, defaults, device identifier, scene state, playback preferences, and librespot
+credential cache. macOS may ask once for permission to read the prior Keychain item. Enter the
+login-keychain password and choose **Always Allow**. Later builds signed by the same Apple team must
+reuse the new authorization without prompting.
 
-If the legacy item's authorization cannot be repaired that way, delete only that item as a fallback
-(or sign out using the old build if it is still usable):
+If the current item's authorization cannot be repaired, delete only that item as a fallback:
 
 ```bash
 security delete-generic-password \
-  -s dev.aural.app.keymaster \
+  -s dev.spotty.app.keymaster \
   -a keymaster_tokens
 ```
 
 Deleting the item removes the stored Spotify grant and requires browser authorization again. Do not
 repeat it as a workaround for later builds; a later prompt means the app is not using the same Apple
-team identity and should be diagnosed with `codesign -dvvv Aural.app`.
+team identity and should be diagnosed with `codesign -dvvv Spotty.app`.
 
 On first launch, choose Connect and complete Spotify authorization in the browser. The grant is
 stored in the macOS Keychain; leftover plaintext from older development builds is migrated once
@@ -107,12 +107,12 @@ Useful build modes are documented in [CONTRIBUTING.md](../CONTRIBUTING.md#build-
 environment also tracks a **Run** action in `.codex/environments/environment.toml` that invokes the
 normal build and launch script.
 
-Plain `swift build` is not a complete build path for products that link `AuralCore`, notably `Aural`
-and `AuralBoundaryChecks`. SwiftPM links `Backend/lib/libaural_playback.a` into those products, but
+Plain `swift build` is not a complete build path for products that link `SpottyCore`, notably `Spotty`
+and `SpottyBoundaryChecks`. SwiftPM links `Backend/lib/libspotty_playback.a` into those products, but
 the generated archive is outside its dependency graph: a missing archive produces a linker error,
 and Rust source changes do not rebuild it or necessarily relink an already-built Swift product.
 Prefer `./Scripts/check.sh` or the build/package scripts, which handle the archive. For deliberate
-direct SwiftPM iteration, run `./Backend/aural-playback/build.sh` after changing Rust sources or
+direct SwiftPM iteration, run `./Backend/spotty-playback/build.sh` after changing Rust sources or
 dependencies, then run `swift package clean` before rebuilding so an existing Swift product cannot
 retain the older linked archive.
 
@@ -137,16 +137,16 @@ guarantees.
 
 The following are reproducible, ignored outputs and may be deleted at any time:
 
-- `.build/` and `Backend/aural-playback/target/` — Swift and Rust build products;
+- `.build/` and `Backend/spotty-playback/target/` — Swift and Rust build products;
 - `Backend/lib/*.a` — the generated Rust static library consumed by SwiftPM;
-- `Aural.app/` and `dist/` — local packages and archives;
+- `Spotty.app/` and `dist/` — local packages and archives;
 - `diagnostics/` — local diagnostic exports that must be reviewed before sharing;
-- `AuralArtwork/` — the bounded artwork cache;
+- `SpottyArtwork/` — the bounded artwork cache;
 - `.DS_Store` and `.swiftpm/` — local tooling metadata.
 
-When changing the master app artwork in `Assets/AuralIcon.png`, regenerate every standard macOS
+When changing the master app artwork in `Assets/SpottyIcon.png`, regenerate every standard macOS
 icon representation with `./Scripts/generate-icon.sh`. Commit both the source PNG and generated
-`Assets/Aural.icns`.
+`Assets/Spotty.icns`.
 
 To recover from an uncertain local state, a fresh clone is the preferred reset. Do not copy build
 products or signing material from an older checkout. Cargo resolves the pinned librespot revision

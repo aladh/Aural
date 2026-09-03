@@ -13,7 +13,7 @@ could still combine values from different account, engine, command, queue, or se
 
 ## Decision
 
-- `AuralDomain.PlaybackState` is the single playback presentation snapshot. Everything the UI
+- `SpottyDomain.PlaybackState` is the single playback presentation snapshot. Everything the UI
   shows about playback, connection, devices, and the upcoming queue is projected into it in Swift;
   which projection owns which field is listed in
   [playback engine ownership](playback-engine-ownership.md).
@@ -44,14 +44,14 @@ could still combine values from different account, engine, command, queue, or se
   whose process-local sequence is assigned and delivered by one re-entry-safe drain so every
   subscriber observes strictly increasing order across playback, queue, connection, and devices
   callbacks. PCM continues directly to `AudioRenderer` and never enters the state architecture.
-- The `AuralApp` scene in `AuralCore` is the production composition root; the shipping `AuralApp`
+- The `SpottyApp` scene in `SpottyCore` is the production composition root; the shipping `SpottyApp`
   target is a deliberately thin launcher. Views receive feature stores or narrow immutable
   playback values/actions. Stores and views do not construct production APIs or call the C bridge.
   `TransientFeedbackPresenter` is composed once there and injected into `PlaybackStore` and
   `RootView`. Transient mutation success/info/failure is not `PlaybackState` and is not a
   NotificationCenter or generic event bus.
 
-`AuralDomain` and `AuralCore` are separate SwiftPM products; check products do not ship. A
+`SpottyDomain` and `SpottyCore` are separate SwiftPM products; check products do not ship. A
 separate infrastructure target is not created solely for folder aesthetics: those adapters still
 share private Spotify transport models, while dependency direction is enforced by injected
 protocols and static checks.
@@ -59,7 +59,7 @@ protocols and static checks.
 ## Consequences
 
 Event ordering, optimistic command reconciliation, account replacement, queue precedence, and
-paused remote ownership can be replayed in `AuralDomain` without Spotify, Rust, Keychain, AppKit,
+paused remote ownership can be replayed in `SpottyDomain` without Spotify, Rust, Keychain, AppKit,
 or SwiftUI. Concrete app boundaries and injected coordinator/queue workflows run in separate
 boundary checks. The shipping executable contains no check harness.
 

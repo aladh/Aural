@@ -1,6 +1,6 @@
 //
 //  stb_vorbis_impl.c
-//  Aural
+//  Spotty
 //
 //  The single compiled translation unit for the vendored stb_vorbis decoder (see UPSTREAM.md for
 //  the pinned commit). stb_vorbis.c is excluded from the CVorbis target's own sources and is
