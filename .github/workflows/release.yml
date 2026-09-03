@@ -100,5 +100,5 @@ jobs:
             --verify-tag \
             --prerelease \
             --generate-notes \
-            --title "Aural $version" \
+            --title "Spotty $version" \
             --notes "$RELEASE_NOTES"

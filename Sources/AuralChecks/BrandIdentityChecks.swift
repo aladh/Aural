@@ -58,6 +58,28 @@ func runBrandIdentityChecks(_ check: CheckRunner) {
                 "local device label remains Swift-owned",
                 playback.contains("let thisDeviceName = \"This Mac\"")
             )
+
+            let credentials = try sourceFile(named: "Backend/aural-playback/src/session_lifecycle.rs")
+            check.check(
+                "credential directory remains Aural-named",
+                credentials.contains(".join(\"Aural\")")
+                    && credentials.contains(".join(\"credentials\")")
+            )
+
+            let launcher = try sourceFile(named: "script/build_and_run.sh")
+            check.check(
+                "launcher process and bundle identities remain stable",
+                launcher.contains("app_name=\"Aural\"")
+                    && launcher.contains("app_bundle=\"$root_dir/Aural.app\"")
+                    && launcher.contains("Contents/MacOS/Aural")
+            )
+
+            let release = try sourceFile(named: ".github/workflows/release.yml")
+            check.check(
+                "release presentation is Spotty while artifacts remain Aural-named",
+                release.contains("--title \"Spotty $version\"")
+                    && release.contains("Aural-$version-arm64.zip")
+            )
         }
     }
 }

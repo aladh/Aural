@@ -9,7 +9,7 @@ output="$output_dir/aural-$timestamp.log"
 
 mkdir -p "$output_dir"
 {
-    print "Aural local diagnostics"
+    print "Spotty local diagnostics"
     print "Captured: $timestamp"
     print "Lookback: $lookback"
     print "macOS: $(sw_vers -productVersion) ($(sw_vers -buildVersion))"
