@@ -3,6 +3,7 @@ import SwiftUI
 struct NowPlayingBar: View {
     let player: PlaybackStore
     @Binding var showsSidePanel: Bool
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         VStack(spacing: 0) {
@@ -39,12 +40,15 @@ struct NowPlayingBar: View {
                     .overlay(alignment: .top) { Divider() }
             }
 
-            if let remote = player.activeRemoteDevice {
-                RemotePlaybackBanner(device: remote, isPlaying: player.isPlaying)
+            if let banner = player.remotePlaybackBanner {
+                RemotePlaybackBanner(device: banner.device, isPlaying: banner.isPlaying)
             }
         }
         .animation(.snappy(duration: 0.2), value: player.hasCurrentTrack)
-        .animation(.snappy(duration: 0.2), value: player.activeRemoteDevice?.id)
+        .animation(
+            reduceMotion ? nil : .snappy(duration: 0.2),
+            value: player.remotePlaybackBanner?.device.id
+        )
         .task(id: player.showsPauseControl) {
             guard player.showsPauseControl else { return }
             while !Task.isCancelled {
