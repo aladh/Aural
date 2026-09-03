@@ -83,7 +83,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           RELEASE_NOTES: |
             > [!CAUTION]
-            > **Experimental build:** Aural uses unsupported, reverse-engineered Spotify interfaces
+            > **Experimental build:** Spotty uses unsupported, reverse-engineered Spotify interfaces
             > and may stop working without notice. Use it only with an account you control.
 
             This is an ARM64-only build for Apple-silicon Macs running macOS 15 or newer.
