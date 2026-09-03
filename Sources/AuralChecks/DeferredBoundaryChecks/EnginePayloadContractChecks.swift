@@ -146,9 +146,10 @@ func runEnginePayloadContractChecks(_ check: CheckRunner) {
                 ),
                 .failed("fixture-session-timeout")
             )
-            let raw = try JSONSerialization.jsonObject(
-                with: enginePayloadFixture(named: "connection-minimal")
-            ) as? [String: Any]
+            let raw =
+                try JSONSerialization.jsonObject(
+                    with: enginePayloadFixture(named: "connection-minimal")
+                ) as? [String: Any]
             check.check(
                 "connection snapshot omits unused reconnect bookkeeping",
                 raw?["reconnect_attempt"] == nil
