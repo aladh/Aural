@@ -15,7 +15,7 @@ enum AuralPalette {
     static let quickAccessSurfaceHover = Color(red: 0.22, green: 0.22, blue: 0.22)
     // The player is a distinct, near-black anchor rather than another raised media card.
     static let playerShelf = Color(red: 0.035, green: 0.035, blue: 0.035)
-    static let playerDivider = Color.white.opacity(0.10)
+    static let playerDivider = Color.primary.opacity(0.10)
     static let playerPrimary = Color.primary.opacity(0.92)
     static let playerSecondary = Color.secondary.opacity(0.92)
     static let remotePlaybackForeground = Color(red: 0.025, green: 0.12, blue: 0.06)
