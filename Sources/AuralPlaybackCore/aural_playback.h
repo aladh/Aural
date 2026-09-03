@@ -125,6 +125,14 @@ uint32_t aural_playback_get_position_ms(void);
 /// Position saved at deactivation for resume-load, or 0 to use the live playhead.
 uint32_t aural_playback_get_resume_position_ms(void);
 
+/// Sticky resume-load context URI (`CURRENT_CONTEXT_URI`), or NULL if none.
+/// Caller frees with `aural_playback_free_string`. Empty string is a present empty value.
+char* _Nullable aural_playback_get_resume_context_uri(void);
+
+/// Sticky resume-load track URI (`CURRENT_TRACK_URI`), or NULL if none.
+/// Caller frees with `aural_playback_free_string`. Empty string is a valid context hint.
+char* _Nullable aural_playback_get_resume_track_uri(void);
+
 /// Callback function type for queue updates.
 /// Receives a JSON string containing the queue state.
 typedef void (*QueueCallback)(const char* queue_json);

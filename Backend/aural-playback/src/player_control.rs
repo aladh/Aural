@@ -365,9 +365,9 @@ pub(crate) fn cleanup_player_globals() {
     // previous account's context — with its position, if this line's neighbour above had not
     // already been cleared. Reachable through the ordinary control path: with nobody active,
     // `sendTransportCommand` takes the Web API 404 and falls back to local
-    // `aural_playback_resume` plus Swift `ResumeLoadPlan` loads from presentation
-    // identity (already niled on the Swift side after cleanup). Reconnect
-    // rehydration still reads these globals through `resume_via_load`.
+    // `aural_playback_resume` plus Swift `ResumeLoadPlan` loads from these sticky URIs
+    // (read through `aural_playback_get_resume_*`). Reconnect rehydration still reads
+    // them through `resume_via_load`.
     //
     // Only a full cleanup clears them. The wake and reconnect paths run
     // `do_reconnect_cleanup`, which deliberately leaves playback state alone so the
@@ -423,6 +423,27 @@ pub extern "C" fn aural_playback_get_resume_position_ms() -> u32 {
     ffi_query_u32("aural_playback_get_resume_position_ms", || {
         RESUME_POSITION_MS.load(Ordering::SeqCst)
     })
+}
+
+#[no_mangle]
+pub extern "C" fn aural_playback_get_resume_context_uri() -> *mut c_char {
+    ffi_owned_string("aural_playback_get_resume_context_uri", || {
+        owned_optional_string(&CURRENT_CONTEXT_URI)
+    })
+}
+
+#[no_mangle]
+pub extern "C" fn aural_playback_get_resume_track_uri() -> *mut c_char {
+    ffi_owned_string("aural_playback_get_resume_track_uri", || {
+        owned_optional_string(&CURRENT_TRACK_URI)
+    })
+}
+
+fn owned_optional_string(slot: &Lazy<Mutex<Option<String>>>) -> *mut c_char {
+    slot.lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .clone()
+        .map_or(std::ptr::null_mut(), into_owned_c_string)
 }
 
 /// Skips to the next track in the queue.

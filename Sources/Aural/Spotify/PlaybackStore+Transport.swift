@@ -260,8 +260,8 @@ extension PlaybackStore {
         ResumeLoadPlan.capture(
             savedAtDeactivation: environment.local.resumePositionMilliseconds(),
             live: environment.local.positionMilliseconds(),
-            contextURI: state.playbackContextURI,
-            trackURI: state.currentTrack?.uri
+            contextURI: environment.local.resumeContextURI(),
+            trackURI: environment.local.resumeTrackURI()
         )
     }
 

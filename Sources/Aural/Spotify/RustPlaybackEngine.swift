@@ -60,6 +60,8 @@ nonisolated final class RustPlaybackEngine: LocalPlaybackEngine, @unchecked Send
 
     func positionMilliseconds() -> UInt32 { PlaybackCore.positionMilliseconds() }
     func resumePositionMilliseconds() -> UInt32 { PlaybackCore.resumePositionMilliseconds() }
+    func resumeContextURI() -> String? { PlaybackCore.resumeContextURI() }
+    func resumeTrackURI() -> String? { PlaybackCore.resumeTrackURI() }
     func queueSnapshotJSON() -> String? { PlaybackCore.queueSnapshotJSON() }
     func configureHighQualityPlayback() { PlaybackCore.configureHighQualityPlayback() }
     func shutdown() -> PlaybackEngineResult {
@@ -75,13 +77,10 @@ nonisolated final class RustPlaybackEngine: LocalPlaybackEngine, @unchecked Send
     /// Activate/`play()` first. On a non-reconnect failure, iterate Swift load targets.
     /// `PlaybackCoordinator` serializes this whole operation.
     private func resume(_ plan: ResumeLoadPlan) -> PlaybackEngineResult {
-        let play = engineResult(PlaybackCore.resume())
-        if play.isOK || play.requiresReconnect { return play }
-        for target in plan.targets() {
-            let loaded = engineResult(PlaybackCore.load(target))
-            if loaded.isOK || loaded.requiresReconnect { return loaded }
-        }
-        return play
+        UserResumeLoadSequence.completing(
+            play: engineResult(PlaybackCore.resume()),
+            targets: plan.targets()
+        ) { engineResult(PlaybackCore.load($0)) }
     }
 
     /// Copies a non-optional FFI result into the Swift engine wrapper. Do not reconstruct

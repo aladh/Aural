@@ -321,7 +321,8 @@ pub(crate) static CURRENT_DURATION_MS: AtomicU32 = AtomicU32::new(0);
 // Current logical track URI - for UI identity and detecting same-track reconnects.
 // The playable AudioItem may carry a different URI after Spotify relinking.
 //
-// Session-scoped: `aural_playback_cleanup` drops it, because `resume_via_load` would otherwise
+// Session-scoped: `aural_playback_cleanup` drops it, because resume-load (Swift
+// `aural_playback_get_resume_track_uri` and reconnect `resume_via_load`) would otherwise
 // hand it to a load made by whichever account logged in next.
 pub(crate) static CURRENT_TRACK_URI: Lazy<Mutex<Option<String>>> = Lazy::new(|| Mutex::new(None));
 

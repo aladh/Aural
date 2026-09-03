@@ -38,7 +38,9 @@ boundaries. Read the relevant ADRs and the
   bookkeeping into Rust.
 - `PlaybackSnapshotProjection` owns engine playback transport, empty-URI identity, timestamp
   correction, and omitted-repeat fallback. The engine sends protocol playing/paused flags and
-  cluster `context_uri`. User resume iterates `ResumeLoadPlan` through `aural_playback_load`.
+  cluster `context_uri`. User resume captures sticky resume-load URIs through FFI and
+  iterates `ResumeLoadPlan` through `aural_playback_load`. Do not feed `playbackContextURI`
+  into that plan: local PlayerEvent snapshots send an empty context on purpose.
   Do not treat playback context as QueueService mutation identity. Do not widen
   `aural_playback_resume`. Reconnect rehydration still loads from session globals.
 - Keep read-only catalog access separate from playlist mutation. Writes use `PlaylistMutating` and

@@ -90,10 +90,12 @@ calls `resume_via_load` without Swift.
 
 ### Sixth slice
 
-User-initiated resume-load target order is Swift-owned (`ResumeLoadPlan`).
-`aural_playback_resume` activates and `play()`s only. On timeout, `RustPlaybackEngine`
-iterates Swift targets through seek-capable `aural_playback_load`. Reconnect rehydration
-still calls `resume_via_load` from session globals without Swift.
+User-initiated resume-load target order is Swift-owned (`ResumeLoadPlan`), captured from
+sticky resume-load URIs (`CURRENT_CONTEXT_URI` / `CURRENT_TRACK_URI` / `RESUME_POSITION_MS`)
+rather than presentation `playbackContextURI`. `aural_playback_resume` activates and
+`play()`s only. On timeout, `RustPlaybackEngine` iterates Swift targets through
+seek-capable `aural_playback_load`. Reconnect rehydration still calls `resume_via_load`
+from the same session globals without Swift.
 
 ## Consequences
 
@@ -111,7 +113,8 @@ still calls `resume_via_load` from session globals without Swift.
   `PlayerEvent` as that pair). Protocol `context_uri` is forwarded as playlist/album/artist
   identity on cluster snapshots. Local player-event snapshots send an empty context.
 - Resume-load target order for user resume comes from Swift `ResumeLoadPlan` issued through
-  `aural_playback_load`. Reconnect rehydration still loads from session globals in the engine.
+  `aural_playback_load`, using sticky resume-load URIs rather than presentation context.
+  Reconnect rehydration still loads from session globals in the engine.
 - Cluster apply and session reconnect remain in Rust until a later slice can forward
   protocol observations without duplicating protobuf ownership in Swift.
 - [ADR 001](ADR-001-playback-engine.md) is not superseded: the C leaf and librespot stay.

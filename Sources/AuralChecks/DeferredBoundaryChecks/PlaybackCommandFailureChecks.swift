@@ -5,10 +5,21 @@ import Foundation
 private final class ScriptedLocalEngine: LocalPlaybackEngine, @unchecked Sendable {
     private let lock = NSLock()
     private let result: PlaybackEngineResult
+    private let storedResumePosition: UInt32
+    private let storedResumeContextURI: String?
+    private let storedResumeTrackURI: String?
     private var storedOperations: [LocalPlaybackOperation] = []
 
-    init(result: PlaybackEngineResult) {
+    init(
+        result: PlaybackEngineResult,
+        resumePosition: UInt32 = 0,
+        resumeContextURI: String? = nil,
+        resumeTrackURI: String? = nil
+    ) {
         self.result = result
+        storedResumePosition = resumePosition
+        storedResumeContextURI = resumeContextURI
+        storedResumeTrackURI = resumeTrackURI
     }
 
     var operations: [LocalPlaybackOperation] {
@@ -30,6 +41,9 @@ private final class ScriptedLocalEngine: LocalPlaybackEngine, @unchecked Sendabl
         return result
     }
     func positionMilliseconds() -> UInt32 { 0 }
+    func resumePositionMilliseconds() -> UInt32 { storedResumePosition }
+    func resumeContextURI() -> String? { storedResumeContextURI }
+    func resumeTrackURI() -> String? { storedResumeTrackURI }
     func queueSnapshotJSON() -> String? { nil }
     func configureHighQualityPlayback() {}
     func shutdown() -> PlaybackEngineResult { .ok }
@@ -2032,5 +2046,113 @@ func runPlaybackCommandFailureChecks(_ runner: CheckRunner) async {
             1
         )
         await acceptedLocalMacStore.shutdownForTermination()
+    }
+
+    runner.suite("User resume load sequence") {
+        let context = ResumeLoadPlan.Target.context(
+            uri: "spotify:playlist:ctx",
+            trackHint: "spotify:track:one",
+            positionMS: 10
+        )
+        let track = ResumeLoadPlan.Target.track(uri: "spotify:track:one", positionMS: 10)
+        let reconnect = PlaybackEngineResult(rawValue: -2)
+
+        runner.equal(
+            "successful play does not load",
+            UserResumeLoadSequence.completing(play: .ok, targets: [context, track]) { _ in
+                runner.check("successful play must not load", false)
+                return .error
+            },
+            .ok
+        )
+        runner.equal(
+            "reconnect-required play does not load",
+            UserResumeLoadSequence.completing(play: reconnect, targets: [context, track]) { _ in
+                runner.check("reconnect-required play must not load", false)
+                return .ok
+            },
+            reconnect
+        )
+
+        var loaded: [ResumeLoadPlan.Target] = []
+        let recovered = UserResumeLoadSequence.completing(play: .error, targets: [context, track]) {
+            loaded.append($0)
+            if case .track = $0 { return .ok }
+            return .error
+        }
+        runner.equal("timeout tries context then track", loaded, [context, track])
+        runner.equal("a later target can recover the timeout", recovered, .ok)
+
+        var failedLoads = 0
+        let exhausted = UserResumeLoadSequence.completing(play: .error, targets: [context, track]) { _ in
+            failedLoads += 1
+            return .error
+        }
+        runner.equal("exhausted loads keep the play timeout", exhausted, .error)
+        runner.equal("exhausted loads try every target", failedLoads, 2)
+    }
+
+    await runner.suite("User resume captures sticky identity not presentation") {
+        let engine = ScriptedLocalEngine(
+            result: .ok,
+            resumePosition: 93_606,
+            resumeContextURI: "spotify:playlist:ctx",
+            resumeTrackURI: "spotify:track:sticky"
+        )
+        let player = playbackStore(
+            commandEnvironment(local: engine, remote: ScriptedRemoteClient(.succeed))
+        )
+        _ = player.send(.session(.ready), source: .account)
+        _ = player.send(
+            .devices(
+                PlaybackDeviceSnapshot(
+                    devices: [
+                        PlaybackDevice(id: "mac", name: "Mac", type: "computer", isActive: true)
+                    ],
+                    localDeviceID: "mac",
+                    revision: 1
+                )),
+            source: .engineDevices,
+            revision: 1
+        )
+        _ = player.send(
+            .presentation(
+                PlaybackPresentationSnapshot(
+                    currentTrack: CurrentTrack(
+                        uri: "spotify:track:presentation",
+                        title: "Now",
+                        artist: "Artist",
+                        duration: 200,
+                        metadataSource: .catalog
+                    ),
+                    transport: .paused,
+                    timing: PlaybackTiming(position: 50, duration: 200, anchoredAt: Date(timeIntervalSince1970: 1))
+                )),
+            source: .user
+        )
+        runner.nil_("local pause presentation has no context URI", player.state.playbackContextURI)
+        runner.check("paused local playback can resume", player.canTogglePlayback)
+        player.togglePlayback()
+        _ = await waitUntil { player.state.pendingCommands[.transport] == nil }
+
+        let plan: ResumeLoadPlan?
+        switch engine.operations.first {
+        case let .resume(captured):
+            plan = captured
+        default:
+            plan = nil
+        }
+        runner.equal(
+            "resume loads sticky context not the empty presentation context",
+            plan?.contextURI,
+            "spotify:playlist:ctx"
+        )
+        runner.equal(
+            "resume loads sticky track not the presentation track",
+            plan?.trackURI,
+            "spotify:track:sticky"
+        )
+        runner.equal("resume uses the deactivation position", plan?.positionMS, 93_606)
+        await player.shutdownForTermination()
     }
 }

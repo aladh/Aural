@@ -61,11 +61,19 @@ nonisolated enum PlaybackCore {
         aural_playback_get_resume_position_ms()
     }
 
+    static func resumeContextURI() -> String? {
+        takeOwnedString(aural_playback_get_resume_context_uri())
+    }
+
+    static func resumeTrackURI() -> String? {
+        takeOwnedString(aural_playback_get_resume_track_uri())
+    }
+
     static func load(_ target: ResumeLoadPlan.Target) -> Result {
         switch target {
         case let .context(uri, trackHint, positionMS):
             uri.withCString { uriPointer in
-                (trackHint ?? "").withCString { hintPointer in
+                withOptionalCString(trackHint) { hintPointer in
                     aural_playback_load(
                         uriPointer,
                         hintPointer,
@@ -79,6 +87,20 @@ nonisolated enum PlaybackCore {
                 aural_playback_load(uriPointer, nil, positionMS, false)
             }
         }
+    }
+
+    private static func takeOwnedString(_ pointer: UnsafeMutablePointer<CChar>?) -> String? {
+        guard let pointer else { return nil }
+        defer { aural_playback_free_string(pointer) }
+        return String(cString: pointer)
+    }
+
+    private static func withOptionalCString<R>(
+        _ string: String?,
+        _ body: (UnsafePointer<CChar>?) -> R
+    ) -> R {
+        guard let string else { return body(nil) }
+        return string.withCString { body($0) }
     }
 
     static func next() -> Result { aural_playback_next() }
@@ -105,9 +127,7 @@ nonisolated enum PlaybackCore {
     /// The last queue the Connect cluster described, or nil before one has arrived.
     /// Same JSON shape the queue callback delivers.
     nonisolated static func queueSnapshotJSON() -> String? {
-        guard let pointer = aural_playback_get_queue_snapshot() else { return nil }
-        defer { aural_playback_free_string(pointer) }
-        return String(cString: pointer)
+        takeOwnedString(aural_playback_get_queue_snapshot())
     }
 
     static func configureHighQualityPlayback() {

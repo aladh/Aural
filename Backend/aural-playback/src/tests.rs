@@ -222,6 +222,50 @@ fn load_at_position_rejects_an_empty_uri_before_session_checks() {
     );
 }
 
+fn take_owned_c_string(ptr: *mut std::os::raw::c_char) -> Option<String> {
+    if ptr.is_null() {
+        return None;
+    }
+    let value = unsafe { std::ffi::CStr::from_ptr(ptr) }
+        .to_str()
+        .ok()
+        .map(str::to_owned);
+    aural_playback_free_string(ptr);
+    value
+}
+
+#[test]
+fn resume_identity_exports_read_session_globals() {
+    let _guard = lock_global_state();
+    *CURRENT_CONTEXT_URI.lock().unwrap() = Some("spotify:playlist:ctx".into());
+    *CURRENT_TRACK_URI.lock().unwrap() = Some("spotify:track:one".into());
+    assert_eq!(
+        take_owned_c_string(aural_playback_get_resume_context_uri()).as_deref(),
+        Some("spotify:playlist:ctx")
+    );
+    assert_eq!(
+        take_owned_c_string(aural_playback_get_resume_track_uri()).as_deref(),
+        Some("spotify:track:one")
+    );
+
+    *CURRENT_TRACK_URI.lock().unwrap() = Some(String::new());
+    assert_eq!(
+        take_owned_c_string(aural_playback_get_resume_track_uri()).as_deref(),
+        Some("")
+    );
+
+    *CURRENT_CONTEXT_URI.lock().unwrap() = None;
+    *CURRENT_TRACK_URI.lock().unwrap() = None;
+    assert_eq!(
+        take_owned_c_string(aural_playback_get_resume_context_uri()),
+        None
+    );
+    assert_eq!(
+        take_owned_c_string(aural_playback_get_resume_track_uri()),
+        None
+    );
+}
+
 #[test]
 fn resume_load_plan_keeps_an_empty_track_as_a_context_hint_only() {
     let plan = ResumeLoadPlan::capture(
@@ -511,7 +555,11 @@ fn exported_c_function_signatures_are_stable() {
     let _: extern "C" fn(*mut c_char) = aural_playback_free_string;
     let _: extern "C" fn() = aural_playback_clear_streaming_credentials;
     let _: extern "C" fn() = aural_playback_cleanup;
-    let _: extern "C" fn() -> *mut c_char = aural_playback_get_queue_snapshot;
+    let _: [extern "C" fn() -> *mut c_char; 3] = [
+        aural_playback_get_queue_snapshot,
+        aural_playback_get_resume_context_uri,
+        aural_playback_get_resume_track_uri,
+    ];
 
     let _: [extern "C" fn() -> i32; 8] = [
         aural_playback_force_reconnect,

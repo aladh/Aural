@@ -1,8 +1,10 @@
-/// Ordered resume-load fallbacks from captured context/track identity and position.
+/// Ordered resume-load fallbacks from sticky session context/track identity and position.
 ///
 /// Empty strings are missing: that is how session globals and engine wire URIs read after
-/// cleanup, not a URI Spirc can load. A deactivation resume point outranks the live
-/// position. `LoadRequest` construction stays in the engine; Swift iterates `targets()`.
+/// cleanup, not a URI Spirc can load. Capture these from resume-load FFI identity, not from
+/// `playbackContextURI` (local PlayerEvent snapshots send an empty context on purpose).
+/// A deactivation resume point outranks the live position. `LoadRequest` construction stays
+/// in the engine; Swift iterates `targets()`.
 public struct ResumeLoadPlan: Equatable, Sendable {
     public let positionMS: UInt32
     public let contextURI: String?
