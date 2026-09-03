@@ -1,13 +1,9 @@
 {
-  "connected_since_ms": 1700000000000,
   "device_id": "fixture-mac",
-  "device_name": "Fixture Mac",
   "is_active_device": true,
   "last_error": null,
-  "reconnect_attempt": 0,
   "revision": 14,
   "session_connected": true,
-  "session_connection_id": "fixture-connection",
   "session_generation": 5,
   "spirc_ready": true
 }

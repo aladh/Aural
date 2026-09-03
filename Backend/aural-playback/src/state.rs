@@ -97,14 +97,16 @@ pub(crate) static SHUTTING_DOWN: AtomicBool = AtomicBool::new(false);
 // Flag to track sleep state (prevents auto-reconnect, but allows explicit forceReconnect on wake)
 pub(crate) static SLEEPING: AtomicBool = AtomicBool::new(false);
 
-/// Everything the connection snapshot publishes, behind a single lock.
+/// Everything the engine's connection observation is assembled from, behind a single lock.
 ///
 /// These fields used to live in six independent globals (three mutexes and three
 /// atomics), so a snapshot assembled from them could mix values from different
 /// transitions — ready from one, connection metadata from another. Keeping them
 /// together makes every published snapshot internally consistent by construction.
 ///
-/// `connected_since_ms` uses 0 for "never connected"; the wire format maps that to null.
+/// `connected_since_ms` uses 0 for "never connected". Reconnect bookkeeping
+/// (`reconnect_attempt`, `session_connection_id`, `connected_since_ms`) stays here
+/// and is not sent on the FFI snapshot.
 ///
 /// `is_active_device` also lives here rather than in a separate atomic. It used to be
 /// tracked in `IS_ACTIVE_DEVICE`, written from fourteen scattered command and event sites
@@ -465,13 +467,9 @@ pub(crate) struct ConnectionStateInfo {
     pub(crate) revision: u64,
     pub(crate) session_generation: u64,
     pub(crate) session_connected: bool,
-    pub(crate) session_connection_id: Option<String>,
     pub(crate) spirc_ready: bool,
     pub(crate) device_id: Option<String>,
-    pub(crate) device_name: String,
-    pub(crate) reconnect_attempt: u32,
     pub(crate) last_error: Option<String>,
-    pub(crate) connected_since_ms: Option<u64>,
     pub(crate) is_active_device: bool,
 }
 

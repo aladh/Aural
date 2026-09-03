@@ -364,30 +364,24 @@ extension PlaybackStore {
 
     func receive(_ state: RustConnectionState, revision: UInt64?, receivedAt: Date) {
         guard !isTearingDown else { return }
-        let resolvedLocalID = state.deviceID.flatMap { $0.isEmpty ? nil : $0 } ?? localDeviceID
-        let resolvedDeviceName: String
-        if let name = state.deviceName, !name.isEmpty {
-            resolvedDeviceName = name
-        } else {
-            resolvedDeviceName = thisDeviceName
-        }
+        let resolvedLocalID = ConnectionSnapshotProjection.resolvedDeviceID(
+            wire: state.deviceID,
+            fallback: localDeviceID
+        )
         let owner = connectionPlaybackOwner(
             isLocalActive: state.isActiveDevice,
             localDeviceID: resolvedLocalID,
-            localDeviceName: resolvedDeviceName,
+            localDeviceName: thisDeviceName,
             devices: self.state.devices.devices,
             currentTrackURI: self.state.currentTrack?.uri,
             previousOwner: self.state.owner,
             lastRemoteDeviceID: lastRemoteDeviceID
         )
-        let session: PlaybackSessionPhase?
-        if state.sessionConnected, state.spircReady {
-            session = .ready
-        } else if let error = state.lastError, !error.isEmpty {
-            session = .failed(error)
-        } else {
-            session = nil
-        }
+        let session = ConnectionSnapshotProjection.sessionPhase(
+            connected: state.sessionConnected,
+            spircReady: state.spircReady,
+            lastError: state.lastError
+        )
         let accepted = send(
             .engineConnection(
                 EngineConnectionSnapshot(
@@ -401,7 +395,6 @@ extension PlaybackStore {
             receivedAt: receivedAt
         )
         guard accepted else { return }
-        thisDeviceName = resolvedDeviceName
         accountStore.receiveEngineConnection(
             connected: state.sessionConnected,
             ready: state.spircReady,

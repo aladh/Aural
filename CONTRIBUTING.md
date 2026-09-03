@@ -162,7 +162,7 @@ canonical list of accepted decisions:
 
 - Swift owns windows, navigation, presentation, OAuth, catalog access, metadata, shuffle policy,
   progress interpolation, upcoming-queue projection from Connect protocol rows, Connect
-  device-list projection, and native AVFoundation audio output.
+  device-list projection, connection-snapshot presentation, and native AVFoundation audio output.
 - Rust/librespot owns the streaming session, Spotify Connect, decoding, reconnects, and
   unfiltered protocol queue and device rows. Build, reconnect cleanup+build, and exported
   cleanup serialize through one async lifecycle mutex so those operations cannot interleave
