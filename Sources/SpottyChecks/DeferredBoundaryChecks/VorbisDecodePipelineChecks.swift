@@ -3,9 +3,8 @@ import Foundation
 @testable import SpottyCore
 
 /// Plumbing checks for `VorbisDecodePipeline`: the decode thread's lifecycle, failure paths, and
-/// the pause/stop gate, driven entirely through fakes. No Vorbis fixture is committed on `main`
-/// yet (see `OggVorbisDecoderChecks` and #209 -- it needs an encoder on a machine that has one),
-/// so the one real-decode check is guarded and skips when the fixture is absent.
+/// the pause/stop gate, driven entirely through fakes. `runFixtureDecodeThroughFakeSinkCheck`
+/// additionally decodes the committed synthetic `tone-44100-stereo.ogg` fixture (#209).
 @MainActor
 func runVorbisDecodePipelineChecks(_ check: CheckRunner) async {
     await check.suite("Vorbis decode pipeline") {
@@ -148,8 +147,6 @@ private func runNoEventsAfterStoppedCheck(_ check: CheckRunner) async {
 
 /// Feeds `Fixtures/tone-44100-stereo.ogg` (see `OggVorbisDecoderChecks`) through the pipeline end
 /// to end with a `FakeByteSource`/`FakeSink` pair standing in for the CDN fetch and the renderer.
-/// Skips with a passing check when the fixture is absent (#209 -- it needs an encoder on a
-/// machine that has one), same as `OggVorbisDecoderChecks`.
 @MainActor
 private func runFixtureDecodeThroughFakeSinkCheck(_ check: CheckRunner) async {
     let data: Data
