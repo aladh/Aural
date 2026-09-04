@@ -549,6 +549,25 @@ func runPlaybackCommandFailureChecks(_ runner: CheckRunner) async {
         runner.equal("reconnect-required on a ready session does not re-authorize", readyAccount.authorizeCount, 0)
         await ready.shutdownForTermination()
 
+        // Recovery is a registry effect: cancelling it before it runs (replacement, logout,
+        // account epoch change) must keep the stale rebuild away from the engine.
+        let cancelledAccount = GrantedAccount()
+        let cancelledEngine = ScriptedLocalEngine(result: .ok)
+        let cancelled = playbackStore(
+            commandEnvironment(
+                local: cancelledEngine,
+                remote: ScriptedRemoteClient(.succeed),
+                account: cancelledAccount
+            )
+        )
+        await cancelled.restore()
+        runner.equal("a granted account restores to ready before cancelled recovery", cancelled.phase, .ready)
+        cancelled.recoverEngineAfterCommandFailure()
+        cancelled.effects.cancel(.engineRecovery)
+        try? await Task.sleep(for: .milliseconds(50))
+        runner.equal("cancelled engine recovery never reaches the engine", cancelledEngine.forceReconnectCount, 0)
+        await cancelled.shutdownForTermination()
+
         // A snapshot can reconcile the pending transport before the engine call returns. That
         // settles the presentation, but a reconnect-required result on that same call is a
         // lifecycle fact and must still rebuild the engine, on a ready session too.

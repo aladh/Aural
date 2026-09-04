@@ -324,7 +324,7 @@ extension PlaybackStore {
         effects.replace(
             .engineRecovery,
             with: Task { [weak self] in
-                guard let self else { return }
+                guard let self, !Task.isCancelled else { return }
                 _ = await self.coordinator.forceReconnect()
             })
     }
