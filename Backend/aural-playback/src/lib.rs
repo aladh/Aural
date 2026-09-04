@@ -34,7 +34,7 @@ pub(crate) use transport::*;
 
 pub(crate) use futures_util::StreamExt;
 pub(crate) use librespot_connect::{
-    ConnectConfig, LoadRequest, LoadRequestOptions, PlayingTrack, Spirc,
+    ConnectConfig, LoadRequest, LoadRequestOptions, PlayingTrack, Spirc, SpircPlayer,
 };
 pub(crate) use librespot_core::cache::Cache;
 pub(crate) use librespot_core::config::DeviceType;

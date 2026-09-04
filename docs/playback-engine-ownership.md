@@ -21,7 +21,12 @@ in the [enforcement inventory](architecture-enforcement.md).
 | `PlaybackSnapshotProjection` | Engine playback transport, empty-URI identity, timestamp correction |
 | `ResumeLoadPlan` | Resume-load target order from sticky resume-load URIs, for user resume and reconnect rehydration. `PlaybackStore` captures those URIs through the engine getters; `RustPlaybackEngine` iterates targets through `aural_playback_load`. The engine signals a reconnect window with `resume_pending` and holds readiness until a Swift load lands, a load reports `ERROR_NEEDS_REINIT` (dead Spirc, which ends the wait for that window and triggers a rebuild), or the window times out |
 | Catalog, OAuth, shuffle policy, HTTP retry | Unchanged; never belonged in Rust |
+| `SpotifyAudioFormat` / `SpotifyAudioHeader` | Stage 1 building block (#208): librespot audio-file format tags and the fixed-size normalisation-gain header prefix. Not yet wired into any decode path |
+| `StorageResolveResponse` / `CDNURLExpiry` | Stage 1 building block (#208): storage-resolve protobuf decoding and librespot's CDN-URL expiry heuristics. Not yet wired into any resolve/fetch path |
+| `AESCTRDecryptor` | Stage 1 building block (#208): AES-128-CTR decryption with Spotify's fixed IV and seekable byte-offset counter arithmetic. Not yet wired into any decode path |
+| `RangedAudioFetcher` | Stage 1 building block (#208): ranged CDN download with a sparse downloaded-byte store, 429/403 handling, and read-ahead prefetch. Not yet wired into any playback path |
 | `OggVorbisDecoder` / `OggPageHeader` | Stage 1 of #201: a Swift wrapper over vendored stb_vorbis's pushdata API, plus a pure Ogg page scanner for later seeking. Not yet wired into playback — the audio-key/CDN/decrypt path and `AudioRenderer` still get PCM from `proxy_sink.rs` |
+| `OggSeeker` | Stage 1 of #201: pure time-to-byte-offset seek — bisects Ogg pages by granule position (`OggByteReader` is the seam a later slice adapts to the CDN fetcher/decryptor) so Spirc's millisecond seeks can restart Vorbis decode at the right page. Not yet wired into playback |
 | `AudioPlaybackSession` | Stage 1 of #201: pure reducer for the future `ShimPlayer` audio-command boundary. Turns forwarded `Load/Play/Pause/Seek/Stop/Preload` commands and decode-pipeline events into effects — command and generation-reset teardown (`.stop`/`.cancelPreload` for any live pipeline or held preload), preload-file-id reuse vs. cancellation, transport commands honored while still `.loading`, seek clamping, a once-per-load `timeToPreloadNext` threshold, and pipeline events scoped by `sessionGeneration`/`playRequestID` so a stale delivery can never resurrect a torn-down load. Not yet wired to any FFI; there is no `ShimPlayer`, audio-command callback, or `aural_playback_report_audio` yet |
 
 ## Rust crate by module
@@ -39,6 +44,7 @@ in the [enforcement inventory](architecture-enforcement.md).
 | `player_control.rs` | Adapter | Spirc play/pause/seek/shuffle/repeat/transfer/queue-add, plus FFI getters for sticky resume URIs |
 | `player_event_pump.rs` | Adapter | Local `PlayerEvent` → position and protocol playing/paused bits when this device is active |
 | `spirc_command_error.rs` | Adapter | Map librespot errors onto FFI codes Swift already understands |
+| `Backend/vendor/librespot-connect` | Vendored third-party, patched | librespot's `connect` crate pinned to the same rev as the git dependencies, patched so `Spirc::new` takes `Arc<dyn SpircPlayer>` instead of the concrete `Arc<Player>`. See its `PATCHES.md` for the exact diff. This is the seam Stage 1 needs to drive playback through a Swift-owned player without forking `Spirc`/`SpircTask`. |
 | `audio_key.rs` | Adapter | Stage 1 (#208) AP audio-key request over FFI. No caller yet; the consumer must cache successes per file id and coalesce concurrent misses |
 
 ### Planned owner per #201 stage
@@ -122,3 +128,15 @@ warranted; the cursor-based renderer is the lower-risk design.
 
 The browse path behind these numbers included surfaces that have since been removed, so a rerun
 must record its own commit and surfaces. #201 requires re-measurement at each stage boundary.
+
+### Binary size
+
+Every CI run's "Release distribution compile" job publishes a size table (app binary,
+`libaural_playback.a`, binary segment totals, archive exported symbol count) to the job
+summary via `Scripts/report-size.sh`, and uploads the same data as the `size-report` artifact
+(`size-report.json`, 30-day retention).
+
+To compare two runs: `gh run view <run-id>` for the job summary, or
+`gh run download <run-id> -n size-report` to fetch the JSON for a scripted diff.
+
+Pre-Stage-1 reference: fill in run id at switchover.

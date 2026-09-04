@@ -73,6 +73,7 @@ material.
 | `Sources/AuralDomain/` | Portable models, reducer, lifetime rules, parsing, sorting, and policies. |
 | `Sources/AuralPlaybackCore/` | Checked-in C header and module map for the Rust ABI. |
 | `Backend/aural-playback/` | Rust/librespot session, Connect, streaming, decoding, recovery, protocol rows, and C exports. |
+| `Backend/vendor/` | Vendored, patched third-party crates (see each crate's `PATCHES.md`); not routine dependency bumps. |
 | `Sources/AuralChecks/` | Deterministic domain and boundary evidence; never ships. |
 | `Scripts/` | Verification, packaging, signing, diagnostics, and release helpers. |
 | `script/` | Development build/sign/launch entry point. |

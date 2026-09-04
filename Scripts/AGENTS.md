@@ -21,6 +21,9 @@ sections of [agent operations](../CONTRIBUTING.md) and the
   changes.
 - Packaging, notarization, tag, release, credential, or repository-setting actions require explicit
   current-request authorization; never publish merely to exercise a script.
+- `report-size.sh` is informational only: it reports release binary/archive size after
+  `compile-release-aural.sh` and must never fail the job over an optional tool (`size`, `nm`) being
+  unavailable.
 
 For script, build, CI, packaging, signing, or release-mechanics changes, run
 `./Scripts/check-clean.sh` plus the affected command in its non-publishing mode. Report exact commands,
