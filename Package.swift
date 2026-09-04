@@ -17,9 +17,24 @@ let package = Package(
             name: "AuralPlaybackCore",
             path: "Sources/AuralPlaybackCore"
         ),
+        // Vendored stb_vorbis (public domain / MIT, pinned in Vendor/stb_vorbis/UPSTREAM.md).
+        // stb_vorbis.c is excluded from `sources`: it is compiled once via #include inside
+        // stb_vorbis_impl.c, and compiling it a second time as its own source file would
+        // duplicate every symbol it defines.
+        .target(
+            name: "CVorbis",
+            path: "Vendor/stb_vorbis",
+            exclude: ["UPSTREAM.md", "LICENSE", "stb_vorbis.c"],
+            sources: ["stb_vorbis_impl.c"],
+            publicHeadersPath: "include",
+            cSettings: [
+                .define("STB_VORBIS_NO_STDIO"),
+                .unsafeFlags(["-Wno-everything"]),
+            ]
+        ),
         .target(
             name: "AuralCore",
-            dependencies: ["AuralDomain", "AuralPlaybackCore"],
+            dependencies: ["AuralDomain", "AuralPlaybackCore", "CVorbis"],
             path: "Sources/Aural",
             exclude: [
                 "AGENTS.md",
