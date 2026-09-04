@@ -33,12 +33,11 @@ material.
 - A request to open a pull request authorizes creating a branch, committing, pushing, opening the PR,
   and addressing automated review for that PR. It does not authorize merging, tagging, publishing a
   release, changing repository settings, or mutating unrelated issues.
-- Require explicit current-request authorization before live Spotify playback or account mutation,
-  signing/keychain changes, destructive cleanup, new production dependencies, external publication,
-  or material scope expansion.
+- Follow the [live Spotify safety contract](docs/product-and-acceptance-contract.md#safe-acceptance-testing).
+  Signing/keychain changes, destructive cleanup, new production dependencies, external publication,
+  or material scope expansion require explicit current-request authorization.
 - Do not invent a human handoff. There is no human maintainer, reviewer, tester, or release operator.
-  When authorized acceptance cannot be performed, strengthen deterministic evidence where practical
-  and state the exact unverified risk instead of deferring it to a person or claiming it passed.
+  Do not defer work to a person or claim an acceptance step passed when it was not performed.
 
 ## Load context progressively
 
@@ -86,61 +85,32 @@ through one narrow adapter. Do not add a reverse edge for convenience.
 
 ## Global engineering constraints
 
-- Match surrounding code: naming, comment density, idiom, isolation, error handling, and abstraction
-  level. Comment invariants and non-obvious lifetime/order constraints, not line-by-line narration.
-- Fix behavior at its owner. Prefer the smallest cohesive change; introduce a seam first only when it
-  makes the behavior change materially safer or easier to verify. Do not add speculative portability,
-  configuration, extension points, or frameworks.
 - Production dependencies are assembled once at the composition root. Production uses live
-  integrations; fakes, synthetic fixtures, and test-only hooks stay in checks. Never commit real
-  Spotify payloads or account-derived fixtures.
+  integrations; fakes, synthetic fixtures, and test-only hooks stay in checks.
 - Swift 6.3 concurrency diagnostics are correctness. Prefer structured concurrency, explicit actor
   isolation, immutable `Sendable` values, and owned cancellation. Do not suppress an ownership bug
   with `nonisolated(unsafe)`, mutable globals, broad singletons, or detached task lifetimes.
-- User-facing failures must be actionable and privacy-safe. Never log tokens, OAuth redirects, raw API
-  payloads, or private account/library identifiers.
-- Generated archives, app bundles, diagnostics, caches, signing material, tokens, account data, and
-  private screenshots do not belong in Git. Inspect the staged diff before every commit.
+- User-facing failures must be actionable and privacy-safe. Follow [PRIVACY.md](PRIVACY.md) and
+  [SECURITY.md](SECURITY.md) for data handling and disclosure.
+- Follow the [development setup guide](docs/development-setup.md#generated-local-state) for generated
+  local state.
 - Preserve `LICENSE`, `NOTICE`, `THIRD_PARTY_NOTICES.md`, `PRIVACY.md`, and `SECURITY.md`. Pin GitHub
   Actions by full commit SHA with a readable version comment. Treat librespot updates as protocol
   changes, not routine dependency bumps.
 
 ## Live Spotify safety
 
-Default to **no playback and no account mutation**. Deterministic checks and builds are safe. A launch
-or read-only UI inspection is not permission to press transport controls, seek, transfer devices,
-modify queue/library/playlists/follows, or sign out. Permission is scoped to the current request and
-the specific action. For authorized live tests, follow the bounded procedure in the
-[product contract](docs/product-and-acceptance-contract.md#safe-acceptance-testing) and report any
-state that could not be restored.
+The [product contract](docs/product-and-acceptance-contract.md#safe-acceptance-testing) is the sole
+owner of live-account authorization and acceptance procedure.
 
 Do not launch the Spotty executable merely to prove compilation: `./script/build_and_run.sh`
 terminates an existing process and can disturb an authenticated session.
 
-## Work loop and evidence
+## Local verification
 
-1. Restate the requested outcome internally, identify the canonical owner and failure modes, and
-   inspect the nearest coverage.
-2. Implement the complete behavior, including relevant error, empty, stale, cancellation,
-   inactive-window, and accessibility states. Avoid unrelated cleanup.
-3. Add or update deterministic coverage at the closest ownership boundary. A green build alone is not
-   evidence for behavior that can be expressed as a transition or boundary check.
-4. Run proportional verification from the repository root:
-   - Documentation only: follow the
-     [documentation-only procedure](CONTRIBUTING.md#clean-and-risk-specific-verification).
-   - Normal Swift/domain/UI behavior: run the nearest focused suites while iterating, then
-     `./Scripts/check.sh`.
-   - Rust, lifecycle, FFI, dependencies, build, signing, packaging, CI, or release mechanics: run
-     `./Scripts/check-clean.sh` plus any task-specific path.
-   - Performance: compare like-for-like configurations and record environment and methodology.
-5. Inspect `git diff` and `git status --short`; remove accidental generated/private files and preserve
-   unrelated edits.
-6. Update the canonical document when product behavior, architecture, setup, privacy, security,
-   attribution, or release behavior changes.
-
-Completion evidence must name the user-visible outcome, important design choice, exact commands and
-results, live/manual activity (including none), and any remaining risk. Never claim a test or
-acceptance step that was not performed.
+Run the smallest focused check that exercises the change. Leave `./Scripts/check.sh`,
+`./Scripts/check-clean.sh`, cross-configuration builds, and repeated suites to PR CI unless the
+change modifies those gates, CI is unavailable, or broader diagnosis is needed.
 
 ## Maintaining these instructions
 

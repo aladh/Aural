@@ -2,9 +2,6 @@
 
 Status: accepted on 2026-09-02. Revisit is gated by #201.
 
-Like all of Spotty, this decision concerns an unofficial, independent, experimental client with no
-affiliation with Spotify AB, built on reverse-engineered Spotify interfaces.
-
 ## Context
 
 [ADR 001](ADR-001-playback-engine.md) keeps librespot behind a narrow boundary. The leaf also

@@ -147,17 +147,6 @@ measured baselines belong in [playback engine ownership](playback-engine-ownersh
   disabled drop targeting for non-editable rows could not be demonstrated without private
   hit-testing or pixel coordinates. The context-menu command is the keyboard-accessible add path.
 
-## Engineering defaults
-
-- Prefer Swift structured concurrency, `AsyncStream`, and Observation for new asynchronous state.
-  Do not introduce Combine unless a publisher-native system boundary makes it materially simpler.
-- Keep the playback engine behind the boundary described in
-  [ADR 001](ADR-001-playback-engine.md); Swift continues to own product policy and presentation.
-- Production code must use live integrations. Deterministic checks use injected ports and reduced,
-  synthetic fixtures—never captured account payloads.
-- Account-scoped work must retain the epoch, cancellation, and stale-result rules in
-  [ADR 002](ADR-002-playback-state-and-dependencies.md).
-
 ## Transient mutation feedback
 
 - User-initiated mutations such as Add to Queue report completion through one app-composed
@@ -202,5 +191,5 @@ Only when the user has explicitly allowed playback for the current test:
 5. Treat transfer, queue mutation, shuffle/repeat changes, sleep/wake, and output-device changes as
    separately scoped mutations; do not bundle them into a basic playback check.
 
-Never include tokens, OAuth callbacks, real API payloads, private library screenshots, or account
-identifiers in source, fixtures, diagnostics, issues, or pull requests.
+Handle test data and artifacts according to [PRIVACY.md](../PRIVACY.md) and
+[SECURITY.md](../SECURITY.md).

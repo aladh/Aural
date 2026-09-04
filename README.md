@@ -9,7 +9,8 @@
 > built on unsupported, reverse-engineered Spotify interfaces. It is not affiliated with, endorsed
 > by, sponsored by, or otherwise connected to Spotify AB. It may break without notice, lose
 > functionality, or expose rough edges. Do not rely on it as your only Spotify client, and use it
-> only with an account you control.
+> only with an account you control. Its use of private interfaces and Spotify's desktop-client
+> authorization flow may violate Spotify's terms.
 
 Spotty is a native macOS music client for Spotify Premium. It is meant to feel like a focused Mac
 app: SwiftUI and AppKit for the interface, AVFoundation for audio output, and a contained
@@ -20,13 +21,6 @@ Spotty's visual direction uses a Spotify-familiar hierarchy in a fixed dark appe
 canvas, library-forward sidebar, artwork-led media headers, dense track tables, right-side queue
 rail, and full-width bottom player shelf—implemented with native macOS surfaces. Familiarity is a
 design reference, not a pixel copy or an indication of affiliation with Spotify.
-
-> [!WARNING]
-> Spotty is an unofficial, independent project with no affiliation to Spotify AB. It is not
-> endorsed, sponsored, or supported by Spotify. Spotty uses private, reverse-engineered Spotify
-> interfaces and Spotify's desktop-client authorization flow, not a supported public API. This may
-> violate Spotify's [Developer Terms](https://developer.spotify.com/terms) or other terms and can
-> stop working at any time. Use it only with an account you control and at your own risk.
 
 > **Naming note:** Spotty is the product and technical identity throughout the repository, app
 > bundle, executable, Swift and Rust modules, C ABI, local storage, diagnostics, build tooling, and
@@ -67,11 +61,7 @@ To run Spotty:
 
 To build it from this repository:
 
-- An Apple Silicon Mac running macOS 26.2 or newer, as required by Xcode 26.6.
-- Xcode 26.6 with Swift 6.3.3.
-- [Rustup](https://rustup.rs/). The exact Rust toolchain and target are pinned in
-  `rust-toolchain.toml` and install automatically on first use.
-- [ripgrep](https://github.com/BurntSushi/ripgrep) when running the verification scripts.
+- Install the prerequisites in the [development setup guide](docs/development-setup.md#fresh-clone).
 
 The repository is source-only. Its architecture-specific Rust archive and app bundle are generated
 locally and ignored by Git.
@@ -86,9 +76,8 @@ cd Spotty
 ./script/build_and_run.sh
 ```
 
-The script compiles the Rust backend when needed, builds the SwiftPM executable, creates and signs a
-local `Spotty.app`, replaces any running development copy, and launches it. The first build downloads
-the locked Rust dependencies and takes longer than subsequent builds. On first launch, choose
+The first build downloads locked dependencies and takes longer than subsequent builds. See the
+[build-and-run details](CONTRIBUTING.md#build-and-run) before launching; on first launch, choose
 Connect and complete Spotify authorization in the browser.
 
 Version tags also publish experimental GitHub prereleases. Until Developer ID and notarization
@@ -135,12 +124,5 @@ See [LICENSE](LICENSE), [NOTICE](NOTICE), and [THIRD_PARTY_NOTICES.md](THIRD_PAR
 ## Agent-first maintenance
 
 Spotty is developed, reviewed, tested, and maintained exclusively by autonomous coding agents; the
-repository does not rely on a human contribution or review path. [AGENTS.md](AGENTS.md) is the sole
-repository instruction format, with scoped `AGENTS.md` files beside specialized code. Reusable
-commands and pull-request/release procedures live in [CONTRIBUTING.md](CONTRIBUTING.md), while
-accepted architecture and supporting technical context are indexed in the
-[architecture decision records](docs/architecture-decisions.md).
-
-Changes are expected to leave machine-verifiable evidence, an explicit risk account, and no invented
-human handoff. External issue reports may describe observed behavior, but implementation, semantic
-review, automated-review resolution, and repository mutation remain agent-owned.
+repository does not rely on a human contribution or review path. Repository instructions begin in
+[AGENTS.md](AGENTS.md).

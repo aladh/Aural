@@ -6,8 +6,16 @@ Spotifly checkout, or separate librespot checkout is neither required nor expect
 
 ## Fresh clone
 
-Install the prerequisites listed in [README.md](../README.md#requirements), then clone the public
-repository:
+Development requires:
+
+- An Apple Silicon Mac running macOS 26.2 or newer; the app's runtime target is macOS 15+.
+- Xcode 26.6 with Swift 6.3.3.
+- [Rustup](https://rustup.rs/); `rust-toolchain.toml` pins the components and ARM64 macOS target.
+- [ripgrep](https://github.com/BurntSushi/ripgrep) for repository verification.
+- Spotify Premium only for live integration testing authorized under the
+  [product contract](product-and-acceptance-contract.md#safe-acceptance-testing).
+
+Then clone the public repository:
 
 ```bash
 git clone https://github.com/aladh/Spotty.git
@@ -93,45 +101,16 @@ Follow the
 [product and acceptance contract](product-and-acceptance-contract.md) before exercising a live
 Spotify account; playback is opt-in during acceptance testing.
 
-## Everyday workflow
-
-Update an existing checkout without rewriting local work:
-
-```bash
-git pull --ff-only
-./Scripts/check.sh
-./script/build_and_run.sh
-```
-
-Useful build modes are documented in [CONTRIBUTING.md](../CONTRIBUTING.md#build-and-run). The Codex
-environment also tracks a **Run** action in `.codex/environments/environment.toml` that invokes the
-normal build and launch script.
+## SwiftPM archive caveat
 
 Plain `swift build` is not a complete build path for products that link `SpottyCore`, notably `Spotty`
 and `SpottyBoundaryChecks`. SwiftPM links `Backend/lib/libspotty_playback.a` into those products, but
 the generated archive is outside its dependency graph: a missing archive produces a linker error,
 and Rust source changes do not rebuild it or necessarily relink an already-built Swift product.
-Prefer `./Scripts/check.sh` or the build/package scripts, which handle the archive. For deliberate
-direct SwiftPM iteration, run `./Backend/spotty-playback/build.sh` after changing Rust sources or
-dependencies, then run `swift package clean` before rebuilding so an existing Swift product cannot
-retain the older linked archive.
-
-Before a pull request, inspect the staged changes and run:
-
-```bash
-./Scripts/check.sh
-git status --short
-```
-
-Use `./Scripts/check-clean.sh` as the slower clean-room gate for changes to dependencies, FFI,
-build, packaging, or releases.
-
-For a tagged release, first update both version fields in `Packaging/Info.plist`, commit and push
-the change, then create an annotated `vMAJOR.MINOR.PATCH` tag matching
-`CFBundleShortVersionString`. CI uses an ad-hoc signature so the build does not depend on an
-interactive development keychain. The tag workflow builds and publishes the ARM64 artifact; see
-[Tagged releases](../CONTRIBUTING.md#tagged-releases) for its signing status and validation
-guarantees.
+The build and package commands in [CONTRIBUTING.md](../CONTRIBUTING.md) handle the archive. For
+deliberate direct SwiftPM iteration, run `./Backend/spotty-playback/build.sh` after changing Rust
+sources or dependencies, then run `swift package clean` before rebuilding so an existing Swift
+product cannot retain the older linked archive.
 
 ## Generated local state
 
@@ -152,17 +131,3 @@ PNG and generated `Assets/Spotty.icns`.
 To recover from an uncertain local state, a fresh clone is the preferred reset. Do not copy build
 products or signing material from an older checkout. Cargo resolves the pinned librespot revision
 from `Cargo.lock`, and the scripts rebuild every generated input.
-
-## Where decisions live
-
-- [README.md](../README.md) is the public landing page: identity, capabilities, requirements,
-  getting started, limitations, and the experimental/unofficial warnings.
-- [Product and acceptance contract](product-and-acceptance-contract.md) records UX invariants and
-  safe live-account testing.
-- [Architecture decision records](architecture-decisions.md) indexes accepted architecture
-  boundaries, ownership decisions, and their status.
-- [CONTRIBUTING.md](../CONTRIBUTING.md) defines verification, packaging, architecture overview, and
-  public-repository hygiene.
-- [PRIVACY.md](../PRIVACY.md), [SECURITY.md](../SECURITY.md), and
-  [THIRD_PARTY_NOTICES.md](../THIRD_PARTY_NOTICES.md) cover data handling, reporting, and
-  attribution.

@@ -2,10 +2,6 @@
 
 Status: accepted on 2026-08-27
 
-Like all of Spotty, this decision concerns an unofficial, independent, experimental client with no
-affiliation with Spotify AB. It does not authorize a Composable Architecture migration or a new
-effect framework.
-
 ## Context
 
 `PlaybackReducer.reduce` is the only mutation entrance for `PlaybackState`, and
@@ -60,7 +56,6 @@ in `SessionLifetimeChecks`.
 ## Consequences
 
 - `Package.swift` has no effect-framework dependency.
-- Agents must not plan a TCA migration.
 - New command sites reuse the shared kernel and follow-up rather than adding a runner.
 
 ## Revisit trigger

@@ -2,9 +2,6 @@
 
 Status: accepted on 2026-08-23
 
-Like all of Spotty, this decision concerns an unofficial, independent, experimental client with no
-affiliation with Spotify AB.
-
 ## Context
 
 Playback, account, Connect ownership, queue provenance, metadata, and catalog work previously met

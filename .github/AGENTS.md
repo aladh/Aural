@@ -12,11 +12,5 @@ GitHub workflows and pull-request metadata are part of the verification and rele
   cache contents, restore prefixes, and timestamp refreshes as correctness-sensitive build behavior.
 - Do not install a second Swift formatter/linter in CI; use the selected Xcode toolchain and the
   repository wrappers. Prefer an existing runner `rg`, with the documented fallback only.
-- Pull-request text must record outcome, design/risk, exact verification, live activity, and review
-  resolution. Do not add human sign-off or manual-tester handoffs.
-- Tags, releases, credentials, repository settings, and publication require explicit authorization.
-  Never push a tag or publish an artifact merely to test a workflow.
-
-Run `./Scripts/check-clean.sh` for workflow or release-boundary changes and inspect the workflow diff
-for permissions, pins, trigger trust boundaries, shell interpolation, cache poisoning, and accidental
-coverage reduction.
+Inspect workflow diffs for permissions, pins, trigger trust boundaries, shell interpolation, cache
+poisoning, and accidental coverage reduction.

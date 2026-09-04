@@ -13,14 +13,5 @@ This directory owns the build, sign, terminate, and launch entry point. Read
   identities in the login keychain to suppress prompts.
 - Preserve non-destructive failure ordering: signing validation must fail before terminating the
   running app. Never erase credentials or unrelated generated state as recovery.
-- Quote paths and values, propagate failures, avoid exposing identities or credential material in
-  logs, and keep behavior aligned with the supported Apple Silicon macOS environment.
-- Packaging, notarization, tag, release, credential, or repository-setting actions remain outside
-  this script's routine verification authority.
-
-For changes here, run `./Scripts/check-clean.sh`, then use
-`./Scripts/package-app.sh --debug` as the standard non-publishing packaging verification. Use
-`./Scripts/package-app.sh --release` when the affected change requires a release build. Both modes
-package, sign, and validate the Spotty executable bundle without terminating or launching it. State
-whether a launch occurred
-and whether any live Spotify action was performed.
+`./Scripts/package-app.sh --debug` and `./Scripts/package-app.sh --release` package, sign, and
+validate the Spotty executable bundle without terminating or launching it.
