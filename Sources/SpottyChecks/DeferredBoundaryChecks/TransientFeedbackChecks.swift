@@ -1,3 +1,4 @@
+import Testing
 import SpottyDomain
 import Foundation
 @testable import SpottyCore
@@ -244,62 +245,53 @@ private func containsToken(_ source: String, _ token: String) -> Bool {
     source.contains(token)
 }
 
+@Test
 @MainActor
-func runTransientFeedbackChecks(_ runner: CheckRunner) async {
-    runner.suite("App display name resolution") {
-        runner.equal(
-            "configured bundle display name drives the window title",
-            AppDisplayName.resolve(info: ["CFBundleDisplayName": "Configured Name"]),
-            "Configured Name"
-        )
-        runner.equal(
-            "missing bundle display name falls back to Spotty",
-            AppDisplayName.resolve(info: [:]),
-            "Spotty"
-        )
-        runner.equal(
-            "blank bundle display name falls back to Spotty",
-            AppDisplayName.resolve(info: ["CFBundleDisplayName": "  \n"]),
-            "Spotty"
-        )
-        runner.equal(
-            "non-string bundle display name falls back to Spotty",
-            AppDisplayName.resolve(info: ["CFBundleDisplayName": 42]),
-            "Spotty"
-        )
+func testTransientFeedback() async {
+    do {
+        #expect(
+            (AppDisplayName.resolve(info: ["CFBundleDisplayName": "Configured Name"])) == ("Configured Name"),
+            "configured bundle display name drives the window title")
+        #expect((AppDisplayName.resolve(info: [:])) == ("Spotty"), "missing bundle display name falls back to Spotty")
+        #expect(
+            (AppDisplayName.resolve(info: ["CFBundleDisplayName": "  \n"])) == ("Spotty"),
+            "blank bundle display name falls back to Spotty")
+        #expect(
+            (AppDisplayName.resolve(info: ["CFBundleDisplayName": 42])) == ("Spotty"),
+            "non-string bundle display name falls back to Spotty")
     }
 
-    await runner.suite("Transient feedback kinds, replacement, and dismissal") {
+    do {
         let clock = UncooperativeParkedClock()
         let feedback = TransientFeedbackPresenter(clock: clock, duration: 4)
 
         feedback.success("Added to Queue")
-        runner.equal("success kind", feedback.message?.kind, .success)
-        runner.equal("success text", feedback.message?.text, "Added to Queue")
-        runner.equal("one message after success", feedback.message == nil ? 0 : 1, 1)
+        #expect((feedback.message?.kind) == (.success), "success kind")
+        #expect((feedback.message?.text) == ("Added to Queue"), "success text")
+        #expect((feedback.message == nil ? 0 : 1) == (1), "one message after success")
 
         feedback.informational("Queue is at the limit")
-        runner.equal("informational replaces success", feedback.message?.kind, .informational)
-        runner.equal("informational text", feedback.message?.text, "Queue is at the limit")
-        runner.equal("still one message after informational", feedback.message == nil ? 0 : 1, 1)
+        #expect((feedback.message?.kind) == (.informational), "informational replaces success")
+        #expect((feedback.message?.text) == ("Queue is at the limit"), "informational text")
+        #expect((feedback.message == nil ? 0 : 1) == (1), "still one message after informational")
 
         feedback.failure("Could not add that track to the queue.")
-        runner.equal("failure replaces informational", feedback.message?.kind, .failure)
-        runner.equal("failure text", feedback.message?.text, "Could not add that track to the queue.")
+        #expect((feedback.message?.kind) == (.failure), "failure replaces informational")
+        #expect((feedback.message?.text) == ("Could not add that track to the queue."), "failure text")
         let visibleID = feedback.message?.id
-        runner.notNil("replacement has an identity", visibleID)
+        #expect((visibleID) != nil, "replacement has an identity")
 
         feedback.success("   ")
-        runner.equal("blank text does not replace", feedback.message?.id, visibleID)
+        #expect((feedback.message?.id) == (visibleID), "blank text does not replace")
 
         feedback.dismiss()
-        runner.nil_("explicit dismiss clears the current message", feedback.message)
+        #expect((feedback.message) == nil, "explicit dismiss clears the current message")
         clock.releaseAll()
         await yieldPasses()
-        runner.nil_("released sleeps after dismiss stay empty", feedback.message)
+        #expect((feedback.message) == nil, "released sleeps after dismiss stay empty")
     }
 
-    await runner.suite("Transient feedback cancellation and stale dismissal") {
+    do {
         let cooperative = CooperativeParkedClock()
         let cancelling = TransientFeedbackPresenter(clock: cooperative, duration: 4)
         cancelling.success("First")
@@ -307,12 +299,10 @@ func runTransientFeedbackChecks(_ runner: CheckRunner) async {
         let firstID = cancelling.message?.id
         cancelling.failure("Second")
         _ = await waitUntil { cooperative.waiterCount == 1 && cancelling.message?.text == "Second" }
-        runner.equal("replacement is the only visible message", cancelling.message?.text, "Second")
-        runner.check("replacement is a new identity", cancelling.message?.id != firstID)
-        runner.equal(
-            "cancelling the previous dismissal leaves the replacement visible",
-            cancelling.message?.text,
-            "Second"
+        #expect((cancelling.message?.text) == ("Second"), "replacement is the only visible message")
+        #expect((cancelling.message?.id != firstID) == true, "replacement is a new identity")
+        #expect(
+            (cancelling.message?.text) == ("Second"), "cancelling the previous dismissal leaves the replacement visible"
         )
         cancelling.dismiss()
         cooperative.releaseAll()
@@ -323,47 +313,41 @@ func runTransientFeedbackChecks(_ runner: CheckRunner) async {
         _ = await waitUntil { uncooperative.waiterCount == 1 }
         stale.failure("Replacement")
         _ = await waitUntil { uncooperative.waiterCount == 2 }
-        runner.equal("replacement is showing before stale wake", stale.message?.text, "Replacement")
+        #expect((stale.message?.text) == ("Replacement"), "replacement is showing before stale wake")
         let replacementID = stale.message?.id
 
         uncooperative.releaseNext()
         _ = await waitUntil { uncooperative.waiterCount == 1 }
-        runner.equal(
-            "a stale dismissal cannot remove the replacement",
-            stale.message?.text,
-            "Replacement"
-        )
-        runner.equal("replacement identity is unchanged", stale.message?.id, replacementID)
+        #expect((stale.message?.text) == ("Replacement"), "a stale dismissal cannot remove the replacement")
+        #expect((stale.message?.id) == (replacementID), "replacement identity is unchanged")
 
         uncooperative.releaseNext()
         _ = await waitUntil { stale.message == nil }
-        runner.nil_("the current dismissal still expires the replacement", stale.message)
+        #expect((stale.message) == nil, "the current dismissal still expires the replacement")
     }
 
-    await runner.suite("Feature injection of transient feedback") {
+    do {
         let clock = UncooperativeParkedClock()
         let feedback = TransientFeedbackPresenter(clock: clock, duration: 4)
         let player = PlaybackStore(
             environment: feedbackEnvironment(clock: clock),
             feedback: feedback
         )
-        runner.check("the store keeps the composed presenter", player.feedback === feedback)
+        #expect((player.feedback === feedback) == true, "the store keeps the composed presenter")
 
         player.addToQueue(uri: "spotify:track:fixture")
-        runner.equal(
-            "disconnected add reports through the injected presenter",
-            feedback.message?.text,
-            "Connect Spotify before adding to the queue."
-        )
-        runner.equal("disconnected add is a failure", feedback.message?.kind, .failure)
-        runner.nil_("disconnected add does not use playback notice", player.transientCommandError)
+        #expect(
+            (feedback.message?.text) == ("Connect Spotify before adding to the queue."),
+            "disconnected add reports through the injected presenter")
+        #expect((feedback.message?.kind) == (.failure), "disconnected add is a failure")
+        #expect((player.transientCommandError) == nil, "disconnected add does not use playback notice")
         await player.endSession(clearGrant: false, finalPhase: .signedOut)
-        runner.nil_("account teardown clears leftover mutation feedback", feedback.message)
+        #expect((feedback.message) == nil, "account teardown clears leftover mutation feedback")
         clock.releaseAll()
         await player.shutdownForTermination()
     }
 
-    await runner.suite("Add to Queue mutation feedback") {
+    do {
         let clock = UncooperativeParkedClock()
 
         let localSuccessFeedback = TransientFeedbackPresenter(clock: clock, duration: 4)
@@ -374,8 +358,8 @@ func runTransientFeedbackChecks(_ runner: CheckRunner) async {
         seedReady(localSuccess)
         localSuccess.addToQueue(uri: "spotify:track:local-ok")
         _ = await waitUntil { localSuccessFeedback.message?.kind == .success }
-        runner.equal("local add success", localSuccessFeedback.message?.text, "Added to Queue")
-        runner.nil_("local add success is not a playback notice", localSuccess.transientCommandError)
+        #expect((localSuccessFeedback.message?.text) == ("Added to Queue"), "local add success")
+        #expect((localSuccess.transientCommandError) == nil, "local add success is not a playback notice")
         await localSuccess.shutdownForTermination()
 
         let localFailureFeedback = TransientFeedbackPresenter(clock: clock, duration: 4)
@@ -386,12 +370,8 @@ func runTransientFeedbackChecks(_ runner: CheckRunner) async {
         seedReady(localFailure)
         localFailure.addToQueue(uri: "spotify:track:local-fail")
         _ = await waitUntil { localFailureFeedback.message?.kind == .failure }
-        runner.equal(
-            "local add failure",
-            localFailureFeedback.message?.text,
-            "Could not add that track to the queue."
-        )
-        runner.nil_("local add failure is not a playback notice", localFailure.transientCommandError)
+        #expect((localFailureFeedback.message?.text) == ("Could not add that track to the queue."), "local add failure")
+        #expect((localFailure.transientCommandError) == nil, "local add failure is not a playback notice")
         await localFailure.shutdownForTermination()
 
         let joiningFeedback = TransientFeedbackPresenter(clock: clock, duration: 4)
@@ -405,12 +385,10 @@ func runTransientFeedbackChecks(_ runner: CheckRunner) async {
             source: .command
         )
         joining.addToQueue(uri: "spotify:track:joining")
-        runner.equal(
-            "waiting for Connect identity is a mutation failure",
-            joiningFeedback.message?.text,
-            "Spotty is still joining Spotify Connect."
-        )
-        runner.nil_("joining add is not a playback notice", joining.transientCommandError)
+        #expect(
+            (joiningFeedback.message?.text) == ("Spotty is still joining Spotify Connect."),
+            "waiting for Connect identity is a mutation failure")
+        #expect((joining.transientCommandError) == nil, "joining add is not a playback notice")
         await joining.shutdownForTermination()
 
         let remote = FeedbackRemoteClient(.succeed)
@@ -422,9 +400,9 @@ func runTransientFeedbackChecks(_ runner: CheckRunner) async {
         seedRemoteOwner(remoteSuccess)
         remoteSuccess.addToQueue(uri: "spotify:track:remote-ok")
         _ = await waitUntil { remoteSuccessFeedback.message?.kind == .success }
-        runner.equal("remote add success", remoteSuccessFeedback.message?.text, "Added to Queue")
-        runner.equal("remote add still sends add_to_queue", await remote.sendCount, 1)
-        runner.nil_("remote add success is not a playback notice", remoteSuccess.transientCommandError)
+        #expect((remoteSuccessFeedback.message?.text) == ("Added to Queue"), "remote add success")
+        #expect((await remote.sendCount) == (1), "remote add still sends add_to_queue")
+        #expect((remoteSuccess.transientCommandError) == nil, "remote add success is not a playback notice")
         await remoteSuccess.shutdownForTermination()
 
         let remoteFail = FeedbackRemoteClient(.fail)
@@ -436,11 +414,8 @@ func runTransientFeedbackChecks(_ runner: CheckRunner) async {
         seedRemoteOwner(remoteFailure)
         remoteFailure.addToQueue(uri: "spotify:track:remote-fail")
         _ = await waitUntil { remoteFailureFeedback.message?.kind == .failure }
-        runner.equal(
-            "remote add failure",
-            remoteFailureFeedback.message?.text,
-            "Could not add that track to the queue."
-        )
+        #expect(
+            (remoteFailureFeedback.message?.text) == ("Could not add that track to the queue."), "remote add failure")
         await remoteFailure.shutdownForTermination()
 
         let parkedRemote = FeedbackRemoteClient(.park)
@@ -451,14 +426,12 @@ func runTransientFeedbackChecks(_ runner: CheckRunner) async {
         )
         seedRemoteOwner(cancelled)
         cancelled.addToQueue(uri: "spotify:track:cancel")
-        runner.check(
-            "cancelled add started the remote command",
-            await waitUntil { await parkedRemote.sendCount == 1 }
-        )
+        #expect(
+            (await waitUntil { await parkedRemote.sendCount == 1 }) == true, "cancelled add started the remote command")
         cancelled.effects.cancelAccountScoped()
         await parkedRemote.completePark(success: false)
         await yieldPasses()
-        runner.nil_("cancelled add reports no mutation feedback", cancelledFeedback.message)
+        #expect((cancelledFeedback.message) == nil, "cancelled add reports no mutation feedback")
         await cancelled.shutdownForTermination()
 
         let staleRemote = FeedbackRemoteClient(.park)
@@ -469,95 +442,87 @@ func runTransientFeedbackChecks(_ runner: CheckRunner) async {
         )
         seedRemoteOwner(staleAccount)
         staleAccount.addToQueue(uri: "spotify:track:stale")
-        runner.check(
-            "stale-account add started the remote command",
-            await waitUntil { await staleRemote.sendCount == 1 }
-        )
+        #expect(
+            (await waitUntil { await staleRemote.sendCount == 1 }) == true,
+            "stale-account add started the remote command")
         staleAccount.accountStore.advanceEpoch()
         await staleRemote.completePark(success: true)
         await yieldPasses()
-        runner.nil_("stale-account add reports no mutation feedback", staleFeedback.message)
+        #expect((staleFeedback.message) == nil, "stale-account add reports no mutation feedback")
         await staleAccount.shutdownForTermination()
 
         clock.releaseAll()
     }
 
-    runner.suite("Transient feedback banner overlay contract") {
-        runner.noThrow("banner, root, app, and queue sources are readable") {
-            let banner = try spottySourceFile("Spotty/Views/TransientFeedbackBanner.swift")
-            let root = try spottySourceFile("Spotty/RootView.swift")
-            let app = try spottySourceFile("Spotty/SpottyApp.swift")
-            let queue = try spottySourceFile("Spotty/Spotify/PlaybackStore+Queue.swift")
-            let commands = try spottySourceFile("Spotty/Spotify/PlaybackStore+Commands.swift")
-            let presenter = try spottySourceFile("Spotty/TransientFeedback.swift")
-            let store = try spottySourceFile("Spotty/Spotify/PlaybackStore.swift")
-            let domain = try spottySourceFile("SpottyDomain/PlaybackState.swift")
+    do {
+        do {
+            do {
+                let banner = try spottySourceFile("Spotty/Views/TransientFeedbackBanner.swift")
+                let root = try spottySourceFile("Spotty/RootView.swift")
+                let app = try spottySourceFile("Spotty/SpottyApp.swift")
+                let queue = try spottySourceFile("Spotty/Spotify/PlaybackStore+Queue.swift")
+                let commands = try spottySourceFile("Spotty/Spotify/PlaybackStore+Commands.swift")
+                let presenter = try spottySourceFile("Spotty/TransientFeedback.swift")
+                let store = try spottySourceFile("Spotty/Spotify/PlaybackStore.swift")
+                let domain = try spottySourceFile("SpottyDomain/PlaybackState.swift")
 
-            runner.check(
-                "the banner is overlay-based at the root above the player",
-                containsToken(root, ".overlay(alignment: .bottom)")
-                    && containsToken(root, "TransientFeedbackBanner(feedback: feedback)")
-                    && containsToken(root, "NowPlayingBar(player: player, showsSidePanel: $showsSidePanel)")
-            )
-            runner.check(
-                "the banner disables hit testing",
-                containsToken(banner, ".allowsHitTesting(false)")
-                    && !containsToken(root, ".allowsHitTesting(false)")
-            )
-            runner.check(
-                "the banner does not steal focus or user interaction",
-                containsToken(banner, ".focusable(false)")
-                    && containsToken(banner, ".accessibilityRespondsToUserInteraction(false)")
-            )
-            runner.check(
-                "Reduce Motion controls presentation animation",
-                containsToken(banner, "accessibilityReduceMotion")
-                    && containsToken(banner, "reduceMotion ? nil")
-                    && containsToken(banner, "reduceMotion ? .opacity")
-            )
-            runner.check(
-                "VoiceOver uses a label and a native announcement",
-                containsToken(banner, ".accessibilityLabel(spokenText(for: message))")
-                    && containsToken(banner, "AccessibilityNotification.Announcement")
-            )
-            runner.check(
-                "the banner is not a modal, stack, or action control",
-                !containsToken(banner, ".alert(")
-                    && !containsToken(banner, ".sheet(")
-                    && !containsToken(banner, ".popover(")
-                    && !containsToken(banner, "Button(")
-                    && !containsToken(presenter, "NotificationCenter")
-                    && !containsToken(presenter, "[TransientFeedbackMessage]")
-            )
-            runner.check(
-                "app composition injects one presenter into the store and root",
-                containsToken(app, "TransientFeedbackPresenter(clock: environment.clock)")
-                    && containsToken(app, "PlaybackStore(environment: environment, feedback: feedback)")
-                    && containsToken(app, "RootView(player: player, catalog: player.catalog, feedback: feedback)")
-            )
-            runner.check(
-                "PlaybackStore requires the composed feedback owner",
-                containsToken(store, "feedback: TransientFeedbackPresenter")
-                    && !containsToken(store, "TransientFeedbackPresenter?")
-                    && !containsToken(store, "?? TransientFeedbackPresenter")
-            )
-            runner.check(
-                "Add to Queue reports through the presenter, not playback notice",
-                containsToken(queue, "presentAddToQueueFeedback")
-                    && containsToken(queue, "feedback.success")
-                    && containsToken(queue, "feedback.informational")
-                    && containsToken(queue, "feedback.failure(")
-                    && !containsToken(queue, "showTransientCommandError")
-            )
-            runner.check(
-                "transport command notices stay on the playback owner",
-                containsToken(commands, "func showTransientCommandError")
-                    && containsToken(commands, "setNotice(message)")
-            )
-            runner.check(
-                "transient mutation feedback is not reducer-owned domain state",
-                !containsToken(domain, "TransientFeedback")
-            )
+                #expect(
+                    (containsToken(root, ".overlay(alignment: .bottom)")
+                        && containsToken(root, "TransientFeedbackBanner(feedback: feedback)")
+                        && containsToken(root, "NowPlayingBar(player: player, showsSidePanel: $showsSidePanel)"))
+                        == true, "the banner is overlay-based at the root above the player")
+                #expect(
+                    (containsToken(banner, ".allowsHitTesting(false)")
+                        && !containsToken(root, ".allowsHitTesting(false)")) == true, "the banner disables hit testing")
+                #expect(
+                    (containsToken(banner, ".focusable(false)")
+                        && containsToken(banner, ".accessibilityRespondsToUserInteraction(false)")) == true,
+                    "the banner does not steal focus or user interaction")
+                #expect(
+                    (containsToken(banner, "accessibilityReduceMotion")
+                        && containsToken(banner, "reduceMotion ? nil")
+                        && containsToken(banner, "reduceMotion ? .opacity")) == true,
+                    "Reduce Motion controls presentation animation")
+                #expect(
+                    (containsToken(banner, ".accessibilityLabel(spokenText(for: message))")
+                        && containsToken(banner, "AccessibilityNotification.Announcement")) == true,
+                    "VoiceOver uses a label and a native announcement")
+                #expect(
+                    (!containsToken(banner, ".alert(")
+                        && !containsToken(banner, ".sheet(")
+                        && !containsToken(banner, ".popover(")
+                        && !containsToken(banner, "Button(")
+                        && !containsToken(presenter, "NotificationCenter")
+                        && !containsToken(presenter, "[TransientFeedbackMessage]")) == true,
+                    "the banner is not a modal, stack, or action control")
+                #expect(
+                    (containsToken(app, "TransientFeedbackPresenter(clock: environment.clock)")
+                        && containsToken(app, "PlaybackStore(environment: environment, feedback: feedback)")
+                        && containsToken(app, "RootView(player: player, catalog: player.catalog, feedback: feedback)"))
+                        == true, "app composition injects one presenter into the store and root")
+                #expect(
+                    (containsToken(store, "feedback: TransientFeedbackPresenter")
+                        && !containsToken(store, "TransientFeedbackPresenter?")
+                        && !containsToken(store, "?? TransientFeedbackPresenter")) == true,
+                    "PlaybackStore requires the composed feedback owner")
+                #expect(
+                    (containsToken(queue, "presentAddToQueueFeedback")
+                        && containsToken(queue, "feedback.success")
+                        && containsToken(queue, "feedback.informational")
+                        && containsToken(queue, "feedback.failure(")
+                        && !containsToken(queue, "showTransientCommandError")) == true,
+                    "Add to Queue reports through the presenter, not playback notice")
+                #expect(
+                    (containsToken(commands, "func showTransientCommandError")
+                        && containsToken(commands, "setNotice(message)")) == true,
+                    "transport command notices stay on the playback owner")
+                #expect(
+                    (!containsToken(domain, "TransientFeedback")) == true,
+                    "transient mutation feedback is not reducer-owned domain state")
+
+            } catch {
+                Issue.record("\("banner, root, app, and queue sources are readable"): unexpected error \(error)")
+            }
         }
     }
 }

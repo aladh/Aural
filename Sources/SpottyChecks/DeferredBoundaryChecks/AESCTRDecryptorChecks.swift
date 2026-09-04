@@ -1,9 +1,11 @@
+import Testing
 import Foundation
 @testable import SpottyCore
 
+@Test
 @MainActor
-func runAESCTRDecryptorChecks(_ check: CheckRunner) {
-    check.suite("AES-128-CTR against NIST SP 800-38A F.5.1") {
+func testAESCTRDecryptor() {
+    do {
         let key = hex("2b7e151628aed2a6abf7158809cf4f3c")
         let counter = hex("f0f1f2f3f4f5f6f7f8f9fafbfcfdfeff")
         let plaintext = hex(
@@ -22,40 +24,40 @@ func runAESCTRDecryptorChecks(_ check: CheckRunner) {
         do {
             let decryptor = try AESCTRDecryptor(key: key, iv: counter)
             let decrypted = try decryptor.decrypt(Data(ciphertext))
-            check.equal("NIST vector decrypts to the reference plaintext", decrypted, Data(plaintext))
+            #expect((decrypted) == (Data(plaintext)), "NIST vector decrypts to the reference plaintext")
         } catch {
-            check.check("NIST vector decryption did not throw: \(error)", false)
+            #expect((false) == true, "NIST vector decryption did not throw: \(error)")
         }
     }
 
-    check.suite("seeking mid-stream matches decrypting the whole stream") {
+    do {
         let key = hex("000102030405060708090a0b0c0d0e0f")
         let buffer = lcgBuffer(count: 4_096)
 
         guard let fullDecryptor = try? AESCTRDecryptor(key: key),
             let full = try? fullDecryptor.decrypt(Data(buffer))
         else {
-            check.check("full-stream decryption did not throw", false)
+            #expect((false) == true, "full-stream decryption did not throw")
             return
         }
 
         for offset in [1, 15, 16, 17, 1_000, 4_080] {
             guard let seeked = try? AESCTRDecryptor(key: key) else {
-                check.check("decryptor \(offset) constructs", false)
+                #expect((false) == true, "decryptor \(offset) constructs")
                 continue
             }
             do {
                 try seeked.seek(toByteOffset: UInt64(offset))
                 let suffixInput = Data(buffer[offset...])
                 let suffixOutput = try seeked.decrypt(suffixInput)
-                check.equal("seek(\(offset)) matches the full decrypt's suffix", suffixOutput, full[offset...])
+                #expect((suffixOutput) == (full[offset...]), "seek(\(offset)) matches the full decrypt's suffix")
             } catch {
-                check.check("seek(\(offset)) did not throw: \(error)", false)
+                #expect((false) == true, "seek(\(offset)) did not throw: \(error)")
             }
         }
     }
 
-    check.suite("seeking with a non-default IV uses that IV, not spotifyIV") {
+    do {
         // A decryptor constructed with an explicit IV must fold *that* IV into the counter on
         // seek, not silently fall back to the Spotify default — otherwise a caller using a
         // non-default IV (as every check above except this one avoids) would seek to the wrong
@@ -70,66 +72,60 @@ func runAESCTRDecryptorChecks(_ check: CheckRunner) {
             let full = try? fullDecryptor.decrypt(Data(buffer)),
             let seeked = try? AESCTRDecryptor(key: key, iv: iv)
         else {
-            check.check("custom-IV decryptors construct and decrypt", false)
+            #expect((false) == true, "custom-IV decryptors construct and decrypt")
             return
         }
         do {
             try seeked.seek(toByteOffset: 16)
             let suffixOutput = try seeked.decrypt(Data(buffer[16...]))
-            check.equal("seek with a custom IV matches that IV's full decrypt", suffixOutput, full[16...])
+            #expect((suffixOutput) == (full[16...]), "seek with a custom IV matches that IV's full decrypt")
         } catch {
-            check.check("seek with a custom IV did not throw: \(error)", false)
+            #expect((false) == true, "seek with a custom IV did not throw: \(error)")
         }
     }
 
-    check.suite("stateless decrypt(key:iv:offset:data:) matches the streaming path") {
+    do {
         let key = hex("202122232425262728292a2b2c2d2e2f")
         let buffer = lcgBuffer(count: 512)
         let offset: UInt64 = 137
 
         guard let streaming = try? AESCTRDecryptor(key: key) else {
-            check.check("streaming decryptor constructs", false)
+            #expect((false) == true, "streaming decryptor constructs")
             return
         }
         do {
             try streaming.seek(toByteOffset: offset)
             let streamed = try streaming.decrypt(Data(buffer[Int(offset)...]))
             let oneShot = try AESCTRDecryptor.decrypt(key: key, offset: offset, data: Data(buffer[Int(offset)...]))
-            check.equal("one-shot decrypt matches the streaming decryptor at a non-zero offset", oneShot, streamed)
+            #expect((oneShot) == (streamed), "one-shot decrypt matches the streaming decryptor at a non-zero offset")
         } catch {
-            check.check("stateless decrypt did not throw: \(error)", false)
+            #expect((false) == true, "stateless decrypt did not throw: \(error)")
         }
     }
 
-    check.suite("counter carry arithmetic") {
+    do {
         let allFF = [UInt8](repeating: 0xFF, count: 16)
-        check.equal(
-            "iv all 0xff, block 1 carries all the way to zero",
-            AESCTRDecryptor.counter(iv: allFF, block: 1),
-            [UInt8](repeating: 0x00, count: 16)
-        )
+        #expect(
+            (AESCTRDecryptor.counter(iv: allFF, block: 1)) == ([UInt8](repeating: 0x00, count: 16)),
+            "iv all 0xff, block 1 carries all the way to zero")
 
         var endingFF = [UInt8](repeating: 0x00, count: 16)
         endingFF[15] = 0xFF
         var expectedEnding = endingFF
         expectedEnding[14] = 0x01
         expectedEnding[15] = 0x00
-        check.equal(
-            "iv ending 00 ff, block 1 carries into the second-to-last byte",
-            AESCTRDecryptor.counter(iv: endingFF, block: 1),
-            expectedEnding
-        )
+        #expect(
+            (AESCTRDecryptor.counter(iv: endingFF, block: 1)) == (expectedEnding),
+            "iv ending 00 ff, block 1 carries into the second-to-last byte")
 
         let zero = [UInt8](repeating: 0x00, count: 16)
         var expectedFromShift32 = zero
         expectedFromShift32[11] = 0x01
-        check.equal(
-            "block 1<<32 increments byte index 11",
-            AESCTRDecryptor.counter(iv: zero, block: 1 << 32),
-            expectedFromShift32
-        )
+        #expect(
+            (AESCTRDecryptor.counter(iv: zero, block: 1 << 32)) == (expectedFromShift32),
+            "block 1<<32 increments byte index 11")
 
-        check.equal("empty iv returns unchanged rather than trapping", AESCTRDecryptor.counter(iv: [], block: 1), [])
+        #expect((AESCTRDecryptor.counter(iv: [], block: 1)) == ([]), "empty iv returns unchanged rather than trapping")
     }
 }
 

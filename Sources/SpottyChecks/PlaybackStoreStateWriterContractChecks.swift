@@ -1,7 +1,9 @@
+import Testing
 import Foundation
 
-func runPlaybackStoreStateWriterContractChecks(_ check: CheckRunner) {
-    check.suite("PlaybackStore.state writer contract") {
+@Test
+func testPlaybackStoreStateWriterContract() {
+    do {
         let declaration = """
             @MainActor
             final class PlaybackStore {
@@ -17,19 +19,15 @@ func runPlaybackStoreStateWriterContractChecks(_ check: CheckRunner) {
                 }
             }
             """
-        check.equal(
-            "declaration and send commit are the only store-state assignments",
-            PlaybackStoreStateWriterContract.assignmentLines(in: declaration),
-            [
-                "private(set) var state = PlaybackState(accountEpoch: 1)",
-                "state = next",
-            ]
-        )
-        check.equal(
-            "the send commit path has no direct member mutation",
-            PlaybackStoreStateWriterContract.memberMutationLines(in: declaration),
-            []
-        )
+        #expect(
+            (PlaybackStoreStateWriterContract.assignmentLines(in: declaration))
+                == ([
+                    "private(set) var state = PlaybackState(accountEpoch: 1)",
+                    "state = next",
+                ]), "declaration and send commit are the only store-state assignments")
+        #expect(
+            (PlaybackStoreStateWriterContract.memberMutationLines(in: declaration)) == ([]),
+            "the send commit path has no direct member mutation")
 
         let illegal = """
             func apply() {
@@ -41,84 +39,73 @@ func runPlaybackStoreStateWriterContractChecks(_ check: CheckRunner) {
                 state.transport = .playing
             }
             """
-        check.equal(
-            "an extra store-state assignment is reported",
-            PlaybackStoreStateWriterContract.assignmentLines(in: illegal),
-            [
-                "state = PlaybackState()",
-                "self.state = next",
-            ]
-        )
-        check.equal(
-            "direct member mutation is reported and local bindings are ignored",
-            PlaybackStoreStateWriterContract.memberMutationLines(in: illegal),
-            [
-                "state.options.repeatMode = .track",
-                "self.state.options.repeatMode = .track",
-                "state.transport = .playing",
-            ]
-        )
-        check.check(
-            "qualified comparisons are not assignments",
-            PlaybackStoreStateWriterContract.assignmentLines(in: "if self.state == next { }").isEmpty
-        )
-        check.check(
-            "qualified reads are not member mutations",
-            PlaybackStoreStateWriterContract.memberMutationLines(in: "let flags = self.state.options.repeatFlags")
-                .isEmpty
-        )
-        check.check(
-            "underscore-prefixed identifiers are not store-state assignments",
-            PlaybackStoreStateWriterContract.assignmentLines(in: "playback_state = next").isEmpty
-        )
-        check.check(
-            "underscore-prefixed identifiers are not store-state member mutations",
-            PlaybackStoreStateWriterContract.memberMutationLines(in: "playback_state.options.repeatMode = .track")
-                .isEmpty
-        )
+        #expect(
+            (PlaybackStoreStateWriterContract.assignmentLines(in: illegal))
+                == ([
+                    "state = PlaybackState()",
+                    "self.state = next",
+                ]), "an extra store-state assignment is reported")
+        #expect(
+            (PlaybackStoreStateWriterContract.memberMutationLines(in: illegal))
+                == ([
+                    "state.options.repeatMode = .track",
+                    "self.state.options.repeatMode = .track",
+                    "state.transport = .playing",
+                ]), "direct member mutation is reported and local bindings are ignored")
+        #expect(
+            (PlaybackStoreStateWriterContract.assignmentLines(in: "if self.state == next { }").isEmpty) == true,
+            "qualified comparisons are not assignments")
+        #expect(
+            (PlaybackStoreStateWriterContract.memberMutationLines(in: "let flags = self.state.options.repeatFlags")
+                .isEmpty) == true, "qualified reads are not member mutations")
+        #expect(
+            (PlaybackStoreStateWriterContract.assignmentLines(in: "playback_state = next").isEmpty) == true,
+            "underscore-prefixed identifiers are not store-state assignments")
+        #expect(
+            (PlaybackStoreStateWriterContract.memberMutationLines(in: "playback_state.options.repeatMode = .track")
+                .isEmpty) == true, "underscore-prefixed identifiers are not store-state member mutations")
 
-        check.check(
-            "comparisons are not assignments",
-            PlaybackStoreStateWriterContract.assignmentLines(in: "if state == next { }").isEmpty
-        )
-        check.check(
-            "reads are not member mutations",
-            PlaybackStoreStateWriterContract.memberMutationLines(in: "let flags = state.options.repeatFlags").isEmpty
-        )
+        #expect(
+            (PlaybackStoreStateWriterContract.assignmentLines(in: "if state == next { }").isEmpty) == true,
+            "comparisons are not assignments")
+        #expect(
+            (PlaybackStoreStateWriterContract.memberMutationLines(in: "let flags = state.options.repeatFlags").isEmpty)
+                == true, "reads are not member mutations")
 
-        check.noThrow("production PlaybackStore sources are readable") {
-            let sourcesDirectory = URL(fileURLWithPath: #filePath)
-                .deletingLastPathComponent()
-                .deletingLastPathComponent()
-                .appending(path: "Spotty/Spotify")
-            let storeFiles = [
-                "PlaybackStore.swift",
-                "PlaybackStore+Commands.swift",
-                "PlaybackStore+EngineEvents.swift",
-                "PlaybackStore+History.swift",
-                "PlaybackStore+Projections.swift",
-                "PlaybackStore+Queue.swift",
-                "PlaybackStore+Session.swift",
-                "PlaybackStore+Transport.swift",
-            ]
-            let sources = try storeFiles.map { file in
-                try String(contentsOf: sourcesDirectory.appending(path: file), encoding: .utf8)
-            }
-            let productionAssignments = sources.flatMap(PlaybackStoreStateWriterContract.assignmentLines(in:))
-            let productionMutations = sources.flatMap(PlaybackStoreStateWriterContract.memberMutationLines(in:))
-            check.equal(
-                "production PlaybackStore.state assignments are the declaration and send commit",
-                productionAssignments,
-                [
-                    "private(set) var state = PlaybackState(accountEpoch: 1)",
-                    "state = next",
+        do {
+            do {
+                let sourcesDirectory = URL(fileURLWithPath: #filePath)
+                    .deletingLastPathComponent()
+                    .deletingLastPathComponent()
+                    .appending(path: "Spotty/Spotify")
+                let storeFiles = [
+                    "PlaybackStore.swift",
+                    "PlaybackStore+Commands.swift",
+                    "PlaybackStore+EngineEvents.swift",
+                    "PlaybackStore+History.swift",
+                    "PlaybackStore+Projections.swift",
+                    "PlaybackStore+Queue.swift",
+                    "PlaybackStore+Session.swift",
+                    "PlaybackStore+Transport.swift",
                 ]
-            )
-            check.equal(
-                "production PlaybackStore files have no direct state member mutation",
-                productionMutations,
-                []
-            )
+                let sources = try storeFiles.map { file in
+                    try String(contentsOf: sourcesDirectory.appending(path: file), encoding: .utf8)
+                }
+                let productionAssignments = sources.flatMap(PlaybackStoreStateWriterContract.assignmentLines(in:))
+                let productionMutations = sources.flatMap(PlaybackStoreStateWriterContract.memberMutationLines(in:))
+                #expect(
+                    (productionAssignments)
+                        == ([
+                            "private(set) var state = PlaybackState(accountEpoch: 1)",
+                            "state = next",
+                        ]), "production PlaybackStore.state assignments are the declaration and send commit")
+                #expect(
+                    (productionMutations) == ([]), "production PlaybackStore files have no direct state member mutation"
+                )
+
+            } catch {
+                Issue.record("\("production PlaybackStore sources are readable"): unexpected error \(error)")
+            }
         }
     }
 }

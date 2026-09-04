@@ -1,225 +1,220 @@
+import Testing
 import SpottyDomain
 import Foundation
 
-func runParsingChecks(_ check: CheckRunner) {
-    check.suite("Library pagination arithmetic") {
-        check.equal(
-            "mid-collection page advances by its entry count",
-            Pagination.nextOffset(offset: 50, pageEntryCount: 50, totalCount: 130), 100)
-        check.nil_(
-            "reaching totalCount ends the walk", Pagination.nextOffset(offset: 100, pageEntryCount: 30, totalCount: 130)
-        )
-        check.nil_(
-            "overshooting totalCount ends the walk",
-            Pagination.nextOffset(offset: 100, pageEntryCount: 50, totalCount: 130))
-        check.nil_("an empty page ends the walk", Pagination.nextOffset(offset: 50, pageEntryCount: 0, totalCount: 130))
-        check.equal(
-            "missing totalCount keeps walking", Pagination.nextOffset(offset: 0, pageEntryCount: 50, totalCount: nil),
-            50)
-        check.equal(
-            "offset ignores how many entities survived decoding",
-            Pagination.nextOffset(offset: 0, pageEntryCount: 50, totalCount: 60), 50)
-        check.equal(
-            "one short of totalCount keeps walking",
-            Pagination.nextOffset(offset: 100, pageEntryCount: 29, totalCount: 130), 129)
-        check.nil_(
-            "single-page collections end immediately",
-            Pagination.nextOffset(offset: 0, pageEntryCount: 50, totalCount: 50))
-        check.nil_(
-            "an emptied collection ends the walk", Pagination.nextOffset(offset: 40, pageEntryCount: 20, totalCount: 0))
+@Test
+func testParsing() {
+    do {
+        #expect(
+            (Pagination.nextOffset(offset: 50, pageEntryCount: 50, totalCount: 130)) == (100),
+            "mid-collection page advances by its entry count")
+        #expect(
+            (Pagination.nextOffset(offset: 100, pageEntryCount: 30, totalCount: 130)) == nil,
+            "reaching totalCount ends the walk")
+        #expect(
+            (Pagination.nextOffset(offset: 100, pageEntryCount: 50, totalCount: 130)) == nil,
+            "overshooting totalCount ends the walk")
+        #expect(
+            (Pagination.nextOffset(offset: 50, pageEntryCount: 0, totalCount: 130)) == nil,
+            "an empty page ends the walk")
+        #expect(
+            (Pagination.nextOffset(offset: 0, pageEntryCount: 50, totalCount: nil)) == (50),
+            "missing totalCount keeps walking")
+        #expect(
+            (Pagination.nextOffset(offset: 0, pageEntryCount: 50, totalCount: 60)) == (50),
+            "offset ignores how many entities survived decoding")
+        #expect(
+            (Pagination.nextOffset(offset: 100, pageEntryCount: 29, totalCount: 130)) == (129),
+            "one short of totalCount keeps walking")
+        #expect(
+            (Pagination.nextOffset(offset: 0, pageEntryCount: 50, totalCount: 50)) == nil,
+            "single-page collections end immediately")
+        #expect(
+            (Pagination.nextOffset(offset: 40, pageEntryCount: 20, totalCount: 0)) == nil,
+            "an emptied collection ends the walk")
     }
 
-    check.suite("Bounded pagination decisions") {
-        check.equal("maximum page bound is finite and explicit", Pagination.maximumPageCount, 500)
+    do {
+        #expect((Pagination.maximumPageCount) == (500), "maximum page bound is finite and explicit")
 
-        check.equal(
-            "ordinary totalCount names the next offset",
-            Pagination.decision(offset: 0, pageEntryCount: 50, totalCount: 130, pagesFetched: 1),
-            .fetch(offset: 50)
-        )
-        check.equal(
-            "exact page-boundary totalCount finishes",
-            Pagination.decision(offset: 0, pageEntryCount: 50, totalCount: 50, pagesFetched: 1),
-            .finished
-        )
-        check.equal(
-            "empty first page finishes",
-            Pagination.decision(offset: 0, pageEntryCount: 0, totalCount: nil, pagesFetched: 1),
-            .finished
-        )
-        check.equal(
-            "omitted totalCount finishes on an empty page",
-            Pagination.decision(offset: 50, pageEntryCount: 0, totalCount: nil, pagesFetched: 2),
-            .finished
-        )
-        check.equal(
-            "a repeated next offset fails rather than refetching",
-            Pagination.decision(
+        #expect(
+            (Pagination.decision(offset: 0, pageEntryCount: 50, totalCount: 130, pagesFetched: 1))
+                == (.fetch(offset: 50)), "ordinary totalCount names the next offset")
+        #expect(
+            (Pagination.decision(offset: 0, pageEntryCount: 50, totalCount: 50, pagesFetched: 1)) == (.finished),
+            "exact page-boundary totalCount finishes")
+        #expect(
+            (Pagination.decision(offset: 0, pageEntryCount: 0, totalCount: nil, pagesFetched: 1)) == (.finished),
+            "empty first page finishes")
+        #expect(
+            (Pagination.decision(offset: 50, pageEntryCount: 0, totalCount: nil, pagesFetched: 2)) == (.finished),
+            "omitted totalCount finishes on an empty page")
+        #expect(
+            (Pagination.decision(
                 offset: 0,
                 pageEntryCount: 50,
                 totalCount: nil,
                 pagesFetched: 1,
                 requestedOffsets: [0, 50]
-            ),
-            .failed(.offsetDidNotAdvance)
-        )
-        check.equal(
-            "a next offset that does not move forward fails",
-            Pagination.decision(
+            )) == (.failed(.offsetDidNotAdvance)), "a repeated next offset fails rather than refetching")
+        #expect(
+            (Pagination.decision(
                 offset: 50,
                 pageEntryCount: 50,
                 totalCount: nil,
                 pagesFetched: 2,
                 nextOffset: { offset, _, _ in offset }
-            ),
-            .failed(.offsetDidNotAdvance)
-        )
-        check.equal(
-            "exhausting the page cap fails instead of continuing",
-            Pagination.decision(
+            )) == (.failed(.offsetDidNotAdvance)), "a next offset that does not move forward fails")
+        #expect(
+            (Pagination.decision(
                 offset: 0,
                 pageEntryCount: 50,
                 totalCount: nil,
                 pagesFetched: Pagination.maximumPageCount
-            ),
-            .failed(.pageLimitReached)
-        )
-        check.equal(
-            "the last allowed page may still name a successor before the cap",
-            Pagination.decision(
+            )) == (.failed(.pageLimitReached)), "exhausting the page cap fails instead of continuing")
+        #expect(
+            (Pagination.decision(
                 offset: 0,
                 pageEntryCount: 50,
                 totalCount: nil,
                 pagesFetched: Pagination.maximumPageCount - 1
-            ),
-            .fetch(offset: 50)
-        )
+            )) == (.fetch(offset: 50)), "the last allowed page may still name a successor before the cap")
 
-        check.equal(
-            "cap exhaustion uses a stable category",
-            Pagination.Failure.pageLimitReached.errorDescription,
-            "Spotify pagination exceeded the request limit"
-        )
-        check.equal(
-            "non-progress uses a stable category",
-            Pagination.Failure.offsetDidNotAdvance.errorDescription,
-            "Spotify pagination did not advance"
-        )
+        #expect(
+            (Pagination.Failure.pageLimitReached.errorDescription) == ("Spotify pagination exceeded the request limit"),
+            "cap exhaustion uses a stable category")
+        #expect(
+            (Pagination.Failure.offsetDidNotAdvance.errorDescription) == ("Spotify pagination did not advance"),
+            "non-progress uses a stable category")
     }
 
-    check.suite("Loopback request-line parsing") {
+    do {
         let crlf = LoopbackRequestParser.parseRequestLine("GET /login?code=abc&state=xyz HTTP/1.1\r\nHost: 127.0.0.1\n")
-        check.notNil("CRLF GET line parses", crlf)
-        check.equal("path", crlf?.path, "/login")
-        check.equal("code parameter", crlf?.queryItems?.first(where: { $0.name == "code" })?.value, "abc")
-        check.equal("state parameter", crlf?.queryItems?.first(where: { $0.name == "state" })?.value, "xyz")
+        #expect((crlf) != nil, "CRLF GET line parses")
+        #expect((crlf?.path) == ("/login"), "path")
+        #expect((crlf?.queryItems?.first(where: { $0.name == "code" })?.value) == ("abc"), "code parameter")
+        #expect((crlf?.queryItems?.first(where: { $0.name == "state" })?.value) == ("xyz"), "state parameter")
 
         let lf = LoopbackRequestParser.parseRequestLine("GET /login?code=abc&state=xyz HTTP/1.1\nHost: 127.0.0.1\n")
-        check.equal("LF terminator yields the same path", lf?.path, "/login")
-        check.equal(
-            "LF terminator yields the same code", lf?.queryItems?.first(where: { $0.name == "code" })?.value, "abc")
+        #expect((lf?.path) == ("/login"), "LF terminator yields the same path")
+        #expect(
+            (lf?.queryItems?.first(where: { $0.name == "code" })?.value) == ("abc"),
+            "LF terminator yields the same code")
 
         let splitLine = LoopbackRequestParser.parseRequestLine("GET /login?code=abc HTTP/1.1")
-        check.notNil("unterminated split request still parses", splitLine)
-        check.equal("split-request path", splitLine?.path, "/login")
-        check.equal("split-request code", splitLine?.queryItems?.first(where: { $0.name == "code" })?.value, "abc")
-        check.nil_("empty input rejected", LoopbackRequestParser.parseRequestLine(""))
-        check.nil_("newline-only input rejected", LoopbackRequestParser.parseRequestLine("\n"))
-        check.nil_(
-            "non-GET methods rejected", LoopbackRequestParser.parseRequestLine("POST /login?code=abc HTTP/1.1\n"))
-        check.nil_(
-            "lowercase methods rejected", LoopbackRequestParser.parseRequestLine("get /login?code=abc HTTP/1.1\n"))
+        #expect((splitLine) != nil, "unterminated split request still parses")
+        #expect((splitLine?.path) == ("/login"), "split-request path")
+        #expect((splitLine?.queryItems?.first(where: { $0.name == "code" })?.value) == ("abc"), "split-request code")
+        #expect((LoopbackRequestParser.parseRequestLine("")) == nil, "empty input rejected")
+        #expect((LoopbackRequestParser.parseRequestLine("\n")) == nil, "newline-only input rejected")
+        #expect(
+            (LoopbackRequestParser.parseRequestLine("POST /login?code=abc HTTP/1.1\n")) == nil,
+            "non-GET methods rejected")
+        #expect(
+            (LoopbackRequestParser.parseRequestLine("get /login?code=abc HTTP/1.1\n")) == nil,
+            "lowercase methods rejected")
         let bare = LoopbackRequestParser.parseRequestLine("GET /login HTTP/1.1\n")
-        check.notNil("query-less request parses", bare)
-        check.equal("query-less path", bare?.path, "/login")
-        check.nil_("no parameters without a query", bare?.queryItems)
+        #expect((bare) != nil, "query-less request parses")
+        #expect((bare?.path) == ("/login"), "query-less path")
+        #expect((bare?.queryItems) == nil, "no parameters without a query")
 
         let encodedPath = LoopbackRequestParser.parseRequestLine("GET /%6Cogin?code=abc&state=xyz HTTP/1.1\n")
-        check.equal("percent-decoded path is /login", encodedPath?.path, "/login")
-        check.equal(
-            "percent-decoded path still yields the code",
-            encodedPath?.queryItems?.first(where: { $0.name == "code" })?.value, "abc")
+        #expect((encodedPath?.path) == ("/login"), "percent-decoded path is /login")
+        #expect(
+            (encodedPath?.queryItems?.first(where: { $0.name == "code" })?.value) == ("abc"),
+            "percent-decoded path still yields the code")
 
         let encodedQuery = LoopbackRequestParser.parseRequestLine("GET /login?code=a%20b&state=xy%26z HTTP/1.1\n")
-        check.equal(
-            "query values stay percent-decoded", encodedQuery?.queryItems?.first(where: { $0.name == "code" })?.value,
-            "a b")
-        check.equal(
-            "encoded ampersands stay inside the value",
-            encodedQuery?.queryItems?.first(where: { $0.name == "state" })?.value, "xy&z")
+        #expect(
+            (encodedQuery?.queryItems?.first(where: { $0.name == "code" })?.value) == ("a b"),
+            "query values stay percent-decoded")
+        #expect(
+            (encodedQuery?.queryItems?.first(where: { $0.name == "state" })?.value) == ("xy&z"),
+            "encoded ampersands stay inside the value")
 
-        check.nil_("root path rejected", LoopbackRequestParser.parseRequestLine("GET / HTTP/1.1\n"))
-        check.nil_(
-            "root path with query cannot win",
-            LoopbackRequestParser.parseRequestLine("GET /?code=abc&state=xyz HTTP/1.1\n"))
-        check.nil_(
-            "prefix lookalike rejected", LoopbackRequestParser.parseRequestLine("GET /login/extra?code=abc HTTP/1.1\n"))
-        check.nil_(
-            "suffix lookalike rejected", LoopbackRequestParser.parseRequestLine("GET /loginn?code=abc HTTP/1.1\n"))
-        check.nil_(
-            "embedded /login rejected",
-            LoopbackRequestParser.parseRequestLine("GET /callback/login?code=abc HTTP/1.1\n"))
-        check.nil_("trailing slash rejected", LoopbackRequestParser.parseRequestLine("GET /login/?code=abc HTTP/1.1\n"))
-        check.nil_(
-            "encoded extra segment rejected",
-            LoopbackRequestParser.parseRequestLine("GET /login%2Fextra?code=abc HTTP/1.1\n"))
-        check.nil_(
-            "double-slash target rejected", LoopbackRequestParser.parseRequestLine("GET //login?code=abc HTTP/1.1\n"))
-        check.nil_(
-            "absolute-form target rejected",
-            LoopbackRequestParser.parseRequestLine("GET http://127.0.0.1/login?code=abc HTTP/1.1\n"))
-        check.nil_("missing HTTP version rejected", LoopbackRequestParser.parseRequestLine("GET /login?code=abc\n"))
-        check.nil_(
-            "extra request-line tokens rejected", LoopbackRequestParser.parseRequestLine("GET /login HTTP/1.1 extra\n"))
-        check.nil_(
-            "tab-separated request-line rejected", LoopbackRequestParser.parseRequestLine("GET\t/login HTTP/1.1\n"))
-        check.notNil("HTTP/1.0 is accepted", LoopbackRequestParser.parseRequestLine("GET /login HTTP/1.0\n"))
-        check.notNil("HTTP/2 is accepted", LoopbackRequestParser.parseRequestLine("GET /login HTTP/2\n"))
-        check.nil_("empty HTTP version rejected", LoopbackRequestParser.parseRequestLine("GET /login?code=abc HTTP/\n"))
-        check.nil_(
-            "suffixed HTTP version rejected",
-            LoopbackRequestParser.parseRequestLine("GET /login?code=abc HTTP/1.1junk\n"))
-        check.nil_(
-            "non-numeric HTTP version rejected",
-            LoopbackRequestParser.parseRequestLine("GET /login?code=abc HTTP/not-a-version\n"))
-        check.nil_(
-            "Unicode numeric HTTP version rejected",
-            LoopbackRequestParser.parseRequestLine("GET /login?code=abc HTTP/๒\n"))
+        #expect((LoopbackRequestParser.parseRequestLine("GET / HTTP/1.1\n")) == nil, "root path rejected")
+        #expect(
+            (LoopbackRequestParser.parseRequestLine("GET /?code=abc&state=xyz HTTP/1.1\n")) == nil,
+            "root path with query cannot win")
+        #expect(
+            (LoopbackRequestParser.parseRequestLine("GET /login/extra?code=abc HTTP/1.1\n")) == nil,
+            "prefix lookalike rejected")
+        #expect(
+            (LoopbackRequestParser.parseRequestLine("GET /loginn?code=abc HTTP/1.1\n")) == nil,
+            "suffix lookalike rejected")
+        #expect(
+            (LoopbackRequestParser.parseRequestLine("GET /callback/login?code=abc HTTP/1.1\n")) == nil,
+            "embedded /login rejected")
+        #expect(
+            (LoopbackRequestParser.parseRequestLine("GET /login/?code=abc HTTP/1.1\n")) == nil,
+            "trailing slash rejected")
+        #expect(
+            (LoopbackRequestParser.parseRequestLine("GET /login%2Fextra?code=abc HTTP/1.1\n")) == nil,
+            "encoded extra segment rejected")
+        #expect(
+            (LoopbackRequestParser.parseRequestLine("GET //login?code=abc HTTP/1.1\n")) == nil,
+            "double-slash target rejected")
+        #expect(
+            (LoopbackRequestParser.parseRequestLine("GET http://127.0.0.1/login?code=abc HTTP/1.1\n")) == nil,
+            "absolute-form target rejected")
+        #expect(
+            (LoopbackRequestParser.parseRequestLine("GET /login?code=abc\n")) == nil, "missing HTTP version rejected")
+        #expect(
+            (LoopbackRequestParser.parseRequestLine("GET /login HTTP/1.1 extra\n")) == nil,
+            "extra request-line tokens rejected")
+        #expect(
+            (LoopbackRequestParser.parseRequestLine("GET\t/login HTTP/1.1\n")) == nil,
+            "tab-separated request-line rejected")
+        #expect((LoopbackRequestParser.parseRequestLine("GET /login HTTP/1.0\n")) != nil, "HTTP/1.0 is accepted")
+        #expect((LoopbackRequestParser.parseRequestLine("GET /login HTTP/2\n")) != nil, "HTTP/2 is accepted")
+        #expect(
+            (LoopbackRequestParser.parseRequestLine("GET /login?code=abc HTTP/\n")) == nil,
+            "empty HTTP version rejected")
+        #expect(
+            (LoopbackRequestParser.parseRequestLine("GET /login?code=abc HTTP/1.1junk\n")) == nil,
+            "suffixed HTTP version rejected")
+        #expect(
+            (LoopbackRequestParser.parseRequestLine("GET /login?code=abc HTTP/not-a-version\n")) == nil,
+            "non-numeric HTTP version rejected")
+        #expect(
+            (LoopbackRequestParser.parseRequestLine("GET /login?code=abc HTTP/๒\n")) == nil,
+            "Unicode numeric HTTP version rejected")
     }
 
-    check.suite("Spotify authentication cookie matching") {
-        check.check(
-            "accounts host is Spotify",
-            SpotifyAuthenticationCookies.shouldRemove(domain: "accounts.spotify.com", path: "/"))
-        check.check(
-            "leading-dot domain is Spotify",
-            SpotifyAuthenticationCookies.shouldRemove(domain: ".spotify.com", path: "/"))
-        check.check(
-            "subdomain and subdirectory stay Spotify",
-            SpotifyAuthenticationCookies.shouldRemove(domain: "www.spotify.com", path: "/api"))
-        check.check(
-            "lookalike host is not Spotify",
-            !SpotifyAuthenticationCookies.shouldRemove(domain: "notspotify.com", path: "/"))
-        check.check(
-            "suffixed lookalike is not Spotify",
-            !SpotifyAuthenticationCookies.shouldRemove(domain: "spotify.com.evil.example", path: "/"))
-        check.check(
-            "unrelated domain is kept", !SpotifyAuthenticationCookies.shouldRemove(domain: "example.com", path: "/"))
-        check.check(
-            "empty path is not a cookie path",
-            !SpotifyAuthenticationCookies.shouldRemove(domain: "spotify.com", path: ""))
+    do {
+        #expect(
+            (SpotifyAuthenticationCookies.shouldRemove(domain: "accounts.spotify.com", path: "/")) == true,
+            "accounts host is Spotify")
+        #expect(
+            (SpotifyAuthenticationCookies.shouldRemove(domain: ".spotify.com", path: "/")) == true,
+            "leading-dot domain is Spotify")
+        #expect(
+            (SpotifyAuthenticationCookies.shouldRemove(domain: "www.spotify.com", path: "/api")) == true,
+            "subdomain and subdirectory stay Spotify")
+        #expect(
+            (!SpotifyAuthenticationCookies.shouldRemove(domain: "notspotify.com", path: "/")) == true,
+            "lookalike host is not Spotify")
+        #expect(
+            (!SpotifyAuthenticationCookies.shouldRemove(domain: "spotify.com.evil.example", path: "/")) == true,
+            "suffixed lookalike is not Spotify")
+        #expect(
+            (!SpotifyAuthenticationCookies.shouldRemove(domain: "example.com", path: "/")) == true,
+            "unrelated domain is kept")
+        #expect(
+            (!SpotifyAuthenticationCookies.shouldRemove(domain: "spotify.com", path: "")) == true,
+            "empty path is not a cookie path")
     }
 
-    check.suite("Spotify uri parsing") {
-        check.equal(
-            "kind-matched playlist uri yields its id",
-            SpotifyURI.id(from: "spotify:playlist:37i9dQZF1DXcBWIGoYBM5M", kind: "playlist"), "37i9dQZF1DXcBWIGoYBM5M")
-        check.nil_(
-            "folder uris never pass as playlists",
-            SpotifyURI.id(from: "spotify:user:alice:folder:9ab01c", kind: "playlist"))
-        check.nil_("a mismatched kind is refused", SpotifyURI.id(from: "spotify:album:abc123", kind: "playlist"))
-        check.equal(
-            "kind-free parsing takes the last component", SpotifyURI.id(from: "spotify:user:alice:playlist:xyz789"),
-            "xyz789")
+    do {
+        #expect(
+            (SpotifyURI.id(from: "spotify:playlist:37i9dQZF1DXcBWIGoYBM5M", kind: "playlist"))
+                == ("37i9dQZF1DXcBWIGoYBM5M"), "kind-matched playlist uri yields its id")
+        #expect(
+            (SpotifyURI.id(from: "spotify:user:alice:folder:9ab01c", kind: "playlist")) == nil,
+            "folder uris never pass as playlists")
+        #expect((SpotifyURI.id(from: "spotify:album:abc123", kind: "playlist")) == nil, "a mismatched kind is refused")
+        #expect(
+            (SpotifyURI.id(from: "spotify:user:alice:playlist:xyz789")) == ("xyz789"),
+            "kind-free parsing takes the last component")
     }
 }

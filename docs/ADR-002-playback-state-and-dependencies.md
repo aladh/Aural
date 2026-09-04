@@ -48,7 +48,7 @@ could still combine values from different account, engine, command, queue, or se
   `RootView`. Transient mutation success/info/failure is not `PlaybackState` and is not a
   NotificationCenter or generic event bus.
 
-`SpottyDomain` and `SpottyCore` are separate SwiftPM products; check products do not ship. A
+`SpottyDomain` and `SpottyCore` are separate SwiftPM products; test targets do not ship. A
 separate infrastructure target is not created solely for folder aesthetics: those adapters still
 share private Spotify transport models, while dependency direction is enforced by injected
 protocols and static checks.

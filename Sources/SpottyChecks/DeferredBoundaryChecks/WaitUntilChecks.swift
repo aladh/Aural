@@ -1,3 +1,4 @@
+import Testing
 @MainActor
 private final class WaitUntilCheckProbe {
     var entered = false
@@ -21,23 +22,21 @@ private final class WaitUntilSuspensionGate {
     }
 }
 
+@Test
 @MainActor
-func runWaitUntilChecks(_ check: CheckRunner) async {
-    await check.suite("waitUntil contract") {
+func testWaitUntil() async {
+    do {
         let immediate = await waitUntil { true }
-        check.check("already-true condition succeeds", immediate)
+        #expect((immediate) == true, "already-true condition succeeds")
 
         let expired = await waitUntil(timeout: .zero) { true }
-        check.check("zero timeout is already expired", !expired)
+        #expect((!expired) == true, "zero timeout is already expired")
 
         let cancelledBeforeStart = Task { @MainActor in
             await waitUntil { true }
         }
         cancelledBeforeStart.cancel()
-        check.check(
-            "cancelled wait returns false before polling",
-            await cancelledBeforeStart.value == false
-        )
+        #expect((await cancelledBeforeStart.value == false) == true, "cancelled wait returns false before polling")
 
         let probe = WaitUntilCheckProbe()
         let cancelledDuringPoll = Task { @MainActor in
@@ -50,10 +49,7 @@ func runWaitUntilChecks(_ check: CheckRunner) async {
             await Task.yield()
         }
         cancelledDuringPoll.cancel()
-        check.check(
-            "cancelled wait returns false during polling",
-            await cancelledDuringPoll.value == false
-        )
+        #expect((await cancelledDuringPoll.value == false) == true, "cancelled wait returns false during polling")
 
         let gate = WaitUntilSuspensionGate()
         let cancelledAfterPredicate = Task { @MainActor in
@@ -67,9 +63,6 @@ func runWaitUntilChecks(_ check: CheckRunner) async {
         }
         cancelledAfterPredicate.cancel()
         gate.release()
-        check.check(
-            "cancelled wait does not accept a late true",
-            await cancelledAfterPredicate.value == false
-        )
+        #expect((await cancelledAfterPredicate.value == false) == true, "cancelled wait does not accept a late true")
     }
 }

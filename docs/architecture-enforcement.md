@@ -37,7 +37,7 @@ an API and not a reason to create one row per implementation detail.
 | `FMT-RUST-001`–`002` | Rust is rustfmt-clean and Clippy warning-clean on locked targets | `CONTRIBUTING.md` | `cargo fmt --all -- --check`; `cargo clippy --locked --all-targets -- -D warnings` in `Scripts/check.sh` |
 | `CMP-PLT-001` | macOS 15+ on Apple Silicon is the supported runtime envelope | Product contract | `Package.swift`, pinned ARM64 Rust target/build, and ARM64 release workflow; support wording remains semantic |
 | `CMP-DEP-001`, `CMP-FFI-001` | Target direction is `SpottyApp -> SpottyCore -> SpottyDomain`; only SpottyCore depends on the C module | ADR 001–002 | SwiftPM target graph plus focused import checks |
-| `CMP-CHK-001`–`002` | Check products never ship; pure checks do not link SpottyCore/Rust; boundary checks remain separate | ADR 002 | SwiftPM products/targets and `Scripts/check.sh` |
+| `CMP-CHK-001`–`002` | Test targets never ship; pure tests do not depend on SpottyCore/Rust; boundary tests remain separate | ADR 002 | SwiftPM targets and `Scripts/check.sh` |
 | `CMP-TCA-001` | No TCA or generic Effect framework | ADR 003 | Empty external Swift dependency graph plus semantic review of dependency additions |
 | `CMP-LIVE-001` | Shipping code uses live integrations; fakes and synthetic hooks stay in checks | Product contract | Package separation, hygiene checks, deterministic fixture checks, and semantic review |
 | `CMP-PKG-001` | Packaging metadata remains parseable | Agent operations | `plutil -lint Packaging/Info.plist` in `Scripts/check.sh` |
@@ -46,7 +46,7 @@ an API and not a reason to create one row per implementation detail.
 
 | IDs | Invariant | Canonical decision | Primary enforcement |
 | --- | --- | --- | --- |
-| `TST-STATE-001` | `PlaybackState` is one atomic snapshot and `PlaybackReducer` is its mutation entrance | ADR 002 | Reducer/writer/projection suites in `SpottyChecks` |
+| `TST-STATE-001` | `PlaybackState` is one atomic snapshot and `PlaybackReducer` is its mutation entrance | ADR 002 | Reducer/writer/projection tests in `SpottyDomainTests` |
 | `TST-CMD-001` | Store/coordinator/registry ownership, acceptance gating, same-lifetime reconciliation, and inert stale outcomes | ADR 003 | Command lifecycle, presentation, failure, parity, registry, and event-outcome suites |
 | `TST-EPC-001`, `TST-ENV-001` | Generations, revisions, cancellation, stale-result protection, ordered callback delivery, and lock-safe fan-out | ADR 002 | Session/epoch/fan-out Swift checks plus Rust generation/listener tests |
 | `TST-LIF-001` | Rust lifecycle writes serialize; reconnect and init revalidate generations under the owner mutex | ADR 001–002 | `lifecycle_serialization_tests.rs`, `session_lifecycle.rs` tests, and related Rust suites |
@@ -61,7 +61,7 @@ an API and not a reason to create one row per implementation detail.
 | `TST-DEP-001` | Live dependencies are assembled at composition; views/stores use narrow injected boundaries | ADR 002 | Package/source topology plus injected workflow checks |
 | `TST-FIX-001` | Fixtures are reduced, synthetic, and non-identifying | Product/privacy contract | Fixture contract suite plus semantic privacy review |
 | `TST-RUST-001` | Locked Rust suite owns Connect recovery, protocol serialization, generations, export signatures, and the reconnect rehydration window; resume target order is Swift-owned under `TST-RES-001` | ADR 001 and ADR 004 | `cargo test --locked` in `Scripts/check.sh` |
-| `TST-GATE-001` | The complete gate runs every registered Swift suite; repeat count is bounded to 1–25 | Agent operations | `Scripts/check.sh` registration/repeat behavior |
+| `TST-GATE-001` | The complete gate runs every discovered Swift test in both targets; repeat count is bounded to 1–25 | Agent operations | `Scripts/check.sh` test filtering/repeat behavior |
 
 ### ABI and cross-language contracts
 

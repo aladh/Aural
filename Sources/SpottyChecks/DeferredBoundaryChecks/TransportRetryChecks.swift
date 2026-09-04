@@ -1,10 +1,12 @@
+import Testing
 import SpottyDomain
 import Foundation
 @testable import SpottyCore
 
+@Test
 @MainActor
-func runTransportRetryChecks(_ check: CheckRunner) async {
-    await check.suite("Replayable reads honor Retry-After and a bounded budget") {
+func testTransportRetry() async {
+    do {
         let deltaSleep = RecordingSleeper()
         let deltaTransport = ScriptedRetryTransport(steps: [
             .http(status: 429, headers: ["Retry-After": "7"]),
@@ -14,9 +16,9 @@ func runTransportRetryChecks(_ check: CheckRunner) async {
             transport: deltaTransport.send,
             retryTiming: timing(sleeper: deltaSleep)
         ).profile()
-        check.equal("Retry-After delta succeeds after one retry", deltaProfile?.name, "Listener")
-        check.equal("Retry-After delta is the recorded delay", deltaSleep.delays, [7])
-        check.equal("Retry-After delta attempts twice", deltaTransport.callCount, 2)
+        #expect((deltaProfile?.name) == ("Listener"), "Retry-After delta succeeds after one retry")
+        #expect((deltaSleep.delays) == ([7]), "Retry-After delta is the recorded delay")
+        #expect((deltaTransport.callCount) == (2), "Retry-After delta attempts twice")
 
         let dateSleep = RecordingSleeper()
         let now = Date(timeIntervalSince1970: 1_000_000)
@@ -28,8 +30,8 @@ func runTransportRetryChecks(_ check: CheckRunner) async {
             transport: dateTransport.send,
             retryTiming: timing(now: now, sleeper: dateSleep)
         ).profile()
-        check.equal("Retry-After HTTP-date succeeds after one retry", dateProfile?.name, "Listener")
-        check.equal("Retry-After HTTP-date delay is the delta until that instant", dateSleep.delays, [30])
+        #expect((dateProfile?.name) == ("Listener"), "Retry-After HTTP-date succeeds after one retry")
+        #expect((dateSleep.delays) == ([30]), "Retry-After HTTP-date delay is the delta until that instant")
 
         let malformedSleep = RecordingSleeper()
         let malformedTransport = ScriptedRetryTransport(steps: [
@@ -40,12 +42,10 @@ func runTransportRetryChecks(_ check: CheckRunner) async {
             transport: malformedTransport.send,
             retryTiming: timing(sleeper: malformedSleep, jitter: 1)
         ).profile()
-        check.equal("malformed Retry-After still retries", malformedProfile?.name, "Listener")
-        check.equal(
-            "malformed Retry-After uses the first backoff",
-            malformedSleep.delays,
-            [SpotifyTransientRetry.backoffDelay(completedAttempts: 1, unitJitter: 1)]
-        )
+        #expect((malformedProfile?.name) == ("Listener"), "malformed Retry-After still retries")
+        #expect(
+            (malformedSleep.delays) == ([SpotifyTransientRetry.backoffDelay(completedAttempts: 1, unitJitter: 1)]),
+            "malformed Retry-After uses the first backoff")
 
         let cappedSleep = RecordingSleeper()
         let cappedTransport = ScriptedRetryTransport(steps: [
@@ -56,14 +56,10 @@ func runTransportRetryChecks(_ check: CheckRunner) async {
             transport: cappedTransport.send,
             retryTiming: timing(sleeper: cappedSleep)
         ).profile()
-        check.equal(
-            "huge Retry-After is capped",
-            cappedSleep.delays,
-            [SpotifyTransientRetry.maximumDelaySeconds]
-        )
+        #expect((cappedSleep.delays) == ([SpotifyTransientRetry.maximumDelaySeconds]), "huge Retry-After is capped")
     }
 
-    await check.suite("Transient 5xx, URLError classification, budget, and success") {
+    do {
         let fiveSleep = RecordingSleeper()
         let fiveTransport = ScriptedRetryTransport(steps: [
             .http(status: 503),
@@ -73,9 +69,9 @@ func runTransportRetryChecks(_ check: CheckRunner) async {
             transport: fiveTransport.send,
             retryTiming: timing(sleeper: fiveSleep, jitter: 1)
         ).profile()
-        check.equal("transient 5xx succeeds after retry", recovered?.name, "Listener")
-        check.equal("transient 5xx uses backoff", fiveSleep.delays, [0.5])
-        check.equal("transient 5xx attempts twice", fiveTransport.callCount, 2)
+        #expect((recovered?.name) == ("Listener"), "transient 5xx succeeds after retry")
+        #expect((fiveSleep.delays) == ([0.5]), "transient 5xx uses backoff")
+        #expect((fiveTransport.callCount) == (2), "transient 5xx attempts twice")
 
         let budget = ScriptedRetryTransport(steps: [
             .http(status: 503),
@@ -83,56 +79,52 @@ func runTransportRetryChecks(_ check: CheckRunner) async {
             .http(status: 500),
             .http(status: 200, body: profileBody),
         ])
-        await expectThrown(check, "the attempt budget is finite", PartnerAPIError.requestFailed(500)) {
+        await expectThrown("the attempt budget is finite", PartnerAPIError.requestFailed(500)) {
             _ = try await partnerAPI(transport: budget.send).profile()
         }
-        check.equal("budget stops after three attempts", budget.callCount, 3)
+        #expect((budget.callCount) == (3), "budget stops after three attempts")
 
         let timeoutThenOk = ScriptedRetryTransport(steps: [
             .urlError(.timedOut),
             .http(status: 200, body: profileBody),
         ])
         let afterTimeout = try? await partnerAPI(transport: timeoutThenOk.send).profile()
-        check.equal("timeout URLError retries and succeeds", afterTimeout?.name, "Listener")
-        check.equal("timeout URLError attempts twice", timeoutThenOk.callCount, 2)
+        #expect((afterTimeout?.name) == ("Listener"), "timeout URLError retries and succeeds")
+        #expect((timeoutThenOk.callCount) == (2), "timeout URLError attempts twice")
 
         let lostThenOk = ScriptedRetryTransport(steps: [
             .urlError(.networkConnectionLost),
             .http(status: 200, body: profileBody),
         ])
-        check.equal(
-            "networkConnectionLost retries",
-            (try? await partnerAPI(transport: lostThenOk.send).profile())?.name,
-            "Listener"
-        )
+        #expect(
+            ((try? await partnerAPI(transport: lostThenOk.send).profile())?.name) == ("Listener"),
+            "networkConnectionLost retries")
 
         let hostThenOk = ScriptedRetryTransport(steps: [
             .urlError(.cannotConnectToHost),
             .http(status: 200, body: profileBody),
         ])
-        check.equal(
-            "cannotConnectToHost retries",
-            (try? await partnerAPI(transport: hostThenOk.send).profile())?.name,
-            "Listener"
-        )
+        #expect(
+            ((try? await partnerAPI(transport: hostThenOk.send).profile())?.name) == ("Listener"),
+            "cannotConnectToHost retries")
 
         let cancelled = ScriptedRetryTransport(steps: [.urlError(.cancelled)])
-        await expectURLError(check, "cancelled URLError is not retried", .cancelled) {
+        await expectURLError("cancelled URLError is not retried", .cancelled) {
             _ = try await partnerAPI(transport: cancelled.send).profile()
         }
-        check.equal("cancelled URLError is one attempt", cancelled.callCount, 1)
+        #expect((cancelled.callCount) == (1), "cancelled URLError is one attempt")
 
         let tls = ScriptedRetryTransport(steps: [.urlError(.secureConnectionFailed)])
-        await expectURLError(check, "TLS URLError is not retried", .secureConnectionFailed) {
+        await expectURLError("TLS URLError is not retried", .secureConnectionFailed) {
             _ = try await partnerAPI(transport: tls.send).profile()
         }
-        check.equal("disallowed URLError is one attempt", tls.callCount, 1)
+        #expect((tls.callCount) == (1), "disallowed URLError is one attempt")
 
         let offline = ScriptedRetryTransport(steps: [.urlError(.notConnectedToInternet)])
-        await expectURLError(check, "offline URLError is not retried", .notConnectedToInternet) {
+        await expectURLError("offline URLError is not retried", .notConnectedToInternet) {
             _ = try await partnerAPI(transport: offline.send).profile()
         }
-        check.equal("offline URLError is one attempt", offline.callCount, 1)
+        #expect((offline.callCount) == (1), "offline URLError is one attempt")
 
         let queueSleep = RecordingSleeper()
         let queueTransport = ScriptedRetryTransport(steps: [
@@ -140,7 +132,6 @@ func runTransportRetryChecks(_ check: CheckRunner) async {
             .http(status: 200, body: queueBody),
         ])
         await expectThrown(
-            check,
             "Web queue 429 is not generic-replayed",
             SpotifyWebPlayerAPIError.requestFailed(429)
         ) {
@@ -151,17 +142,15 @@ func runTransportRetryChecks(_ check: CheckRunner) async {
                 retryTiming: timing(sleeper: queueSleep)
             ).queue()
         }
-        check.equal("Web queue 429 is one GET", queueTransport.callCount, 1)
-        check.equal("Web queue 429 does not sleep in the generic retry layer", queueSleep.delays, [])
-        check.equal("Web queue 429 is GET", queueTransport.methods, ["GET"])
-        check.equal(
-            "Web queue 429 hits the documented endpoint",
-            queueTransport.urls,
-            [SpotifyWebPlayerAPI.queueURL.absoluteString]
-        )
+        #expect((queueTransport.callCount) == (1), "Web queue 429 is one GET")
+        #expect((queueSleep.delays) == ([]), "Web queue 429 does not sleep in the generic retry layer")
+        #expect((queueTransport.methods) == (["GET"]), "Web queue 429 is GET")
+        #expect(
+            (queueTransport.urls) == ([SpotifyWebPlayerAPI.queueURL.absoluteString]),
+            "Web queue 429 hits the documented endpoint")
     }
 
-    await check.suite("One 401 interacts with the shared budget and cancellation") {
+    do {
         let tokens = CredentialSequence(values: ["access-a", "access-b", "access-c"])
         let clients = CredentialSequence(values: ["client-a", "client-b", "client-c"])
         let invalidatedAccess = RecordingInvalidator()
@@ -179,11 +168,11 @@ func runTransportRetryChecks(_ check: CheckRunner) async {
             transport: mixed.send,
             retryTiming: .immediate
         ).profile()
-        check.equal("401 then 5xx still succeeds within the budget", recovered?.name, "Listener")
-        check.equal("credentials invalidate once", await invalidatedAccess.values, ["access-a"])
-        check.equal("client token invalidates once", await invalidatedClient.values, ["client-a"])
-        check.equal("401 plus transient retry is three attempts", mixed.callCount, 3)
-        check.equal("each attempt signs again", tokens.callCount, 3)
+        #expect((recovered?.name) == ("Listener"), "401 then 5xx still succeeds within the budget")
+        #expect((await invalidatedAccess.values) == (["access-a"]), "credentials invalidate once")
+        #expect((await invalidatedClient.values) == (["client-a"]), "client token invalidates once")
+        #expect((mixed.callCount) == (3), "401 plus transient retry is three attempts")
+        #expect((tokens.callCount) == (3), "each attempt signs again")
 
         let second401 = ScriptedRetryTransport(steps: [
             .http(status: 503),
@@ -207,11 +196,11 @@ func runTransportRetryChecks(_ check: CheckRunner) async {
         } catch let error as PartnerAPIError {
             if case let .requestFailed(code) = error { status = code }
         } catch {
-            check.check("second 401 stays PartnerAPIError, got \(error)", false)
+            #expect((false) == true, "second 401 stays PartnerAPIError, got \(error)")
         }
-        check.equal("a second 401 stops even when budget remains", status, 401)
-        check.equal("a second 401 does not consume a fourth attempt", second401.callCount, 3)
-        check.equal("each 401 names its sent bearer", await accessB.values, ["b", "c"])
+        #expect((status) == (401), "a second 401 stops even when budget remains")
+        #expect((second401.callCount) == (3), "a second 401 does not consume a fourth attempt")
+        #expect((await accessB.values) == (["b", "c"]), "each 401 names its sent bearer")
 
         let sleeper = ParkUntilCancelledSleeper()
         let parked = ScriptedRetryTransport(steps: [
@@ -236,14 +225,14 @@ func runTransportRetryChecks(_ check: CheckRunner) async {
         } catch is CancellationError {
             cancelledDuringBackoff = true
         } catch {
-            check.check("backoff cancellation stays CancellationError, got \(error)", false)
+            #expect((false) == true, "backoff cancellation stays CancellationError, got \(error)")
         }
-        check.check("cancellation during backoff surfaces CancellationError", cancelledDuringBackoff)
-        check.equal("cancellation during backoff does not send the retry", parked.callCount, 1)
-        check.equal("cancellation still recorded the Retry-After delay", sleeper.delays, [5])
+        #expect((cancelledDuringBackoff) == true, "cancellation during backoff surfaces CancellationError")
+        #expect((parked.callCount) == (1), "cancellation during backoff does not send the retry")
+        #expect((sleeper.delays) == ([5]), "cancellation still recorded the Retry-After delay")
     }
 
-    await check.suite("Concurrent 401s keep the rejected identity; mutations do not replay") {
+    do {
         let started = StartedGate(count: 2)
         let current = SharedToken("access-a")
         let invalidatedAccess = RecordingInvalidator()
@@ -271,20 +260,17 @@ func runTransportRetryChecks(_ check: CheckRunner) async {
         async let first = api.profile()
         async let second = api.profile()
         let names = [(try? await first)?.name, (try? await second)?.name]
-        check.check("both concurrent reads succeed", names.allSatisfy { $0 == "Listener" })
-        check.equal(
-            "each concurrent 401 names the rejected bearer",
-            await invalidatedAccess.values,
-            ["access-a", "access-a"]
-        )
-        check.equal("concurrent reads retry independently", concurrent.callCount, 4)
+        #expect((names.allSatisfy { $0 == "Listener" }) == true, "both concurrent reads succeed")
+        #expect(
+            (await invalidatedAccess.values) == (["access-a", "access-a"]),
+            "each concurrent 401 names the rejected bearer")
+        #expect((concurrent.callCount) == (4), "concurrent reads retry independently")
 
         let mutation = ScriptedRetryTransport(steps: [
             .http(status: 503),
             .http(status: 200, body: Data()),
         ])
         await expectThrown(
-            check,
             "PartnerAPI mutations do not replay a lost 5xx",
             PartnerAPIError.requestFailed(503)
         ) {
@@ -293,27 +279,25 @@ func runTransportRetryChecks(_ check: CheckRunner) async {
                 trackUris: ["spotify:track:t"]
             )
         }
-        check.equal("a playlist mutation is one attempt", mutation.callCount, 1)
+        #expect((mutation.callCount) == (1), "a playlist mutation is one attempt")
 
         let libraryWrite = ScriptedRetryTransport(steps: [
             .http(status: 429, headers: ["Retry-After": "2"]),
             .http(status: 200, body: Data()),
         ])
         await expectThrown(
-            check,
             "library mutations do not replay a 429",
             PartnerAPIError.requestFailed(429)
         ) {
             try await partnerAPI(transport: libraryWrite.send).addToLibrary(uris: ["spotify:track:t"])
         }
-        check.equal("a library mutation is one attempt", libraryWrite.callCount, 1)
+        #expect((libraryWrite.callCount) == (1), "a library mutation is one attempt")
 
         let connect = ScriptedRetryTransport(steps: [
             .http(status: 503),
             .http(status: 200, body: Data()),
         ])
         await expectThrown(
-            check,
             "Connect commands do not replay a lost 5xx",
             SpotifyConnectAPIError.requestFailed(503)
         ) {
@@ -326,10 +310,10 @@ func runTransportRetryChecks(_ check: CheckRunner) async {
                 retryTiming: .immediate
             ).send(.pause, from: "source", to: "target")
         }
-        check.equal("a Connect command is one attempt", connect.callCount, 1)
+        #expect((connect.callCount) == (1), "a Connect command is one attempt")
     }
 
-    await check.suite("A budget-final 401 still invalidates the exact sent pair") {
+    do {
         let tokens = CredentialSequence(values: ["access-a", "access-b", "access-c", "access-d"])
         let clients = CredentialSequence(values: ["client-a", "client-b", "client-c", "client-d"])
         let invalidatedAccess = RecordingInvalidator()
@@ -353,13 +337,13 @@ func runTransportRetryChecks(_ check: CheckRunner) async {
         } catch let error as PartnerAPIError {
             if case let .requestFailed(code) = error { fiveStatus = code }
         } catch {
-            check.check("budget-final 401 stays PartnerAPIError, got \(error)", false)
+            #expect((false) == true, "budget-final 401 stays PartnerAPIError, got \(error)")
         }
-        check.equal("5xx then 401 returns the terminal 401", fiveStatus, 401)
-        check.equal("5xx then 401 is three attempts", fiveThen401.callCount, 3)
-        check.equal("the final 401 bearer is invalidated", await invalidatedAccess.values, ["access-c"])
-        check.equal("the final 401 client token is invalidated", await invalidatedClient.values, ["client-c"])
-        check.equal("no fourth credential fetch after the budget-final 401", tokens.callCount, 3)
+        #expect((fiveStatus) == (401), "5xx then 401 returns the terminal 401")
+        #expect((fiveThen401.callCount) == (3), "5xx then 401 is three attempts")
+        #expect((await invalidatedAccess.values) == (["access-c"]), "the final 401 bearer is invalidated")
+        #expect((await invalidatedClient.values) == (["client-c"]), "the final 401 client token is invalidated")
+        #expect((tokens.callCount) == (3), "no fourth credential fetch after the budget-final 401")
 
         let timeoutTokens = CredentialSequence(values: ["timeout-a", "timeout-b", "timeout-c", "timeout-d"])
         let timeoutClients = CredentialSequence(values: ["client-timeout-a", "client-timeout-b", "client-timeout-c"])
@@ -384,17 +368,14 @@ func runTransportRetryChecks(_ check: CheckRunner) async {
         } catch let error as PartnerAPIError {
             if case let .requestFailed(code) = error { timeoutStatus = code }
         } catch {
-            check.check("timeout then 401 stays PartnerAPIError, got \(error)", false)
+            #expect((false) == true, "timeout then 401 stays PartnerAPIError, got \(error)")
         }
-        check.equal("timeout then 401 returns the terminal 401", timeoutStatus, 401)
-        check.equal("timeout then 401 is three attempts", timeoutThen401.callCount, 3)
-        check.equal("the timeout-final 401 bearer is invalidated", await timeoutAccess.values, ["timeout-c"])
-        check.equal(
-            "the timeout-final 401 client token is invalidated",
-            await timeoutClient.values,
-            ["client-timeout-c"]
-        )
-        check.equal("no fourth credential fetch after the timeout-final 401", timeoutTokens.callCount, 3)
+        #expect((timeoutStatus) == (401), "timeout then 401 returns the terminal 401")
+        #expect((timeoutThen401.callCount) == (3), "timeout then 401 is three attempts")
+        #expect((await timeoutAccess.values) == (["timeout-c"]), "the timeout-final 401 bearer is invalidated")
+        #expect(
+            (await timeoutClient.values) == (["client-timeout-c"]), "the timeout-final 401 client token is invalidated")
+        #expect((timeoutTokens.callCount) == (3), "no fourth credential fetch after the timeout-final 401")
 
         let queueTokens = CredentialSequence(values: ["queue-a", "queue-b", "queue-c", "queue-d"])
         let queueAccess = RecordingInvalidator()
@@ -404,7 +385,6 @@ func runTransportRetryChecks(_ check: CheckRunner) async {
             .http(status: 200, body: queueBody),
         ])
         await expectThrown(
-            check,
             "Web queue 503 is not generic-replayed",
             SpotifyWebPlayerAPIError.requestFailed(503)
         ) {
@@ -415,12 +395,12 @@ func runTransportRetryChecks(_ check: CheckRunner) async {
                 retryTiming: .immediate
             ).queue()
         }
-        check.equal("Web queue 503 is one GET", queueTransient.callCount, 1)
-        check.equal("Web queue 503 does not invalidate a bearer", await queueAccess.values, [])
-        check.equal("Web queue 503 does not fetch a replacement bearer", queueTokens.callCount, 1)
+        #expect((queueTransient.callCount) == (1), "Web queue 503 is one GET")
+        #expect((await queueAccess.values) == ([]), "Web queue 503 does not invalidate a bearer")
+        #expect((queueTokens.callCount) == (1), "Web queue 503 does not fetch a replacement bearer")
     }
 
-    await check.suite("Terminal 401 invalidation failures and cancellation do not add a request") {
+    do {
         let tokens = CredentialSequence(values: ["access-a", "access-b", "access-c", "access-d"])
         let clients = CredentialSequence(values: ["client-a", "client-b", "client-c", "client-d"])
         let invalidatedClient = RecordingInvalidator()
@@ -443,16 +423,13 @@ func runTransportRetryChecks(_ check: CheckRunner) async {
         } catch KeymasterSessionError.grantRevoked {
             revoked = true
         } catch {
-            check.check("budget-final bearer throw stays grantRevoked, got \(error)", false)
+            #expect((false) == true, "budget-final bearer throw stays grantRevoked, got \(error)")
         }
-        check.check("a budget-final bearer throw still surfaces grantRevoked", revoked)
-        check.equal(
-            "client token drops before the terminal bearer throw",
-            await invalidatedClient.values,
-            ["client-c"]
-        )
-        check.equal("a terminal bearer throw does not add a request", thrown.callCount, 3)
-        check.equal("a terminal bearer throw does not fetch another credential", tokens.callCount, 3)
+        #expect((revoked) == true, "a budget-final bearer throw still surfaces grantRevoked")
+        #expect(
+            (await invalidatedClient.values) == (["client-c"]), "client token drops before the terminal bearer throw")
+        #expect((thrown.callCount) == (3), "a terminal bearer throw does not add a request")
+        #expect((tokens.callCount) == (3), "a terminal bearer throw does not fetch another credential")
 
         let parkedTokens = CredentialSequence(values: ["park-a", "park-b", "park-c", "park-d"])
         let parkedClients = CredentialSequence(values: ["park-client-a", "park-client-b", "park-client-c"])
@@ -481,22 +458,17 @@ func runTransportRetryChecks(_ check: CheckRunner) async {
         } catch is CancellationError {
             cancelledDuringInvalidation = true
         } catch {
-            check.check("terminal invalidation cancellation stays CancellationError, got \(error)", false)
+            #expect((false) == true, "terminal invalidation cancellation stays CancellationError, got \(error)")
         }
-        check.check(
-            "cancellation during terminal invalidation surfaces CancellationError",
-            cancelledDuringInvalidation
-        )
-        check.equal(
-            "cancellation during terminal invalidation does not add a request",
-            parked.callCount,
-            3
-        )
-        check.equal("cancellation still named the final bearer", await parkedAccess.values, ["park-c"])
-        check.equal("cancellation does not fetch another credential", parkedTokens.callCount, 3)
+        #expect(
+            (cancelledDuringInvalidation) == true,
+            "cancellation during terminal invalidation surfaces CancellationError")
+        #expect((parked.callCount) == (3), "cancellation during terminal invalidation does not add a request")
+        #expect((await parkedAccess.values) == (["park-c"]), "cancellation still named the final bearer")
+        #expect((parkedTokens.callCount) == (3), "cancellation does not fetch another credential")
     }
 
-    await check.suite("Web queue 429 reaches QueueService without generic replay") {
+    do {
         let clock = ControllablePlaybackClock(Date(timeIntervalSince1970: 1_700_000_000))
         let fallback = [
             QueueEntry(uri: "spotify:track:alpha", provider: "connect", occurrence: 0, uid: "uid-alpha"),
@@ -520,19 +492,14 @@ func runTransportRetryChecks(_ check: CheckRunner) async {
             currentTrackURI: "spotify:track:now",
             accountEpoch: 11
         )
-        check.equal("first 429 performs one Web queue call", await webQueue.callCount, 1)
-        check.equal("first 429 falls back to Connect", first?.source, .connect)
-        check.equal("first 429 Connect fallback is complete", first?.completeness, .complete)
-        check.equal(
-            "first 429 preserves Connect order",
-            first?.entries.map(\.uri),
-            ["spotify:track:alpha", "spotify:track:beta"]
-        )
-        check.equal(
-            "first 429 preserves Connect occurrence uids",
-            first?.entries.map(\.uid),
-            ["uid-alpha", "uid-beta"]
-        )
+        #expect((await webQueue.callCount) == (1), "first 429 performs one Web queue call")
+        #expect((first?.source) == (.connect), "first 429 falls back to Connect")
+        #expect((first?.completeness) == (.complete), "first 429 Connect fallback is complete")
+        #expect(
+            (first?.entries.map(\.uri)) == (["spotify:track:alpha", "spotify:track:beta"]),
+            "first 429 preserves Connect order")
+        #expect(
+            (first?.entries.map(\.uid)) == (["uid-alpha", "uid-beta"]), "first 429 preserves Connect occurrence uids")
 
         let second = await limitedService.refresh(
             fallbackEntries: fallback,
@@ -540,14 +507,12 @@ func runTransportRetryChecks(_ check: CheckRunner) async {
             currentTrackURI: "spotify:track:now",
             accountEpoch: 11
         )
-        check.equal("cooldown refresh makes no second Web request", await webQueue.callCount, 1)
-        check.equal("cooldown refresh still uses Connect", second?.source, .connect)
-        check.equal("cooldown refresh stays complete", second?.completeness, .complete)
-        check.equal(
-            "cooldown refresh keeps Connect order",
-            second?.entries.map(\.uri),
-            ["spotify:track:alpha", "spotify:track:beta"]
-        )
+        #expect((await webQueue.callCount) == (1), "cooldown refresh makes no second Web request")
+        #expect((second?.source) == (.connect), "cooldown refresh still uses Connect")
+        #expect((second?.completeness) == (.complete), "cooldown refresh stays complete")
+        #expect(
+            (second?.entries.map(\.uri)) == (["spotify:track:alpha", "spotify:track:beta"]),
+            "cooldown refresh keeps Connect order")
         clock.advance(seconds: 5 * 60 + 1)
         let recovered = await limitedService.refresh(
             fallbackEntries: fallback,
@@ -555,18 +520,14 @@ func runTransportRetryChecks(_ check: CheckRunner) async {
             currentTrackURI: "spotify:track:now",
             accountEpoch: 11
         )
-        check.equal("expired cooldown retries the Web queue once", await webQueue.callCount, 2)
-        check.equal("expired cooldown keeps authoritative Connect order", recovered?.source, .connect)
-        check.equal(
-            "expired cooldown does not let Web reorder Connect entries",
-            recovered?.entries.map(\.uri),
-            ["spotify:track:alpha", "spotify:track:beta"]
-        )
-        check.equal(
-            "expired cooldown preserves Connect occurrence uids",
-            recovered?.entries.map(\.uid),
-            ["uid-alpha", "uid-beta"]
-        )
+        #expect((await webQueue.callCount) == (2), "expired cooldown retries the Web queue once")
+        #expect((recovered?.source) == (.connect), "expired cooldown keeps authoritative Connect order")
+        #expect(
+            (recovered?.entries.map(\.uri)) == (["spotify:track:alpha", "spotify:track:beta"]),
+            "expired cooldown does not let Web reorder Connect entries")
+        #expect(
+            (recovered?.entries.map(\.uid)) == (["uid-alpha", "uid-beta"]),
+            "expired cooldown preserves Connect occurrence uids")
     }
 }
 
@@ -666,35 +627,33 @@ private func timing(
 
 @MainActor
 private func expectThrown<Failure: Error & Equatable>(
-    _ check: CheckRunner,
     _ label: String,
     _ expected: Failure,
     perform: () async throws -> Void
 ) async {
     do {
         try await perform()
-        check.check("\(label) throws", false)
+        #expect((false) == true, "\(label) throws")
     } catch let error as Failure {
-        check.equal(label, error, expected)
+        #expect((error) == (expected), "\(label)")
     } catch {
-        check.check("\(label) throws \(Failure.self), got \(error)", false)
+        #expect((false) == true, "\(label) throws \(Failure.self), got \(error)")
     }
 }
 
 @MainActor
 private func expectURLError(
-    _ check: CheckRunner,
     _ label: String,
     _ code: URLError.Code,
     perform: () async throws -> Void
 ) async {
     do {
         try await perform()
-        check.check("\(label) throws", false)
+        #expect((false) == true, "\(label) throws")
     } catch let error as URLError {
-        check.equal("\(label) keeps URLError.code", error.code, code)
+        #expect((error.code) == (code), "\(label) keeps URLError.code")
     } catch {
-        check.check("\(label) throws URLError, got \(error)", false)
+        #expect((false) == true, "\(label) throws URLError, got \(error)")
     }
 }
 

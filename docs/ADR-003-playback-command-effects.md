@@ -49,9 +49,9 @@ Keep `PlaybackEffectRegistry`. Do not adopt TCA. Do not introduce a generic Effe
   the registry.
 
 Optimistic seek hold, play-target presentation, rollback, and cancellation semantics are proven by
-the `SpottyChecks` suites `PlaybackCommandPresentationChecks`, `PlaybackCommandEffectSpike`,
-`PlaybackCommandLifecycleParityChecks`, `PlaybackCommandFailureChecks`, and the follow-up cases
-in `SessionLifetimeChecks`.
+`testPlaybackCommandPresentation`, `testPlaybackCommandEffectSpike`, `testPlaybackCommandLifecycleParity`,
+`testPlaybackCommandFailure`, and the follow-up cases in `testSessionLifetime` across
+`SpottyDomainTests` and `SpottyBoundaryTests`.
 
 ## Consequences
 

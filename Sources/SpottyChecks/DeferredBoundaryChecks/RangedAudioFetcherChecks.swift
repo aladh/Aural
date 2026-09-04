@@ -1,18 +1,20 @@
+import Testing
 import Foundation
 @testable import SpottyCore
 
+@Test
 @MainActor
-func runRangedAudioFetcherChecks(_ check: CheckRunner) async {
+func testRangedAudioFetcher() async {
     let url = URL(string: "https://audio-ak.spotifycdn.com/audio/fixture")!
 
-    await check.suite("RangedAudioFetcher: open, read, minimum-chunk widening, EOF clamping") {
+    do {
         let openTransport = ScriptedRangedTransport(steps: [
             .response(status: 206, headers: ["Content-Range": "bytes 0-39/40"], body: bytes(0..<40))
         ])
         let opened = try? await RangedAudioFetcher(url: url, transport: openTransport).open()
-        check.equal("open() returns the total length parsed from Content-Range", opened, 40)
-        check.equal("open() fetches exactly one range", openTransport.requestedRanges.count, 1)
-        check.equal("open() requests from byte 0", openTransport.requestedRanges.first?.lowerBound, 0)
+        #expect((opened) == (40), "open() returns the total length parsed from Content-Range")
+        #expect((openTransport.requestedRanges.count) == (1), "open() fetches exactly one range")
+        #expect((openTransport.requestedRanges.first?.lowerBound) == (0), "open() requests from byte 0")
 
         let readWithinTransport = ScriptedRangedTransport(steps: [
             .response(status: 206, headers: ["Content-Range": "bytes 0-39/40"], body: bytes(0..<40))
@@ -20,12 +22,10 @@ func runRangedAudioFetcherChecks(_ check: CheckRunner) async {
         let readWithinFetcher = RangedAudioFetcher(url: url, transport: readWithinTransport)
         _ = try? await readWithinFetcher.open()
         let withinRead = try? await readWithinFetcher.read(offset: 2, length: 4)
-        check.equal("read() inside the downloaded range returns the stored bytes", withinRead, bytes(2..<6))
-        check.equal(
-            "read() inside the downloaded range performs no extra fetch",
-            readWithinTransport.requestedRanges.count,
-            1
-        )
+        #expect((withinRead) == (bytes(2..<6)), "read() inside the downloaded range returns the stored bytes")
+        #expect(
+            (readWithinTransport.requestedRanges.count) == (1),
+            "read() inside the downloaded range performs no extra fetch")
 
         // A file much larger than the minimum chunk: open() fully satisfies its own 64 KiB
         // request in one response, so a later read well past it is a genuine gap, and — being
@@ -41,11 +41,9 @@ func runRangedAudioFetcherChecks(_ check: CheckRunner) async {
         let minimumChunkFetcher = RangedAudioFetcher(url: url, transport: minimumChunkTransport)
         _ = try? await minimumChunkFetcher.open()
         _ = try? await minimumChunkFetcher.read(offset: 70_000, length: 5)
-        check.equal(
-            "a missing read fetches at least the minimum chunk size",
-            minimumChunkTransport.requestedRanges.last,
-            70_000...135_535
-        )
+        #expect(
+            (minimumChunkTransport.requestedRanges.last) == (70_000...135_535),
+            "a missing read fetches at least the minimum chunk size")
 
         // A read that runs past the end of a (larger) file is clamped to the bytes that exist,
         // both in what gets fetched and in what's returned — not widened past the last byte.
@@ -56,16 +54,12 @@ func runRangedAudioFetcherChecks(_ check: CheckRunner) async {
         let clampToEndFetcher = RangedAudioFetcher(url: url, transport: clampToEndTransport)
         _ = try? await clampToEndFetcher.open()
         let clampedRead = try? await clampToEndFetcher.read(offset: 69_990, length: 20)
-        check.equal(
-            "a missing read near the end clamps the fetch to the file's last byte, not past it",
-            clampToEndTransport.requestedRanges.last,
-            69_990...69_999
-        )
-        check.equal(
-            "a read past end of file returns the shorter slice that exists, not a trap",
-            clampedRead,
-            bytes(69_990..<70_000)
-        )
+        #expect(
+            (clampToEndTransport.requestedRanges.last) == (69_990...69_999),
+            "a missing read near the end clamps the fetch to the file's last byte, not past it")
+        #expect(
+            (clampedRead) == (bytes(69_990..<70_000)),
+            "a read past end of file returns the shorter slice that exists, not a trap")
 
         let retrySleeper = RecordingDurationSleeper()
         let retryTransport = ScriptedRangedTransport(steps: [
@@ -74,17 +68,17 @@ func runRangedAudioFetcherChecks(_ check: CheckRunner) async {
         ])
         let retryFetcher = RangedAudioFetcher(url: url, transport: retryTransport, sleep: retrySleeper.sleep)
         let retried = try? await retryFetcher.open()
-        check.equal("a 429 with Retry-After retries and eventually succeeds", retried, 40)
-        check.equal("the retry honours the Retry-After delay", retrySleeper.delays, [.seconds(1)])
+        #expect((retried) == (40), "a 429 with Retry-After retries and eventually succeeds")
+        #expect((retrySleeper.delays) == ([.seconds(1)]), "the retry honours the Retry-After delay")
 
         let forbiddenTransport = ScriptedRangedTransport(steps: [.response(status: 403, headers: [:], body: Data())])
         do {
             _ = try await RangedAudioFetcher(url: url, transport: forbiddenTransport).open()
-            check.check("403 throws forbidden", false)
+            #expect((false) == true, "403 throws forbidden")
         } catch RangedAudioFetcherError.forbidden {
-            check.check("403 throws forbidden", true)
+            #expect((true) == true, "403 throws forbidden")
         } catch {
-            check.check("403 throws forbidden, not \(error)", false)
+            #expect((false) == true, "403 throws forbidden, not \(error)")
         }
 
         // A 200 (server ignored `Range`) is only acceptable for a request that wanted the file
@@ -97,40 +91,40 @@ func runRangedAudioFetcherChecks(_ check: CheckRunner) async {
         _ = try? await unexpectedFetcher.open()
         do {
             _ = try await unexpectedFetcher.read(offset: 69_999, length: 1)
-            check.check("a 200 for a non-zero-offset gap throws unexpectedStatus(200)", false)
+            #expect((false) == true, "a 200 for a non-zero-offset gap throws unexpectedStatus(200)")
         } catch RangedAudioFetcherError.unexpectedStatus(200) {
-            check.check("a 200 for a non-zero-offset gap throws unexpectedStatus(200)", true)
+            #expect((true) == true, "a 200 for a non-zero-offset gap throws unexpectedStatus(200)")
         } catch {
-            check.check("a 200 for a non-zero-offset gap throws unexpectedStatus(200), not \(error)", false)
+            #expect((false) == true, "a 200 for a non-zero-offset gap throws unexpectedStatus(200), not \(error)")
         }
     }
 
-    await check.suite("RangedAudioFetcher: invalid ranges") {
-        await expectThrown(check, "negative offset", .invalidRange) {
+    do {
+        await expectThrown("negative offset", .invalidRange) {
             _ = try await RangedAudioFetcher(url: url, transport: ScriptedRangedTransport(steps: [])).read(
                 offset: -1,
                 length: 5
             )
         }
-        await expectThrown(check, "negative length", .invalidRange) {
+        await expectThrown("negative length", .invalidRange) {
             _ = try await RangedAudioFetcher(url: url, transport: ScriptedRangedTransport(steps: [])).read(
                 offset: 5,
                 length: -1
             )
         }
-        await expectThrown(check, "offset+length overflow", .invalidRange) {
+        await expectThrown("offset+length overflow", .invalidRange) {
             _ = try await RangedAudioFetcher(url: url, transport: ScriptedRangedTransport(steps: [])).read(
                 offset: Int.max - 2,
                 length: 10
             )
         }
-        await expectThrown(check, "prefetch with a negative offset", .invalidRange) {
+        await expectThrown("prefetch with a negative offset", .invalidRange) {
             try await RangedAudioFetcher(url: url, transport: ScriptedRangedTransport(steps: [])).prefetch(
                 from: -1,
                 upTo: 5
             )
         }
-        await expectThrown(check, "prefetch with end before offset", .invalidRange) {
+        await expectThrown("prefetch with end before offset", .invalidRange) {
             try await RangedAudioFetcher(url: url, transport: ScriptedRangedTransport(steps: [])).prefetch(
                 from: 10,
                 upTo: 5
@@ -140,8 +134,8 @@ func runRangedAudioFetcherChecks(_ check: CheckRunner) async {
         let noFetchTransport = ScriptedRangedTransport(steps: [])
         let noFetchFetcher = RangedAudioFetcher(url: url, transport: noFetchTransport)
         let zeroLengthRead = try? await noFetchFetcher.read(offset: 0, length: 0)
-        check.equal("a zero-length read returns empty data before any fetch", zeroLengthRead, Data())
-        check.equal("validation happens before any fetch is attempted", noFetchTransport.requestedRanges.count, 0)
+        #expect((zeroLengthRead) == (Data()), "a zero-length read returns empty data before any fetch")
+        #expect((noFetchTransport.requestedRanges.count) == (0), "validation happens before any fetch is attempted")
 
         let pastEndTransport = ScriptedRangedTransport(steps: [
             .response(status: 206, headers: ["Content-Range": "bytes 0-39/40"], body: bytes(0..<40))
@@ -150,20 +144,18 @@ func runRangedAudioFetcherChecks(_ check: CheckRunner) async {
         _ = try? await pastEndFetcher.open()
         do {
             _ = try await pastEndFetcher.read(offset: 40, length: 1)
-            check.check("an offset at the file's total length throws invalidRange", false)
+            #expect((false) == true, "an offset at the file's total length throws invalidRange")
         } catch RangedAudioFetcherError.invalidRange {
-            check.check("an offset at the file's total length throws invalidRange", true)
+            #expect((true) == true, "an offset at the file's total length throws invalidRange")
         } catch {
-            check.check("an offset at the file's total length throws invalidRange, not \(error)", false)
+            #expect((false) == true, "an offset at the file's total length throws invalidRange, not \(error)")
         }
-        check.equal(
-            "rejecting an out-of-range offset issues no additional fetch",
-            pastEndTransport.requestedRanges.count,
-            1
-        )
+        #expect(
+            (pastEndTransport.requestedRanges.count) == (1),
+            "rejecting an out-of-range offset issues no additional fetch")
     }
 
-    await check.suite("RangedAudioFetcher: sparse store gap-filling and coalescing") {
+    do {
         let transport = ScriptedRangedTransport(steps: [
             .response(status: 206, headers: ["Content-Range": "bytes 0-65535/200000"], body: bytes(0..<65536)),
             .response(
@@ -176,29 +168,23 @@ func runRangedAudioFetcherChecks(_ check: CheckRunner) async {
         _ = try? await fetcher.open()
 
         try? await fetcher.prefetch(from: 0, upTo: 131_071)
-        check.equal(
-            "prefetch to a horizon after open() fetches only the missing tail range",
-            transport.requestedRanges,
-            [0...65_535, 65_536...131_071]
-        )
+        #expect(
+            (transport.requestedRanges) == ([0...65_535, 65_536...131_071]),
+            "prefetch to a horizon after open() fetches only the missing tail range")
 
         try? await fetcher.prefetch(from: 0, upTo: 131_071)
-        check.equal(
-            "two adjacent stores coalesce: a repeat prefetch over the same range issues no request",
-            transport.requestedRanges.count,
-            2
-        )
+        #expect(
+            (transport.requestedRanges.count) == (2),
+            "two adjacent stores coalesce: a repeat prefetch over the same range issues no request")
 
         let alreadyDownloaded = try? await fetcher.read(offset: 100, length: 50)
-        check.equal(
-            "a read of an already-downloaded interval returns the bytes with no extra fetch",
-            alreadyDownloaded,
-            bytes(100..<150)
-        )
-        check.equal("no extra fetch was issued", transport.requestedRanges.count, 2)
+        #expect(
+            (alreadyDownloaded) == (bytes(100..<150)),
+            "a read of an already-downloaded interval returns the bytes with no extra fetch")
+        #expect((transport.requestedRanges.count) == (2), "no extra fetch was issued")
     }
 
-    await check.suite("RangedAudioFetcher: prefetch(from:upTo:) never fills from file start unless asked") {
+    do {
         let transport = ScriptedRangedTransport(steps: [
             .response(status: 206, headers: ["Content-Range": "bytes 0-65535/200000"], body: bytes(0..<65536)),
             .response(
@@ -213,19 +199,14 @@ func runRangedAudioFetcherChecks(_ check: CheckRunner) async {
         // learn it), but the window it actually fetches for the request itself starts at
         // 70,000, not back at the start of the file.
         try? await fetcher.prefetch(from: 70_000, upTo: 70_010)
-        check.equal(
-            "prefetch(from:upTo:) fetches the requested window, not the whole file from 0",
-            transport.requestedRanges.last,
-            70_000...135_535
-        )
-        check.equal(
-            "only the bootstrap open() and the requested window were fetched",
-            transport.requestedRanges.count,
-            2
-        )
+        #expect(
+            (transport.requestedRanges.last) == (70_000...135_535),
+            "prefetch(from:upTo:) fetches the requested window, not the whole file from 0")
+        #expect(
+            (transport.requestedRanges.count) == (2), "only the bootstrap open() and the requested window were fetched")
     }
 
-    await check.suite("RangedAudioFetcher: a capped 206 response is followed until the request is covered") {
+    do {
         // The CDN can return less than requested in a single 206 even when more of the file
         // remains; `fetchAndStore` must keep asking for the rest. Setting up a stored segment
         // starting at byte 10 (via a first response that itself, unusually, starts partway
@@ -241,32 +222,28 @@ func runRangedAudioFetcherChecks(_ check: CheckRunner) async {
         _ = try? await fetcher.open()
 
         let firstByte = try? await fetcher.read(offset: 0, length: 1)
-        check.equal("the gap fills in via continuation and the byte reads back correctly", firstByte, bytes(0..<1))
-        check.equal(
-            "the widened request for the gap is capped at the next stored segment (byte 9)",
-            transport.requestedRanges[1],
-            0...9
-        )
-        check.equal(
-            "a 206 covering less than requested causes a follow-up request for the remainder",
-            transport.requestedRanges[2],
-            5...9
-        )
+        #expect((firstByte) == (bytes(0..<1)), "the gap fills in via continuation and the byte reads back correctly")
+        #expect(
+            (transport.requestedRanges[1]) == (0...9),
+            "the widened request for the gap is capped at the next stored segment (byte 9)")
+        #expect(
+            (transport.requestedRanges[2]) == (5...9),
+            "a 206 covering less than requested causes a follow-up request for the remainder")
 
         let mismatchedTransport = ScriptedRangedTransport(steps: [
             .response(status: 206, headers: ["Content-Range": "bytes 0-9/40"], body: bytes(0..<3))
         ])
-        await expectThrown(check, "a body shorter than Content-Range claims", .unparseableContentRange) {
+        await expectThrown("a body shorter than Content-Range claims", .unparseableContentRange) {
             _ = try await RangedAudioFetcher(url: url, transport: mismatchedTransport).open()
         }
     }
 
-    await check.suite("RangedAudioFetcher: header lookups are case-insensitive") {
+    do {
         let lowercaseTransport = ScriptedRangedTransport(steps: [
             .response(status: 206, headers: ["content-range": "bytes 0-9/10"], body: bytes(0..<10))
         ])
         let opened = try? await RangedAudioFetcher(url: url, transport: lowercaseTransport).open()
-        check.equal("a lowercase content-range header still parses", opened, 10)
+        #expect((opened) == (10), "a lowercase content-range header still parses")
 
         let pastDateSleeper = RecordingDurationSleeper()
         let pastDateTransport = ScriptedRangedTransport(steps: [
@@ -275,8 +252,8 @@ func runRangedAudioFetcherChecks(_ check: CheckRunner) async {
         ])
         let pastDateFetcher = RangedAudioFetcher(url: url, transport: pastDateTransport, sleep: pastDateSleeper.sleep)
         let pastDateOpened = try? await pastDateFetcher.open()
-        check.equal("a 429 with a past HTTP-date Retry-After still succeeds", pastDateOpened, 10)
-        check.equal("a past HTTP-date Retry-After retries with no delay", pastDateSleeper.delays, [.seconds(0)])
+        #expect((pastDateOpened) == (10), "a 429 with a past HTTP-date Retry-After still succeeds")
+        #expect((pastDateSleeper.delays) == ([.seconds(0)]), "a past HTTP-date Retry-After retries with no delay")
     }
 }
 
@@ -287,18 +264,17 @@ private func bytes(_ range: Range<Int>) -> Data {
 
 @MainActor
 private func expectThrown(
-    _ check: CheckRunner,
     _ label: String,
     _ expected: RangedAudioFetcherError,
     perform: () async throws -> Void
 ) async {
     do {
         try await perform()
-        check.check("\(label) throws", false)
+        #expect((false) == true, "\(label) throws")
     } catch let error as RangedAudioFetcherError {
-        check.equal(label, error, expected)
+        #expect((error) == (expected), "\(label)")
     } catch {
-        check.check("\(label) throws RangedAudioFetcherError, got \(error)", false)
+        #expect((false) == true, "\(label) throws RangedAudioFetcherError, got \(error)")
     }
 }
 

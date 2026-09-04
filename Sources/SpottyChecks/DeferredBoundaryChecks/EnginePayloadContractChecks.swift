@@ -1,28 +1,34 @@
+import Testing
 import Foundation
 @testable import SpottyCore
 
+@Test
 @MainActor
-func runEnginePayloadContractChecks(_ check: CheckRunner) {
-    check.suite("Connection snapshot intake source contract") {
-        check.noThrow("connection intake projects session phase at the envelope") {
-            let engineEvents = try spottySourceFile("Spotty/Spotify/PlaybackStore+EngineEvents.swift")
-            let dto = try spottySourceFile("Spotty/Spotify/PlaybackStore.swift")
-            let account = try spottySourceFile("Spotty/Spotify/AccountStore.swift")
-            let projection = try spottySourceFile("SpottyDomain/ConnectionSnapshotProjection.swift")
-            check.check(
-                "Connect intake projects connection session at the envelope, not on the DTO",
-                containsToken(engineEvents, "ConnectionSnapshotProjection.sessionPhase(")
-                    && containsToken(engineEvents, "ConnectionSnapshotProjection.resolvedDeviceID(")
-                    && containsToken(engineEvents, "localDeviceName: thisDeviceName")
-                    && containsToken(engineEvents, "accountStore.receiveEngineConnection(session)")
-                    && containsToken(dto, "let thisDeviceName = \"This Mac\"")
-                    && !containsToken(dto, "var thisDeviceName")
-                    && !containsToken(dto, "deviceName")
-                    && containsToken(account, "func receiveEngineConnection(_ session: PlaybackSessionPhase?)")
-                    && !containsToken(account, "if connected, ready")
-                    && containsToken(projection, "public static func sessionPhase")
-                    && containsToken(projection, "public static func resolvedDeviceID")
-            )
+func testEnginePayloadContract() {
+    do {
+        do {
+            do {
+                let engineEvents = try spottySourceFile("Spotty/Spotify/PlaybackStore+EngineEvents.swift")
+                let dto = try spottySourceFile("Spotty/Spotify/PlaybackStore.swift")
+                let account = try spottySourceFile("Spotty/Spotify/AccountStore.swift")
+                let projection = try spottySourceFile("SpottyDomain/ConnectionSnapshotProjection.swift")
+                #expect(
+                    (containsToken(engineEvents, "ConnectionSnapshotProjection.sessionPhase(")
+                        && containsToken(engineEvents, "ConnectionSnapshotProjection.resolvedDeviceID(")
+                        && containsToken(engineEvents, "localDeviceName: thisDeviceName")
+                        && containsToken(engineEvents, "accountStore.receiveEngineConnection(session)")
+                        && containsToken(dto, "let thisDeviceName = \"This Mac\"")
+                        && !containsToken(dto, "var thisDeviceName")
+                        && !containsToken(dto, "deviceName")
+                        && containsToken(account, "func receiveEngineConnection(_ session: PlaybackSessionPhase?)")
+                        && !containsToken(account, "if connected, ready")
+                        && containsToken(projection, "public static func sessionPhase")
+                        && containsToken(projection, "public static func resolvedDeviceID")) == true,
+                    "Connect intake projects connection session at the envelope, not on the DTO")
+
+            } catch {
+                Issue.record("\("connection intake projects session phase at the envelope"): unexpected error \(error)")
+            }
         }
     }
 }

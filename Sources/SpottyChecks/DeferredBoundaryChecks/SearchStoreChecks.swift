@@ -1,3 +1,4 @@
+import Testing
 import SpottyDomain
 import Foundation
 @testable import SpottyCore
@@ -93,247 +94,202 @@ private func commitImmediateSearch(
     return true
 }
 
+@Test
 @MainActor
-func runSearchStoreChecks(_ runner: CheckRunner) async {
+func testSearchStore() async {
     let first: PathfinderTrack
     let second: PathfinderTrack
     do {
         first = try decodeTrack(firstTrackJSON)
         second = try decodeTrack(secondTrackJSON)
     } catch {
-        runner.check("synthetic search fixtures decode", false)
+        #expect((false) == true, "synthetic search fixtures decode")
         return
     }
 
-    await runner.suite("Search debounce pre-deadline cancellation") {
+    do {
         let provider = GatedSearchCatalog()
         let session = CatalogSessionAvailability(accountEpoch: 1, isAvailable: true)
         let clock = CooperativeParkedClock()
         let store = makeStore(provider: provider, session: session, clock: clock)
 
-        runner.check(
-            "seeded results commit immediately",
-            await commitImmediateSearch(store, provider: provider, query: "alpha", tracks: [first])
-        )
-        runner.equal(
-            "committed tracks stay visible before a later query is admitted", store.tracks.map(\.uri),
-            [
-                "spotify:track:first"
-            ])
-        runner.check("seeded search is not left searching", !store.isSearching)
+        #expect(
+            (await commitImmediateSearch(store, provider: provider, query: "alpha", tracks: [first])) == true,
+            "seeded results commit immediately")
+        #expect(
+            (store.tracks.map(\.uri))
+                == ([
+                    "spotify:track:first"
+                ]), "committed tracks stay visible before a later query is admitted")
+        #expect((!store.isSearching) == true, "seeded search is not left searching")
 
         let pending = Task { await store.scheduleSearch("beta") }
-        runner.check(
-            "the debounce clock parks before admission",
-            await waitUntil { clock.waiterCount == 1 }
-        )
-        runner.equal(
-            "debounce asks for the catalog admission delay",
-            clock.requestedSleeps,
-            [SearchStore.queryAdmissionDelay]
-        )
-        runner.check("debounce does not publish isSearching before admission", !store.isSearching)
-        runner.equal("debounce does not start a catalog fetch before admission", await provider.requestCount, 1)
-        runner.equal(
-            "committed results survive a query that has not been admitted",
-            store.tracks.map(\.uri),
-            ["spotify:track:first"]
-        )
+        #expect((await waitUntil { clock.waiterCount == 1 }) == true, "the debounce clock parks before admission")
+        #expect(
+            (clock.requestedSleeps) == ([SearchStore.queryAdmissionDelay]),
+            "debounce asks for the catalog admission delay")
+        #expect((!store.isSearching) == true, "debounce does not publish isSearching before admission")
+        #expect((await provider.requestCount) == (1), "debounce does not start a catalog fetch before admission")
+        #expect(
+            (store.tracks.map(\.uri)) == (["spotify:track:first"]),
+            "committed results survive a query that has not been admitted")
 
         pending.cancel()
         await pending.value
-        runner.equal("cancelled debounce never starts a fetch", await provider.requestCount, 1)
-        runner.equal(
-            "cancelled debounce leaves committed results",
-            store.tracks.map(\.uri),
-            ["spotify:track:first"]
-        )
-        runner.check("cancelled debounce does not publish isSearching", !store.isSearching)
-        runner.equal("cancelled debounce leaves no clock waiter", clock.waiterCount, 0)
+        #expect((await provider.requestCount) == (1), "cancelled debounce never starts a fetch")
+        #expect((store.tracks.map(\.uri)) == (["spotify:track:first"]), "cancelled debounce leaves committed results")
+        #expect((!store.isSearching) == true, "cancelled debounce does not publish isSearching")
+        #expect((clock.waiterCount) == (0), "cancelled debounce leaves no clock waiter")
     }
 
-    await runner.suite("Search debounce exact admission") {
+    do {
         let provider = GatedSearchCatalog()
         let session = CatalogSessionAvailability(accountEpoch: 1, isAvailable: true)
         let clock = CooperativeParkedClock()
         let store = makeStore(provider: provider, session: session, clock: clock)
 
         let pending = Task { await store.scheduleSearch("  beta  ") }
-        runner.check(
-            "admission waits on the injected clock",
-            await waitUntil { clock.waiterCount == 1 }
-        )
-        runner.check("exact admission has not fetched yet", await provider.requestCount == 0)
-        runner.check("exact admission has not published isSearching yet", !store.isSearching)
+        #expect((await waitUntil { clock.waiterCount == 1 }) == true, "admission waits on the injected clock")
+        #expect((await provider.requestCount == 0) == true, "exact admission has not fetched yet")
+        #expect((!store.isSearching) == true, "exact admission has not published isSearching yet")
 
         clock.releaseAll()
-        runner.check(
-            "exact admission starts the trimmed query",
-            await waitUntil { await provider.trackQueries == ["beta"] }
-        )
-        runner.check("admitted search publishes isSearching", store.isSearching)
+        #expect(
+            (await waitUntil { await provider.trackQueries == ["beta"] }) == true,
+            "exact admission starts the trimmed query")
+        #expect((store.isSearching) == true, "admitted search publishes isSearching")
         await provider.completeNext(.tracks([second]))
         await pending.value
-        runner.equal(
-            "admitted search publishes the current query", store.tracks.map(\.uri),
-            [
-                "spotify:track:second"
-            ])
-        runner.check("admitted search clears isSearching", !store.isSearching)
-        runner.equal("admitted search leaves no clock waiter", clock.waiterCount, 0)
+        #expect(
+            (store.tracks.map(\.uri))
+                == ([
+                    "spotify:track:second"
+                ]), "admitted search publishes the current query")
+        #expect((!store.isSearching) == true, "admitted search clears isSearching")
+        #expect((clock.waiterCount) == (0), "admitted search leaves no clock waiter")
     }
 
-    await runner.suite("Search debounce rapid query supersession") {
+    do {
         let provider = GatedSearchCatalog()
         let session = CatalogSessionAvailability(accountEpoch: 1, isAvailable: true)
         let clock = CooperativeParkedClock()
         let store = makeStore(provider: provider, session: session, clock: clock)
 
         let firstQuery = Task { await store.scheduleSearch("alpha") }
-        runner.check(
-            "the first query parks on the clock",
-            await waitUntil { clock.waiterCount == 1 }
-        )
+        #expect((await waitUntil { clock.waiterCount == 1 }) == true, "the first query parks on the clock")
         let secondQuery = Task { await store.scheduleSearch("beta") }
-        runner.check(
-            "the newer query replaces the parked timer",
-            await waitUntil { clock.waiterCount == 1 && clock.requestedSleeps.count == 2 }
-        )
+        #expect(
+            (await waitUntil { clock.waiterCount == 1 && clock.requestedSleeps.count == 2 }) == true,
+            "the newer query replaces the parked timer")
         await firstQuery.value
-        runner.equal("the superseded timer never fetched", await provider.requestCount, 0)
+        #expect((await provider.requestCount) == (0), "the superseded timer never fetched")
 
         clock.releaseAll()
-        runner.check(
-            "only the latest query is admitted",
-            await waitUntil { await provider.trackQueries == ["beta"] }
-        )
+        #expect(
+            (await waitUntil { await provider.trackQueries == ["beta"] }) == true, "only the latest query is admitted")
         await provider.completeNext(.tracks([second]))
         await secondQuery.value
-        runner.equal(
-            "supersession publishes the latest query", store.tracks.map(\.uri),
-            [
-                "spotify:track:second"
-            ])
-        runner.equal("supersession fetches once", await provider.requestCount, 1)
+        #expect(
+            (store.tracks.map(\.uri))
+                == ([
+                    "spotify:track:second"
+                ]), "supersession publishes the latest query")
+        #expect((await provider.requestCount) == (1), "supersession fetches once")
     }
 
-    await runner.suite("Search debounce reset disconnect and stale identity") {
+    do {
         let provider = GatedSearchCatalog()
         let session = CatalogSessionAvailability(accountEpoch: 1, isAvailable: true)
         let clock = CooperativeParkedClock()
         let store = makeStore(provider: provider, session: session, clock: clock)
 
-        runner.check(
-            "reset fixture commits",
-            await commitImmediateSearch(store, provider: provider, query: "alpha", tracks: [first])
-        )
+        #expect(
+            (await commitImmediateSearch(store, provider: provider, query: "alpha", tracks: [first])) == true,
+            "reset fixture commits")
 
         let resetPending = Task { await store.scheduleSearch("beta") }
-        runner.check(
-            "reset parks the later query",
-            await waitUntil { clock.waiterCount == 1 }
-        )
+        #expect((await waitUntil { clock.waiterCount == 1 }) == true, "reset parks the later query")
         store.reset()
-        runner.check("reset clears committed results immediately", store.isEmpty)
+        #expect((store.isEmpty) == true, "reset clears committed results immediately")
         clock.releaseAll()
         await resetPending.value
-        runner.equal("reset prevents the parked timer from fetching", await provider.requestCount, 1)
-        runner.check("reset leaves the store empty", store.isEmpty)
+        #expect((await provider.requestCount) == (1), "reset prevents the parked timer from fetching")
+        #expect((store.isEmpty) == true, "reset leaves the store empty")
 
         let disconnectPending = Task { await store.scheduleSearch("gamma") }
-        runner.check(
-            "disconnect parks before session change",
-            await waitUntil { clock.waiterCount == 1 }
-        )
+        #expect((await waitUntil { clock.waiterCount == 1 }) == true, "disconnect parks before session change")
         session.update(accountEpoch: 1, isAvailable: false)
         clock.releaseAll()
         await disconnectPending.value
-        runner.equal("a session change refuses the parked timer", await provider.requestCount, 1)
-        runner.check("a refused timer does not publish isSearching", !store.isSearching)
+        #expect((await provider.requestCount) == (1), "a session change refuses the parked timer")
+        #expect((!store.isSearching) == true, "a refused timer does not publish isSearching")
 
         session.update(accountEpoch: 2, isAvailable: true)
         let stale = Task { await store.search("delta") }
-        runner.check(
-            "stale identity parks the fetch",
-            await waitUntil { await provider.requestCount == 2 }
-        )
+        #expect((await waitUntil { await provider.requestCount == 2 }) == true, "stale identity parks the fetch")
         session.update(accountEpoch: 3, isAvailable: true)
         await provider.completeNext(.tracks([second]))
         await stale.value
-        runner.check("a stale success does not publish", store.isEmpty)
-        runner.check("a stale success is not left searching", !store.isSearching)
+        #expect((store.isEmpty) == true, "a stale success does not publish")
+        #expect((!store.isSearching) == true, "a stale success is not left searching")
     }
 
-    await runner.suite("Search immediate retry skips debounce") {
+    do {
         let provider = GatedSearchCatalog()
         let session = CatalogSessionAvailability(accountEpoch: 1, isAvailable: true)
         let clock = CooperativeParkedClock()
         let store = makeStore(provider: provider, session: session, clock: clock)
 
         let scheduled = Task { await store.scheduleSearch("retry") }
-        runner.check(
-            "retry parks the view-driven timer",
-            await waitUntil { clock.waiterCount == 1 }
-        )
+        #expect((await waitUntil { clock.waiterCount == 1 }) == true, "retry parks the view-driven timer")
 
         let retry = Task { await store.search("retry") }
-        runner.check(
-            "Try Again fetches without waiting for the clock",
-            await waitUntil { await provider.trackQueries == ["retry"] }
-        )
-        runner.equal(
-            "immediate retry uses one sleep from the cancelled timer", clock.requestedSleeps,
-            [
-                SearchStore.queryAdmissionDelay
-            ])
+        #expect(
+            (await waitUntil { await provider.trackQueries == ["retry"] }) == true,
+            "Try Again fetches without waiting for the clock")
+        #expect(
+            (clock.requestedSleeps)
+                == ([
+                    SearchStore.queryAdmissionDelay
+                ]), "immediate retry uses one sleep from the cancelled timer")
         await provider.completeNext(.tracks([first]))
         await retry.value
-        runner.equal("immediate retry publishes", store.tracks.map(\.uri), ["spotify:track:first"])
+        #expect((store.tracks.map(\.uri)) == (["spotify:track:first"]), "immediate retry publishes")
 
         clock.releaseAll()
         await scheduled.value
-        runner.equal("a later timer does not fetch after Try Again", await provider.requestCount, 1)
-        runner.equal(
-            "a later timer does not replace retry results", store.tracks.map(\.uri),
-            [
-                "spotify:track:first"
-            ])
+        #expect((await provider.requestCount) == (1), "a later timer does not fetch after Try Again")
+        #expect(
+            (store.tracks.map(\.uri))
+                == ([
+                    "spotify:track:first"
+                ]), "a later timer does not replace retry results")
     }
 
-    await runner.suite("Search debounce empty query") {
+    do {
         let provider = GatedSearchCatalog()
         let session = CatalogSessionAvailability(accountEpoch: 1, isAvailable: true)
         let clock = CooperativeParkedClock()
         let store = makeStore(provider: provider, session: session, clock: clock)
 
-        runner.check(
-            "empty-query fixture commits",
-            await commitImmediateSearch(store, provider: provider, query: "alpha", tracks: [first])
-        )
+        #expect(
+            (await commitImmediateSearch(store, provider: provider, query: "alpha", tracks: [first])) == true,
+            "empty-query fixture commits")
 
         let cancelledEmpty = Task { await store.scheduleSearch("   ") }
-        runner.check(
-            "empty query parks before admission",
-            await waitUntil { clock.waiterCount == 1 }
-        )
+        #expect((await waitUntil { clock.waiterCount == 1 }) == true, "empty query parks before admission")
         cancelledEmpty.cancel()
         await cancelledEmpty.value
-        runner.equal(
-            "cancelled empty query leaves committed results",
-            store.tracks.map(\.uri),
-            ["spotify:track:first"]
-        )
-        runner.equal("cancelled empty query does not fetch", await provider.requestCount, 1)
+        #expect(
+            (store.tracks.map(\.uri)) == (["spotify:track:first"]), "cancelled empty query leaves committed results")
+        #expect((await provider.requestCount) == (1), "cancelled empty query does not fetch")
 
         let admittedEmpty = Task { await store.scheduleSearch("\n\t") }
-        runner.check(
-            "admitted empty query parks",
-            await waitUntil { clock.waiterCount == 1 }
-        )
+        #expect((await waitUntil { clock.waiterCount == 1 }) == true, "admitted empty query parks")
         clock.releaseAll()
         await admittedEmpty.value
-        runner.check("admitted empty query clears committed results", store.isEmpty)
-        runner.equal("admitted empty query does not fetch", await provider.requestCount, 1)
-        runner.check("admitted empty query is not left searching", !store.isSearching)
+        #expect((store.isEmpty) == true, "admitted empty query clears committed results")
+        #expect((await provider.requestCount) == (1), "admitted empty query does not fetch")
+        #expect((!store.isSearching) == true, "admitted empty query is not left searching")
     }
 }

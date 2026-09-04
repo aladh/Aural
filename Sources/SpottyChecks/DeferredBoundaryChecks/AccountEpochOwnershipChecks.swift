@@ -1,3 +1,4 @@
+import Testing
 import SpottyDomain
 import Foundation
 @testable import SpottyCore
@@ -207,9 +208,10 @@ private func playbackStoreWritableAccountEpochMutations(_ source: String) -> [St
     }
 }
 
+@Test
 @MainActor
-func runAccountEpochOwnershipChecks(_ runner: CheckRunner) async {
-    await runner.suite("AccountStore is the single writable account-epoch owner") {
+func testAccountEpochOwnership() async {
+    do {
         let engine = EpochEngine()
         let account = EpochAccount()
         let player = PlaybackStore(
@@ -218,22 +220,22 @@ func runAccountEpochOwnershipChecks(_ runner: CheckRunner) async {
         )
         await player.restore()
         let start = player.accountStore.epoch
-        runner.equal("restore keeps the initial account identity", start, 1)
-        runner.equal("the store projection matches AccountStore", player.accountEpoch, start)
-        runner.equal("reducer state starts on the same epoch", player.state.accountEpoch, start)
+        #expect((start) == (1), "restore keeps the initial account identity")
+        #expect((player.accountEpoch) == (start), "the store projection matches AccountStore")
+        #expect((player.state.accountEpoch) == (start), "reducer state starts on the same epoch")
 
         await player.logout()
         let afterLogout = player.accountStore.epoch
-        runner.equal("ordinary teardown advances AccountStore once", afterLogout, start + 1)
-        runner.equal("PlaybackStore projects that exact epoch", player.accountEpoch, afterLogout)
-        runner.equal("reducer state adopts that exact epoch", player.state.accountEpoch, afterLogout)
-        runner.equal("catalog session observes that exact epoch", player.catalogSession.accountEpoch, afterLogout)
-        runner.equal("QueueService reset uses that exact epoch", await player.queueService.accountEpoch, afterLogout)
-        runner.equal("logout still shuts the engine down once", engine.count("shutdown"), 1)
-        runner.equal("logout still clears the grant once", account.clearCount, 1)
+        #expect((afterLogout) == (start + 1), "ordinary teardown advances AccountStore once")
+        #expect((player.accountEpoch) == (afterLogout), "PlaybackStore projects that exact epoch")
+        #expect((player.state.accountEpoch) == (afterLogout), "reducer state adopts that exact epoch")
+        #expect((player.catalogSession.accountEpoch) == (afterLogout), "catalog session observes that exact epoch")
+        #expect((await player.queueService.accountEpoch) == (afterLogout), "QueueService reset uses that exact epoch")
+        #expect((engine.count("shutdown")) == (1), "logout still shuts the engine down once")
+        #expect((account.clearCount) == (1), "logout still clears the grant once")
     }
 
-    await runner.suite("Coalesced teardown upgrades without a second epoch bump") {
+    do {
         let engine = EpochEngine()
         let account = EpochAccount()
         account.parkClear = true
@@ -245,33 +247,33 @@ func runAccountEpochOwnershipChecks(_ runner: CheckRunner) async {
         let start = player.accountStore.epoch
 
         let logout = Task { await player.logout() }
-        runner.check("logout reaches grant clear", await waitUntil { account.isClearParked })
+        #expect((await waitUntil { account.isClearParked }) == true, "logout reaches grant clear")
         let duringTeardown = player.accountStore.epoch
-        runner.equal("the in-flight teardown already advanced AccountStore once", duringTeardown, start + 1)
-        runner.equal("projection matches during the parked teardown", player.accountEpoch, duringTeardown)
-        runner.equal("reducer already adopted the teardown epoch", player.state.accountEpoch, duringTeardown)
-        runner.equal("catalog already observes the teardown epoch", player.catalogSession.accountEpoch, duringTeardown)
-        runner.check(
-            "QueueService already reset to the teardown epoch",
-            await waitUntil { await player.queueService.accountEpoch == duringTeardown }
-        )
+        #expect((duringTeardown) == (start + 1), "the in-flight teardown already advanced AccountStore once")
+        #expect((player.accountEpoch) == (duringTeardown), "projection matches during the parked teardown")
+        #expect((player.state.accountEpoch) == (duringTeardown), "reducer already adopted the teardown epoch")
+        #expect((player.catalogSession.accountEpoch) == (duringTeardown), "catalog already observes the teardown epoch")
+        #expect(
+            (await waitUntil { await player.queueService.accountEpoch == duringTeardown }) == true,
+            "QueueService already reset to the teardown epoch")
 
         let upgrade = Task { await player.handleGrantRevocation() }
         for _ in 0..<20 { await Task.yield() }
-        runner.equal(
-            "an overlapping revocation does not advance the epoch again", player.accountStore.epoch, duringTeardown)
-        runner.equal("projection is unchanged after the upgrade", player.accountEpoch, duringTeardown)
-        runner.equal("reducer epoch is unchanged after the upgrade", player.state.accountEpoch, duringTeardown)
+        #expect(
+            (player.accountStore.epoch) == (duringTeardown),
+            "an overlapping revocation does not advance the epoch again")
+        #expect((player.accountEpoch) == (duringTeardown), "projection is unchanged after the upgrade")
+        #expect((player.state.accountEpoch) == (duringTeardown), "reducer epoch is unchanged after the upgrade")
 
         account.completeClear()
         await logout.value
         await upgrade.value
-        runner.equal("the completed coalesced teardown still advanced once", player.accountStore.epoch, start + 1)
-        runner.equal("grant clear still happens once", account.clearCount, 1)
-        runner.equal("engine shutdown still happens once", engine.count("shutdown"), 1)
+        #expect((player.accountStore.epoch) == (start + 1), "the completed coalesced teardown still advanced once")
+        #expect((account.clearCount) == (1), "grant clear still happens once")
+        #expect((engine.count("shutdown")) == (1), "engine shutdown still happens once")
     }
 
-    await runner.suite("Process termination advances the epoch once through AccountStore") {
+    do {
         let engine = EpochEngine()
         let account = EpochAccount()
         let player = PlaybackStore(
@@ -283,19 +285,20 @@ func runAccountEpochOwnershipChecks(_ runner: CheckRunner) async {
 
         await player.shutdownForTermination()
         let afterStop = player.accountStore.epoch
-        runner.equal("termination advances AccountStore once", afterStop, start + 1)
-        runner.equal("PlaybackStore projects the termination epoch", player.accountEpoch, afterStop)
-        runner.equal("reducer adopts the termination epoch", player.state.accountEpoch, afterStop)
-        runner.equal("catalog observes the termination epoch", player.catalogSession.accountEpoch, afterStop)
-        runner.equal("termination shuts the engine down once", engine.count("shutdown"), 1)
-        runner.equal("termination does not clear the reusable grant", account.clearCount, 0)
+        #expect((afterStop) == (start + 1), "termination advances AccountStore once")
+        #expect((player.accountEpoch) == (afterStop), "PlaybackStore projects the termination epoch")
+        #expect((player.state.accountEpoch) == (afterStop), "reducer adopts the termination epoch")
+        #expect((player.catalogSession.accountEpoch) == (afterStop), "catalog observes the termination epoch")
+        #expect((engine.count("shutdown")) == (1), "termination shuts the engine down once")
+        #expect((account.clearCount) == (0), "termination does not clear the reusable grant")
 
         await player.shutdownForTermination()
-        runner.equal("a second termination is idempotent and does not bump again", player.accountStore.epoch, afterStop)
-        runner.equal("a second termination does not shut down again", engine.count("shutdown"), 1)
+        #expect(
+            (player.accountStore.epoch) == (afterStop), "a second termination is idempotent and does not bump again")
+        #expect((engine.count("shutdown")) == (1), "a second termination does not shut down again")
     }
 
-    await runner.suite("Work stamped with the prior epoch stays inert") {
+    do {
         let engine = EpochEngine()
         let account = EpochAccount()
         let player = PlaybackStore(
@@ -316,7 +319,7 @@ func runAccountEpochOwnershipChecks(_ runner: CheckRunner) async {
 
         await player.logout()
         let current = player.accountStore.epoch
-        runner.notEqual("logout replaced the prior identity", current, prior)
+        #expect((current) != (prior), "logout replaced the prior identity")
 
         let staleSession = player.send(.session(.ready), source: .account, accountEpoch: prior)
         let staleQueue = await player.queueService.acceptConnect(
@@ -325,47 +328,49 @@ func runAccountEpochOwnershipChecks(_ runner: CheckRunner) async {
             sourceRevision: 1,
             contextURI: "spotify:track:stale"
         )
-        runner.check("a reducer send stamped with the prior epoch is rejected", !staleSession)
-        runner.nil_("QueueService rejects the prior epoch after reset", staleQueue)
-        runner.nil_("prior-epoch work cannot revive signed-out presentation", player.state.currentTrack)
-        runner.equal("signed-out session is unchanged", player.state.session, PlaybackSessionPhase.signedOut)
-        runner.equal("inert work did not roll the epoch back", player.accountEpoch, current)
-        runner.equal(
-            "inert work did not drift the projection from AccountStore", player.accountEpoch, player.accountStore.epoch)
-        runner.equal("inert work did not drift reducer state from AccountStore", player.state.accountEpoch, current)
+        #expect((!staleSession) == true, "a reducer send stamped with the prior epoch is rejected")
+        #expect((staleQueue) == nil, "QueueService rejects the prior epoch after reset")
+        #expect((player.state.currentTrack) == nil, "prior-epoch work cannot revive signed-out presentation")
+        #expect((player.state.session) == (PlaybackSessionPhase.signedOut), "signed-out session is unchanged")
+        #expect((player.accountEpoch) == (current), "inert work did not roll the epoch back")
+        #expect(
+            (player.accountEpoch) == (player.accountStore.epoch),
+            "inert work did not drift the projection from AccountStore")
+        #expect((player.state.accountEpoch) == (current), "inert work did not drift reducer state from AccountStore")
     }
 
-    runner.suite("PlaybackStore has no writable account-epoch increment or assignment") {
-        runner.noThrow("PlaybackStore sources are readable") {
-            let session = try spottySourceFile("Spotty/Spotify/PlaybackStore+Session.swift")
-            let store = try spottySourceFile("Spotty/Spotify/PlaybackStore.swift")
-            let commands = try spottySourceFile("Spotty/Spotify/PlaybackStore+Commands.swift")
-            let engineEvents = try spottySourceFile("Spotty/Spotify/PlaybackStore+EngineEvents.swift")
-            let history = try spottySourceFile("Spotty/Spotify/PlaybackStore+History.swift")
-            let queue = try spottySourceFile("Spotty/Spotify/PlaybackStore+Queue.swift")
-            let transport = try spottySourceFile("Spotty/Spotify/PlaybackStore+Transport.swift")
-            let projections = try spottySourceFile("Spotty/Spotify/PlaybackStore+Projections.swift")
-            let account = try spottySourceFile("Spotty/Spotify/AccountStore.swift")
-            let sources = [session, store, commands, engineEvents, history, queue, transport, projections]
-            let mutations = sources.flatMap(playbackStoreWritableAccountEpochMutations)
-            runner.equal("PlaybackStore files have no accountEpoch increment or assignment", mutations, [String]())
-            runner.check(
-                "PlaybackStore.accountEpoch is a read-only AccountStore projection",
-                containsToken(store, "var accountEpoch: UInt64 { accountStore.epoch }")
-                    && !containsToken(store, "@ObservationIgnored var accountEpoch")
-            )
-            runner.check(
-                "teardown no longer resyncs a PlaybackStore mirror after AccountStore completes",
-                !containsToken(session, "accountEpoch = accountStore.epoch")
-            )
-            runner.check(
-                "AccountStore.advanceEpoch is the only epoch increment",
-                account.components(separatedBy: "epoch &+= 1").count == 2
-            )
-            runner.check(
-                "invalidateAccountIdentity advances the epoch before cancelling connection work",
-                epochAdvancesBeforeConnectionCancel(in: account)
-            )
+    do {
+        do {
+            do {
+                let session = try spottySourceFile("Spotty/Spotify/PlaybackStore+Session.swift")
+                let store = try spottySourceFile("Spotty/Spotify/PlaybackStore.swift")
+                let commands = try spottySourceFile("Spotty/Spotify/PlaybackStore+Commands.swift")
+                let engineEvents = try spottySourceFile("Spotty/Spotify/PlaybackStore+EngineEvents.swift")
+                let history = try spottySourceFile("Spotty/Spotify/PlaybackStore+History.swift")
+                let queue = try spottySourceFile("Spotty/Spotify/PlaybackStore+Queue.swift")
+                let transport = try spottySourceFile("Spotty/Spotify/PlaybackStore+Transport.swift")
+                let projections = try spottySourceFile("Spotty/Spotify/PlaybackStore+Projections.swift")
+                let account = try spottySourceFile("Spotty/Spotify/AccountStore.swift")
+                let sources = [session, store, commands, engineEvents, history, queue, transport, projections]
+                let mutations = sources.flatMap(playbackStoreWritableAccountEpochMutations)
+                #expect((mutations) == ([String]()), "PlaybackStore files have no accountEpoch increment or assignment")
+                #expect(
+                    (containsToken(store, "var accountEpoch: UInt64 { accountStore.epoch }")
+                        && !containsToken(store, "@ObservationIgnored var accountEpoch")) == true,
+                    "PlaybackStore.accountEpoch is a read-only AccountStore projection")
+                #expect(
+                    (!containsToken(session, "accountEpoch = accountStore.epoch")) == true,
+                    "teardown no longer resyncs a PlaybackStore mirror after AccountStore completes")
+                #expect(
+                    (account.components(separatedBy: "epoch &+= 1").count == 2) == true,
+                    "AccountStore.advanceEpoch is the only epoch increment")
+                #expect(
+                    (epochAdvancesBeforeConnectionCancel(in: account)) == true,
+                    "invalidateAccountIdentity advances the epoch before cancelling connection work")
+
+            } catch {
+                Issue.record("\("PlaybackStore sources are readable"): unexpected error \(error)")
+            }
         }
     }
 }

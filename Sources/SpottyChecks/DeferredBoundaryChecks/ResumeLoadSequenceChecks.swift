@@ -1,11 +1,13 @@
+import Testing
 import SpottyDomain
 import Foundation
 @testable import SpottyCore
 
 /// `ResumeLoadSequence` policy for both callers. Store-level capture and the reconnect
 /// trigger live in the command-failure and workflow suites.
+@Test
 @MainActor
-func runResumeLoadSequenceChecks(_ runner: CheckRunner) {
+func testResumeLoadSequence() {
     let context = ResumeLoadPlan.Target.context(
         uri: "spotify:playlist:ctx",
         trackHint: "spotify:track:one",
@@ -14,23 +16,22 @@ func runResumeLoadSequenceChecks(_ runner: CheckRunner) {
     let track = ResumeLoadPlan.Target.track(uri: "spotify:track:one", positionMS: 10)
     let reconnect = PlaybackEngineResult(rawValue: -2)
 
-    runner.suite("User resume load sequence") {
-        runner.equal(
-            "successful play does not load",
-            ResumeLoadSequence.completing(play: .ok, targets: [context, track]) { _ in
-                runner.check("successful play must not load", false)
+    do {
+        var successfulPlayLoaded = false
+        #expect(
+            (ResumeLoadSequence.completing(play: .ok, targets: [context, track]) { _ in
+                successfulPlayLoaded = true
                 return .error
-            },
-            .ok
-        )
-        runner.equal(
-            "reconnect-required play does not load",
-            ResumeLoadSequence.completing(play: reconnect, targets: [context, track]) { _ in
-                runner.check("reconnect-required play must not load", false)
+            }) == (.ok), "successful play does not load")
+        #expect(!successfulPlayLoaded, "successful play must not load")
+
+        var reconnectPlayLoaded = false
+        #expect(
+            (ResumeLoadSequence.completing(play: reconnect, targets: [context, track]) { _ in
+                reconnectPlayLoaded = true
                 return .ok
-            },
-            reconnect
-        )
+            }) == (reconnect), "reconnect-required play does not load")
+        #expect(!reconnectPlayLoaded, "reconnect-required play must not load")
 
         var loaded: [ResumeLoadPlan.Target] = []
         let recovered = ResumeLoadSequence.completing(play: .error, targets: [context, track]) {
@@ -38,26 +39,26 @@ func runResumeLoadSequenceChecks(_ runner: CheckRunner) {
             if case .track = $0 { return .ok }
             return .error
         }
-        runner.equal("timeout tries context then track", loaded, [context, track])
-        runner.equal("a later target can recover the timeout", recovered, .ok)
+        #expect((loaded) == ([context, track]), "timeout tries context then track")
+        #expect((recovered) == (.ok), "a later target can recover the timeout")
 
         var failedLoads = 0
         let exhausted = ResumeLoadSequence.completing(play: .error, targets: [context, track]) { _ in
             failedLoads += 1
             return .error
         }
-        runner.equal("exhausted loads keep the play timeout", exhausted, .error)
-        runner.equal("exhausted loads try every target", failedLoads, 2)
+        #expect((exhausted) == (.error), "exhausted loads keep the play timeout")
+        #expect((failedLoads) == (2), "exhausted loads try every target")
     }
 
-    runner.suite("Reconnect rehydration load sequence") {
+    do {
         var loaded: [ResumeLoadPlan.Target] = []
         let queued = ResumeLoadSequence.completing(play: nil, targets: [context, track]) {
             loaded.append($0)
             return .ok
         }
-        runner.equal("rehydration issues no play and stops at the first queued load", loaded, [context])
-        runner.equal("a queued load is the sequence result", queued, .ok)
+        #expect((loaded) == ([context]), "rehydration issues no play and stops at the first queued load")
+        #expect((queued) == (.ok), "a queued load is the sequence result")
 
         loaded = []
         let unqueued = ResumeLoadSequence.completing(play: nil, targets: [context, track]) {
@@ -65,21 +66,20 @@ func runResumeLoadSequenceChecks(_ runner: CheckRunner) {
             if case .track = $0 { return .ok }
             return .error
         }
-        runner.equal("a context load the engine refused to queue falls through to the track", loaded, [context, track])
-        runner.equal("the fallback result is reported", unqueued, .ok)
+        #expect(
+            (loaded) == ([context, track]), "a context load the engine refused to queue falls through to the track")
+        #expect((unqueued) == (.ok), "the fallback result is reported")
 
         loaded = []
         let dead = ResumeLoadSequence.completing(play: nil, targets: [context, track]) {
             loaded.append($0)
             return reconnect
         }
-        runner.equal("a dead Spirc stops the sequence", loaded, [context])
-        runner.equal("a dead Spirc is reported as reconnect-required", dead, reconnect)
+        #expect((loaded) == ([context]), "a dead Spirc stops the sequence")
+        #expect((dead) == (reconnect), "a dead Spirc is reported as reconnect-required")
 
-        runner.equal(
-            "no targets is an ordinary failure",
-            ResumeLoadSequence.completing(play: nil, targets: []) { _ in .ok },
-            .error
-        )
+        #expect(
+            (ResumeLoadSequence.completing(play: nil, targets: []) { _ in .ok }) == (.error),
+            "no targets is an ordinary failure")
     }
 }

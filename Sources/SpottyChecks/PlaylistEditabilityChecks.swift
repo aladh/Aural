@@ -1,7 +1,9 @@
+import Testing
 import SpottyDomain
 import Foundation
 
-func runPlaylistEditabilityChecks(_ check: CheckRunner) {
+@Test
+func testPlaylistEditability() {
     func track(id: String, uri: String) -> CatalogTrack {
         CatalogTrack(
             id: id,
@@ -27,68 +29,48 @@ func runPlaylistEditabilityChecks(_ check: CheckRunner) {
         )
     }
 
-    check.suite("Playlist ownership and editable-target filtering") {
-        check.equal(
-            "profile URI prefers the explicit user URI",
-            PlaylistEditability.userURI(uri: "spotify:user:Ada", username: "ignored"),
-            "spotify:user:Ada"
-        )
-        check.equal(
-            "username synthesizes a user URI without changing identifier case",
-            PlaylistEditability.userURI(uri: nil, username: "Ada"),
-            "spotify:user:Ada"
-        )
-        check.nil_(
-            "a track URI is not a user identity",
-            PlaylistEditability.userURI(uri: "spotify:track:abc", username: nil)
-        )
-        check.nil_(
-            "an empty identity is not a user URI",
-            PlaylistEditability.normalizeUserURI("   ")
-        )
-        check.check(
-            "matching owner and profile justify a write",
-            PlaylistEditability.canJustifyEdit(
+    do {
+        #expect(
+            (PlaylistEditability.userURI(uri: "spotify:user:Ada", username: "ignored")) == ("spotify:user:Ada"),
+            "profile URI prefers the explicit user URI")
+        #expect(
+            (PlaylistEditability.userURI(uri: nil, username: "Ada")) == ("spotify:user:Ada"),
+            "username synthesizes a user URI without changing identifier case")
+        #expect(
+            (PlaylistEditability.userURI(uri: "spotify:track:abc", username: nil)) == nil,
+            "a track URI is not a user identity")
+        #expect((PlaylistEditability.normalizeUserURI("   ")) == nil, "an empty identity is not a user URI")
+        #expect(
+            (PlaylistEditability.canJustifyEdit(
                 playlistOwnerURI: "spotify:user:me",
                 profileURI: "spotify:user:me"
-            )
-        )
-        check.check(
-            "identical mixed-case owner and profile remain editable",
-            PlaylistEditability.canJustifyEdit(
+            )) == true, "matching owner and profile justify a write")
+        #expect(
+            (PlaylistEditability.canJustifyEdit(
                 playlistOwnerURI: "spotify:user:Ada",
                 profileURI: "spotify:user:Ada"
-            )
-        )
-        check.check(
-            "case-only owner and profile differences are not editable",
-            !PlaylistEditability.canJustifyEdit(
+            )) == true, "identical mixed-case owner and profile remain editable")
+        #expect(
+            (!PlaylistEditability.canJustifyEdit(
                 playlistOwnerURI: "spotify:user:Ada",
                 profileURI: "spotify:user:ada"
-            )
-        )
-        check.check(
-            "synthesized username case must match the profile URI exactly",
-            !PlaylistEditability.canJustifyEdit(
+            )) == true, "case-only owner and profile differences are not editable")
+        #expect(
+            (!PlaylistEditability.canJustifyEdit(
                 playlistOwnerURI: PlaylistEditability.userURI(uri: nil, username: "Ada"),
                 profileURI: "spotify:user:ada"
-            )
-        )
-        check.check(
-            "someone else’s playlist is not advertised as editable",
-            !PlaylistEditability.canJustifyEdit(
+            )) == true, "synthesized username case must match the profile URI exactly")
+        #expect(
+            (!PlaylistEditability.canJustifyEdit(
                 playlistOwnerURI: "spotify:user:them",
                 profileURI: "spotify:user:me"
-            )
-        )
-        check.check(
-            "missing owner metadata is not treated as editable",
-            !PlaylistEditability.canJustifyEdit(playlistOwnerURI: nil, profileURI: "spotify:user:me")
-        )
-        check.check(
-            "missing profile metadata is not treated as editable",
-            !PlaylistEditability.canJustifyEdit(playlistOwnerURI: "spotify:user:me", profileURI: nil)
-        )
+            )) == true, "someone else’s playlist is not advertised as editable")
+        #expect(
+            (!PlaylistEditability.canJustifyEdit(playlistOwnerURI: nil, profileURI: "spotify:user:me")) == true,
+            "missing owner metadata is not treated as editable")
+        #expect(
+            (!PlaylistEditability.canJustifyEdit(playlistOwnerURI: "spotify:user:me", profileURI: nil)) == true,
+            "missing profile metadata is not treated as editable")
 
         let items = [
             playlist(uri: "spotify:playlist:mine", title: "Mine", ownerURI: "spotify:user:me"),
@@ -104,19 +86,15 @@ func runPlaylistEditabilityChecks(_ check: CheckRunner) {
             ),
             playlist(uri: "spotify:playlist:unknown", title: "Unknown", ownerURI: nil),
         ]
-        check.equal(
-            "editable targets are owned library playlists only",
-            PlaylistEditability.editablePlaylists(items, profileURI: "spotify:user:me").map(\.uri),
-            ["spotify:playlist:mine"]
-        )
-        check.equal(
-            "no profile means no writable targets",
-            PlaylistEditability.editablePlaylists(items, profileURI: nil).map(\.uri),
-            []
-        )
+        #expect(
+            (PlaylistEditability.editablePlaylists(items, profileURI: "spotify:user:me").map(\.uri))
+                == (["spotify:playlist:mine"]), "editable targets are owned library playlists only")
+        #expect(
+            (PlaylistEditability.editablePlaylists(items, profileURI: nil).map(\.uri)) == ([]),
+            "no profile means no writable targets")
     }
 
-    check.suite("Playlist mutation selection, batch add, and occurrence removal") {
+    do {
         let duplicateURI = "spotify:track:dup"
         let otherURI = "spotify:track:other"
         let rows = [
@@ -129,98 +107,71 @@ func runPlaylistEditabilityChecks(_ check: CheckRunner) {
             selectedIDs: ["uid-b", "uid-a", "uid-b", duplicateURI],
             in: rows
         )
-        check.equal(
-            "selection follows playlist order and drops repeated IDs",
-            selected.map(\.id),
-            ["uid-a", "uid-b", duplicateURI]
-        )
-        check.equal(
-            "batch add keeps duplicate URIs from distinct occurrences",
-            PlaylistMutationSelection.addURIs(from: Array(selected.prefix(2))),
-            [duplicateURI, duplicateURI]
-        )
-        check.equal(
-            "removal uses Pathfinder UIDs, never the shared track URI",
-            PlaylistMutationSelection.occurrenceIDsForRemoval(from: Array(selected.prefix(2))),
-            ["uid-a", "uid-b"]
-        )
-        check.equal(
-            "a URI-as-id row is not a removable occurrence",
-            PlaylistMutationSelection.occurrenceIDsForRemoval(from: [rows[3]]),
-            []
-        )
-        check.equal(
-            "mixed UID and URI-as-id selection removes only occurrence UIDs",
-            PlaylistMutationSelection.occurrenceIDsForRemoval(from: selected),
-            ["uid-a", "uid-b"]
-        )
-        check.check(
-            "add requires an editable target and at least one URI",
-            PlaylistMutationSelection.canAdd(isTargetEditable: true, uris: [duplicateURI])
-        )
-        check.check(
-            "add is refused for a read-only target",
-            !PlaylistMutationSelection.canAdd(isTargetEditable: false, uris: [duplicateURI])
-        )
-        check.check(
-            "remove requires an editable playlist and occurrence UIDs",
-            PlaylistMutationSelection.canRemove(isPlaylistEditable: true, occurrenceIDs: ["uid-a"])
-        )
-        check.check(
-            "read-only playlists cannot route destructive removal",
-            !PlaylistMutationSelection.canRemove(isPlaylistEditable: false, occurrenceIDs: ["uid-a"])
-        )
+        #expect(
+            (selected.map(\.id)) == (["uid-a", "uid-b", duplicateURI]),
+            "selection follows playlist order and drops repeated IDs")
+        #expect(
+            (PlaylistMutationSelection.addURIs(from: Array(selected.prefix(2)))) == ([duplicateURI, duplicateURI]),
+            "batch add keeps duplicate URIs from distinct occurrences")
+        #expect(
+            (PlaylistMutationSelection.occurrenceIDsForRemoval(from: Array(selected.prefix(2))))
+                == (["uid-a", "uid-b"]), "removal uses Pathfinder UIDs, never the shared track URI")
+        #expect(
+            (PlaylistMutationSelection.occurrenceIDsForRemoval(from: [rows[3]])) == ([]),
+            "a URI-as-id row is not a removable occurrence")
+        #expect(
+            (PlaylistMutationSelection.occurrenceIDsForRemoval(from: selected)) == (["uid-a", "uid-b"]),
+            "mixed UID and URI-as-id selection removes only occurrence UIDs")
+        #expect(
+            (PlaylistMutationSelection.canAdd(isTargetEditable: true, uris: [duplicateURI])) == true,
+            "add requires an editable target and at least one URI")
+        #expect(
+            (!PlaylistMutationSelection.canAdd(isTargetEditable: false, uris: [duplicateURI])) == true,
+            "add is refused for a read-only target")
+        #expect(
+            (PlaylistMutationSelection.canRemove(isPlaylistEditable: true, occurrenceIDs: ["uid-a"])) == true,
+            "remove requires an editable playlist and occurrence UIDs")
+        #expect(
+            (!PlaylistMutationSelection.canRemove(isPlaylistEditable: false, occurrenceIDs: ["uid-a"])) == true,
+            "read-only playlists cannot route destructive removal")
     }
 
-    check.suite("Playlist keyboard command routing") {
-        check.equal(
-            "Delete on an editable selection removes occurrences",
-            PlaylistMutationSelection.keyboardCommand(
+    do {
+        #expect(
+            (PlaylistMutationSelection.keyboardCommand(
                 deleteOrBackspace: true,
                 isPlaylistEditable: true,
                 selectedOccurrenceCount: 2
-            ),
-            .removeOccurrences
-        )
-        check.equal(
-            "Backspace uses the same native delete command",
-            PlaylistMutationSelection.keyboardCommand(
+            )) == (.removeOccurrences), "Delete on an editable selection removes occurrences")
+        #expect(
+            (PlaylistMutationSelection.keyboardCommand(
                 deleteOrBackspace: true,
                 isPlaylistEditable: true,
                 selectedOccurrenceCount: 1
-            ),
-            .removeOccurrences
-        )
-        check.nil_(
-            "Delete does nothing in a read-only playlist",
-            PlaylistMutationSelection.keyboardCommand(
+            )) == (.removeOccurrences), "Backspace uses the same native delete command")
+        #expect(
+            (PlaylistMutationSelection.keyboardCommand(
                 deleteOrBackspace: true,
                 isPlaylistEditable: false,
                 selectedOccurrenceCount: 2
-            )
-        )
-        check.nil_(
-            "Delete does nothing without a selection",
-            PlaylistMutationSelection.keyboardCommand(
+            )) == nil, "Delete does nothing in a read-only playlist")
+        #expect(
+            (PlaylistMutationSelection.keyboardCommand(
                 deleteOrBackspace: true,
                 isPlaylistEditable: true,
                 selectedOccurrenceCount: 0
-            )
-        )
-        check.nil_(
-            "unrelated keys are not playlist removal",
-            PlaylistMutationSelection.keyboardCommand(
+            )) == nil, "Delete does nothing without a selection")
+        #expect(
+            (PlaylistMutationSelection.keyboardCommand(
                 deleteOrBackspace: false,
                 isPlaylistEditable: true,
                 selectedOccurrenceCount: 2
-            )
-        )
+            )) == nil, "unrelated keys are not playlist removal")
     }
 
-    check.suite("Playlist drag-to-playlist prototype decision") {
-        check.check(
-            "native drag onto playlist rows is not shipped",
-            !PlaylistTrackDragDecision.shipsNativeDragAndDrop
+    do {
+        #expect(
+            (!PlaylistTrackDragDecision.shipsNativeDragAndDrop) == true, "native drag onto playlist rows is not shipped"
         )
     }
 }

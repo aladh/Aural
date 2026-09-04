@@ -1,3 +1,4 @@
+import Testing
 import Foundation
 @testable import SpottyCore
 
@@ -56,9 +57,10 @@ private func awaitBounded(_ task: Task<Void, Never>) async -> Bool {
     }
 }
 
+@Test
 @MainActor
-func runCommandEffectRegistryChecks(_ runner: CheckRunner) async {
-    await runner.suite("PlaybackEffectRegistry cancel in flight") {
+func testCommandEffectRegistry() async {
+    do {
         let effects = PlaybackEffectRegistry()
         let commandID = UUID()
         let finishedWithoutCancel = CancellationFlag()
@@ -73,11 +75,11 @@ func runCommandEffectRegistryChecks(_ runner: CheckRunner) async {
         }
         effects.replace(.command(commandID), with: superseded)
         effects.replace(.command(commandID), with: Task<Void, Never> {})
-        runner.check("the superseded task ends without waiting out a long sleep", await awaitBounded(superseded))
-        runner.check("replacing a command token cancels the superseded task", !finishedWithoutCancel.isSet)
+        #expect((await awaitBounded(superseded)) == true, "the superseded task ends without waiting out a long sleep")
+        #expect((!finishedWithoutCancel.isSet) == true, "replacing a command token cancels the superseded task")
     }
 
-    await runner.suite("PlaybackEffectRegistry account-scoped invalidation") {
+    do {
         let effects = PlaybackEffectRegistry()
         let commandSurvived = CancellationFlag()
         let lifecycleCancelled = CancellationFlag()
@@ -103,19 +105,18 @@ func runCommandEffectRegistryChecks(_ runner: CheckRunner) async {
         effects.replace(.lifecycle, with: lifecycle)
 
         effects.cancelAccountScoped()
-        runner.check("account-scoped command cancellation is bounded", await awaitBounded(command))
-        runner.check("account teardown cancels in-flight commands", !commandSurvived.isSet)
-        runner.check(
-            "process-lifetime listeners are not cancelled with account-scoped work",
-            !lifecycleCancelled.isSet
+        #expect((await awaitBounded(command)) == true, "account-scoped command cancellation is bounded")
+        #expect((!commandSurvived.isSet) == true, "account teardown cancels in-flight commands")
+        #expect(
+            (!lifecycleCancelled.isSet) == true, "process-lifetime listeners are not cancelled with account-scoped work"
         )
 
         effects.cancel(.lifecycle)
-        runner.check("explicit lifecycle cancellation is bounded", await awaitBounded(lifecycle))
-        runner.check("an explicit lifecycle cancel still stops the listener", lifecycleCancelled.isSet)
+        #expect((await awaitBounded(lifecycle)) == true, "explicit lifecycle cancellation is bounded")
+        #expect((lifecycleCancelled.isSet) == true, "an explicit lifecycle cancel still stops the listener")
     }
 
-    await runner.suite("PlaybackEffectRegistry complete does not drop a newer token") {
+    do {
         let effects = PlaybackEffectRegistry()
         let commandID = UUID()
         let replacementCancelled = CancellationFlag()
@@ -140,13 +141,13 @@ func runCommandEffectRegistryChecks(_ runner: CheckRunner) async {
             }
         }
         effects.replace(.command(commandID), with: replacement, registration: replacementRegistration)
-        runner.check("the superseded task ends without waiting out a long sleep", await awaitBounded(superseded))
+        #expect((await awaitBounded(superseded)) == true, "the superseded task ends without waiting out a long sleep")
         effects.cancel(.command(commandID))
-        runner.check("the replacement token is still cancellable", await awaitBounded(replacement))
-        runner.check("completing the superseded task did not drop the replacement", replacementCancelled.isSet)
+        #expect((await awaitBounded(replacement)) == true, "the replacement token is still cancellable")
+        #expect((replacementCancelled.isSet) == true, "completing the superseded task did not drop the replacement")
     }
 
-    runner.suite("PlaybackEffectRegistry replace runs the previous onCancel") {
+    do {
         let effects = PlaybackEffectRegistry()
         let commandID = UUID()
         let previousCancelled = CancellationFlag()
@@ -156,26 +157,25 @@ func runCommandEffectRegistryChecks(_ runner: CheckRunner) async {
                 previousCancelled.mark()
             })
         effects.replace(.command(commandID), with: Task<Void, Never> {})
-        runner.check("replacing a token runs the previous onCancel", previousCancelled.isSet)
+        #expect((previousCancelled.isSet) == true, "replacing a token runs the previous onCancel")
     }
 
-    await runner.suite("PlaybackEffectRegistry settlement follows the captured task") {
-        runner.check(
-            "a missing in-flight effect has no settlement handle",
-            PlaybackEffectRegistry().settlement(of: .trackMetadata) == nil
-        )
+    do {
+        #expect(
+            (PlaybackEffectRegistry().settlement(of: .trackMetadata) == nil) == true,
+            "a missing in-flight effect has no settlement handle")
 
         let cancelled = PlaybackEffectRegistry()
         let cancelGate = SettlementPark()
         cancelled.replace(.trackMetadata, with: Task { await cancelGate.park() })
-        runner.check("cancelled work parks before capture", await waitUntil { cancelGate.isParked })
+        #expect((await waitUntil { cancelGate.isParked }) == true, "cancelled work parks before capture")
         let cancelledHandle = cancelled.settlement(of: .trackMetadata)
-        runner.notNil("cancelled work is registered before cancel", cancelledHandle)
+        #expect((cancelledHandle) != nil, "cancelled work is registered before cancel")
         cancelled.cancel(.trackMetadata)
-        runner.check("cancel drops the live settlement", cancelled.settlement(of: .trackMetadata) == nil)
+        #expect((cancelled.settlement(of: .trackMetadata) == nil) == true, "cancel drops the live settlement")
         cancelGate.release()
         await cancelledHandle?.wait()
-        runner.check("waiting on a captured cancelled task observes unwind after release", cancelGate.didFinish)
+        #expect((cancelGate.didFinish) == true, "waiting on a captured cancelled task observes unwind after release")
 
         let completed = PlaybackEffectRegistry()
         let completeGate = SettlementPark()
@@ -188,28 +188,28 @@ func runCommandEffectRegistryChecks(_ runner: CheckRunner) async {
             },
             registration: completeRegistration
         )
-        runner.check("completed work parks before capture", await waitUntil { completeGate.isParked })
+        #expect((await waitUntil { completeGate.isParked }) == true, "completed work parks before capture")
         let completedHandle = completed.settlement(of: .positionRefresh)
-        runner.notNil("completed work is registered before complete", completedHandle)
+        #expect((completedHandle) != nil, "completed work is registered before complete")
         completeGate.release()
         await completedHandle?.wait()
-        runner.check("complete drops the live settlement", completed.settlement(of: .positionRefresh) == nil)
-        runner.check("waiting on a captured completed task observes unwind after complete", completeGate.didFinish)
+        #expect((completed.settlement(of: .positionRefresh) == nil) == true, "complete drops the live settlement")
+        #expect((completeGate.didFinish) == true, "waiting on a captured completed task observes unwind after complete")
 
         let replaced = PlaybackEffectRegistry()
         let originalGate = SettlementPark()
         let replacementGate = SettlementPark()
         replaced.replace(.queueSnapshot, with: Task { await originalGate.park() })
-        runner.check("original work parks before capture", await waitUntil { originalGate.isParked })
+        #expect((await waitUntil { originalGate.isParked }) == true, "original work parks before capture")
         let originalHandle = replaced.settlement(of: .queueSnapshot)
-        runner.notNil("original work is registered before replace", originalHandle)
+        #expect((originalHandle) != nil, "original work is registered before replace")
         replaced.replace(.queueSnapshot, with: Task { await replacementGate.park() })
-        runner.check("replacement work parks after replace", await waitUntil { replacementGate.isParked })
-        runner.notNil("replacement keeps a live settlement", replaced.settlement(of: .queueSnapshot))
+        #expect((await waitUntil { replacementGate.isParked }) == true, "replacement work parks after replace")
+        #expect((replaced.settlement(of: .queueSnapshot)) != nil, "replacement keeps a live settlement")
         originalGate.release()
         await originalHandle?.wait()
-        runner.check("the captured handle followed the original task", originalGate.didFinish)
-        runner.check("the captured handle did not wait for the replacement", !replacementGate.didFinish)
+        #expect((originalGate.didFinish) == true, "the captured handle followed the original task")
+        #expect((!replacementGate.didFinish) == true, "the captured handle did not wait for the replacement")
         replacementGate.release()
         await replaced.settlement(of: .queueSnapshot)?.wait()
     }

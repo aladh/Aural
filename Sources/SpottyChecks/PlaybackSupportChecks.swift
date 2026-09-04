@@ -1,155 +1,125 @@
+import Testing
 import SpottyDomain
 import Foundation
 
-func runPlaybackSupportChecks(_ check: CheckRunner) {
-    check.suite("Smooth playback position") {
+@Test
+func testPlaybackSupport() {
+    do {
         let anchorDate = Date(timeIntervalSince1970: 1_000)
-        check.equal(
-            "playing advances between backend samples",
-            interpolatedPlaybackPosition(
+        #expect(
+            (interpolatedPlaybackPosition(
                 anchor: 40, anchoredAt: anchorDate, now: anchorDate.addingTimeInterval(0.25), isPlaying: true,
-                duration: 200),
-            40.25
-        )
-        check.equal(
-            "paused position stays anchored",
-            interpolatedPlaybackPosition(
+                duration: 200)) == (40.25), "playing advances between backend samples")
+        #expect(
+            (interpolatedPlaybackPosition(
                 anchor: 40, anchoredAt: anchorDate, now: anchorDate.addingTimeInterval(10), isPlaying: false,
-                duration: 200),
-            40
-        )
-        check.equal(
-            "interpolation stops at track duration",
-            interpolatedPlaybackPosition(
+                duration: 200)) == (40), "paused position stays anchored")
+        #expect(
+            (interpolatedPlaybackPosition(
                 anchor: 199.8, anchoredAt: anchorDate, now: anchorDate.addingTimeInterval(1), isPlaying: true,
-                duration: 200),
-            200
-        )
-        check.equal(
-            "clock reversal cannot move the playhead backward",
-            interpolatedPlaybackPosition(
+                duration: 200)) == (200), "interpolation stops at track duration")
+        #expect(
+            (interpolatedPlaybackPosition(
                 anchor: 40, anchoredAt: anchorDate, now: anchorDate.addingTimeInterval(-1), isPlaying: true,
-                duration: 200),
-            40
-        )
+                duration: 200)) == (40), "clock reversal cannot move the playhead backward")
 
         let receivedAt = Date(timeIntervalSince1970: 1_010)
-        check.equal(
-            "playing Connect snapshots compensate for their timestamp",
-            playbackSnapshotPosition(
+        #expect(
+            (playbackSnapshotPosition(
                 positionMilliseconds: 40_000, durationMilliseconds: 200_000, timestampMilliseconds: 1_005_000,
-                isPlaying: true, now: receivedAt),
-            45
-        )
-        check.equal(
-            "paused Connect snapshots stay at their exact position",
-            playbackSnapshotPosition(
+                isPlaying: true, now: receivedAt)) == (45), "playing Connect snapshots compensate for their timestamp")
+        #expect(
+            (playbackSnapshotPosition(
                 positionMilliseconds: 40_000, durationMilliseconds: 200_000, timestampMilliseconds: 1_005_000,
-                isPlaying: false, now: receivedAt),
-            40
-        )
+                isPlaying: false, now: receivedAt)) == (40), "paused Connect snapshots stay at their exact position")
     }
 
-    check.suite("Repeat mode") {
+    do {
         let cycle: [RepeatMode] = [.off, .context, .track, .off]
         for (before, after) in zip(cycle, cycle.dropFirst()) {
-            check.equal("cycle \(before) → \(after)", before.next, after)
+            #expect((before.next) == (after), "cycle \(before) → \(after)")
         }
-        check.equal(
-            "backend flags for context repeat", RepeatMode.context.flags, RepeatFlags(context: true, track: false))
-        check.equal("backend flags for track repeat", RepeatMode.track.flags, RepeatFlags(context: false, track: true))
-        check.equal("backend flags for no repeat", RepeatMode.off.flags, RepeatFlags(context: false, track: false))
-        check.equal("flags rebuild to context", RepeatMode(context: true, track: false), .context)
-        check.equal("track flag wins over context", RepeatMode(context: true, track: true), .track)
-        check.equal("flags rebuild to off", RepeatMode(context: false, track: false), .off)
+        #expect(
+            (RepeatMode.context.flags) == (RepeatFlags(context: true, track: false)), "backend flags for context repeat"
+        )
+        #expect(
+            (RepeatMode.track.flags) == (RepeatFlags(context: false, track: true)), "backend flags for track repeat")
+        #expect((RepeatMode.off.flags) == (RepeatFlags(context: false, track: false)), "backend flags for no repeat")
+        #expect((RepeatMode(context: true, track: false)) == (.context), "flags rebuild to context")
+        #expect((RepeatMode(context: true, track: true)) == (.track), "track flag wins over context")
+        #expect((RepeatMode(context: false, track: false)) == (.off), "flags rebuild to off")
 
         let offToContext = RepeatTransitionPlan.planning(from: RepeatMode.off.flags, to: RepeatMode.context.flags)
-        check.equal(
-            "off → context sends only context on",
-            offToContext.mutations,
-            [RepeatFlagMutation(flag: .context, enabled: true)]
-        )
-        check.equal("off → context has no compensation", offToContext.compensation, [])
+        #expect(
+            (offToContext.mutations) == ([RepeatFlagMutation(flag: .context, enabled: true)]),
+            "off → context sends only context on")
+        #expect((offToContext.compensation) == ([]), "off → context has no compensation")
 
         let contextToTrack = RepeatTransitionPlan.planning(from: RepeatMode.context.flags, to: RepeatMode.track.flags)
-        check.equal(
-            "context → track sends context off then track on",
-            contextToTrack.mutations,
-            [
-                RepeatFlagMutation(flag: .context, enabled: false),
-                RepeatFlagMutation(flag: .track, enabled: true),
-            ]
-        )
-        check.equal(
-            "context → track compensates the accepted context flag",
-            contextToTrack.compensation,
-            [RepeatFlagMutation(flag: .context, enabled: true)]
-        )
+        #expect(
+            (contextToTrack.mutations)
+                == ([
+                    RepeatFlagMutation(flag: .context, enabled: false),
+                    RepeatFlagMutation(flag: .track, enabled: true),
+                ]), "context → track sends context off then track on")
+        #expect(
+            (contextToTrack.compensation) == ([RepeatFlagMutation(flag: .context, enabled: true)]),
+            "context → track compensates the accepted context flag")
 
         let trackToOff = RepeatTransitionPlan.planning(from: RepeatMode.track.flags, to: RepeatMode.off.flags)
-        check.equal(
-            "track → off sends only track off",
-            trackToOff.mutations,
-            [RepeatFlagMutation(flag: .track, enabled: false)]
-        )
-        check.equal("track → off has no compensation", trackToOff.compensation, [])
-        check.equal(
-            "identical flags send nothing",
-            RepeatTransitionPlan.planning(from: RepeatMode.off.flags, to: RepeatMode.off.flags).mutations,
-            []
-        )
+        #expect(
+            (trackToOff.mutations) == ([RepeatFlagMutation(flag: .track, enabled: false)]),
+            "track → off sends only track off")
+        #expect((trackToOff.compensation) == ([]), "track → off has no compensation")
+        #expect(
+            (RepeatTransitionPlan.planning(from: RepeatMode.off.flags, to: RepeatMode.off.flags).mutations) == ([]),
+            "identical flags send nothing")
 
         let bothTrue = RepeatFlags(context: true, track: true)
-        check.equal("both-true flags still display as track", RepeatMode(context: true, track: true), .track)
-        check.equal(
-            "display track flags are not a both-true pair",
-            RepeatMode.track.flags,
-            RepeatFlags(context: false, track: true)
-        )
-        check.equal(
-            "both-true track → off sends both flags off",
-            RepeatTransitionPlan.planning(from: bothTrue, to: RepeatMode.off.flags).mutations,
-            [
-                RepeatFlagMutation(flag: .context, enabled: false),
-                RepeatFlagMutation(flag: .track, enabled: false),
-            ]
-        )
-        check.equal(
-            "ordinary track → off still sends only track off",
-            RepeatTransitionPlan.planning(from: RepeatMode.track.flags, to: RepeatMode.off.flags).mutations,
-            [RepeatFlagMutation(flag: .track, enabled: false)]
-        )
-        check.equal(
-            "both-true first mutation is the compensated intermediate pair",
-            bothTrue.applying(RepeatFlagMutation(flag: .context, enabled: false)),
-            RepeatFlags(context: false, track: true)
-        )
+        #expect((RepeatMode(context: true, track: true)) == (.track), "both-true flags still display as track")
+        #expect(
+            (RepeatMode.track.flags) == (RepeatFlags(context: false, track: true)),
+            "display track flags are not a both-true pair")
+        #expect(
+            (RepeatTransitionPlan.planning(from: bothTrue, to: RepeatMode.off.flags).mutations)
+                == ([
+                    RepeatFlagMutation(flag: .context, enabled: false),
+                    RepeatFlagMutation(flag: .track, enabled: false),
+                ]), "both-true track → off sends both flags off")
+        #expect(
+            (RepeatTransitionPlan.planning(from: RepeatMode.track.flags, to: RepeatMode.off.flags).mutations)
+                == ([RepeatFlagMutation(flag: .track, enabled: false)]),
+            "ordinary track → off still sends only track off")
+        #expect(
+            (bothTrue.applying(RepeatFlagMutation(flag: .context, enabled: false)))
+                == (RepeatFlags(context: false, track: true)),
+            "both-true first mutation is the compensated intermediate pair")
     }
 
-    check.suite("Play history") {
+    do {
         let now = Date(timeIntervalSince1970: 1_000_000)
         var entries = PlaybackHistory.updated(
             [], afterPlaying: "spotify:track:a", title: "A", artist: "X", artworkURLString: nil, playedAt: now)
-        check.equal("newest entry lands first", entries.first?.uri, "spotify:track:a")
+        #expect((entries.first?.uri) == ("spotify:track:a"), "newest entry lands first")
 
         entries = PlaybackHistory.updated(
             entries, afterPlaying: "spotify:track:a", title: "A", artist: "X", artworkURLString: nil,
             playedAt: now.addingTimeInterval(60))
-        check.equal("replay does not duplicate", entries.count, 1)
-        check.equal("replay refreshes the timestamp", entries.first?.playedAt, now.addingTimeInterval(60))
+        #expect((entries.count) == (1), "replay does not duplicate")
+        #expect((entries.first?.playedAt) == (now.addingTimeInterval(60)), "replay refreshes the timestamp")
 
         entries = PlaybackHistory.withMetadata(
             entries, for: "spotify:track:a", title: "Real Title", artist: "Real Artist",
             artworkURLString: "https://example/a.jpg")
-        check.equal("late metadata fills the title", entries.first?.title, "Real Title")
-        check.equal("late metadata keeps other fields", entries.first?.playedAt, now.addingTimeInterval(60))
+        #expect((entries.first?.title) == ("Real Title"), "late metadata fills the title")
+        #expect((entries.first?.playedAt) == (now.addingTimeInterval(60)), "late metadata keeps other fields")
 
         entries = (0..<PlaybackHistory.cap + 25).reversed().reduce(entries) { current, index in
             PlaybackHistory.updated(
                 current, afterPlaying: "spotify:track:\(index)", title: "T\(index)", artist: "", artworkURLString: nil,
                 playedAt: now.addingTimeInterval(TimeInterval(index)))
         }
-        check.equal("history is capped", entries.count, PlaybackHistory.cap)
+        #expect((entries.count) == (PlaybackHistory.cap), "history is capped")
 
         var capped: [HistoryEntry] = []
         for index in 0..<PlaybackHistory.cap {
@@ -160,9 +130,9 @@ func runPlaybackSupportChecks(_ check: CheckRunner) {
         capped = PlaybackHistory.updated(
             capped, afterPlaying: "spotify:track:new", title: "New", artist: "", artworkURLString: nil,
             playedAt: now.addingTimeInterval(999))
-        check.equal("cap boundary stays at the cap", capped.count, PlaybackHistory.cap)
-        check.equal("the new track lands on top", capped.first?.uri, "spotify:track:new")
-        check.equal("exactly the oldest row falls off", capped.last?.uri, "spotify:track:t1")
+        #expect((capped.count) == (PlaybackHistory.cap), "cap boundary stays at the cap")
+        #expect((capped.first?.uri) == ("spotify:track:new"), "the new track lands on top")
+        #expect((capped.last?.uri) == ("spotify:track:t1"), "exactly the oldest row falls off")
 
         var lifted: [HistoryEntry] = []
         for suffix in ["a", "b", "c"] {
@@ -173,16 +143,16 @@ func runPlaybackSupportChecks(_ check: CheckRunner) {
         lifted = PlaybackHistory.updated(
             lifted, afterPlaying: "spotify:track:a", title: "A", artist: "", artworkURLString: nil,
             playedAt: now.addingTimeInterval(30))
-        check.equal("a buried replay moves to the front", lifted.first?.uri, "spotify:track:a")
-        check.equal("the lift does not duplicate", lifted.count, 3)
-        check.equal("the other rows keep their order", lifted.last?.uri, "spotify:track:b")
+        #expect((lifted.first?.uri) == ("spotify:track:a"), "a buried replay moves to the front")
+        #expect((lifted.count) == (3), "the lift does not duplicate")
+        #expect((lifted.last?.uri) == ("spotify:track:b"), "the other rows keep their order")
 
         let untouched = [
             HistoryEntry(uri: "spotify:track:kept", title: "Kept", artist: "K", artworkURLString: nil, playedAt: now)
         ]
         let afterMiss = PlaybackHistory.withMetadata(
             untouched, for: "spotify:track:other", title: "X", artist: "Y", artworkURLString: "https://example/x.jpg")
-        check.equal("metadata for an absent uri changes nothing", afterMiss, untouched)
+        #expect((afterMiss) == (untouched), "metadata for an absent uri changes nothing")
 
         let owned = [
             HistoryEntry(
@@ -192,95 +162,76 @@ func runPlaybackSupportChecks(_ check: CheckRunner) {
         let enriched = PlaybackHistory.withMetadata(
             owned, for: "spotify:track:a", title: "Better Title", artist: "X",
             artworkURLString: "https://example/new.jpg")
-        check.equal("known artwork survives enrichment", enriched.first?.artworkURLString, "https://example/old.jpg")
-        check.equal("non-empty titles still update", enriched.first?.title, "Better Title")
+        #expect((enriched.first?.artworkURLString) == ("https://example/old.jpg"), "known artwork survives enrichment")
+        #expect((enriched.first?.title) == ("Better Title"), "non-empty titles still update")
     }
 
-    check.suite("Queue and device policy") {
+    do {
         let queued = QueueEntry(uri: "spotify:track:a", provider: "queue")
         let suggested = QueueEntry(uri: "spotify:track:b", provider: "autoplay")
         let contextual = QueueEntry(uri: "spotify:track:c", provider: "context")
         let documented = QueueEntry(uri: "spotify:track:d", provider: "web-api")
-        check.check(
-            "providers map to listener labels",
-            queued.sourceLabel == "From your queue"
+        #expect(
+            (queued.sourceLabel == "From your queue"
                 && suggested.sourceLabel == "Suggested by Spotify"
                 && contextual.sourceLabel == "From the current context"
-                && documented.sourceLabel == "Up next"
-        )
+                && documented.sourceLabel == "Up next") == true, "providers map to listener labels")
         let repeated = [
             QueueEntry(uri: "spotify:track:a", provider: "queue", occurrence: 0),
             QueueEntry(uri: "spotify:track:a", provider: "queue", occurrence: 1),
         ]
-        check.check("duplicate queue tracks have distinct row identities", repeated[0].id != repeated[1].id)
-        check.equal("duplicate queue tracks keep typed occurrences", repeated.map(\.occurrence), [0, 1])
+        #expect((repeated[0].id != repeated[1].id) == true, "duplicate queue tracks have distinct row identities")
+        #expect((repeated.map(\.occurrence)) == ([0, 1]), "duplicate queue tracks keep typed occurrences")
         let uidBacked = QueueEntry(
             uri: "spotify:track:a", provider: "queue", occurrence: 7, uid: "occurrence-uid"
         )
         let queueItem = PlaybackQueueItem(uidBacked)
-        check.equal("queue-item conversion keeps the typed occurrence", queueItem.occurrence, 7)
-        check.equal("queue-item conversion keeps UID-aware identity", queueItem.id, uidBacked.id)
-        check.equal("queue-item conversion keeps the occurrence uid", queueItem.uid, "occurrence-uid")
-        check.equal(
-            "an empty uid stays out of selectable identity",
-            repeated[1].id,
-            QueueEntry.identity(
-                occurrence: repeated[1].occurrence,
-                provider: repeated[1].provider,
-                uri: repeated[1].uri,
-                uid: ""
-            )
-        )
+        #expect((queueItem.occurrence) == (7), "queue-item conversion keeps the typed occurrence")
+        #expect((queueItem.id) == (uidBacked.id), "queue-item conversion keeps UID-aware identity")
+        #expect((queueItem.uid) == ("occurrence-uid"), "queue-item conversion keeps the occurrence uid")
+        #expect(
+            (repeated[1].id)
+                == (QueueEntry.identity(
+                    occurrence: repeated[1].occurrence,
+                    provider: repeated[1].provider,
+                    uri: repeated[1].uri,
+                    uid: ""
+                )), "an empty uid stays out of selectable identity")
 
         let local = ConnectDevice(id: "local", name: "Spotty", type: "computer", isActive: false)
         let remote = ConnectDevice(id: "phone", name: "Phone", type: "smartphone", isActive: true)
-        check.equal(
-            "local device is identified even while inactive", local.displayName(localDeviceID: "local"),
-            "This Mac")
-        check.equal(
-            "active remote device is identified as playing", remote.displayName(localDeviceID: "local"),
-            "Phone (Playing)")
-        check.equal(
-            "transport routes to the active remote device",
-            connectCommandRoute(isLocalActive: false, localDeviceID: "local", devices: [local, remote]),
-            .remote(from: "local", to: "phone")
-        )
-        check.equal(
-            "remote commands wait for this device identity",
-            connectCommandRoute(isLocalActive: false, localDeviceID: nil, devices: [remote]),
-            .waitingForLocalIdentity
-        )
-        check.equal(
-            "no active remote keeps local playback available",
-            connectCommandRoute(isLocalActive: false, localDeviceID: "local", devices: [local]),
-            .local
-        )
-        check.equal(
-            "paused playback retains its remote command target",
-            connectCommandRoute(
+        #expect(
+            (local.displayName(localDeviceID: "local")) == ("This Mac"),
+            "local device is identified even while inactive")
+        #expect(
+            (remote.displayName(localDeviceID: "local")) == ("Phone (Playing)"),
+            "active remote device is identified as playing")
+        #expect(
+            (connectCommandRoute(isLocalActive: false, localDeviceID: "local", devices: [local, remote]))
+                == (.remote(from: "local", to: "phone")), "transport routes to the active remote device")
+        #expect(
+            (connectCommandRoute(isLocalActive: false, localDeviceID: nil, devices: [remote]))
+                == (.waitingForLocalIdentity), "remote commands wait for this device identity")
+        #expect(
+            (connectCommandRoute(isLocalActive: false, localDeviceID: "local", devices: [local])) == (.local),
+            "no active remote keeps local playback available")
+        #expect(
+            (connectCommandRoute(
                 isLocalActive: false,
                 localDeviceID: "local",
                 devices: [local, ConnectDevice(id: "phone", name: "Phone", type: "smartphone", isActive: false)],
                 fallbackRemoteDeviceID: "phone"
-            ),
-            .remote(from: "local", to: "phone")
-        )
+            )) == (.remote(from: "local", to: "phone")), "paused playback retains its remote command target")
         let remoteOwner = PlaybackDevice(id: "phone", name: "Phone", type: "smartphone")
-        check.equal(
-            "explicit remote ownership routes remotely",
-            connectCommandRoute(owner: .remote(remoteOwner), localDeviceID: "local"),
-            .remote(from: "local", to: "phone")
-        )
-        check.equal(
-            "an uncertain paused remote remains routable",
-            connectCommandRoute(owner: .uncertain(remoteOwner), localDeviceID: "local"),
-            .remote(from: "local", to: "phone")
-        )
-        check.equal(
-            "an unidentified owner cannot accidentally steal playback",
-            connectCommandRoute(owner: .uncertain(nil), localDeviceID: "local"),
-            .waitingForLocalIdentity
-        )
+        #expect(
+            (connectCommandRoute(owner: .remote(remoteOwner), localDeviceID: "local"))
+                == (.remote(from: "local", to: "phone")), "explicit remote ownership routes remotely")
+        #expect(
+            (connectCommandRoute(owner: .uncertain(remoteOwner), localDeviceID: "local"))
+                == (.remote(from: "local", to: "phone")), "an uncertain paused remote remains routable")
+        #expect(
+            (connectCommandRoute(owner: .uncertain(nil), localDeviceID: "local")) == (.waitingForLocalIdentity),
+            "an unidentified owner cannot accidentally steal playback")
 
         let inactivePhone = PlaybackDevice(
             id: "phone",
@@ -297,16 +248,13 @@ func runPlaybackSupportChecks(_ check: CheckRunner) {
             previousOwner: .none,
             lastRemoteDeviceID: "phone"
         )
-        check.equal(
-            "a metadata-late remote track retains an uncertain remote identity",
-            metadataLateOwner,
-            .uncertain(inactivePhone)
-        )
-        check.equal(
-            "the metadata-late owner routes remotely instead of stealing playback",
-            connectCommandRoute(owner: metadataLateOwner, localDeviceID: "local"),
-            .remote(from: "local", to: "phone")
-        )
+        #expect(
+            (metadataLateOwner) == (.uncertain(inactivePhone)),
+            "a metadata-late remote track retains an uncertain remote identity")
+        #expect(
+            (connectCommandRoute(owner: metadataLateOwner, localDeviceID: "local"))
+                == (.remote(from: "local", to: "phone")),
+            "the metadata-late owner routes remotely instead of stealing playback")
         let missingFallbackOwner = connectionPlaybackOwner(
             isLocalActive: false,
             localDeviceID: "local",
@@ -316,16 +264,10 @@ func runPlaybackSupportChecks(_ check: CheckRunner) {
             previousOwner: .none,
             lastRemoteDeviceID: "missing-speaker"
         )
-        check.equal(
-            "a stale last-remote fallback stays unidentified",
-            missingFallbackOwner,
-            .uncertain(nil)
-        )
-        check.equal(
-            "an unidentified fallback cannot steal playback locally",
-            connectCommandRoute(owner: missingFallbackOwner, localDeviceID: "local"),
-            .waitingForLocalIdentity
-        )
+        #expect((missingFallbackOwner) == (.uncertain(nil)), "a stale last-remote fallback stays unidentified")
+        #expect(
+            (connectCommandRoute(owner: missingFallbackOwner, localDeviceID: "local")) == (.waitingForLocalIdentity),
+            "an unidentified fallback cannot steal playback locally")
         let localIdentityFallback = connectionPlaybackOwner(
             isLocalActive: false,
             localDeviceID: "local",
@@ -335,90 +277,73 @@ func runPlaybackSupportChecks(_ check: CheckRunner) {
             previousOwner: .none,
             lastRemoteDeviceID: "local"
         )
-        check.equal(
-            "a last-remote identity that matches this Mac stays unidentified",
-            localIdentityFallback,
-            .uncertain(nil)
-        )
+        #expect(
+            (localIdentityFallback) == (.uncertain(nil)),
+            "a last-remote identity that matches this Mac stays unidentified")
 
-        check.nil_(
-            "a cached queue for an older track cannot replace playback identity",
-            queueBootstrapMetadataURI(
+        #expect(
+            (queueBootstrapMetadataURI(
                 snapshotTrackURI: "spotify:track:old",
                 currentTrackURI: "spotify:track:new"
-            )
-        )
-        check.equal(
-            "a cached queue may enrich only the matching current track",
-            queueBootstrapMetadataURI(
+            )) == nil, "a cached queue for an older track cannot replace playback identity")
+        #expect(
+            (queueBootstrapMetadataURI(
                 snapshotTrackURI: "spotify:track:new",
                 currentTrackURI: "spotify:track:new"
-            ),
-            "spotify:track:new"
-        )
+            )) == ("spotify:track:new"), "a cached queue may enrich only the matching current track")
     }
 
-    check.suite("Termination policy") {
+    do {
         var gate = PlaybackTerminationGate()
-        check.check("commands are admitted before termination", gate.allowsCommands)
-        check.check("the first termination request owns shutdown", gate.begin())
-        check.check("commands are rejected once termination begins", !gate.allowsCommands)
-        check.check("a second termination request cannot start another shutdown", !gate.begin())
+        #expect((gate.allowsCommands) == true, "commands are admitted before termination")
+        #expect((gate.begin()) == true, "the first termination request owns shutdown")
+        #expect((!gate.allowsCommands) == true, "commands are rejected once termination begins")
+        #expect((!gate.begin()) == true, "a second termination request cannot start another shutdown")
     }
 
-    check.suite("PCM ring buffer cursor") {
+    do {
         var cursor = PCMBufferCursor(capacity: 8)
-        check.equal("an empty cursor has no available samples", cursor.available, 0)
-        check.equal("one slot distinguishes full from empty", cursor.free, 7)
+        #expect((cursor.available) == (0), "an empty cursor has no available samples")
+        #expect((cursor.free) == (7), "one slot distinguishes full from empty")
 
         let normalized = PCMBufferCursor(capacity: 8, readIndex: -1, writeIndex: -9)
-        check.equal("a negative read index wraps into the ring", normalized.readIndex, 7)
-        check.equal("a negative write index wraps into the ring", normalized.writeIndex, 7)
+        #expect((normalized.readIndex) == (7), "a negative read index wraps into the ring")
+        #expect((normalized.writeIndex) == (7), "a negative write index wraps into the ring")
 
         cursor.advanceWrite(by: 6)
         cursor.advanceRead(by: 5)
         cursor.advanceWrite(by: 1)
-        check.equal("wrapped writes preserve the available count", cursor.available, 2)
-        check.equal("write index wraps at capacity", cursor.writeIndex, 7)
+        #expect((cursor.available) == (2), "wrapped writes preserve the available count")
+        #expect((cursor.writeIndex) == (7), "write index wraps at capacity")
 
         cursor.advanceRead(by: 2)
         cursor.advanceWrite(by: 7)
-        check.equal("the cursor can represent a full ring", cursor.available, 7)
-        check.equal("a full ring has no writable slots", cursor.free, 0)
+        #expect((cursor.available) == (7), "the cursor can represent a full ring")
+        #expect((cursor.free) == (0), "a full ring has no writable slots")
 
         cursor.reset()
-        check.equal("reset clears the read index", cursor.readIndex, 0)
-        check.equal("reset clears the write index", cursor.writeIndex, 0)
-        check.equal("reset restores full writable capacity", cursor.free, 7)
+        #expect((cursor.readIndex) == (0), "reset clears the read index")
+        #expect((cursor.writeIndex) == (0), "reset clears the write index")
+        #expect((cursor.free) == (7), "reset restores full writable capacity")
     }
 
-    check.suite("PCM write backpressure") {
-        check.equal(
-            "one wait slice is 500 milliseconds",
-            PCMWriteBackpressure.waitTimeoutMilliseconds,
-            500
-        )
+    do {
+        #expect((PCMWriteBackpressure.waitTimeoutMilliseconds) == (500), "one wait slice is 500 milliseconds")
 
         var policy = PCMWriteBackpressure()
         policy.beginWrite()
-        check.equal(
-            "free space admits a partial write",
-            policy.admit(freeSpace: 8, remaining: 3, isRendering: true),
-            .write(3)
-        )
-        check.equal(
-            "admission never copies more than free space",
-            policy.admit(freeSpace: 2, remaining: 9, isRendering: true),
-            .write(2)
-        )
+        #expect(
+            (policy.admit(freeSpace: 8, remaining: 3, isRendering: true)) == (.write(3)),
+            "free space admits a partial write")
+        #expect(
+            (policy.admit(freeSpace: 2, remaining: 9, isRendering: true)) == (.write(2)),
+            "admission never copies more than free space")
 
         var stopped = PCMWriteBackpressure()
         stopped.beginWrite()
-        check.equal(
-            "a stopped renderer drops a full buffer instead of waiting",
-            stopped.admit(freeSpace: 0, remaining: 4, isRendering: false),
-            .dropRemaining
-        )
+        #expect(
+            (stopped.admit(freeSpace: 0, remaining: 4, isRendering: false)) == (.dropRemaining),
+            "a stopped renderer drops a full buffer instead of waiting")
 
         var full = PCMWriteBackpressure()
         full.beginWrite()
@@ -428,12 +353,12 @@ func runPlaybackSupportChecks(_ check: CheckRunner) {
         writeLoop: while true {
             switch full.admit(freeSpace: 0, remaining: remaining, isRendering: true) {
             case .write(_):
-                check.check("a full rendering buffer cannot admit a write", false)
+                #expect((false) == true, "a full rendering buffer cannot admit a write")
                 break writeLoop
             case .waitForSpace:
                 waitCount += 1
                 if waitCount > 1 {
-                    check.check("wait admission is spent after one park", false)
+                    #expect((false) == true, "wait admission is spent after one park")
                     break writeLoop
                 }
             case .dropRemaining:
@@ -441,74 +366,59 @@ func runPlaybackSupportChecks(_ check: CheckRunner) {
                 break writeLoop
             }
         }
-        check.equal("a full buffer waits once then drops instead of looping", waitCount, 1)
-        check.check("control can run on the writer thread after the drop", controlRan)
-        check.check("the wait budget stays spent after the drop", full.hasSpentWait)
+        #expect((waitCount) == (1), "a full buffer waits once then drops instead of looping")
+        #expect((controlRan) == true, "control can run on the writer thread after the drop")
+        #expect((full.hasSpentWait) == true, "the wait budget stays spent after the drop")
 
         var trickle = PCMWriteBackpressure()
         trickle.beginWrite()
-        check.equal(
-            "the first full buffer spends the wait",
-            trickle.admit(freeSpace: 0, remaining: 10, isRendering: true),
-            .waitForSpace
-        )
-        check.equal(
-            "a small consumer release still copies",
-            trickle.admit(freeSpace: 1, remaining: 10, isRendering: true),
-            .write(1)
-        )
-        check.equal(
-            "a second full buffer in the same write drops instead of waiting again",
-            trickle.admit(freeSpace: 0, remaining: 9, isRendering: true),
-            .dropRemaining
-        )
-        check.equal(
-            "further trickle releases cannot buy another wait",
-            trickle.admit(freeSpace: 1, remaining: 8, isRendering: true),
-            .write(1)
-        )
-        check.equal(
-            "the same write still drops when full after another trickle",
-            trickle.admit(freeSpace: 0, remaining: 7, isRendering: true),
-            .dropRemaining
-        )
+        #expect(
+            (trickle.admit(freeSpace: 0, remaining: 10, isRendering: true)) == (.waitForSpace),
+            "the first full buffer spends the wait")
+        #expect(
+            (trickle.admit(freeSpace: 1, remaining: 10, isRendering: true)) == (.write(1)),
+            "a small consumer release still copies")
+        #expect(
+            (trickle.admit(freeSpace: 0, remaining: 9, isRendering: true)) == (.dropRemaining),
+            "a second full buffer in the same write drops instead of waiting again")
+        #expect(
+            (trickle.admit(freeSpace: 1, remaining: 8, isRendering: true)) == (.write(1)),
+            "further trickle releases cannot buy another wait")
+        #expect(
+            (trickle.admit(freeSpace: 0, remaining: 7, isRendering: true)) == (.dropRemaining),
+            "the same write still drops when full after another trickle")
 
         trickle.beginWrite()
-        check.equal(
-            "the next write call restores a single wait",
-            trickle.admit(freeSpace: 0, remaining: 7, isRendering: true),
-            .waitForSpace
-        )
+        #expect(
+            (trickle.admit(freeSpace: 0, remaining: 7, isRendering: true)) == (.waitForSpace),
+            "the next write call restores a single wait")
 
         full.resetWaitBudget()
-        check.equal(
-            "ring reset allows a later full buffer to wait again",
-            full.admit(freeSpace: 0, remaining: 1, isRendering: true),
-            .waitForSpace
-        )
+        #expect(
+            (full.admit(freeSpace: 0, remaining: 1, isRendering: true)) == (.waitForSpace),
+            "ring reset allows a later full buffer to wait again")
     }
 
-    check.suite("Audio output control epoch") {
+    do {
         var epoch = AudioOutputControlEpoch()
-        check.equal("stop is a no-op before start", epoch.beginStop() == nil, true)
+        #expect((epoch.beginStop() == nil) == (true), "stop is a no-op before start")
 
         epoch.beginStart()
         let first = epoch.beginStop()
-        check.check("stop captures the live generation", first == 1)
-        check.check("rendering is cleared before serialized teardown", !epoch.isRendering)
-        check.check("a stop still applies before a later start", first.map { epoch.shouldApplyStop($0) } == true)
+        #expect((first == 1) == true, "stop captures the live generation")
+        #expect((!epoch.isRendering) == true, "rendering is cleared before serialized teardown")
+        #expect((first.map { epoch.shouldApplyStop($0) } == true) == true, "a stop still applies before a later start")
 
         epoch.beginStart()
-        check.check("rendering is live after start", epoch.isRendering)
-        check.check(
-            "a superseded stop cannot tear down a later start",
-            first.map { epoch.shouldApplyStop($0) } == false
-        )
-        check.equal("start bumps the generation", epoch.generation, 2)
+        #expect((epoch.isRendering) == true, "rendering is live after start")
+        #expect(
+            (first.map { epoch.shouldApplyStop($0) } == false) == true,
+            "a superseded stop cannot tear down a later start")
+        #expect((epoch.generation) == (2), "start bumps the generation")
 
         let second = epoch.beginStop()
-        check.check("a new stop captures the new generation", second == 2)
-        check.check("the new stop still applies", second.map { epoch.shouldApplyStop($0) } == true)
-        check.check("the old stop remains inert", first.map { epoch.shouldApplyStop($0) } == false)
+        #expect((second == 2) == true, "a new stop captures the new generation")
+        #expect((second.map { epoch.shouldApplyStop($0) } == true) == true, "the new stop still applies")
+        #expect((first.map { epoch.shouldApplyStop($0) } == false) == true, "the old stop remains inert")
     }
 }

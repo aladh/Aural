@@ -1,3 +1,4 @@
+import Testing
 //
 //  ShufflePolicyChecks.swift
 //  Spotty
@@ -6,7 +7,8 @@
 import Foundation
 import SpottyDomain
 
-func runShufflePolicyChecks(_ check: CheckRunner) {
+@Test
+func testShufflePolicy() {
     /// Tiny deterministic generator so shuffle outcomes are reproducible.
     struct StepRng: RandomNumberGenerator {
         var state: UInt64 = 0
@@ -17,18 +19,14 @@ func runShufflePolicyChecks(_ check: CheckRunner) {
         }
     }
 
-    check.suite("Fewer-repeats shuffle") {
+    do {
         var rng = StepRng()
-        check.equal(
-            "empty list passes through",
-            ShufflePolicy.order(count: 0, uri: { _ in "" }, history: [:], now: 0, generator: &rng),
-            []
-        )
-        check.equal(
-            "single track passes through",
-            ShufflePolicy.order(count: 1, uri: { _ in "a" }, history: [:], now: 0, generator: &rng),
-            [0]
-        )
+        #expect(
+            (ShufflePolicy.order(count: 0, uri: { _ in "" }, history: [:], now: 0, generator: &rng)) == ([]),
+            "empty list passes through")
+        #expect(
+            (ShufflePolicy.order(count: 1, uri: { _ in "a" }, history: [:], now: 0, generator: &rng)) == ([0]),
+            "single track passes through")
 
         // "fresh" (index 0) was played moments ago; "stale" has never been played.
         let uris = ["fresh", "stale"]
@@ -43,11 +41,7 @@ func runShufflePolicyChecks(_ check: CheckRunner) {
                 now: now,
                 generator: &seeded
             )
-            check.equal(
-                "just-played track sinks deepest into the sequence (seed \(seed))",
-                order.last,
-                0
-            )
+            #expect((order.last) == (0), "just-played track sinks deepest into the sequence (seed \(seed))")
         }
 
         let scoringNow: TimeInterval = ShufflePolicy.freshnessWindow
@@ -60,8 +54,8 @@ func runShufflePolicyChecks(_ check: CheckRunner) {
             [0, 1], uri: { scoringURIs[$0] }, history: scoringHistory, now: scoringNow
         )
         let unplayedFirst = ShufflePolicy.score([0, 1], uri: { scoringURIs[$0] }, history: [:], now: scoringNow)
-        check.check("freshness raises the score of an early position", staleFirst < halfFreshFirst)
-        check.check("unplayed beats half-fresh in the same slot", halfFreshFirst < unplayedFirst)
+        #expect((staleFirst < halfFreshFirst) == true, "freshness raises the score of an early position")
+        #expect((halfFreshFirst < unplayedFirst) == true, "unplayed beats half-fresh in the same slot")
 
         let retentionNow: TimeInterval = 200 * 24 * 60 * 60
         let pruned = ShufflePolicy.pruned(
@@ -69,33 +63,26 @@ func runShufflePolicyChecks(_ check: CheckRunner) {
                 "expired": 0,
                 "current": retentionNow - 60,
             ], now: retentionNow)
-        check.check("expired entries are dropped", !pruned.keys.contains("expired"))
-        check.check("recent entries survive pruning", pruned.keys.contains("current"))
+        #expect((!pruned.keys.contains("expired")) == true, "expired entries are dropped")
+        #expect((pruned.keys.contains("current")) == true, "recent entries survive pruning")
 
         // The cutoff itself is inclusive; one second past it is not.
         let atCutoff = ShufflePolicy.pruned(["edge": retentionNow - ShufflePolicy.retention], now: retentionNow)
-        check.check("history exactly at retention survives pruning", atCutoff.keys.contains("edge"))
+        #expect((atCutoff.keys.contains("edge")) == true, "history exactly at retention survives pruning")
         let pastCutoff = ShufflePolicy.pruned(
             ["gone": retentionNow - ShufflePolicy.retention - 1],
             now: retentionNow
         )
-        check.check("history one second past retention is dropped", !pastCutoff.keys.contains("gone"))
-        check.check(
-            "pruning an empty history stays empty",
-            ShufflePolicy.pruned([:], now: retentionNow).isEmpty
-        )
+        #expect((!pastCutoff.keys.contains("gone")) == true, "history one second past retention is dropped")
+        #expect((ShufflePolicy.pruned([:], now: retentionNow).isEmpty) == true, "pruning an empty history stays empty")
 
         // Clock skew must never make a track fresher than fresh.
-        check.equal(
-            "future play times contribute no freshness",
-            ShufflePolicy.score([0], uri: { scoringURIs[$0] }, history: ["a": scoringNow + 60], now: scoringNow),
-            0
-        )
-        check.equal(
-            "an empty sequence scores nothing",
-            ShufflePolicy.score([], uri: { scoringURIs[$0] }, history: scoringHistory, now: scoringNow),
-            0
-        )
+        #expect(
+            (ShufflePolicy.score([0], uri: { scoringURIs[$0] }, history: ["a": scoringNow + 60], now: scoringNow))
+                == (0), "future play times contribute no freshness")
+        #expect(
+            (ShufflePolicy.score([], uri: { scoringURIs[$0] }, history: scoringHistory, now: scoringNow)) == (0),
+            "an empty sequence scores nothing")
 
         // Whatever ordering wins, every track must still play exactly once.
         var permutationRng = StepRng(state: 99)
@@ -107,10 +94,8 @@ func runShufflePolicyChecks(_ check: CheckRunner) {
             now: 200,
             generator: &permutationRng
         )
-        check.equal(
-            "shuffled output is a permutation of the list",
-            permutationOrder.sorted(),
-            Array(0..<permutationURIs.count)
-        )
+        #expect(
+            (permutationOrder.sorted()) == (Array(0..<permutationURIs.count)),
+            "shuffled output is a permutation of the list")
     }
 }

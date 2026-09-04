@@ -1,3 +1,4 @@
+import Testing
 import SpottyDomain
 import Foundation
 @testable import SpottyCore
@@ -110,269 +111,207 @@ private func startJoiningPlaylistLoad(_ store: HomeLibraryStore) -> PlaylistLoad
     )
 }
 
+@Test
 @MainActor
-func runHomeLibraryStoreChecks(_ runner: CheckRunner) async {
+func testHomeLibraryStore() async {
     let first: PathfinderPlaylist
     let second: PathfinderPlaylist
     do {
         first = try firstPlaylist()
         second = try secondPlaylist()
     } catch {
-        runner.check("synthetic playlist fixtures decode", false)
+        #expect((false) == true, "synthetic playlist fixtures decode")
         return
     }
 
-    await runner.suite("Home library non-force join") {
+    do {
         let provider = GatedPlaylistCatalog()
         let session = CatalogSessionAvailability(accountEpoch: 1, isAvailable: true)
         let store = makeStore(provider: provider, session: session)
 
         let firstLoad = Task { await store.loadPlaylists() }
-        runner.check(
-            "the first playlist request parks",
-            await waitUntil { await provider.requestCount == 1 }
-        )
+        #expect((await waitUntil { await provider.requestCount == 1 }) == true, "the first playlist request parks")
         let follower = startJoiningPlaylistLoad(store)
-        runner.check(
-            "the duplicate caller entered loadPlaylists",
-            await waitUntil { follower.hasEntered() }
-        )
-        runner.equal("a duplicate current-section request joins the in-flight work", await provider.requestCount, 1)
-        runner.check("the joined section stays loading", store.isLoading(.playlists))
-        runner.check("the duplicate caller is still waiting on the in-flight request", !follower.hasFinished())
+        #expect((await waitUntil { follower.hasEntered() }) == true, "the duplicate caller entered loadPlaylists")
+        #expect((await provider.requestCount) == (1), "a duplicate current-section request joins the in-flight work")
+        #expect((store.isLoading(.playlists)) == true, "the joined section stays loading")
+        #expect((!follower.hasFinished()) == true, "the duplicate caller is still waiting on the in-flight request")
 
         await provider.completeNext(.playlists([first]))
         await firstLoad.value
         await follower.task.value
-        runner.check("the duplicate caller finishes after the in-flight request", follower.hasFinished())
+        #expect((follower.hasFinished()) == true, "the duplicate caller finishes after the in-flight request")
 
-        runner.equal("joined consumers publish one result", store.playlists.map(\.uri), ["spotify:playlist:first"])
-        runner.check("the joined section is loaded once", store.loadedSections.contains(.playlists))
-        runner.check("joined loading finishes", !store.isLoading(.playlists))
-        runner.nil_("join does not surface an error", store.error(for: .playlists))
+        #expect((store.playlists.map(\.uri)) == (["spotify:playlist:first"]), "joined consumers publish one result")
+        #expect((store.loadedSections.contains(.playlists)) == true, "the joined section is loaded once")
+        #expect((!store.isLoading(.playlists)) == true, "joined loading finishes")
+        #expect((store.error(for: .playlists)) == nil, "join does not surface an error")
     }
 
-    await runner.suite("Home library force supersession") {
+    do {
         let provider = GatedPlaylistCatalog()
         let session = CatalogSessionAvailability(accountEpoch: 1, isAvailable: true)
         let store = makeStore(provider: provider, session: session)
 
         let stale = Task { await store.loadPlaylists() }
-        runner.check(
-            "the superseded request parks",
-            await waitUntil { await provider.requestCount == 1 }
-        )
+        #expect((await waitUntil { await provider.requestCount == 1 }) == true, "the superseded request parks")
 
         let forced = Task { await store.loadPlaylists(force: true) }
-        runner.check(
-            "force starts a new section request instead of joining",
-            await waitUntil { await provider.requestCount == 2 }
-        )
-        runner.check("the newest flight owns loading", store.isLoading(.playlists))
-        runner.nil_("force clears the previous section error slot", store.error(for: .playlists))
+        #expect(
+            (await waitUntil { await provider.requestCount == 2 }) == true,
+            "force starts a new section request instead of joining")
+        #expect((store.isLoading(.playlists)) == true, "the newest flight owns loading")
+        #expect((store.error(for: .playlists)) == nil, "force clears the previous section error slot")
 
         await provider.completeNext(.playlists([first]))
         await stale.value
-        runner.check("a stale success leaves the new request loading", store.isLoading(.playlists))
-        runner.check("a stale success does not mark the section loaded", !store.loadedSections.contains(.playlists))
-        runner.equal("a stale success does not publish", store.playlists.map(\.uri), [])
-        runner.nil_("a stale success does not surface an error", store.error(for: .playlists))
+        #expect((store.isLoading(.playlists)) == true, "a stale success leaves the new request loading")
+        #expect(
+            (!store.loadedSections.contains(.playlists)) == true, "a stale success does not mark the section loaded")
+        #expect((store.playlists.map(\.uri)) == ([]), "a stale success does not publish")
+        #expect((store.error(for: .playlists)) == nil, "a stale success does not surface an error")
 
         let joiner = startJoiningPlaylistLoad(store)
-        runner.check(
-            "the later non-forced caller entered loadPlaylists",
-            await waitUntil { joiner.hasEntered() }
-        )
-        runner.equal(
-            "the old request cannot clear the new request's in-flight task",
-            await provider.requestCount,
-            2
-        )
-        runner.check("a later non-forced caller is still waiting on the newest flight", !joiner.hasFinished())
+        #expect((await waitUntil { joiner.hasEntered() }) == true, "the later non-forced caller entered loadPlaylists")
+        #expect((await provider.requestCount) == (2), "the old request cannot clear the new request's in-flight task")
+        #expect((!joiner.hasFinished()) == true, "a later non-forced caller is still waiting on the newest flight")
 
         await provider.completeNext(.playlists([second]))
         await forced.value
         await joiner.task.value
-        runner.check("the later non-forced caller finishes with the newest flight", joiner.hasFinished())
+        #expect((joiner.hasFinished()) == true, "the later non-forced caller finishes with the newest flight")
 
-        runner.equal(
-            "only the current forced request publishes",
-            store.playlists.map(\.uri),
-            ["spotify:playlist:second"]
-        )
-        runner.check("the newest flight marks the section loaded", store.loadedSections.contains(.playlists))
-        runner.check("the newest flight clears loading", !store.isLoading(.playlists))
+        #expect(
+            (store.playlists.map(\.uri)) == (["spotify:playlist:second"]), "only the current forced request publishes")
+        #expect((store.loadedSections.contains(.playlists)) == true, "the newest flight marks the section loaded")
+        #expect((!store.isLoading(.playlists)) == true, "the newest flight clears loading")
     }
 
-    await runner.suite("Home library non-force joins an in-flight forced refresh") {
+    do {
         let provider = GatedPlaylistCatalog()
         let session = CatalogSessionAvailability(accountEpoch: 1, isAvailable: true)
         let store = makeStore(provider: provider, session: session)
 
         let initial = Task { await store.loadPlaylists() }
-        runner.check(
-            "the initial playlist request parks",
-            await waitUntil { await provider.requestCount == 1 }
-        )
+        #expect((await waitUntil { await provider.requestCount == 1 }) == true, "the initial playlist request parks")
         await provider.completeNext(.playlists([first]))
         await initial.value
-        runner.equal(
-            "the section is loaded before the forced refresh", store.playlists.map(\.uri), ["spotify:playlist:first"])
+        #expect(
+            (store.playlists.map(\.uri)) == (["spotify:playlist:first"]),
+            "the section is loaded before the forced refresh")
 
         let forced = Task { await store.loadPlaylists(force: true) }
-        runner.check(
-            "force refreshes an already-loaded section",
-            await waitUntil { await provider.requestCount == 2 }
-        )
+        #expect(
+            (await waitUntil { await provider.requestCount == 2 }) == true, "force refreshes an already-loaded section")
         let follower = startJoiningPlaylistLoad(store)
-        runner.check(
-            "the non-forced caller entered loadPlaylists",
-            await waitUntil { follower.hasEntered() }
-        )
-        runner.equal(
-            "a non-forced caller joins the in-flight forced refresh",
-            await provider.requestCount,
-            2
-        )
-        runner.check("the forced refresh keeps loading while the follower waits", store.isLoading(.playlists))
-        runner.check("the non-forced caller is still waiting on the forced refresh", !follower.hasFinished())
+        #expect((await waitUntil { follower.hasEntered() }) == true, "the non-forced caller entered loadPlaylists")
+        #expect((await provider.requestCount) == (2), "a non-forced caller joins the in-flight forced refresh")
+        #expect((store.isLoading(.playlists)) == true, "the forced refresh keeps loading while the follower waits")
+        #expect((!follower.hasFinished()) == true, "the non-forced caller is still waiting on the forced refresh")
 
         await provider.completeNext(.playlists([second]))
         await forced.value
         await follower.task.value
-        runner.check("the non-forced caller finishes after the forced refresh", follower.hasFinished())
-        runner.equal(
-            "joined callers observe the forced refresh",
-            store.playlists.map(\.uri),
-            ["spotify:playlist:second"]
-        )
-        runner.check("the joined forced refresh finishes loading", !store.isLoading(.playlists))
+        #expect((follower.hasFinished()) == true, "the non-forced caller finishes after the forced refresh")
+        #expect(
+            (store.playlists.map(\.uri)) == (["spotify:playlist:second"]), "joined callers observe the forced refresh")
+        #expect((!store.isLoading(.playlists)) == true, "the joined forced refresh finishes loading")
     }
 
-    await runner.suite("Home library stale failure and cancellation stay inert") {
+    do {
         let provider = GatedPlaylistCatalog()
         let session = CatalogSessionAvailability(accountEpoch: 1, isAvailable: true)
         let store = makeStore(provider: provider, session: session)
 
         let stale = Task { await store.loadPlaylists() }
-        runner.check(
-            "the failing request parks",
-            await waitUntil { await provider.requestCount == 1 }
-        )
+        #expect((await waitUntil { await provider.requestCount == 1 }) == true, "the failing request parks")
         let forced = Task { await store.loadPlaylists(force: true) }
-        runner.check(
-            "force supersedes the failing request",
-            await waitUntil { await provider.requestCount == 2 }
-        )
+        #expect((await waitUntil { await provider.requestCount == 2 }) == true, "force supersedes the failing request")
 
         await provider.completeNext(.failure(.unavailable))
         await stale.value
-        runner.check("a stale failure leaves the new request loading", store.isLoading(.playlists))
-        runner.nil_("a stale failure does not surface an error", store.error(for: .playlists))
+        #expect((store.isLoading(.playlists)) == true, "a stale failure leaves the new request loading")
+        #expect((store.error(for: .playlists)) == nil, "a stale failure does not surface an error")
 
         await provider.completeNext(.urlCancelled)
         await forced.value
-        runner.check("cancellation does not mark the section loaded", !store.loadedSections.contains(.playlists))
-        runner.check("cancellation clears only the cancelled flight's loading", !store.isLoading(.playlists))
-        runner.nil_("cancellation does not surface a user-facing error", store.error(for: .playlists))
-        runner.equal("cancellation does not publish playlists", store.playlists.map(\.uri), [])
+        #expect((!store.loadedSections.contains(.playlists)) == true, "cancellation does not mark the section loaded")
+        #expect((!store.isLoading(.playlists)) == true, "cancellation clears only the cancelled flight's loading")
+        #expect((store.error(for: .playlists)) == nil, "cancellation does not surface a user-facing error")
+        #expect((store.playlists.map(\.uri)) == ([]), "cancellation does not publish playlists")
     }
 
-    await runner.suite("Home library account and session change") {
+    do {
         let provider = GatedPlaylistCatalog()
         let session = CatalogSessionAvailability(accountEpoch: 1, isAvailable: true)
         let store = makeStore(provider: provider, session: session)
 
         let staleEpoch = Task { await store.loadPlaylists() }
-        runner.check(
-            "the pre-epoch request parks",
-            await waitUntil { await provider.requestCount == 1 }
-        )
+        #expect((await waitUntil { await provider.requestCount == 1 }) == true, "the pre-epoch request parks")
         session.update(accountEpoch: 2, isAvailable: true)
         await provider.completeNext(.playlists([first]))
         await staleEpoch.value
-        runner.equal("an older account epoch cannot publish", store.playlists.map(\.uri), [])
-        runner.check(
-            "an older account epoch cannot mark the section loaded", !store.loadedSections.contains(.playlists))
+        #expect((store.playlists.map(\.uri)) == ([]), "an older account epoch cannot publish")
+        #expect(
+            (!store.loadedSections.contains(.playlists)) == true,
+            "an older account epoch cannot mark the section loaded")
 
         let staleRevision = Task { await store.loadPlaylists() }
-        runner.check(
-            "the pre-reconnect request parks",
-            await waitUntil { await provider.requestCount == 2 }
-        )
+        #expect((await waitUntil { await provider.requestCount == 2 }) == true, "the pre-reconnect request parks")
         session.update(accountEpoch: 2, isAvailable: false)
         session.update(accountEpoch: 2, isAvailable: true)
         await provider.completeNext(.playlists([first]))
         await staleRevision.value
-        runner.equal("a pre-reconnect result cannot publish", store.playlists.map(\.uri), [])
+        #expect((store.playlists.map(\.uri)) == ([]), "a pre-reconnect result cannot publish")
 
         let current = Task { await store.loadPlaylists() }
-        runner.check(
-            "a new session starts a distinct request",
-            await waitUntil { await provider.requestCount == 3 }
-        )
+        #expect(
+            (await waitUntil { await provider.requestCount == 3 }) == true, "a new session starts a distinct request")
         await provider.completeNext(.playlists([second]))
         await current.value
-        runner.equal(
-            "the current session publishes",
-            store.playlists.map(\.uri),
-            ["spotify:playlist:second"]
-        )
-        runner.check("the current session marks the section loaded", store.loadedSections.contains(.playlists))
+        #expect((store.playlists.map(\.uri)) == (["spotify:playlist:second"]), "the current session publishes")
+        #expect((store.loadedSections.contains(.playlists)) == true, "the current session marks the section loaded")
 
         session.update(accountEpoch: 3, isAvailable: true)
         let afterEpoch = Task { await store.loadPlaylists() }
-        runner.check(
-            "a later account epoch reloads a previously loaded section",
-            await waitUntil { await provider.requestCount == 4 }
-        )
+        #expect(
+            (await waitUntil { await provider.requestCount == 4 }) == true,
+            "a later account epoch reloads a previously loaded section")
         await provider.completeNext(.playlists([first]))
         await afterEpoch.value
-        runner.equal(
-            "the later account epoch publishes",
-            store.playlists.map(\.uri),
-            ["spotify:playlist:first"]
-        )
+        #expect((store.playlists.map(\.uri)) == (["spotify:playlist:first"]), "the later account epoch publishes")
 
         session.update(accountEpoch: 3, isAvailable: false)
         session.update(accountEpoch: 3, isAvailable: true)
         let afterRevision = Task { await store.loadPlaylists() }
-        runner.check(
-            "a new session revision reloads a previously loaded section",
-            await waitUntil { await provider.requestCount == 5 }
-        )
+        #expect(
+            (await waitUntil { await provider.requestCount == 5 }) == true,
+            "a new session revision reloads a previously loaded section")
         await provider.completeNext(.playlists([second]))
         await afterRevision.value
-        runner.equal(
-            "the new session revision publishes",
-            store.playlists.map(\.uri),
-            ["spotify:playlist:second"]
-        )
+        #expect((store.playlists.map(\.uri)) == (["spotify:playlist:second"]), "the new session revision publishes")
     }
 
-    await runner.suite("Home library reset and teardown") {
+    do {
         let provider = GatedPlaylistCatalog()
         let session = CatalogSessionAvailability(accountEpoch: 1, isAvailable: true)
         let store = makeStore(provider: provider, session: session)
 
         let inflight = Task { await store.loadPlaylists() }
-        runner.check(
-            "the torn-down request parks",
-            await waitUntil { await provider.requestCount == 1 }
-        )
-        runner.check("teardown starts from a loading section", store.isLoading(.playlists))
+        #expect((await waitUntil { await provider.requestCount == 1 }) == true, "the torn-down request parks")
+        #expect((store.isLoading(.playlists)) == true, "teardown starts from a loading section")
 
         store.reset()
-        runner.check("reset clears loading", !store.isLoading)
-        runner.check("reset clears loaded sections", store.loadedSections.isEmpty)
-        runner.equal("reset clears playlists", store.playlists.map(\.uri), [])
-        runner.nil_("reset clears section errors", store.error(for: .playlists))
+        #expect((!store.isLoading) == true, "reset clears loading")
+        #expect((store.loadedSections.isEmpty) == true, "reset clears loaded sections")
+        #expect((store.playlists.map(\.uri)) == ([]), "reset clears playlists")
+        #expect((store.error(for: .playlists)) == nil, "reset clears section errors")
 
         await provider.completeNext(.playlists([first]))
         await inflight.value
-        runner.equal("a torn-down success cannot publish", store.playlists.map(\.uri), [])
-        runner.check("a torn-down success cannot restore loading", !store.isLoading)
-        runner.check("a torn-down success cannot mark the section loaded", store.loadedSections.isEmpty)
-        runner.nil_("a torn-down success cannot surface an error", store.error(for: .playlists))
+        #expect((store.playlists.map(\.uri)) == ([]), "a torn-down success cannot publish")
+        #expect((!store.isLoading) == true, "a torn-down success cannot restore loading")
+        #expect((store.loadedSections.isEmpty) == true, "a torn-down success cannot mark the section loaded")
+        #expect((store.error(for: .playlists)) == nil, "a torn-down success cannot surface an error")
     }
 }

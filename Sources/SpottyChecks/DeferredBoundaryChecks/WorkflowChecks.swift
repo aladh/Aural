@@ -1,3 +1,4 @@
+import Testing
 import SpottyDomain
 import Foundation
 @testable import SpottyCore
@@ -462,17 +463,21 @@ private struct WorkflowCatalog: CatalogProviding {
     func playlist(id _: String) async throws -> PathfinderPlaylistUnion { throw WorkflowFailure.unavailable }
 }
 
+@Test
 @MainActor
-func runWorkflowChecks(_ runner: CheckRunner) async {
-    runner.suite("Sidebar navigation serialization") {
+func testWorkflow() async {
+    do {
         let selection = SidebarSelection.playlist("spotify:playlist:sensitive-fixture")
-        runner.equal(
-            "selection round-trips through scene storage", SidebarSelection(rawValue: selection.rawValue), selection)
-        runner.equal("diagnostics retain the media kind", selection.diagnosticLabel, "media:playlist")
-        runner.check("diagnostics omit the Spotify entity id", !selection.diagnosticLabel.contains("sensitive-fixture"))
+        #expect(
+            (SidebarSelection(rawValue: selection.rawValue)) == (selection),
+            "selection round-trips through scene storage")
+        #expect((selection.diagnosticLabel) == ("media:playlist"), "diagnostics retain the media kind")
+        #expect(
+            (!selection.diagnosticLabel.contains("sensitive-fixture")) == true, "diagnostics omit the Spotify entity id"
+        )
     }
 
-    await runner.suite("Injected playback coordinator") {
+    do {
         let local = RecordingLocalEngine()
         let remote = RecordingRemoteClient()
         let coordinator = PlaybackCoordinator(local: local, remote: remote)
@@ -481,28 +486,28 @@ func runWorkflowChecks(_ runner: CheckRunner) async {
         do {
             localResult = try await coordinator.performLocalCommand(.pause)
         } catch {
-            runner.check("fake local command succeeds", false)
+            #expect((false) == true, "fake local command succeeds")
             return
         }
         try? await coordinator.performRemote(.shuffle(true), from: "source", to: "target")
 
         if case .success = localResult {
-            runner.check("fake local command succeeds", true)
+            #expect((true) == true, "fake local command succeeds")
         } else {
-            runner.check("fake local command succeeds", false)
+            #expect((false) == true, "fake local command succeeds")
         }
-        runner.equal("one local command recorded", local.operations.count, 1)
+        #expect((local.operations.count) == (1), "one local command recorded")
         if case .pause? = local.operations.first {
-            runner.check("pause command reaches injected engine", true)
+            #expect((true) == true, "pause command reaches injected engine")
         } else {
-            runner.check("pause command reaches injected engine", false)
+            #expect((false) == true, "pause command reaches injected engine")
         }
         let endpoints = await remote.endpoints
-        runner.equal("one remote command recorded", endpoints.count, 1)
-        runner.equal("shuffle reaches injected remote", endpoints.first, .shuffle)
+        #expect((endpoints.count) == (1), "one remote command recorded")
+        #expect((endpoints.first) == (.shuffle), "shuffle reaches injected remote")
     }
 
-    await runner.suite("Queue workflow invalidation") {
+    do {
         let webQueue = SuspendedWebQueue()
         let remote = RecordingRemoteClient()
         let service = QueueService(
@@ -523,7 +528,7 @@ func runWorkflowChecks(_ runner: CheckRunner) async {
         await service.reset(accountEpoch: 8)
         await webQueue.complete(with: [workflowTrack("spotify:track:stale")])
         let staleResult = await refresh.value
-        runner.nil_("old-account web result is rejected after reset", staleResult)
+        #expect((staleResult) == nil, "old-account web result is rejected after reset")
 
         let accepted = await service.acceptConnect(
             [QueueEntry(uri: "spotify:track:fresh", provider: "connect", occurrence: 0)],
@@ -531,9 +536,9 @@ func runWorkflowChecks(_ runner: CheckRunner) async {
             sourceRevision: 1,
             contextURI: "spotify:track:fresh"
         )
-        runner.equal("new-account queue remains authoritative", accepted?.snapshot.accountEpoch, 8)
-        runner.equal(
-            "new-account queue retains fresh entry", accepted?.snapshot.entries.first?.uri, "spotify:track:fresh")
+        #expect((accepted?.snapshot.accountEpoch) == (8), "new-account queue remains authoritative")
+        #expect(
+            (accepted?.snapshot.entries.first?.uri) == ("spotify:track:fresh"), "new-account queue retains fresh entry")
 
         let wrongAccount = await service.acceptConnect(
             [QueueEntry(uri: "spotify:track:wrong", provider: "connect", occurrence: 0)],
@@ -541,10 +546,10 @@ func runWorkflowChecks(_ runner: CheckRunner) async {
             sourceRevision: 2,
             contextURI: "spotify:track:wrong"
         )
-        runner.nil_("a stale account cannot read the replacement queue", wrongAccount)
+        #expect((wrongAccount) == nil, "a stale account cannot read the replacement queue")
     }
 
-    await runner.suite("Queue rate-limit cooldown and metadata bounds") {
+    do {
         let webQueue = RateLimitedWebQueue()
         let service = QueueService(
             webQueue: webQueue,
@@ -554,12 +559,12 @@ func runWorkflowChecks(_ runner: CheckRunner) async {
         await service.reset(accountEpoch: 1)
         _ = await service.refresh(fallbackEntries: [], currentTrackURI: nil, accountEpoch: 1)
         _ = await service.refresh(fallbackEntries: [], currentTrackURI: nil, accountEpoch: 1)
-        runner.equal(
-            "a 429 starts a session cooldown instead of retrying on every open", await webQueue.requestCount, 1)
+        #expect(
+            (await webQueue.requestCount) == (1), "a 429 starts a session cooldown instead of retrying on every open")
 
         await service.reset(accountEpoch: 2)
         _ = await service.refresh(fallbackEntries: [], currentTrackURI: nil, accountEpoch: 2)
-        runner.equal("a new account gets a fresh Web queue capability probe", await webQueue.requestCount, 2)
+        #expect((await webQueue.requestCount) == (2), "a new account gets a fresh Web queue capability probe")
 
         let old = workflowQueueSnapshot(
             revision: 1,
@@ -572,7 +577,8 @@ func runWorkflowChecks(_ runner: CheckRunner) async {
             entryURI: "spotify:track:new"
         )
         let merged = mergeQueueSnapshots(current: old, incoming: replacement)
-        runner.equal("replacement queues discard unreachable metadata", merged.tracks.map(\.uri), ["spotify:track:new"])
+        #expect(
+            (merged.tracks.map(\.uri)) == (["spotify:track:new"]), "replacement queues discard unreachable metadata")
 
         let connectUID = workflowQueueSnapshot(
             revision: 4,
@@ -589,11 +595,9 @@ func runWorkflowChecks(_ runner: CheckRunner) async {
             provider: "web-api"
         )
         let labeled = mergeQueueSnapshots(current: connectUID, incoming: webLabels)
-        runner.equal(
-            "Web metadata merge keeps the Connect occurrence uid for the same URI index",
-            labeled.entries.first?.uid ?? "",
-            "occ-4"
-        )
+        #expect(
+            (labeled.entries.first?.uid ?? "") == ("occ-4"),
+            "Web metadata merge keeps the Connect occurrence uid for the same URI index")
         let reorderedWeb = workflowQueueSnapshot(
             revision: 7,
             contextURI: "spotify:track:same",
@@ -602,32 +606,21 @@ func runWorkflowChecks(_ runner: CheckRunner) async {
             provider: "web-api"
         )
         let keptOrder = mergeQueueSnapshots(current: connectUID, incoming: reorderedWeb)
-        runner.equal(
-            "same-context Web refresh keeps Connect occurrence order",
-            keptOrder.entries.map(\.uri),
-            ["spotify:track:same"]
-        )
-        runner.equal(
-            "same-context Web refresh keeps the Connect occurrence uid",
-            keptOrder.entries.first?.uid ?? "",
-            "occ-4"
-        )
-        runner.equal(
-            "same-context Web refresh keeps the typed Connect occurrence",
-            keptOrder.entries.first?.occurrence,
-            4
-        )
-        runner.equal("same-context Web refresh stays Connect-owned", keptOrder.source, .connect)
-        runner.equal(
-            "same-context Web refresh does not copy the Web revision onto Connect order",
-            keptOrder.revision,
-            connectUID.revision
-        )
-        runner.equal(
-            "same-context Web refresh does not copy Web receivedAt onto Connect order",
-            keptOrder.receivedAt,
-            connectUID.receivedAt
-        )
+        #expect(
+            (keptOrder.entries.map(\.uri)) == (["spotify:track:same"]),
+            "same-context Web refresh keeps Connect occurrence order")
+        #expect(
+            (keptOrder.entries.first?.uid ?? "") == ("occ-4"),
+            "same-context Web refresh keeps the Connect occurrence uid")
+        #expect(
+            (keptOrder.entries.first?.occurrence) == (4), "same-context Web refresh keeps the typed Connect occurrence")
+        #expect((keptOrder.source) == (.connect), "same-context Web refresh stays Connect-owned")
+        #expect(
+            (keptOrder.revision) == (connectUID.revision),
+            "same-context Web refresh does not copy the Web revision onto Connect order")
+        #expect(
+            (keptOrder.receivedAt) == (connectUID.receivedAt),
+            "same-context Web refresh does not copy Web receivedAt onto Connect order")
         let changedURI = workflowQueueSnapshot(
             revision: 6,
             contextURI: "spotify:track:changed",
@@ -636,26 +629,18 @@ func runWorkflowChecks(_ runner: CheckRunner) async {
             source: .webAPI,
             provider: "web-api"
         )
-        runner.equal(
-            "Web metadata merge does not invent a uid when the URI at that index changed",
-            mergeQueueSnapshots(current: connectUID, incoming: changedURI).entries.first?.uid ?? "",
-            ""
-        )
-        runner.equal(
-            "changed-URI Web merge uses the Web entry URI",
-            mergeQueueSnapshots(current: connectUID, incoming: changedURI).entries.first?.uri ?? "",
-            "spotify:track:changed"
-        )
-        runner.equal(
-            "changed-URI Web merge keeps Web provenance",
-            mergeQueueSnapshots(current: connectUID, incoming: changedURI).source,
-            .webAPI
-        )
-        runner.equal(
-            "changed-context Web merge keeps its typed occurrence",
-            mergeQueueSnapshots(current: connectUID, incoming: changedURI).entries.first?.occurrence,
-            7
-        )
+        #expect(
+            (mergeQueueSnapshots(current: connectUID, incoming: changedURI).entries.first?.uid ?? "") == (""),
+            "Web metadata merge does not invent a uid when the URI at that index changed")
+        #expect(
+            (mergeQueueSnapshots(current: connectUID, incoming: changedURI).entries.first?.uri ?? "")
+                == ("spotify:track:changed"), "changed-URI Web merge uses the Web entry URI")
+        #expect(
+            (mergeQueueSnapshots(current: connectUID, incoming: changedURI).source) == (.webAPI),
+            "changed-URI Web merge keeps Web provenance")
+        #expect(
+            (mergeQueueSnapshots(current: connectUID, incoming: changedURI).entries.first?.occurrence) == (7),
+            "changed-context Web merge keeps its typed occurrence")
 
         let orderedService = QueueService(
             webQueue: ReorderedWebQueue(),
@@ -675,24 +660,18 @@ func runWorkflowChecks(_ runner: CheckRunner) async {
             currentTrackURI: "spotify:track:same",
             accountEpoch: 3
         )
-        runner.equal(
-            "QueueService Web refresh keeps Connect occurrence URIs",
-            refreshed?.entries.map(\.uri),
-            ["spotify:track:same"]
+        #expect(
+            (refreshed?.entries.map(\.uri)) == (["spotify:track:same"]),
+            "QueueService Web refresh keeps Connect occurrence URIs")
+        #expect(
+            (refreshed?.entries.first?.uid ?? "") == ("occ-4"), "QueueService Web refresh keeps Connect occurrence uids"
         )
-        runner.equal(
-            "QueueService Web refresh keeps Connect occurrence uids",
-            refreshed?.entries.first?.uid ?? "",
-            "occ-4"
-        )
-        runner.equal("QueueService Web refresh keeps typed occurrence", refreshed?.entries.first?.occurrence, 0)
-        runner.equal("QueueService Web refresh stays Connect-owned", refreshed?.source, .connect)
-        runner.equal("QueueService Web refresh keeps the Connect ordering revision", refreshed?.revision, 1)
-        runner.equal(
-            "Web refresh does not rewrite the Connect mutation snapshot",
-            await orderedService.mutationSnapshot()?.next.map(\.uid),
-            ["occ-4"]
-        )
+        #expect((refreshed?.entries.first?.occurrence) == (0), "QueueService Web refresh keeps typed occurrence")
+        #expect((refreshed?.source) == (.connect), "QueueService Web refresh stays Connect-owned")
+        #expect((refreshed?.revision) == (1), "QueueService Web refresh keeps the Connect ordering revision")
+        #expect(
+            (await orderedService.mutationSnapshot()?.next.map(\.uid)) == (["occ-4"]),
+            "Web refresh does not rewrite the Connect mutation snapshot")
         let laterConnect = await orderedService.acceptConnect(
             [
                 QueueEntry(uri: "spotify:track:same", provider: "connect", occurrence: 0, uid: "occ-a"),
@@ -708,29 +687,22 @@ func runWorkflowChecks(_ runner: CheckRunner) async {
                 QueueProtocolTrack(uri: "spotify:track:tail", uid: "occ-c", provider: "queue"),
             ]
         )
-        runner.equal(
-            "a later Connect revision still replaces order after a Web refresh",
-            laterConnect?.snapshot.entries.map(\.uri),
-            ["spotify:track:same", "spotify:track:same", "spotify:track:tail"]
-        )
-        runner.equal(
-            "later Connect occurrences keep distinct uids",
-            laterConnect?.snapshot.entries.map(\.uid),
-            ["occ-a", "occ-b", "occ-c"]
-        )
-        runner.equal(
-            "later Connect occurrences keep typed positions",
-            laterConnect?.snapshot.entries.map(\.occurrence),
-            [0, 1, 2]
-        )
-        runner.equal(
-            "a later Connect revision updates mutation metadata after a Web refresh",
-            await orderedService.mutationSnapshot()?.next.map(\.uid),
-            ["occ-a", "occ-b", "occ-c"]
-        )
+        #expect(
+            (laterConnect?.snapshot.entries.map(\.uri))
+                == (["spotify:track:same", "spotify:track:same", "spotify:track:tail"]),
+            "a later Connect revision still replaces order after a Web refresh")
+        #expect(
+            (laterConnect?.snapshot.entries.map(\.uid)) == (["occ-a", "occ-b", "occ-c"]),
+            "later Connect occurrences keep distinct uids")
+        #expect(
+            (laterConnect?.snapshot.entries.map(\.occurrence)) == ([0, 1, 2]),
+            "later Connect occurrences keep typed positions")
+        #expect(
+            (await orderedService.mutationSnapshot()?.next.map(\.uid)) == (["occ-a", "occ-b", "occ-c"]),
+            "a later Connect revision updates mutation metadata after a Web refresh")
     }
 
-    await runner.suite("Progressive queue metadata") {
+    do {
         let remote = ControlledMetadataRemote()
         let metadata = TrackMetadataService(remote: remote)
         let service = QueueService(webQueue: UnavailableWebQueue(), metadata: metadata)
@@ -750,14 +722,16 @@ func runWorkflowChecks(_ runner: CheckRunner) async {
         }
 
         while await remote.requestedURIs.count < 8 { await Task.yield() }
-        runner.equal("queue ordering is published before network hydration completes", updates.first?.entries.count, 12)
-        runner.equal("cached metadata is included in the first update", updates.first?.tracks.count, 2)
-        runner.equal("metadata concurrency is bounded", await remote.maximumActiveRequests, 8)
+        #expect(
+            (updates.first?.entries.count) == (12), "queue ordering is published before network hydration completes")
+        #expect((updates.first?.tracks.count) == (2), "cached metadata is included in the first update")
+        #expect((await remote.maximumActiveRequests) == (8), "metadata concurrency is bounded")
 
         let initiallyRequested = await remote.requestedURIs
         if let first = initiallyRequested.first { await remote.complete(first) }
         while await remote.requestedURIs.count < 9 { await Task.yield() }
-        runner.check("a completed lookup publishes an incremental update", updates.contains { $0.tracks.count == 3 })
+        #expect(
+            (updates.contains { $0.tracks.count == 3 }) == true, "a completed lookup publishes an incremental update")
 
         var completed: Set<String> = Set(initiallyRequested.prefix(1))
         while completed.count < 10 {
@@ -767,27 +741,27 @@ func runWorkflowChecks(_ runner: CheckRunner) async {
             await Task.yield()
         }
         let final = await refresh.value
-        runner.equal("all queue metadata eventually hydrates", final?.tracks.count, 12)
-        runner.equal("hydration completion marks the queue complete", final?.completeness, .complete)
-        runner.equal("queue ordering never changes during enrichment", final?.entries.map(\.id), entries.map(\.id))
+        #expect((final?.tracks.count) == (12), "all queue metadata eventually hydrates")
+        #expect((final?.completeness) == (.complete), "hydration completion marks the queue complete")
+        #expect((final?.entries.map(\.id)) == (entries.map(\.id)), "queue ordering never changes during enrichment")
     }
 
-    await runner.suite("Shared metadata request coalescing") {
+    do {
         let remote = ControlledMetadataRemote()
         let metadata = TrackMetadataService(remote: remote)
         let uri = "spotify:track:shared"
         let first = Task { try? await metadata.metadata(for: uri) }
         let second = Task { try? await metadata.metadata(for: uri) }
         while await remote.requestedURIs.isEmpty { await Task.yield() }
-        runner.equal("concurrent consumers issue one remote lookup", await remote.requestedURIs.count, 1)
+        #expect((await remote.requestedURIs.count) == (1), "concurrent consumers issue one remote lookup")
         await remote.complete(uri)
         let values = await [first.value, second.value]
-        runner.equal("both consumers receive the shared result", values.compactMap { $0 }.count, 2)
+        #expect((values.compactMap { $0 }.count) == (2), "both consumers receive the shared result")
         _ = try? await metadata.metadata(for: uri)
-        runner.equal("the account-scoped cache avoids a second lookup", await remote.requestedURIs.count, 1)
+        #expect((await remote.requestedURIs.count) == (1), "the account-scoped cache avoids a second lookup")
     }
 
-    runner.suite("Bounded queue metadata retention") {
+    do {
         let session = CatalogSessionAvailability(accountEpoch: 1, isAvailable: true)
         let metadata = CatalogMetadataRepository(
             attributesProvider: WorkflowAttributes(),
@@ -802,22 +776,19 @@ func runWorkflowChecks(_ runner: CheckRunner) async {
         metadata.replaceTracks([], from: .queue)
         metadata.replaceTracks([], from: .playlist)
 
-        runner.equal(
-            "visited playlist metadata survives for the active queue",
-            metadata.knownTrack(for: queued.uri)?.uri,
-            queued.uri
-        )
-        runner.nil_(
-            "unrelated playlist metadata is not retained with the queue",
-            metadata.knownTrack(for: unrelated.uri)
-        )
+        #expect(
+            (metadata.knownTrack(for: queued.uri)?.uri) == (queued.uri),
+            "visited playlist metadata survives for the active queue")
+        #expect(
+            (metadata.knownTrack(for: unrelated.uri)) == nil,
+            "unrelated playlist metadata is not retained with the queue")
 
         metadata.retainTracks(from: .queue, for: [])
         metadata.replaceTracks([], from: .queue)
-        runner.nil_("queue metadata is released when its ordering clears", metadata.knownTrack(for: queued.uri))
+        #expect((metadata.knownTrack(for: queued.uri)) == nil, "queue metadata is released when its ordering clears")
     }
 
-    await runner.suite("Independent library section lifetimes") {
+    do {
         let provider = ControlledLibraryCatalog()
         let session = CatalogSessionAvailability(accountEpoch: 1, isAvailable: true)
         let metadata = CatalogMetadataRepository(
@@ -832,7 +803,7 @@ func runWorkflowChecks(_ runner: CheckRunner) async {
         let artists = Task { await store.loadArtists() }
         while await provider.artistRequestCount == 0 { await Task.yield() }
 
-        runner.equal("duplicate requests for one section coalesce", await provider.albumRequestCount, 1)
+        #expect((await provider.albumRequestCount) == (1), "duplicate requests for one section coalesce")
 
         await provider.completeAlbums()
         await provider.completeArtists()
@@ -840,12 +811,12 @@ func runWorkflowChecks(_ runner: CheckRunner) async {
         await albumFollower.value
         await artists.value
 
-        runner.check("overlapping album load remains current", store.loadedSections.contains(.albums))
-        runner.check("overlapping artist load remains current", store.loadedSections.contains(.artists))
-        runner.check("both independent loading indicators finish", !store.isLoading)
+        #expect((store.loadedSections.contains(.albums)) == true, "overlapping album load remains current")
+        #expect((store.loadedSections.contains(.artists)) == true, "overlapping artist load remains current")
+        #expect((!store.isLoading) == true, "both independent loading indicators finish")
     }
 
-    await runner.suite("Empty media detail caching") {
+    do {
         let provider = EmptyDetailCatalog()
         let session = CatalogSessionAvailability(accountEpoch: 1, isAvailable: true)
         let metadata = CatalogMetadataRepository(
@@ -876,19 +847,19 @@ func runWorkflowChecks(_ runner: CheckRunner) async {
         await artistStore.load(artist)
         await artistStore.load(artist)
 
-        runner.equal("an empty album is still a completed load", await provider.albumRequestCount, 1)
-        runner.equal("an empty artist overview is still a completed load", await provider.artistRequestCount, 1)
-        runner.equal("an empty discography is still a completed load", await provider.discographyRequestCount, 1)
+        #expect((await provider.albumRequestCount) == (1), "an empty album is still a completed load")
+        #expect((await provider.artistRequestCount) == (1), "an empty artist overview is still a completed load")
+        #expect((await provider.discographyRequestCount) == (1), "an empty discography is still a completed load")
 
         session.update(accountEpoch: 1, isAvailable: false)
         session.update(accountEpoch: 1, isAvailable: true)
         await albumStore.load(album)
         await artistStore.load(artist)
-        runner.equal("a new catalog session reloads the album", await provider.albumRequestCount, 2)
-        runner.equal("a new catalog session reloads the artist", await provider.artistRequestCount, 2)
+        #expect((await provider.albumRequestCount) == (2), "a new catalog session reloads the album")
+        #expect((await provider.artistRequestCount) == (2), "a new catalog session reloads the artist")
     }
 
-    await runner.suite("Complete PlaybackStore lifecycle with injected environment") {
+    do {
         let engine = WorkflowEngine()
         let account = WorkflowAccount()
         let lifecycle = WorkflowLifecycle()
@@ -911,48 +882,47 @@ func runWorkflowChecks(_ runner: CheckRunner) async {
         )
         _ = speculative
         await Task.yield()
-        runner.equal("initialization does not subscribe to engine events", engine.count("eventSubscriptions"), 0)
-        runner.equal("initialization does not subscribe to grant revocations", account.subscriptionCount, 0)
-        runner.equal("initialization does not subscribe to lifecycle events", lifecycle.subscriptionCount, 0)
+        #expect((engine.count("eventSubscriptions")) == (0), "initialization does not subscribe to engine events")
+        #expect((account.subscriptionCount) == (0), "initialization does not subscribe to grant revocations")
+        #expect((lifecycle.subscriptionCount) == (0), "initialization does not subscribe to lifecycle events")
 
         let player = PlaybackStore(
             environment: environment,
             feedback: TransientFeedbackPresenter(clock: environment.clock)
         )
         await player.restore()
-        runner.check(
-            "restore installs every process subscription",
-            await waitUntil {
+        #expect(
+            (await waitUntil {
                 engine.count("eventSubscriptions") != 0 && account.subscriptionCount != 0
                     && lifecycle.subscriptionCount != 0
-            }
-        )
-        runner.equal("stored grant restores the real store", player.phase, .ready)
-        runner.equal("engine initializes once", engine.count("initialize"), 1)
-        runner.equal("restore starts one engine-event subscription", engine.count("eventSubscriptions"), 1)
-        runner.equal("restore starts one grant-revocation subscription", account.subscriptionCount, 1)
-        runner.equal("restore starts one lifecycle subscription", lifecycle.subscriptionCount, 1)
+            }) == true, "restore installs every process subscription")
+        #expect((player.phase) == (.ready), "stored grant restores the real store")
+        #expect((engine.count("initialize")) == (1), "engine initializes once")
+        #expect((engine.count("eventSubscriptions")) == (1), "restore starts one engine-event subscription")
+        #expect((account.subscriptionCount) == (1), "restore starts one grant-revocation subscription")
+        #expect((lifecycle.subscriptionCount) == (1), "restore starts one lifecycle subscription")
 
         await player.restore()
-        runner.equal(
-            "repeated restore does not replace the engine-event subscription", engine.count("eventSubscriptions"), 1)
-        runner.equal(
-            "repeated restore does not replace the grant-revocation subscription", account.subscriptionCount, 1)
-        runner.equal("repeated restore does not replace the lifecycle subscription", lifecycle.subscriptionCount, 1)
+        #expect(
+            (engine.count("eventSubscriptions")) == (1),
+            "repeated restore does not replace the engine-event subscription")
+        #expect(
+            (account.subscriptionCount) == (1), "repeated restore does not replace the grant-revocation subscription")
+        #expect((lifecycle.subscriptionCount) == (1), "repeated restore does not replace the lifecycle subscription")
 
         lifecycle.emit(.willSleep)
         while engine.count("disconnect") == 0 { await Task.yield() }
         lifecycle.emit(.didWake)
         while engine.count("reconnect") == 0 { await Task.yield() }
-        runner.equal("sleep disconnects once", engine.count("disconnect"), 1)
-        runner.equal("wake reconnects once", engine.count("reconnect"), 1)
+        #expect((engine.count("disconnect")) == (1), "sleep disconnects once")
+        #expect((engine.count("reconnect")) == (1), "wake reconnects once")
 
         let oldEpoch = player.state.accountEpoch
         await player.logout()
-        runner.equal("logout clears the grant", account.clearCount, 1)
-        runner.equal("logout advances account identity", player.state.accountEpoch, oldEpoch + 1)
-        runner.equal("logout shuts the engine down once", engine.count("shutdown"), 1)
-        runner.equal("logout clears presentation", player.trackURI, "")
+        #expect((account.clearCount) == (1), "logout clears the grant")
+        #expect((player.state.accountEpoch) == (oldEpoch + 1), "logout advances account identity")
+        #expect((engine.count("shutdown")) == (1), "logout shuts the engine down once")
+        #expect((player.trackURI) == (""), "logout clears presentation")
 
         engine.emit(
             RustPlaybackEventEnvelope(
@@ -975,24 +945,22 @@ func runWorkflowChecks(_ runner: CheckRunner) async {
                     ))
             ))
         await Task.yield()
-        runner.equal("old engine callback cannot repopulate signed-out state", player.trackURI, "")
+        #expect((player.trackURI) == (""), "old engine callback cannot repopulate signed-out state")
 
         await player.shutdownForTermination()
         await player.shutdownForTermination()
-        runner.check(
-            "termination settles every process subscription",
-            await waitUntil {
+        #expect(
+            (await waitUntil {
                 engine.count("activeEventSubscriptions") == 0 && account.activeSubscriptionCount == 0
                     && lifecycle.activeSubscriptionCount == 0
-            }
-        )
-        runner.equal("termination shutdown is idempotent", engine.count("shutdown"), 2)
-        runner.equal("termination cancels the engine-event subscription", engine.count("activeEventSubscriptions"), 0)
-        runner.equal("termination cancels the grant-revocation subscription", account.activeSubscriptionCount, 0)
-        runner.equal("termination cancels the lifecycle subscription", lifecycle.activeSubscriptionCount, 0)
+            }) == true, "termination settles every process subscription")
+        #expect((engine.count("shutdown")) == (2), "termination shutdown is idempotent")
+        #expect((engine.count("activeEventSubscriptions")) == (0), "termination cancels the engine-event subscription")
+        #expect((account.activeSubscriptionCount) == (0), "termination cancels the grant-revocation subscription")
+        #expect((lifecycle.activeSubscriptionCount) == (0), "termination cancels the lifecycle subscription")
     }
 
-    await runner.suite("Reconnect rehydration issues Swift load targets once per engine session") {
+    do {
         let engine = WorkflowEngine()
         let account = WorkflowAccount()
         let lifecycle = WorkflowLifecycle()
@@ -1014,9 +982,8 @@ func runWorkflowChecks(_ runner: CheckRunner) async {
             feedback: TransientFeedbackPresenter(clock: environment.clock)
         )
         await player.restore()
-        runner.check(
-            "restore subscribes to engine events",
-            await waitUntil { engine.count("eventSubscriptions") != 0 }
+        #expect(
+            (await waitUntil { engine.count("eventSubscriptions") != 0 }) == true, "restore subscribes to engine events"
         )
         let expectedPlan = ResumeLoadPlan(
             positionMS: 10,
@@ -1026,52 +993,42 @@ func runWorkflowChecks(_ runner: CheckRunner) async {
 
         engine.emit(
             workflowConnectionEnvelope(sequence: 1, sessionGeneration: 1, spircReady: false, resumePending: true))
-        runner.check(
-            "a pending, not-ready connection snapshot triggers one rehydration",
-            await waitUntil { engine.rehydrations.count == 1 }
-        )
-        runner.equal(
-            "rehydration captures the sticky engine identity, not presentation",
-            engine.rehydrations.first,
-            expectedPlan
-        )
-        runner.equal(
-            "rehydration names the engine session it belongs to",
-            engine.rehydratedGenerations,
-            [1]
-        )
+        #expect(
+            (await waitUntil { engine.rehydrations.count == 1 }) == true,
+            "a pending, not-ready connection snapshot triggers one rehydration")
+        #expect(
+            (engine.rehydrations.first) == (expectedPlan),
+            "rehydration captures the sticky engine identity, not presentation")
+        #expect((engine.rehydratedGenerations) == ([1]), "rehydration names the engine session it belongs to")
 
         await player.effects.settlement(of: .reconnectRehydration)?.wait()
         engine.emit(
             workflowConnectionEnvelope(sequence: 2, sessionGeneration: 1, spircReady: false, resumePending: true))
         engine.emit(
             workflowConnectionEnvelope(sequence: 3, sessionGeneration: 1, spircReady: true, resumePending: false))
-        runner.check(
-            "the ready snapshot is accepted after the window",
-            await waitUntil { player.state.sourceRevisions[.engineConnection] == 3 }
-        )
-        runner.equal("a republished window and the ready snapshot do not rehydrate again", engine.rehydrations.count, 1)
+        #expect(
+            (await waitUntil { player.state.sourceRevisions[.engineConnection] == 3 }) == true,
+            "the ready snapshot is accepted after the window")
+        #expect(
+            (engine.rehydrations.count) == (1), "a republished window and the ready snapshot do not rehydrate again")
 
         engine.emit(
             workflowConnectionEnvelope(sequence: 4, sessionGeneration: 2, spircReady: false, resumePending: true))
-        runner.check(
-            "a later engine session rehydrates once more",
-            await waitUntil { engine.rehydrations.count == 2 }
-        )
+        #expect(
+            (await waitUntil { engine.rehydrations.count == 2 }) == true, "a later engine session rehydrates once more")
 
         await player.effects.settlement(of: .reconnectRehydration)?.wait()
         engine.emit(
             workflowConnectionEnvelope(sequence: 5, sessionGeneration: 3, spircReady: true, resumePending: true))
-        runner.check(
-            "the contradictory snapshot is accepted",
-            await waitUntil { player.state.sourceRevisions[.engineConnection] == 5 }
-        )
-        runner.equal("a ready snapshot never rehydrates even if the flag is set", engine.rehydrations.count, 2)
+        #expect(
+            (await waitUntil { player.state.sourceRevisions[.engineConnection] == 5 }) == true,
+            "the contradictory snapshot is accepted")
+        #expect((engine.rehydrations.count) == (2), "a ready snapshot never rehydrates even if the flag is set")
 
         await player.shutdownForTermination()
     }
 
-    await runner.suite("Queued reconnect rehydration is dropped once its window or session is gone") {
+    do {
         let engine = WorkflowEngine()
         let account = WorkflowAccount()
         let lifecycle = WorkflowLifecycle()
@@ -1093,62 +1050,49 @@ func runWorkflowChecks(_ runner: CheckRunner) async {
             feedback: TransientFeedbackPresenter(clock: environment.clock)
         )
         await player.restore()
-        runner.check(
-            "restore subscribes to engine events",
-            await waitUntil { engine.count("eventSubscriptions") != 0 }
+        #expect(
+            (await waitUntil { engine.count("eventSubscriptions") != 0 }) == true, "restore subscribes to engine events"
         )
         let coordinator = player.coordinator
 
         // Same generation: the window closes (ready snapshot) while the coordinator is busy.
         engine.holdExecutes(true)
         let busy = Task { await coordinator.performLocal(.pause) }
-        runner.check(
-            "the coordinator is occupied by an earlier local command",
-            await waitUntil { engine.count("execute") == 0 && !busy.isCancelled }
-        )
+        #expect(
+            (await waitUntil { engine.count("execute") == 0 && !busy.isCancelled }) == true,
+            "the coordinator is occupied by an earlier local command")
         player.receive(
             workflowConnectionEnvelope(sequence: 1, sessionGeneration: 1, spircReady: false, resumePending: true))
-        runner.check(
-            "the rehydration is claimed for this generation",
-            player.rehydratedSessionGeneration == 1
-        )
+        #expect((player.rehydratedSessionGeneration == 1) == true, "the rehydration is claimed for this generation")
         player.receive(
             workflowConnectionEnvelope(sequence: 2, sessionGeneration: 1, spircReady: true, resumePending: false))
         engine.holdExecutes(false)
         _ = await busy.value
         await player.effects.settlement(of: .reconnectRehydration)?.wait()
-        runner.equal("a rehydration whose window closed while queued issues no load", engine.rehydrations.count, 0)
-        runner.equal("the earlier command still executed", engine.operations.count, 1)
+        #expect((engine.rehydrations.count) == (0), "a rehydration whose window closed while queued issues no load")
+        #expect((engine.operations.count) == (1), "the earlier command still executed")
 
         // New generation: the engine session changes while the coordinator is busy.
         engine.holdExecutes(true)
         let busyAgain = Task { await coordinator.performLocal(.pause) }
         player.receive(
             workflowConnectionEnvelope(sequence: 3, sessionGeneration: 2, spircReady: false, resumePending: true))
-        runner.check(
-            "the rehydration is claimed for the second generation",
-            player.rehydratedSessionGeneration == 2
-        )
+        #expect(
+            (player.rehydratedSessionGeneration == 2) == true, "the rehydration is claimed for the second generation")
         player.receive(
             workflowConnectionEnvelope(sequence: 4, sessionGeneration: 3, spircReady: false, resumePending: true))
         engine.holdExecutes(false)
         _ = await busyAgain.value
-        runner.check(
-            "the newer generation's own rehydration runs",
-            await waitUntil { engine.rehydrations.count == 1 }
-        )
+        #expect(
+            (await waitUntil { engine.rehydrations.count == 1 }) == true, "the newer generation's own rehydration runs")
         await player.effects.settlement(of: .reconnectRehydration)?.wait()
-        runner.equal(
-            "the superseded generation's rehydration never loads",
-            engine.rehydrations.count,
-            1
-        )
-        runner.equal("only the two pauses and one rehydration reached the engine", engine.operations.count, 3)
+        #expect((engine.rehydrations.count) == (1), "the superseded generation's rehydration never loads")
+        #expect((engine.operations.count) == (3), "only the two pauses and one rehydration reached the engine")
 
         await player.shutdownForTermination()
     }
 
-    await runner.suite("Termination wins during playback-store startup") {
+    do {
         let engine = WorkflowEngine()
         let account = WorkflowAccount()
         let lifecycle = WorkflowLifecycle()
@@ -1174,21 +1118,23 @@ func runWorkflowChecks(_ runner: CheckRunner) async {
         )
 
         let restore = Task { await player.restore() }
-        runner.check("queue bootstrap parks before engine restore", await waitUntil { await hook.resetIsParked() })
+        #expect((await waitUntil { await hook.resetIsParked() }) == true, "queue bootstrap parks before engine restore")
         await player.shutdownForTermination()
         await restore.value
 
-        runner.equal("termination during bootstrap prevents engine initialization", engine.count("initialize"), 0)
-        runner.equal("termination during bootstrap shuts down once", engine.count("shutdown"), 1)
-        runner.equal("termination during bootstrap leaves the store signed out", player.phase, .signedOut)
-        runner.equal(
-            "cancelled bootstrap leaves no active engine subscription", engine.count("activeEventSubscriptions"), 0)
-        runner.equal("cancelled bootstrap leaves no active revocation subscription", account.activeSubscriptionCount, 0)
-        runner.equal(
-            "cancelled bootstrap leaves no active lifecycle subscription", lifecycle.activeSubscriptionCount, 0)
+        #expect((engine.count("initialize")) == (0), "termination during bootstrap prevents engine initialization")
+        #expect((engine.count("shutdown")) == (1), "termination during bootstrap shuts down once")
+        #expect((player.phase) == (.signedOut), "termination during bootstrap leaves the store signed out")
+        #expect(
+            (engine.count("activeEventSubscriptions")) == (0),
+            "cancelled bootstrap leaves no active engine subscription")
+        #expect(
+            (account.activeSubscriptionCount) == (0), "cancelled bootstrap leaves no active revocation subscription")
+        #expect(
+            (lifecycle.activeSubscriptionCount) == (0), "cancelled bootstrap leaves no active lifecycle subscription")
     }
 
-    await runner.suite("Termination wins during preference restoration") {
+    do {
         let engine = WorkflowEngine()
         let account = WorkflowAccount()
         let lifecycle = WorkflowLifecycle()
@@ -1212,18 +1158,17 @@ func runWorkflowChecks(_ runner: CheckRunner) async {
         )
 
         let restore = Task { await player.restore() }
-        runner.check(
-            "preference read parks while account restoration proceeds",
-            await waitUntil { await preferences.shuffleIsParked() && engine.count("initialize") == 1 }
-        )
+        #expect(
+            (await waitUntil { await preferences.shuffleIsParked() && engine.count("initialize") == 1 }) == true,
+            "preference read parks while account restoration proceeds")
         await player.shutdownForTermination()
         await preferences.resumeShuffle()
         await restore.value
 
-        runner.equal("late preference read cannot restore shuffle", player.state.options.shuffle, false)
-        runner.nil_("late preference read cannot restore a remote device", player.lastRemoteDeviceID)
-        runner.equal("late preference read cannot restore shuffle history", player.shuffleHistoryCache, [:])
-        runner.equal("termination after account restore shuts down once", engine.count("shutdown"), 1)
+        #expect((player.state.options.shuffle) == (false), "late preference read cannot restore shuffle")
+        #expect((player.lastRemoteDeviceID) == nil, "late preference read cannot restore a remote device")
+        #expect((player.shuffleHistoryCache) == ([:]), "late preference read cannot restore shuffle history")
+        #expect((engine.count("shutdown")) == (1), "termination after account restore shuts down once")
     }
 }
 

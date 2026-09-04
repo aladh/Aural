@@ -1,3 +1,4 @@
+import Testing
 //
 //  TrackAttributeChecks.swift
 //  Spotty
@@ -6,8 +7,9 @@
 import Foundation
 @testable import SpottyCore
 
+@Test
 @MainActor
-func runTrackAttributeChecks(_ check: CheckRunner) {
+func testTrackAttribute() {
     // Payload builders mirroring the wire shapes Spotify answers with.
 
     func array(kind: UInt64, uri: String, payload: Data) -> Data {
@@ -62,7 +64,7 @@ func runTrackAttributeChecks(_ check: CheckRunner) {
         return writer.data
     }
 
-    check.suite("Track attributes") {
+    do {
         let uri = "spotify:track:6rqhFgbbKwnb9MLmUQDhG6"
         let combined = TrackAttributesAPI.decodeResponse(
             response([
@@ -74,15 +76,11 @@ func runTrackAttributeChecks(_ check: CheckRunner) {
                 ),
             ]))[uri]
 
-        check.notNil("combined attributes decoded", combined)
+        #expect((combined) != nil, "combined attributes decoded")
         if let attributes = combined {
-            check.equal("popularity", attributes.popularity ?? -1, 87)
-            check.equal("bpm rounds", attributes.bpm ?? -1, 123)
-            check.equal(
-                "camelot label preferred (what the desktop client shows)",
-                attributes.key ?? "",
-                "8B"
-            )
+            #expect((attributes.popularity ?? -1) == (87), "popularity")
+            #expect((attributes.bpm ?? -1) == (123), "bpm rounds")
+            #expect((attributes.key ?? "") == ("8B"), "camelot label preferred (what the desktop client shows)")
         }
 
         let major = TrackAttributesAPI.decodeResponse(
@@ -93,7 +91,7 @@ func runTrackAttributeChecks(_ check: CheckRunner) {
                     payload: audioPayload(keyName: "F#", mode: 1)
                 )
             ]))["spotify:track:fallback"]
-        check.equal("key falls back to name + major mode", major?.key, "F# Major")
+        #expect((major?.key) == ("F# Major"), "key falls back to name + major mode")
 
         let minor = TrackAttributesAPI.decodeResponse(
             response([
@@ -103,14 +101,14 @@ func runTrackAttributeChecks(_ check: CheckRunner) {
                     payload: audioPayload(keyName: "A", mode: 0)
                 )
             ]))["spotify:track:fallback"]
-        check.equal("key falls back to name + minor mode", minor?.key, "A Minor")
+        #expect((minor?.key) == ("A Minor"), "key falls back to name + minor mode")
 
         let negative = TrackAttributesAPI.decodeResponse(
             response([
                 array(
                     kind: TrackAttributesAPI.trackKind, uri: "spotify:track:neg", payload: trackPayload(popularity: -7))
             ]))["spotify:track:neg"]
-        check.equal("zigzag decodes negative popularity", negative?.popularity, -7)
+        #expect((negative?.popularity) == (-7), "zigzag decodes negative popularity")
 
         let partial = TrackAttributesAPI.decodeResponse(
             response([
@@ -119,18 +117,17 @@ func runTrackAttributeChecks(_ check: CheckRunner) {
                 // An unrecognized kind contributes nothing; the entry keeps its popularity.
                 array(kind: 999, uri: "spotify:track:p", payload: Data([0x01])),
             ]))["spotify:track:p"]
-        check.equal("partial entries keep what arrived", partial?.popularity, 42)
-        check.nil_("missing bpm stays absent", partial?.bpm)
+        #expect((partial?.popularity) == (42), "partial entries keep what arrived")
+        #expect((partial?.bpm) == nil, "missing bpm stays absent")
 
-        check.check("empty response yields nothing", TrackAttributesAPI.decodeResponse(Data()).isEmpty)
-        check.check(
-            "truncated response yields nothing",
-            TrackAttributesAPI.decodeResponse(Data([0x12, 0x05])).isEmpty
+        #expect((TrackAttributesAPI.decodeResponse(Data()).isEmpty) == true, "empty response yields nothing")
+        #expect(
+            (TrackAttributesAPI.decodeResponse(Data([0x12, 0x05])).isEmpty) == true, "truncated response yields nothing"
         )
         let truncated = response([
             array(kind: TrackAttributesAPI.audioAttributesKind, uri: "spotify:track:x", payload: Data([0x11]))
         ])
-        check.check("truncated attribute payload tolerated", TrackAttributesAPI.decodeResponse(truncated).isEmpty)
+        #expect((TrackAttributesAPI.decodeResponse(truncated).isEmpty) == true, "truncated attribute payload tolerated")
 
         // A zero tempo is no tempo: the columns stay blank rather than reading 0 BPM.
         let zeroBPM = TrackAttributesAPI.decodeResponse(
@@ -139,27 +136,26 @@ func runTrackAttributeChecks(_ check: CheckRunner) {
                     kind: TrackAttributesAPI.audioAttributesKind, uri: "spotify:track:zb", payload: audioPayload(bpm: 0)
                 )
             ]))
-        check.nil_("zero bpm contributes no attributes", zeroBPM["spotify:track:zb"])
+        #expect((zeroBPM["spotify:track:zb"]) == nil, "zero bpm contributes no attributes")
 
         // An entry without its uri cannot be attributed to anything.
         var anonymous = ProtobufWriter()
         anonymous.message(field: 3) { any in
             any.bytes(field: 2, trackPayload(popularity: 50))
         }
-        check.check(
-            "entries without uris are skipped",
-            TrackAttributesAPI.decodeResponse(response([anonymous.data])).isEmpty
-        )
+        #expect(
+            (TrackAttributesAPI.decodeResponse(response([anonymous.data])).isEmpty) == true,
+            "entries without uris are skipped")
 
         // Zero is a real popularity and sits exactly on the zigzag sign boundary.
         let zero = TrackAttributesAPI.decodeResponse(
             response([
                 array(kind: TrackAttributesAPI.trackKind, uri: "spotify:track:z", payload: trackPayload(popularity: 0))
             ]))
-        check.equal("zigzag keeps a zero popularity", zero["spotify:track:z"]?.popularity ?? -1, 0)
+        #expect((zero["spotify:track:z"]?.popularity ?? -1) == (0), "zigzag keeps a zero popularity")
     }
 
-    check.suite("Track attribute request encoding") {
+    do {
         let data = TrackAttributesAPI.encodeRequest([
             "spotify:track:a",
             "spotify:local:not-a-real-track",
@@ -181,18 +177,16 @@ func runTrackAttributeChecks(_ check: CheckRunner) {
             kindsPerEntity.append(kinds)
         }
 
-        check.equal("non-track uris are skipped", entityURIs, ["spotify:track:a", "spotify:track:b"])
-        check.equal(
-            "each track asks for both extensions",
-            kindsPerEntity,
-            [
-                [TrackAttributesAPI.trackKind, TrackAttributesAPI.audioAttributesKind],
-                [TrackAttributesAPI.trackKind, TrackAttributesAPI.audioAttributesKind],
-            ]
-        )
+        #expect((entityURIs) == (["spotify:track:a", "spotify:track:b"]), "non-track uris are skipped")
+        #expect(
+            (kindsPerEntity)
+                == ([
+                    [TrackAttributesAPI.trackKind, TrackAttributesAPI.audioAttributesKind],
+                    [TrackAttributesAPI.trackKind, TrackAttributesAPI.audioAttributesKind],
+                ]), "each track asks for both extensions")
     }
 
-    check.suite("Track attribute request scheduling") {
+    do {
         func track(_ uri: String) -> CatalogTrack {
             CatalogTrack(
                 id: uri, uri: uri, title: uri, artist: "", album: "",
@@ -208,19 +202,18 @@ func runTrackAttributeChecks(_ check: CheckRunner) {
             excluding: [],
             limit: 1_000
         )
-        check.equal("metadata scheduling respects its exact cap", capped.count, 1_000)
-        check.equal("metadata scheduling keeps source order", capped.first, "spotify:track:0")
-        check.equal("metadata scheduling ends at the cap", capped.last, "spotify:track:999")
+        #expect((capped.count) == (1_000), "metadata scheduling respects its exact cap")
+        #expect((capped.first) == ("spotify:track:0"), "metadata scheduling keeps source order")
+        #expect((capped.last) == ("spotify:track:999"), "metadata scheduling ends at the cap")
 
         let excluded = CatalogMetadataRepository.attributeURIsToRequest(
             from: [track("spotify:track:cached"), track("spotify:track:in-flight"), track("spotify:track:new")],
             excluding: ["spotify:track:cached", "spotify:track:in-flight"],
             limit: 10
         )
-        check.equal("cached and in-flight metadata is not rescheduled", excluded, ["spotify:track:new"])
-        check.check(
-            "a zero request limit schedules nothing",
-            CatalogMetadataRepository.attributeURIsToRequest(from: tracks, excluding: [], limit: 0).isEmpty
-        )
+        #expect((excluded) == (["spotify:track:new"]), "cached and in-flight metadata is not rescheduled")
+        #expect(
+            (CatalogMetadataRepository.attributeURIsToRequest(from: tracks, excluding: [], limit: 0).isEmpty) == true,
+            "a zero request limit schedules nothing")
     }
 }

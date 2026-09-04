@@ -1,3 +1,4 @@
+import Testing
 import SpottyDomain
 import Foundation
 
@@ -5,11 +6,11 @@ private enum WalkProbe: Error, Equatable {
     case boom
 }
 
-func runPaginationCollectChecks(_ check: CheckRunner) async {
-    await check.suite("Bounded pagination collect") {
+@Test
+func testPaginationCollect() async {
+    do {
         let ordinary = OffsetRecorder()
         await expectCollect(
-            check,
             "ordinary totalCount concatenates pages in order",
             expected: [0, 1, 2]
         ) { offset in
@@ -19,11 +20,10 @@ func runPaginationCollectChecks(_ check: CheckRunner) async {
             }
             return Pagination.Page(items: [2], pageEntryCount: 1, totalCount: 3)
         }
-        check.equal("ordinary totalCount fetches each named offset once", ordinary.values, [0, 2])
+        #expect((ordinary.values) == ([0, 2]), "ordinary totalCount fetches each named offset once")
 
         let boundary = OffsetRecorder()
         await expectCollect(
-            check,
             "exact page-boundary totalCount does not fetch past the last page",
             expected: [0, 1, 2, 3]
         ) { offset in
@@ -34,10 +34,9 @@ func runPaginationCollectChecks(_ check: CheckRunner) async {
                 totalCount: 4
             )
         }
-        check.equal("exact page-boundary fetches two pages", boundary.values, [0, 2])
+        #expect((boundary.values) == ([0, 2]), "exact page-boundary fetches two pages")
 
         await expectCollect(
-            check,
             "omitted totalCount ends on a final empty page",
             expected: [0, 1]
         ) { offset in
@@ -48,7 +47,6 @@ func runPaginationCollectChecks(_ check: CheckRunner) async {
         }
 
         await expectCollect(
-            check,
             "empty first page yields no items",
             expected: []
         ) { _ in
@@ -57,7 +55,6 @@ func runPaginationCollectChecks(_ check: CheckRunner) async {
 
         let zeroCap = OffsetRecorder()
         await expectThrown(
-            check,
             "a zero page cap fails before any fetch",
             Pagination.Failure.pageLimitReached
         ) {
@@ -66,11 +63,10 @@ func runPaginationCollectChecks(_ check: CheckRunner) async {
                 return Pagination.Page(items: [offset], pageEntryCount: 0, totalCount: 0)
             }
         }
-        check.equal("a zero page cap does not fetch", zeroCap.values, [])
+        #expect((zeroCap.values) == ([]), "a zero page cap does not fetch")
 
         let capOffsets = OffsetRecorder()
         await expectThrown(
-            check,
             "cap exhaustion fails instead of returning a partial list",
             Pagination.Failure.pageLimitReached
         ) {
@@ -79,11 +75,10 @@ func runPaginationCollectChecks(_ check: CheckRunner) async {
                 return Pagination.Page(items: [offset], pageEntryCount: 1, totalCount: nil)
             }
         }
-        check.equal("cap exhaustion fetches exactly the allowed pages", capOffsets.values, [0, 1])
+        #expect((capOffsets.values) == ([0, 1]), "cap exhaustion fetches exactly the allowed pages")
 
         let stalled = OffsetRecorder()
         await expectThrown(
-            check,
             "a non-progressing offset fails rather than looping",
             Pagination.Failure.offsetDidNotAdvance
         ) {
@@ -95,11 +90,10 @@ func runPaginationCollectChecks(_ check: CheckRunner) async {
                 return Pagination.Page(items: [offset], pageEntryCount: 1, totalCount: nil)
             }
         }
-        check.equal("a non-progressing response is fetched once", stalled.values, [0])
+        #expect((stalled.values) == ([0]), "a non-progressing response is fetched once")
 
         let thrown = OffsetRecorder()
         await expectThrown(
-            check,
             "fetch errors propagate without a partial success",
             WalkProbe.boom
         ) {
@@ -109,7 +103,7 @@ func runPaginationCollectChecks(_ check: CheckRunner) async {
                 return Pagination.Page(items: [offset], pageEntryCount: 1, totalCount: 10)
             }
         }
-        check.equal("a mid-walk error stops after the failing page", thrown.values, [0, 1])
+        #expect((thrown.values) == ([0, 1]), "a mid-walk error stops after the failing page")
 
         let parked = ReleaseGate()
         let fetches = OffsetRecorder()
@@ -132,40 +126,38 @@ func runPaginationCollectChecks(_ check: CheckRunner) async {
         } catch is CancellationError {
             cancelled = true
         } catch {
-            check.check("cancellation stays CancellationError, got \(error)", false)
+            #expect((false) == true, "cancellation stays CancellationError, got \(error)")
         }
-        check.check("a cancelled walk does not succeed after a terminal page returns", cancelled)
-        check.equal("cancellation does not fetch past the parked page", fetches.values, [0, 1])
+        #expect((cancelled) == true, "a cancelled walk does not succeed after a terminal page returns")
+        #expect((fetches.values) == ([0, 1]), "cancellation does not fetch past the parked page")
     }
 }
 
 private func expectCollect(
-    _ check: CheckRunner,
     _ label: String,
     expected: [Int],
     fetchPage: @escaping @Sendable (Int) async throws -> Pagination.Page<Int>
 ) async {
     do {
         let items = try await Pagination.collect(maximumPageCount: 8, fetchPage: fetchPage)
-        check.equal(label, items, expected)
+        #expect((items) == (expected), "\(label)")
     } catch {
-        check.check("\(label) succeeds, got \(error)", false)
+        #expect((false) == true, "\(label) succeeds, got \(error)")
     }
 }
 
 private func expectThrown<Failure: Error & Equatable>(
-    _ check: CheckRunner,
     _ label: String,
     _ expected: Failure,
     perform: @escaping () async throws -> Void
 ) async {
     do {
         try await perform()
-        check.check("\(label) throws", false)
+        #expect((false) == true, "\(label) throws")
     } catch let error as Failure {
-        check.equal(label, error, expected)
+        #expect((error) == (expected), "\(label)")
     } catch {
-        check.check("\(label) throws \(Failure.self), got \(error)", false)
+        #expect((false) == true, "\(label) throws \(Failure.self), got \(error)")
     }
 }
 

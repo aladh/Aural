@@ -1,27 +1,30 @@
+import Testing
 import Foundation
 
+@Test
 @MainActor
-func runAudioRendererOwnershipChecks(_ check: CheckRunner) {
-    check.suite("Audio renderer chunk ownership") {
-        check.noThrow("renderer source is readable") {
-            let source = try audioRendererSource()
+func testAudioRendererOwnership() {
+    do {
+        do {
+            do {
+                let source = try audioRendererSource()
 
-            check.check(
-                "temporary PCM chunks use Core Foundation allocation",
-                source.contains("CFAllocatorAllocate(kCFAllocatorDefault, chunkSize, 0)")
-                    && !source.contains(
-                        "UnsafeMutableRawPointer.allocate(byteCount: chunkSize"
-                    )
-            )
-            check.check(
-                "Core Media releases successful chunks through the matching allocator",
-                source.contains("blockAllocator: kCFAllocatorDefault")
-            )
-            check.check(
-                "failed block creation releases chunks through the matching allocator",
-                source.contains("CFAllocatorDeallocate(kCFAllocatorDefault, chunk)")
-                    && !source.contains("chunk.deallocate()")
-            )
+                #expect(
+                    (source.contains("CFAllocatorAllocate(kCFAllocatorDefault, chunkSize, 0)")
+                        && !source.contains(
+                            "UnsafeMutableRawPointer.allocate(byteCount: chunkSize"
+                        )) == true, "temporary PCM chunks use Core Foundation allocation")
+                #expect(
+                    (source.contains("blockAllocator: kCFAllocatorDefault")) == true,
+                    "Core Media releases successful chunks through the matching allocator")
+                #expect(
+                    (source.contains("CFAllocatorDeallocate(kCFAllocatorDefault, chunk)")
+                        && !source.contains("chunk.deallocate()")) == true,
+                    "failed block creation releases chunks through the matching allocator")
+
+            } catch {
+                Issue.record("\("renderer source is readable"): unexpected error \(error)")
+            }
         }
     }
 }

@@ -51,7 +51,7 @@ gate is:
 
 The gate checks tracked Swift formatting, Rust formatting, warning-clean Clippy, locked Rust tests,
 Rust/C export and header parity, Swift builds with project-owned warnings as errors, deterministic
-Swift check products, architecture contracts, CI policy, and packaging metadata. It does not sign in
+Swift tests, architecture contracts, CI policy, and packaging metadata. It does not sign in
 or initiate playback.
 
 Swift formatting uses the selected Swift 6.3 toolchain's `swift-format`:
@@ -64,24 +64,21 @@ Swift formatting uses the selected Swift 6.3 toolchain's `swift-format`:
 `Scripts/format-swift-self-test.sh` protects wrapper discovery and failure behavior and runs inside
 `check.sh` before the real formatting check.
 
-The two non-shipping check products are:
+The two non-shipping Swift Testing targets are:
 
-- `SpottyChecks`: pure `SpottyDomain` state, policy, parsing, and deterministic playback traces.
-- `SpottyBoundaryChecks`: concrete codecs, fixtures, stores, coordinators, queue flows, and other
+- `SpottyDomainTests`: pure `SpottyDomain` state, policy, parsing, and deterministic playback traces.
+- `SpottyBoundaryTests`: concrete codecs, fixtures, stores, coordinators, queue flows, and other
   injected SpottyCore boundaries.
 
-Available focused suites are:
+Use standard SwiftPM filtering for focused iteration:
 
 ```bash
-swift run --disable-sandbox --product SpottyChecks -- --list
-swift run --disable-sandbox --product SpottyChecks -- protobuf playback-reducer
-swift run --disable-sandbox --product SpottyBoundaryChecks -- --list
-swift run --disable-sandbox --product SpottyBoundaryChecks -- auth-flow workflow
+swift test --disable-sandbox --filter SpottyDomainTests.testProtobuf
+swift test --disable-sandbox --no-parallel --filter SpottyBoundaryTests.testAuthFlow
 ```
 
-`--list` prints stable suite names in registration order. Unknown or empty names fail before any
-check runs; repeated names run once in first-requested order. No-argument execution runs all suites,
-and `check.sh` never passes suite filters.
+`swift test list` shows the discovered test names. No-argument execution runs all tests, and
+`check.sh` never passes a test-name filter beyond selecting its domain or boundary target.
 
 CI may partition the gate with:
 

@@ -1,19 +1,29 @@
+import Testing
 import SpottyCore
 import SpottyDomain
 import Foundation
 
+@Test
 @MainActor
-func runOggVorbisDecoderChecks(_ check: CheckRunner) {
-    check.suite("Ogg Vorbis pushdata decoder") {
-        check.check("empty buffer throws needMoreData, not success or another error", emptyBufferThrowsNeedMoreData())
+func testOggVorbisDecoder() {
+    do {
+        #expect(
+            (emptyBufferThrowsNeedMoreData()) == true, "empty buffer throws needMoreData, not success or another error")
 
-        check.throwsError("garbage bytes never open successfully (4 KiB deterministic LCG stream)") {
-            let garbage = lcgBytes(count: 4_096, seed: 0x1234_5678_9abc_def0)
-            let decoder = OggVorbisDecoder()
-            _ = try garbage.withUnsafeBytes { try decoder.openHeaders($0) }
+        do {
+            var didThrow = false
+            do {
+                let garbage = lcgBytes(count: 4_096, seed: 0x1234_5678_9abc_def0)
+                let decoder = OggVorbisDecoder()
+                _ = try garbage.withUnsafeBytes { try decoder.openHeaders($0) }
+
+            } catch {
+                didThrow = true
+            }
+            #expect(didThrow, "garbage bytes never open successfully (4 KiB deterministic LCG stream)")
         }
 
-        runFixtureDecodeCheck(check)
+        runFixtureDecodeCheck()
     }
 }
 
@@ -33,8 +43,8 @@ private func emptyBufferThrowsNeedMoreData() -> Bool {
 /// against the file's own Ogg page framing. The fixture is a one-second synthetic 440 Hz tone
 /// (44.1 kHz stereo, libvorbis), never account-derived.
 @MainActor
-private func runFixtureDecodeCheck(_ check: CheckRunner) {
-    guard let data = bundledToneFixture(check) else { return }
+private func runFixtureDecodeCheck() {
+    guard let data = bundledToneFixture() else { return }
 
     let decoder = OggVorbisDecoder()
 
@@ -50,17 +60,17 @@ private func runFixtureDecodeCheck(_ check: CheckRunner) {
             guard headerWindowEnd < data.count else { break }
             headerWindowEnd = min(headerWindowEnd + 4_096, data.count)
         } catch {
-            check.check("fixture headers open: unexpected error \(error)", false)
+            #expect((false) == true, "fixture headers open: unexpected error \(error)")
             return
         }
     }
     guard let consumed = headerBytesConsumed else {
-        check.check("fixture headers open before the file is exhausted", false)
+        #expect((false) == true, "fixture headers open before the file is exhausted")
         return
     }
 
-    check.equal("fixture sample rate", decoder.sampleRate, 44_100)
-    check.equal("fixture channel count", decoder.channels, 2)
+    #expect((decoder.sampleRate) == (44_100), "fixture sample rate")
+    #expect((decoder.channels) == (2), "fixture channel count")
 
     var pcm: [Float] = []
     var frameBuffer: [Float] = []
@@ -76,7 +86,7 @@ private func runFixtureDecodeCheck(_ check: CheckRunner) {
         do {
             result = try slice.withUnsafeBytes { try decoder.decodeFrame($0, into: &frameBuffer) }
         } catch {
-            check.check("fixture frame decode: unexpected error \(error)", false)
+            #expect((false) == true, "fixture frame decode: unexpected error \(error)")
             return
         }
 
@@ -94,21 +104,19 @@ private func runFixtureDecodeCheck(_ check: CheckRunner) {
         windowEnd = min(cursor + 4_096, data.count)
     }
 
-    check.check("fixture decode produced frames", totalFrames > 0)
+    #expect((totalFrames > 0) == true, "fixture decode produced frames")
     if let expectedFrames = lastGranulePosition(in: data) {
-        check.equal(
-            "fixture decoded frame count matches the last page's granule position",
-            Int64(totalFrames),
-            expectedFrames
-        )
+        #expect(
+            (Int64(totalFrames)) == (expectedFrames),
+            "fixture decoded frame count matches the last page's granule position")
     } else {
-        check.check("fixture has a page with a resolved granule position", false)
+        #expect((false) == true, "fixture has a page with a resolved granule position")
     }
 
     guard !pcm.isEmpty else {
-        check.check("fixture decoded samples are non-silent", false)
+        #expect((false) == true, "fixture decoded samples are non-silent")
         return
     }
     let meanAbsoluteSample = pcm.reduce(Float(0)) { $0 + abs($1) } / Float(pcm.count)
-    check.check("fixture decoded samples are non-silent (mean |sample| > 0.01)", meanAbsoluteSample > 0.01)
+    #expect((meanAbsoluteSample > 0.01) == true, "fixture decoded samples are non-silent (mean |sample| > 0.01)")
 }

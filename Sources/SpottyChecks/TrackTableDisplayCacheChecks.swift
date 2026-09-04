@@ -1,7 +1,9 @@
+import Testing
 import SpottyDomain
 import Foundation
 
-func runTrackTableDisplayCacheChecks(_ check: CheckRunner) {
+@Test
+func testTrackTableDisplayCache() {
     func track(
         id: String,
         title: String,
@@ -21,32 +23,34 @@ func runTrackTableDisplayCacheChecks(_ check: CheckRunner) {
         )
     }
 
-    check.suite("Catalog track collection version") {
+    do {
         var collection = CatalogTrackCollection()
         let initialVersion = collection.version
 
         collection.replace([track(id: "a", title: "A"), track(id: "b", title: "B")])
-        check.check("first replace mints a new version", collection.version != initialVersion)
-        check.equal("replace publishes the new rows", collection.tracks.map(\.id), ["a", "b"])
+        #expect((collection.version != initialVersion) == true, "first replace mints a new version")
+        #expect((collection.tracks.map(\.id)) == (["a", "b"]), "replace publishes the new rows")
 
         let afterFirstReplace = collection.version
         collection.replace(collection.tracks)
-        check.check("equal content still mints a new version", collection.version != afterFirstReplace)
+        #expect((collection.version != afterFirstReplace) == true, "equal content still mints a new version")
 
         var copy = collection
-        check.equal("a copy keeps the current version until it replaces", copy.version, collection.version)
+        #expect((copy.version) == (collection.version), "a copy keeps the current version until it replaces")
         copy.replace([track(id: "c", title: "C")])
-        check.check("copy-and-replace mints a version the original does not share", copy.version != collection.version)
-        check.equal("the original rows stay on the unreplaced copy", collection.tracks.map(\.id), ["a", "b"])
+        #expect(
+            (copy.version != collection.version) == true, "copy-and-replace mints a version the original does not share"
+        )
+        #expect((collection.tracks.map(\.id)) == (["a", "b"]), "the original rows stay on the unreplaced copy")
 
         let seeded = CatalogTrackCollection(tracks: [track(id: "seed", title: "Seed")])
-        check.check("seeded construction mints its own version", seeded.version != collection.version)
-        check.check(
-            "two fresh owners mint distinct versions",
-            CatalogTrackCollection().version != CatalogTrackCollection().version)
+        #expect((seeded.version != collection.version) == true, "seeded construction mints its own version")
+        #expect(
+            (CatalogTrackCollection().version != CatalogTrackCollection().version) == true,
+            "two fresh owners mint distinct versions")
     }
 
-    check.suite("Track table display cache") {
+    do {
         let alpha = track(id: "alpha", title: "Alpha", artist: "B", album: "Z")
         let beta = track(id: "beta", title: "Beta", artist: "A", album: "Y")
         let gamma = track(id: "gamma", title: "Gamma", artist: "A", album: "X")
@@ -55,110 +59,80 @@ func runTrackTableDisplayCacheChecks(_ check: CheckRunner) {
         var collection = CatalogTrackCollection()
         collection.replace(source)
         var cache = TrackTableDisplayCache(collection)
-        check.equal("empty sort keeps source order", cache.rows.map(\.id), ["gamma", "alpha", "beta"])
+        #expect((cache.rows.map(\.id)) == (["gamma", "alpha", "beta"]), "empty sort keeps source order")
 
         let snapshot = collection
         collection.replace([gamma, track(id: "middle", title: "Replaced"), beta])
-        check.check("the unreplaced copy is a cache hit", !cache.update(snapshot, sortOrder: []))
-        check.equal(
-            "a cache hit keeps the previous rows",
-            cache.rows.map(\.id),
-            ["gamma", "alpha", "beta"]
-        )
-        check.check("replace of the live collection recomputes", cache.update(collection, sortOrder: []))
-        check.equal(
-            "rows follow the replaced generation",
-            cache.rows.map(\.id),
-            ["gamma", "middle", "beta"]
-        )
+        #expect((!cache.update(snapshot, sortOrder: [])) == true, "the unreplaced copy is a cache hit")
+        #expect((cache.rows.map(\.id)) == (["gamma", "alpha", "beta"]), "a cache hit keeps the previous rows")
+        #expect((cache.update(collection, sortOrder: [])) == true, "replace of the live collection recomputes")
+        #expect((cache.rows.map(\.id)) == (["gamma", "middle", "beta"]), "rows follow the replaced generation")
 
         collection.replace(source)
         _ = cache.update(collection, sortOrder: [])
         let titleAscending = [KeyPathComparator(\TrackTableRow.title)]
-        check.check("sort-field change recomputes", cache.update(collection, sortOrder: titleAscending))
-        check.equal("title ascending uses the native comparator", cache.rows.map(\.id), ["alpha", "beta", "gamma"])
+        #expect((cache.update(collection, sortOrder: titleAscending)) == true, "sort-field change recomputes")
+        #expect((cache.rows.map(\.id)) == (["alpha", "beta", "gamma"]), "title ascending uses the native comparator")
 
         let titleDescending = [
             KeyPathComparator(\TrackTableRow.title, order: .reverse)
         ]
-        check.check("descending recomputes", cache.update(collection, sortOrder: titleDescending))
-        check.equal("title descending reverses the column", cache.rows.map(\.id), ["gamma", "beta", "alpha"])
+        #expect((cache.update(collection, sortOrder: titleDescending)) == true, "descending recomputes")
+        #expect((cache.rows.map(\.id)) == (["gamma", "beta", "alpha"]), "title descending reverses the column")
 
         let artistThenReverseTitle = [
             KeyPathComparator(\TrackTableRow.artist),
             KeyPathComparator(\TrackTableRow.title, order: .reverse),
         ]
-        check.check("multi-comparator recomputes", cache.update(collection, sortOrder: artistThenReverseTitle))
-        check.equal(
-            "artist then reverse title keeps comparator order",
-            cache.rows.map(\.id),
-            ["gamma", "beta", "alpha"]
-        )
+        #expect((cache.update(collection, sortOrder: artistThenReverseTitle)) == true, "multi-comparator recomputes")
+        #expect(
+            (cache.rows.map(\.id)) == (["gamma", "beta", "alpha"]), "artist then reverse title keeps comparator order")
 
-        check.check(
-            "attribute revision is ignored for a title sort",
-            !cache.update(
+        #expect(
+            (!cache.update(
                 collection,
                 sortValuesRevision: 1,
                 sortOrder: artistThenReverseTitle
-            )
-        )
+            )) == true, "attribute revision is ignored for a title sort")
 
         let popularityAscending = [KeyPathComparator(\TrackTableRow.popularitySortValue)]
         let initialPopularity = [
             alpha.uri: TrackTableSortValues(popularity: 80, bpm: nil, key: nil),
             beta.uri: TrackTableSortValues(popularity: 20, bpm: nil, key: nil),
         ]
-        check.check(
-            "attribute-backed sort recomputes",
-            cache.update(
+        #expect(
+            (cache.update(
                 collection,
                 sortValues: initialPopularity,
                 sortValuesRevision: 1,
                 sortOrder: popularityAscending
-            )
-        )
-        check.equal(
-            "missing popularity follows present values",
-            cache.rows.map(\.id),
-            ["beta", "alpha", "gamma"]
-        )
+            )) == true, "attribute-backed sort recomputes")
+        #expect((cache.rows.map(\.id)) == (["beta", "alpha", "gamma"]), "missing popularity follows present values")
         let refreshedPopularity = [
             alpha.uri: TrackTableSortValues(popularity: 10, bpm: nil, key: nil),
             beta.uri: TrackTableSortValues(popularity: 90, bpm: nil, key: nil),
             gamma.uri: TrackTableSortValues(popularity: 50, bpm: nil, key: nil),
         ]
-        check.check(
-            "new attribute revision re-sorts an active attribute column",
-            cache.update(
+        #expect(
+            (cache.update(
                 collection,
                 sortValues: refreshedPopularity,
                 sortValuesRevision: 2,
                 sortOrder: popularityAscending
-            )
-        )
-        check.equal(
-            "attribute arrival updates the active order",
-            cache.rows.map(\.id),
-            ["alpha", "gamma", "beta"]
-        )
-        check.check(
-            "unchanged attribute revision is a cache hit",
-            !cache.update(
+            )) == true, "new attribute revision re-sorts an active attribute column")
+        #expect((cache.rows.map(\.id)) == (["alpha", "gamma", "beta"]), "attribute arrival updates the active order")
+        #expect(
+            (!cache.update(
                 collection,
                 sortValues: initialPopularity,
                 sortValuesRevision: 2,
                 sortOrder: popularityAscending
-            )
-        )
+            )) == true, "unchanged attribute revision is a cache hit")
 
         var other = CatalogTrackCollection()
         other.replace([beta])
-        check.check(
-            "a different collection recomputes",
-            cache.update(other, sortOrder: [])
-        )
-        check.equal("rows follow the new collection", cache.rows.map(\.id), ["beta"])
+        #expect((cache.update(other, sortOrder: [])) == true, "a different collection recomputes")
+        #expect((cache.rows.map(\.id)) == (["beta"]), "rows follow the new collection")
 
         let older = Date(timeIntervalSince1970: 1_000)
         let newer = Date(timeIntervalSince1970: 2_000)
@@ -169,65 +143,37 @@ func runTrackTableDisplayCacheChecks(_ check: CheckRunner) {
             track(id: "new", title: "New", addedAt: newer),
         ])
         var dateCache = TrackTableDisplayCache(dated)
-        check.check(
-            "date-added sort recomputes",
-            dateCache.update(dated, sortOrder: [KeyPathComparator(\TrackTableRow.dateAddedSortValue)])
-        )
-        check.equal(
-            "nil dates sink below present dates for the table column",
-            dateCache.rows.map(\.id),
-            ["old", "new", "undated"]
-        )
-        check.check(
-            "the playlist's recently-added projection is newest first",
-            dateCache.update(
+        #expect(
+            (dateCache.update(dated, sortOrder: [KeyPathComparator(\TrackTableRow.dateAddedSortValue)])) == true,
+            "date-added sort recomputes")
+        #expect(
+            (dateCache.rows.map(\.id)) == (["old", "new", "undated"]),
+            "nil dates sink below present dates for the table column")
+        #expect(
+            (dateCache.update(
                 dated,
                 sortOrder: [KeyPathComparator(\TrackTableRow.dateAddedSortValue, order: .reverse)]
-            )
-        )
-        check.equal(
-            "newest date-added rows precede older rows",
-            dateCache.rows.map(\.id),
-            ["new", "old", "undated"]
-        )
-        check.equal(
-            "playlist source positions stay attached after sorting",
-            dateCache.rows.map(\.sourceIndex),
-            [2, 1, 0]
-        )
-        check.equal(
-            "sorted playlist rows receive one-based display positions",
-            dateCache.rows.map { dateCache.displayPosition(for: $0) },
-            [1, 2, 3]
-        )
-        check.equal(
-            "display positions map back to source occurrences",
-            dateCache.rows.reduce(into: [Int: Int]()) { positions, row in
+            )) == true, "the playlist's recently-added projection is newest first")
+        #expect((dateCache.rows.map(\.id)) == (["new", "old", "undated"]), "newest date-added rows precede older rows")
+        #expect(
+            (dateCache.rows.map(\.sourceIndex)) == ([2, 1, 0]), "playlist source positions stay attached after sorting")
+        #expect(
+            (dateCache.rows.map { dateCache.displayPosition(for: $0) }) == ([1, 2, 3]),
+            "sorted playlist rows receive one-based display positions")
+        #expect(
+            (dateCache.rows.reduce(into: [Int: Int]()) { positions, row in
                 positions[row.sourceIndex] = dateCache.displayPosition(for: row)
-            },
-            [2: 1, 1: 2, 0: 3]
-        )
-        check.check("clearing the projection restores source order", dateCache.update(dated, sortOrder: []))
-        check.equal(
-            "the source collection remains oldest-to-newest",
-            dated.tracks.map(\.id),
-            ["undated", "old", "new"]
-        )
-        check.equal(
-            "clearing sorting restores the source order",
-            dateCache.rows.map(\.id),
-            ["undated", "old", "new"]
-        )
-        check.equal(
-            "clearing sorting restores playlist source positions",
-            dateCache.rows.map(\.sourceIndex),
-            [0, 1, 2]
-        )
-        check.equal(
-            "clearing sorting restores one-based display positions",
-            dateCache.rows.map { dateCache.displayPosition(for: $0) },
-            [1, 2, 3]
-        )
+            }) == ([2: 1, 1: 2, 0: 3]), "display positions map back to source occurrences")
+        #expect((dateCache.update(dated, sortOrder: [])) == true, "clearing the projection restores source order")
+        #expect(
+            (dated.tracks.map(\.id)) == (["undated", "old", "new"]), "the source collection remains oldest-to-newest")
+        #expect(
+            (dateCache.rows.map(\.id)) == (["undated", "old", "new"]), "clearing sorting restores the source order")
+        #expect(
+            (dateCache.rows.map(\.sourceIndex)) == ([0, 1, 2]), "clearing sorting restores playlist source positions")
+        #expect(
+            (dateCache.rows.map { dateCache.displayPosition(for: $0) }) == ([1, 2, 3]),
+            "clearing sorting restores one-based display positions")
 
         let first = track(id: "uid-a", title: "Zebra")
         let second = CatalogTrack(
@@ -244,11 +190,9 @@ func runTrackTableDisplayCacheChecks(_ check: CheckRunner) {
         duplicates.replace([first, second])
         var duplicateCache = TrackTableDisplayCache(duplicates)
         _ = duplicateCache.update(duplicates, sortOrder: titleAscending)
-        check.equal(
-            "duplicate occurrences keep distinct identities after sort",
-            duplicateCache.rows.map(\.id),
-            ["uid-b", "uid-a"]
-        )
+        #expect(
+            (duplicateCache.rows.map(\.id)) == (["uid-b", "uid-a"]),
+            "duplicate occurrences keep distinct identities after sort")
 
         let tiedSecond = CatalogTrack(
             id: "uid-c",
@@ -262,41 +206,27 @@ func runTrackTableDisplayCacheChecks(_ check: CheckRunner) {
         )
         duplicates.replace([first, tiedSecond])
         _ = duplicateCache.update(duplicates, sortOrder: titleAscending)
-        check.equal(
-            "equal duplicate occurrences keep source order",
-            duplicateCache.rows.map(\.id),
-            ["uid-a", "uid-c"]
-        )
+        #expect(
+            (duplicateCache.rows.map(\.id)) == (["uid-a", "uid-c"]), "equal duplicate occurrences keep source order")
 
         var replacement = CatalogTrackCollection()
         replacement.replace([alpha, beta, gamma])
         var replacementCache = TrackTableDisplayCache(replacement)
         var forked = replacement
         forked.replace([alpha, track(id: "beta-2", title: "Omega"), gamma])
-        check.check(
-            "copy-and-replace of a same-count middle row recomputes",
-            replacementCache.update(forked, sortOrder: titleAscending)
-        )
-        check.equal(
-            "middle replacement participates in the new sort",
-            replacementCache.rows.map(\.id),
-            ["alpha", "gamma", "beta-2"]
-        )
-        check.check(
-            "the unreplaced original is still a distinct version",
-            forked.version != replacement.version
-        )
+        #expect(
+            (replacementCache.update(forked, sortOrder: titleAscending)) == true,
+            "copy-and-replace of a same-count middle row recomputes")
+        #expect(
+            (replacementCache.rows.map(\.id)) == (["alpha", "gamma", "beta-2"]),
+            "middle replacement participates in the new sort")
+        #expect((forked.version != replacement.version) == true, "the unreplaced original is still a distinct version")
 
         let selection: Set<String> = ["alpha", "gone", "gamma"]
-        check.equal(
-            "selection pruning drops identities that left the authoritative collection",
-            TrackTableDisplayCache.prunedSelection(selection, from: forked.tracks),
-            ["alpha", "gamma"]
-        )
-        check.equal(
-            "empty selection stays empty",
-            TrackTableDisplayCache.prunedSelection([], from: forked.tracks),
-            []
-        )
+        #expect(
+            (TrackTableDisplayCache.prunedSelection(selection, from: forked.tracks)) == (["alpha", "gamma"]),
+            "selection pruning drops identities that left the authoritative collection")
+        #expect(
+            (TrackTableDisplayCache.prunedSelection([], from: forked.tracks)) == ([]), "empty selection stays empty")
     }
 }
