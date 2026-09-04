@@ -153,6 +153,7 @@ dependencies = [
  "http",
  "librespot-connect",
  "librespot-core",
+ "librespot-metadata",
  "librespot-playback",
  "librespot-protocol",
  "log",
