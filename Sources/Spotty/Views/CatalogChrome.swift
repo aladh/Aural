@@ -32,15 +32,14 @@ struct CircularPlayButton: View {
         Button(action: action) {
             Image(systemName: "play.fill")
                 .symbolRenderingMode(.monochrome)
-                .font(.system(size: 17, weight: .bold))
-                .foregroundStyle(Color.black)
+                .font(.body.weight(.bold))
+                .foregroundStyle(SpottyPalette.playerButtonForeground)
                 .frame(width: 38, height: 38)
         }
         .buttonStyle(.borderedProminent)
         .buttonBorderShape(.circle)
         .controlSize(.large)
         .tint(SpottyPalette.mediaGreen)
-        .opacity(isEnabled ? 1 : 0.45)
         .disabled(!isEnabled)
         .help("Play")
         .accessibilityLabel("Play")

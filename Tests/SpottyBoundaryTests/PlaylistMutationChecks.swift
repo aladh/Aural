@@ -147,6 +147,9 @@ private let ownedAfterAddJSON = """
 private let foreignContentsJSON = """
     {"uri":"spotify:playlist:foreign","name":"Foreign Mix","description":null,"ownerV2":{"data":{"username":"them","name":"Them","uri":"spotify:user:them"}},"content":{"totalCount":1,"items":[{"uid":"uid-f","itemV2":{"data":{"uri":"spotify:track:other","name":"Other","trackDuration":{"totalMilliseconds":1000}}}}]}}
     """
+private let emptyContentsJSON = """
+    {"uri":"spotify:playlist:empty","name":"Empty Mix","description":null,"ownerV2":{"data":{"username":"me","name":"Me","uri":"spotify:user:me"}},"content":{"totalCount":0,"items":[]}}
+    """
 
 @MainActor
 private func makeCatalog(
@@ -200,6 +203,46 @@ struct PlaylistMutationTests {
     @Test
     @MainActor
     func testPlaylistMutation() async {
+        do {
+            let services = ScriptedPlaylistServices()
+            let emptyPlaylist: PathfinderPlaylistUnion
+            do {
+                emptyPlaylist = try decodePlaylistUnion(emptyContentsJSON)
+                await services.setPlaylist(emptyPlaylist)
+            } catch {
+                #expect((false) == true, "empty playlist fixture decodes")
+                return
+            }
+            let session = CatalogSessionAvailability(accountEpoch: 1, isAvailable: true)
+            let feedback = TransientFeedbackPresenter(clock: HoldingClock())
+            let catalog = makeCatalog(services: services, session: session, feedback: feedback)
+            let item = CatalogItem(
+                id: "empty",
+                uri: "spotify:playlist:empty",
+                title: "Empty Mix",
+                subtitle: "Me",
+                artworkURL: nil,
+                kind: .playlist,
+                ownerURI: "spotify:user:me"
+            )
+
+            await catalog.playlistStore.load(item)
+            await catalog.playlistStore.load(item)
+
+            #expect((catalog.playlistStore.tracks) == ([]), "an empty playlist remains authoritatively empty")
+            #expect(
+                (await services.playlistLoadCount) == (1),
+                "an empty playlist opened twice in one session fetches once"
+            )
+
+            session.update(accountEpoch: 2, isAvailable: true)
+            await catalog.playlistStore.load(item)
+            #expect(
+                (await services.playlistLoadCount) == (2),
+                "an empty result from an earlier account session is fetched again"
+            )
+        }
+
         do {
             do {
                 do {
@@ -755,6 +798,12 @@ struct PlaylistMutationTests {
                             && !containsToken(albumStore, "replaceCatalogTracks")
                             && !containsToken(homeLibrary, "replaceCatalogTracks")) == true,
                         "catalog track lists replace through CatalogTrackCollection")
+                    #expect(
+                        (containsToken(homeLibrary, "identity.isCurrent(")
+                            && !containsToken(homeLibrary, "identity.accountEpoch ==")
+                            && !containsToken(homeLibrary, "identity.sessionRevision ==")) == true,
+                        "catalog stores delegate account-scoped request validation to the shared identity"
+                    )
                     #expect(
                         (!containsToken(playlistStore, "sortedTracks")
                             && !containsToken(playlistStore, "dateSort")

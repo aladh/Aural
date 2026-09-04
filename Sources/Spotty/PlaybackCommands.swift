@@ -27,11 +27,11 @@ struct PlaybackCommands: Commands {
             .disabled(!player.canTogglePlayback)
 
             Button("Previous") { player.previous() }
-                .keyboardShortcut(.leftArrow, modifiers: .command)
+                .keyboardShortcut(.leftArrow, modifiers: [.command, .shift])
                 .disabled(!player.canSkipTrack)
 
             Button("Next") { player.next() }
-                .keyboardShortcut(.rightArrow, modifiers: .command)
+                .keyboardShortcut(.rightArrow, modifiers: [.command, .shift])
                 .disabled(!player.canSkipTrack)
 
             Divider()

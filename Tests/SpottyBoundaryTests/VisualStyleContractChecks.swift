@@ -71,6 +71,9 @@ struct VisualStyleContractTests {
                     let home = try visualStyleSourceFile("Spotty/Views/HomeView.swift")
                     let palette = try visualStyleSourceFile("Spotty/Views/SpottyPalette.swift")
                     let playlistDetail = try visualStyleSourceFile("Spotty/Views/PlaylistDetailView.swift")
+                    let detailHeader = try visualStyleSourceFile("Spotty/Views/MediaDetailHeader.swift")
+                    let interactionModifiers = try visualStyleSourceFile("Spotty/Views/InteractionModifiers.swift")
+                    let sidePanel = try visualStyleSourceFile("Spotty/Views/SidePanelView.swift")
                     let table =
                         try visualStyleSourceFile("Spotty/Views/TrackTable.swift")
                         + visualStyleSourceFile("Spotty/Views/CatalogChrome.swift")
@@ -109,14 +112,15 @@ struct VisualStyleContractTests {
                         (palette.contains("isHovering ? mediaSurfaceHover : .clear")) == true,
                         "media cards are flat until hover")
                     #expect(
-                        (playlistDetail.contains("PlaylistDetailHero(")
+                        (playlistDetail.contains("MediaDetailHeader(")
+                            && playlistDetail.contains("style: .playlist")
                             && playlistDetail.contains("PlaylistDetailActionStrip")
-                            && playlistDetail.contains("pointSize: size")
-                            && playlistDetail.contains("LinearGradient(")
-                            && playlistDetail.contains("SpottyPalette.playlistHeroGradient")
+                            && detailHeader.contains("pointSize: size")
+                            && detailHeader.contains("LinearGradient(")
+                            && detailHeader.contains("SpottyPalette.playlistHeroGradient")
                             && palette.contains("static let playlistHeroGradient")
-                            && !playlistDetail.contains("MediaDetailHeader(")) == true,
-                        "playlist details keep a dedicated compact hero and action strip")
+                            && !playlistDetail.contains("PlaylistDetailHero")) == true,
+                        "playlist details use the shared styled header and a separate action strip")
                     #expect(
                         (playlistDetail.contains("store.description")
                             && playlistDetail.contains("ownerText")
@@ -158,16 +162,16 @@ struct VisualStyleContractTests {
                             && playlistTitleCell.contains("pointSize: 30")) == true,
                         "playlist table rows use cached display positions and semantic current-track labels")
                     #expect(
-                        (playlistDetail.contains("return 64")
-                            && playlistDetail.contains("case ..<840:")
-                            && playlistDetail.contains("accessibilityAddTraits(.isHeader)")
-                            && playlistDetail.contains("horizontalPadding")) == true,
+                        (detailHeader.contains("default: 64")
+                            && detailHeader.contains("case ..<840:")
+                            && detailHeader.contains("accessibilityAddTraits(.isHeader)")
+                            && detailHeader.contains("CatalogLayout.contentPadding")) == true,
                         "playlist hero title is a responsive accessibility heading")
                     #expect(
                         (playlistDetail.contains("CircularPlayButton(action: play, isEnabled: canPlay)")
                             && table.contains("struct CircularPlayButton")
                             && table.contains(".buttonBorderShape(.circle)")
-                            && table.contains(".opacity(isEnabled ? 1 : 0.45)")
+                            && !table.contains(".opacity(isEnabled ? 1 : 0.45)")
                             && table.contains(".disabled(!isEnabled)")
                             && table.contains(".help(\"Play\")")
                             && !playlistDetail.contains("PlaylistPlayButton")) == true,
@@ -194,7 +198,8 @@ struct VisualStyleContractTests {
                             && !playerBar.contains(".fill(.bar)")) == true,
                         "the persistent player uses a compact near-black shelf")
                     #expect(
-                        (playerComponents.contains("player.canTogglePlayback ? SpottyPalette.playerPrimary")
+                        (playerComponents.contains("? SpottyPalette.playerPrimary")
+                            && playerComponents.contains(": SpottyPalette.playerDisabledControl")
                             && playerComponents.contains(
                                 "isHovering ? SpottyPalette.mediaGreen : SpottyPalette.playerPrimary"))
                             == true, "primary transport and resting progress remain neutral")
@@ -216,9 +221,27 @@ struct VisualStyleContractTests {
                                 "RemotePlaybackBanner(device: banner.device, isPlaying: banner.isPlaying)")
                             && playerBar.contains(".background(SpottyPalette.mediaGreen)")
                             && playerBar.contains("Playing\" : \"Paused")
-                            && playerBar.contains("reduceMotion ? nil : .snappy")
+                            && playerBar.contains(".animationIfAllowed(")
                             && palette.contains("static let remotePlaybackForeground")) == true,
                         "identified remote playback gets a Spotify-familiar green footer")
+                    #expect(
+                        (home.contains(".hoverSurface(isHovering: $isHovering)")
+                            && sidePanel.contains(".hoverSurface(isHovering: $isHovering)")
+                            && interactionModifiers.contains("private struct HoverSurfaceModifier")
+                            && interactionModifiers.contains(".onDisappear { isHovering = false }")) == true,
+                        "hoverable catalog surfaces share one recyclable hover modifier")
+                    #expect(
+                        (table.contains(".accessibilityLabel(\"BPM\")")
+                            && table.contains(".accessibilityValue(text)")
+                            && sidePanel.contains(".accessibilityElement(children: .ignore)")
+                            && sidePanel.contains(".accessibilityValue(\"Played \\(relativeTime)\")")) == true,
+                        "data values and queue/history rows expose deterministic VoiceOver elements")
+                    #expect(
+                        (!playerBar.contains(".animation(")
+                            && playerBar.contains(".animationIfAllowed(")
+                            && playerComponents.contains("animationIfAllowed(")
+                            && interactionModifiers.contains("if reduceMotion")) == true,
+                        "player shelf motion consistently honors Reduce Motion")
 
                 } catch {
                     Issue.record(

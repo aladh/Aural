@@ -133,14 +133,13 @@ private struct QuickAccessCard: View {
             .padding(.trailing, 14)
             .frame(maxWidth: .infinity, minHeight: 56, alignment: .leading)
             .background(
-                isHovering ? SpottyPalette.quickAccessSurfaceHover : SpottyPalette.quickAccessSurface,
+                SpottyPalette.quickAccessSurface(isHovering: isHovering),
                 in: RoundedRectangle(cornerRadius: 5, style: .continuous)
             )
             .contentShape(RoundedRectangle(cornerRadius: 5, style: .continuous))
         }
         .buttonStyle(.plain)
-        .onHover { isHovering = $0 }
-        .onDisappear { isHovering = false }
+        .hoverSurface(isHovering: $isHovering)
         .help(item.kind == .track ? "Play \(item.title)" : "Open \(item.title)")
         .accessibilityLabel(item.title)
         .accessibilityHint(item.kind == .track ? "Starts playback" : "Opens details")
@@ -173,7 +172,6 @@ struct MediaCard: View {
     let action: () -> Void
 
     @State private var isHovering = false
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         Button(action: action) {
@@ -207,10 +205,7 @@ struct MediaCard: View {
             )
         }
         .buttonStyle(.plain)
-        .onHover { isHovering = $0 }
-        // A card scrolled away under a resting cursor keeps no highlight.
-        .onDisappear { isHovering = false }
-        .animation(reduceMotion ? nil : .easeOut(duration: 0.15), value: isHovering)
+        .hoverSurface(isHovering: $isHovering)
         .help(item.kind == .track ? "Play \(item.title)" : "Open \(item.title)")
         .accessibilityLabel("\(item.title), \(item.subtitle.isEmpty ? item.kind.rawValue : item.subtitle)")
         .accessibilityHint(item.kind == .track ? "Starts playback" : "Opens details")

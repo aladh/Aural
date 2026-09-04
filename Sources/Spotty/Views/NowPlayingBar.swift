@@ -24,7 +24,7 @@ struct NowPlayingBar: View {
 
                         playerTimeLabel(remainingTime, alignment: .leading)
                     }
-                    .font(.system(size: 9, weight: .regular, design: .rounded).monospacedDigit())
+                    .font(.caption2.monospacedDigit())
                 }
                 .frame(minWidth: 500, maxWidth: 520)
 
@@ -45,10 +45,15 @@ struct NowPlayingBar: View {
                 RemotePlaybackBanner(device: banner.device, isPlaying: banner.isPlaying)
             }
         }
-        .animation(.snappy(duration: 0.2), value: player.hasCurrentTrack)
-        .animation(
-            reduceMotion ? nil : .snappy(duration: 0.2),
-            value: player.remotePlaybackBanner?.device.id
+        .animationIfAllowed(
+            .snappy(duration: 0.2),
+            value: player.hasCurrentTrack,
+            reduceMotion: reduceMotion
+        )
+        .animationIfAllowed(
+            .snappy(duration: 0.2),
+            value: player.remotePlaybackBanner?.device.id,
+            reduceMotion: reduceMotion
         )
         .task(id: player.showsPauseControl) {
             guard player.showsPauseControl else { return }
@@ -83,7 +88,7 @@ private struct RemotePlaybackBanner: View {
         HStack(spacing: 5) {
             Spacer(minLength: 0)
             Image(systemName: "airplayaudio")
-                .font(.system(size: 10, weight: .bold))
+                .font(.caption2.weight(.bold))
             Text("\(isPlaying ? "Playing" : "Paused") on \(device.name)")
                 .lineLimit(1)
         }
