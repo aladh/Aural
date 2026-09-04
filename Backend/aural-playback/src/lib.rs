@@ -5,6 +5,7 @@
 //! Connect, queue, transport, and player-event-pump responsibilities without changing that
 //! runtime contract.
 
+mod audio_key;
 mod connect;
 mod ffi;
 mod lifecycle_serialization;
