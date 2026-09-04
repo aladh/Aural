@@ -113,6 +113,7 @@ These rules are intentionally lexical; they complement rather than replace seman
 | `SRC-INOUT-001` | Revision gates do not use `lastRevision: inout` | `Scripts/check.sh`; epoch correctness remains behavior-tested |
 | `SRC-HYG-001`–`004` | No tracked generated/private artifacts, security placeholders, mock/demo tombstones, or shipping `LogicChecks` directory | `Scripts/check.sh`, gitignore, and privacy review |
 | `SRC-DUP-004` | View code does not introduce the intentionally unsupported drag APIs | `Scripts/check.sh` and product contract |
+| `SRC-SIGN-001` | Authenticated development launch requires the Apple anchor + Team ID validator and never silently falls back to a self-signed identity; packaging keeps the identity override and validation stays `--keychain-stable` | `Scripts/check.sh` signing-policy assertions over `script/build_and_run.sh`, `Scripts/package-app.sh`, and `Scripts/validate-app.sh`; behavior remains semantic review under `DOC-SEC-002` |
 
 The removed IDs `SRC-OBS-001`–`003`, `SRC-WRITER-001`, `SRC-DUP-003`, `CI-OBS-001`,
 `CI-SWIFT-001`, and `ABI-JSON-001` stay retired. Do not recreate them as duplicate snapshots; their behavior is owned by
@@ -126,6 +127,7 @@ the package graph, deterministic suites, current focused checks, or semantic rev
 | `CI-RUST-001` | Rust cache key/content stays tied to runner architecture, toolchain, and lockfile | `Scripts/check.sh` plus semantic workflow review |
 | `CI-FMT-001` | CI uses the selected toolchain formatter, not Homebrew Swift formatting/lint tools | `Scripts/check.sh` |
 | `CI-REL-001` | Rust, Swift/architecture, and release compile lanes all feed the required aggregate without reducing coverage | workflow commands/dependencies asserted from `Scripts/check.sh` |
+| `CI-TOOL-001` | CI lanes select the pinned Xcode (26.6 / Swift 6.3.3), run on the pinned macOS runner, check out without persisted credentials, and restore caches by the exact content keys | literal workflow fragments asserted from `Scripts/check.sh`; the pin values are the documented toolchain in `CONTRIBUTING.md` and change together |
 
 Action SHA pins, least permissions, cache contents beyond asserted fragments, tag/version agreement,
 release-note warnings, notarization credentials, and publication authorization remain semantic agent

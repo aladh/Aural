@@ -7,11 +7,12 @@ import Foundation
 
 /// Minimal assertion harness for the logic checks.
 ///
-/// The Command Line Tools toolchain this project builds with ships neither the XCTest
-/// framework nor the swift-testing runtime, so the suites run as a plain executable:
-/// every check prints its label, failures accumulate, and the process exit status carries
-/// the verdict. Installing full Xcode would unlock XCTest; until then this keeps the pure
-/// logic under real regression coverage with zero dependencies.
+/// The suites run as plain executables: every check prints its label, failures accumulate,
+/// and the process exit status carries the verdict. `AuralChecks` and `AuralBoundaryChecks`
+/// share this runner and the `AuralCheckSelection` CLI so the gate has one selection and
+/// reporting path with no test-framework dependency. The supported toolchain is Xcode 26.6
+/// (see CONTRIBUTING.md); replacing this runner with Swift Testing is tracked in
+/// https://github.com/aladh/Aural/issues/156.
 final class CheckRunner {
     private(set) var checksRun = 0
     private(set) var failures: [String] = []

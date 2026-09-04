@@ -364,11 +364,12 @@ pub(crate) fn spawn_reconnection_loop(intent: RecoveryIntent) {
             });
             notify_connection_state_change();
 
-            // No token is fetched here. Swift's token is minted with the user's dashboard
-            // client id, which login5 now rejects — a reconnect built on one fails exactly
-            // where the original outage did. The credentials cached by the streaming grant
-            // are what a rebuild connects from, so the ten-second round-trip that used to
-            // sit here, and the re-check that existed only to cover it, are both gone.
+            // No token is fetched here. A rebuild connects from the AP credentials cached by
+            // the streaming grant, which is the only login path this crate performs, so a
+            // Swift token round-trip adds latency without changing the outcome of a network
+            // outage. Credentials rejected server-side are a different failure: this loop
+            // does not detect them yet, and the bounded credential-rejected exit is tracked
+            // in https://github.com/aladh/Aural/issues/181.
 
             // One recovery strategy: tear everything down and rebuild Session, Player,
             // Mixer and Spirc as a single generation, then restore the captured intent.

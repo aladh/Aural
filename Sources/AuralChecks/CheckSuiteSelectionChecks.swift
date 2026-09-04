@@ -152,8 +152,7 @@ func runCheckSuiteSelectionChecks(_ check: CheckRunner, catalog: [String]) {
         check.noThrow("every compiled run*Checks function is registered") {
             let sources = try CheckSuiteRegistration.swiftSources(
                 in: URL(fileURLWithPath: #filePath).deletingLastPathComponent(),
-                excludingDirectoryNames: ["DeferredBoundaryChecks"],
-                excludingFileNames: ["LegacyLogicChecks.swift"]
+                excludingDirectoryNames: ["DeferredBoundaryChecks"]
             )
             let defined = CheckSuiteRegistration.expectedSuiteNames(fromSources: sources)
             check.equal(

@@ -56,14 +56,12 @@ let package = Package(
             exclude: [
                 "AGENTS.md",
                 "DeferredBoundaryChecks",
-                "LegacyLogicChecks.swift",
             ]
         ),
         .executableTarget(
             name: "AuralBoundaryChecks",
             dependencies: ["AuralCore", "AuralCheckSelection"],
             path: "Sources/AuralChecks/DeferredBoundaryChecks",
-            exclude: ["README.md"],
             resources: [.copy("Fixtures")]
         ),
     ]

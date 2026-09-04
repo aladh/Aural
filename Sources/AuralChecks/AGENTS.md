@@ -14,6 +14,15 @@ AuralCore codecs, adapters, stores, and injected workflows.
   behavior when relevant, not only the happy path.
 - A source/topology check is appropriate only for a truly lexical boundary. Do not replace semantic
   concurrency, lifetime, queue provenance, or rollback coverage with regex snapshots.
+- Check code never moves into `Sources/Aural`: test code must not ship in the application
+  executable. `AuralChecks` depends only on `AuralDomain` and `AuralCheckSelection` and is the
+  Rust-free path; `AuralBoundaryChecks` links `AuralCore` and needs the playback archive at link
+  time.
+- Boundary suites wait with the shared `@MainActor` `waitUntil` helper (cooperative `Task.yield`
+  polling under a `ContinuousClock` deadline, rechecked after cancellation), and settle negative
+  assertions by awaiting `PlaybackEffectRegistry.settlement(of:)` rather than a fixed sleep.
 
 Run the focused check product while iterating, then `./Scripts/check.sh` from the repository root.
+Suite selection flags (`--list`, `--help`, names after `--`) are documented in
+[agent operations](../../CONTRIBUTING.md).
 Rust/FFI contract changes also require Rust coverage and `./Scripts/check-clean.sh`.
