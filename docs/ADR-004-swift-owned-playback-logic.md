@@ -31,12 +31,12 @@ at risk, so application policy moves to Swift one owner at a time.
 All four observation callbacks (connection, playback, device list, queue) cross FFI as typed C
 snapshots. Presentation and resume/rehydration policy are Swift-owned; the engine forwards
 protocol rows and flags and holds readiness open behind `resume_pending` while Swift's reconnect
-loads run. The live classification of each Rust module, the FFI surface, and the planned owner
-per #201 stage live in [playback engine ownership](playback-engine-ownership.md). ADR 001 is not
-superseded: the boundary rule applies to whatever remains in the leaf.
+loads run. The former #201 roadmap proposed further ownership stages; that roadmap was retired
+by ADR 005. Current Rust module ownership and the retained FFI surface are defined in
+[playback engine ownership](playback-engine-ownership.md). ADR 001 remains accepted.
 
 ## Options considered
 
-- Rewrite the engine in Swift: deferred to #201.
+- Rewrite the engine in Swift: historically deferred to #201; rejected by ADR 005.
 - Forward raw cluster protobuf to Swift immediately: deferred. It would expand the ABI and require
   Swift protobuf models of Connect state in one step.

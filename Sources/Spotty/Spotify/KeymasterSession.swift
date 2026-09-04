@@ -106,9 +106,7 @@ actor KeymasterSession {
     /// account workflow. Callers must not start an implicit authorization when the latter occurs.
     var grantState: KeymasterGrantState {
         get async {
-            await waitForAdoption()
-            await loadStoredGrantIfNeeded()
-            await waitForAdoption()
+            await ensureGrantVisible()
             if tokens != nil { return .available }
             switch loadFailure {
             case .some(.denied): return .denied
@@ -130,6 +128,50 @@ actor KeymasterSession {
         return await grantState
     }
 
+    /// Whether the persisted grant must not be reused for streaming on the next connection.
+    /// The marker lives with the grant so a relaunch cannot lose a typed engine rejection.
+    func reauthenticationRequired() async -> Bool {
+        await ensureGrantVisible()
+        return tokens?.requiresReauthentication == true
+    }
+
+    /// Retains the Web API grant while durably marking its streaming credentials unusable. The
+    /// save is submitted on the owned worker before the actor suspends, so a concurrent refresh
+    /// or sign-out cannot write an older grant after this marker decision.
+    func markReauthenticationRequired() async {
+        let requestedGeneration = generation
+        await ensureGrantVisible()
+        guard generation == requestedGeneration else { return }
+
+        // Let a refresh that already owns the grant settle before taking its snapshot. Cancelling
+        // it and saving the pre-refresh value could otherwise put an older rotating refresh token
+        // after the refresh's durable write on the worker.
+        if let refreshInFlight {
+            _ = try? await refreshInFlight.value
+        }
+        await waitForAdoption()
+        guard generation == requestedGeneration, let current = tokens else { return }
+
+        supersedeRefresh()
+        let startedAt = generation
+        var marked = current
+        marked.requiresReauthentication = true
+        // Keep the in-memory marker visible while the save is pending. A refresh that starts
+        // during this await then carries the marker forward instead of overwriting it with a
+        // response built from the old in-memory grant. A failed marker write remains actionable
+        // for this process; a fresh adoption or explicit grant clear is required to change it.
+        tokens = marked
+        let receipt = persistence.submitSave(marked)
+        let result = await receipt.value()
+        guard generation == startedAt else { return }
+        guard case .success = result else {
+            SpottyLog.authentication.error(
+                "\(KeymasterGrantPersistenceDiagnostics.saveFailed, privacy: .public)"
+            )
+            return
+        }
+    }
+
     /// Loads persisted state lazily on this actor rather than synchronously while the main-actor
     /// controller is being initialized. A Keychain lookup can take time to resolve an older
     /// item's ACL; that must not prevent SwiftUI from presenting the window.
@@ -138,6 +180,13 @@ actor KeymasterSession {
     /// so a concurrent early `accessToken()` cannot observe an empty grant and throw `noGrant`
     /// while the store still holds one. `adopt` and `clear` bump `generation` and win over a
     /// stale read the same way a superseded refresh does.
+    private func ensureGrantVisible() async {
+        await waitForAdoption()
+        await loadStoredGrantIfNeeded()
+        // An adoption can begin while the initial read is suspended.
+        await waitForAdoption()
+    }
+
     private func loadStoredGrantIfNeeded() async {
         if hasLoadedStore { return }
 
@@ -181,9 +230,7 @@ actor KeymasterSession {
 
     var username: String? {
         get async {
-            await waitForAdoption()
-            await loadStoredGrantIfNeeded()
-            await waitForAdoption()
+            await ensureGrantVisible()
             return tokens?.username
         }
     }
@@ -196,11 +243,13 @@ actor KeymasterSession {
         adoptionInFlight = startedAt
         let completion = KeymasterPersistenceReceipt<Void>()
         adoptionCompletion = completion
+        var committed = newTokens
+        committed.requiresReauthentication = false
         defer {
             completion.resolve(())
         }
         do {
-            let receipt = persistence.submitSave(newTokens)
+            let receipt = persistence.submitSave(committed)
             let result = await receipt.value()
             try result.get()
         } catch {
@@ -215,7 +264,7 @@ actor KeymasterSession {
         // Commit memory only after the worker confirms the durable replacement. This leaves the
         // last committed grant available while a save is blocked and avoids rolling back to a
         // newer grant that never reached the store when two saves fail in succession.
-        tokens = newTokens
+        tokens = committed
         loadFailure = nil
         adoptionInFlight = nil
         adoptionCompletion = nil
@@ -263,9 +312,7 @@ actor KeymasterSession {
     /// Throws rather than returning nil when there is no grant: every caller needs a token to
     /// do anything at all, and "not authorized yet" is a state the UI already handles.
     func accessToken(now: Date = Date()) async throws -> String {
-        await waitForAdoption()
-        await loadStoredGrantIfNeeded()
-        await waitForAdoption()
+        await ensureGrantVisible()
         guard let current = tokens else {
             throw KeymasterSessionError.noGrant
         }
@@ -294,9 +341,7 @@ actor KeymasterSession {
     /// Concurrent refusals of the same bearer join `refreshed(from:)` so that token is spent
     /// once.
     func refreshIgnoringExpiry(rejected: String) async throws -> String {
-        await waitForAdoption()
-        await loadStoredGrantIfNeeded()
-        await waitForAdoption()
+        await ensureGrantVisible()
         guard let current = tokens else {
             throw KeymasterSessionError.noGrant
         }
@@ -390,6 +435,7 @@ actor KeymasterSession {
         if merged.username.isEmpty {
             merged.username = current.username
         }
+        merged.requiresReauthentication = current.requiresReauthentication
 
         do {
             let receipt = persistence.submitSave(merged)

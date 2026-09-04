@@ -35,7 +35,7 @@ nonisolated enum KeychainManager {
     /// Only `errSecItemNotFound` means that no grant exists. Access failures deliberately leave
     /// the retired item alone: a denied read must not perform an unrelated cleanup mutation while
     /// the secure store is unavailable.
-    static func loadKeymasterTokens() -> KeychainReadResult {
+    static func loadKeymasterTokens() -> KeymasterGrantLoadResult {
         switch load(key: keymasterTokensKey, service: keymasterService) {
         case let .found(data):
             guard let tokens = KeymasterStoredGrantCodec.decode(data) else { return .failed }
@@ -156,16 +156,6 @@ nonisolated enum KeychainManager {
             kSecAttrAccount as String: key,
         ]
     }
-}
-
-/// A typed keychain read. Returning `nil` for every non-success status would make a locked,
-/// denied, or unavailable keychain look exactly like a first launch and could overwrite a valid
-/// grant after an access prompt fails.
-nonisolated enum KeychainReadResult: Equatable, Sendable {
-    case found(KeymasterTokens)
-    case absent
-    case denied
-    case failed
 }
 
 private nonisolated enum RawKeychainReadResult {

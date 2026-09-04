@@ -86,7 +86,50 @@ pub(crate) fn start_player_event_pump(
     (tx, task)
 }
 
+enum PlayerEventNotification {
+    Playback(LocalPlaybackStateNotification),
+    Connection(ConnectionStateNotification),
+}
+
+struct AppliedPlayerEvent {
+    notifications: Vec<PlayerEventNotification>,
+    recovery: Option<RecoveryIntent>,
+}
+
+impl PlayerEventNotification {
+    fn deliver(self) {
+        match self {
+            Self::Playback(notification) => deliver_local_playback_state(notification),
+            Self::Connection(notification) => deliver_connection_state_notification(notification),
+        }
+    }
+}
+
 fn apply_player_event(event: PlayerEvent, event_listener_generation: u64) {
+    let Some(applied) = with_current_generation_mutation(event_listener_generation, || {
+        let mut applied = AppliedPlayerEvent {
+            notifications: Vec::with_capacity(2),
+            recovery: None,
+        };
+        apply_player_event_locked(event, event_listener_generation, &mut applied);
+        applied
+    }) else {
+        return;
+    };
+
+    for notification in applied.notifications {
+        notification.deliver();
+    }
+    if let Some(intent) = applied.recovery {
+        spawn_reconnection_loop_for_generation(intent, event_listener_generation);
+    }
+}
+
+fn apply_player_event_locked(
+    event: PlayerEvent,
+    event_listener_generation: u64,
+    applied: &mut AppliedPlayerEvent,
+) {
     match event {
         PlayerEvent::Playing {
             track_id,
@@ -100,14 +143,28 @@ fn apply_player_event(event: PlayerEvent, event_listener_generation: u64) {
             );
             set_current_track_uri(track_uri);
             IS_PLAYING.store(true, Ordering::SeqCst);
-            set_active_device(true);
+            if store_active_device(true) {
+                if let Some(notification) =
+                    capture_connection_state_notification(event_listener_generation)
+                {
+                    applied
+                        .notifications
+                        .push(PlayerEventNotification::Connection(notification));
+                }
+            }
             publish_playing_event(event_listener_generation);
             // Playback is running again, so any saved resume point belongs
             // to a deactivation that has been recovered from.
             RESUME_POSITION_MS.store(0, Ordering::SeqCst);
             update_position(position_ms);
             // Send playback state update to Swift
-            send_local_playback_state(true, position_ms);
+            if let Some(notification) =
+                capture_local_playback_state(true, position_ms, event_listener_generation)
+            {
+                applied
+                    .notifications
+                    .push(PlayerEventNotification::Playback(notification));
+            }
         }
         PlayerEvent::Paused {
             track_id,
@@ -124,7 +181,13 @@ fn apply_player_event(event: PlayerEvent, event_listener_generation: u64) {
             // Still active when paused - just not playing
             update_position(position_ms);
             // Send playback state update to Swift
-            send_local_playback_state(false, position_ms);
+            if let Some(notification) =
+                capture_local_playback_state(false, position_ms, event_listener_generation)
+            {
+                applied
+                    .notifications
+                    .push(PlayerEventNotification::Playback(notification));
+            }
         }
         PlayerEvent::PositionChanged { position_ms, .. } => {
             // Periodic position update (every 200ms)
@@ -195,10 +258,15 @@ fn apply_player_event(event: PlayerEvent, event_listener_generation: u64) {
         PlayerEvent::ShuffleChanged { shuffle } => {
             debug!("PlayerEvent::ShuffleChanged: {}", shuffle);
             SHUFFLE_STATE.store(shuffle, Ordering::SeqCst);
-            send_local_playback_state(
+            if let Some(notification) = capture_local_playback_state(
                 IS_PLAYING.load(Ordering::SeqCst),
                 POSITION_MS.load(Ordering::SeqCst),
-            );
+                event_listener_generation,
+            ) {
+                applied
+                    .notifications
+                    .push(PlayerEventNotification::Playback(notification));
+            }
         }
         PlayerEvent::RepeatChanged { context, track } => {
             debug!(
@@ -207,10 +275,15 @@ fn apply_player_event(event: PlayerEvent, event_listener_generation: u64) {
             );
             REPEAT_CONTEXT_STATE.store(context, Ordering::SeqCst);
             REPEAT_TRACK_STATE.store(track, Ordering::SeqCst);
-            send_local_playback_state(
+            if let Some(notification) = capture_local_playback_state(
                 IS_PLAYING.load(Ordering::SeqCst),
                 POSITION_MS.load(Ordering::SeqCst),
-            );
+                event_listener_generation,
+            ) {
+                applied
+                    .notifications
+                    .push(PlayerEventNotification::Playback(notification));
+            }
         }
         PlayerEvent::Loading {
             track_id,
@@ -292,7 +365,15 @@ fn apply_player_event(event: PlayerEvent, event_listener_generation: u64) {
             {
                 RESUME_POSITION_MS.store(stopped_at_ms, Ordering::SeqCst);
             }
-            set_active_device(false);
+            if store_active_device(false) {
+                if let Some(notification) =
+                    capture_connection_state_notification(event_listener_generation)
+                {
+                    applied
+                        .notifications
+                        .push(PlayerEventNotification::Connection(notification));
+                }
+            }
 
             // Only recover if the transport is genuinely broken. A dead
             // Session here means the Spirc task went down with it (librespot
@@ -311,10 +392,26 @@ fn apply_player_event(event: PlayerEvent, event_listener_generation: u64) {
                     "[WAKE +{}ms] Session is invalid at deactivation - recovering",
                     elapsed_since_wake_ms()
                 );
-                mark_disconnected("Session invalid");
-                spawn_reconnection_loop(intent);
+                with_connection(|c| {
+                    c.session_connected = false;
+                    c.last_error = Some("Session invalid".to_string());
+                });
+                if let Some(notification) =
+                    capture_connection_state_notification(event_listener_generation)
+                {
+                    applied
+                        .notifications
+                        .push(PlayerEventNotification::Connection(notification));
+                }
+                applied.recovery = Some(intent);
             } else {
-                notify_connection_state_change();
+                if let Some(notification) =
+                    capture_connection_state_notification(event_listener_generation)
+                {
+                    applied
+                        .notifications
+                        .push(PlayerEventNotification::Connection(notification));
+                }
             }
         }
         // Emitted when the local Connect device becomes ACTIVE. Carries the
@@ -329,10 +426,24 @@ fn apply_player_event(event: PlayerEvent, event_listener_generation: u64) {
                 elapsed_since_wake_ms(),
                 connection_id
             );
-            set_active_device(true);
+            if store_active_device(true) {
+                if let Some(notification) =
+                    capture_connection_state_notification(event_listener_generation)
+                {
+                    applied
+                        .notifications
+                        .push(PlayerEventNotification::Connection(notification));
+                }
+            }
 
             // Notify connection state change
-            notify_connection_state_change();
+            if let Some(notification) =
+                capture_connection_state_notification(event_listener_generation)
+            {
+                applied
+                    .notifications
+                    .push(PlayerEventNotification::Connection(notification));
+            }
         }
         PlayerEvent::SessionClientChanged {
             client_id,
@@ -411,6 +522,12 @@ mod player_event_pump_policy {
         }
     }
 
+    fn apply_current_generation_event(event: PlayerEvent, generation: u64) {
+        let previous_generation = SESSION_GENERATION.swap(generation, Ordering::SeqCst);
+        apply_player_event(event, generation);
+        SESSION_GENERATION.store(previous_generation, Ordering::SeqCst);
+    }
+
     #[derive(Clone)]
     struct PlaybackGlobals {
         is_playing: bool,
@@ -467,7 +584,7 @@ mod player_event_pump_policy {
         IS_PLAYING.store(false, Ordering::SeqCst);
         let seq_before = playing_event_stamp().sequence;
 
-        apply_player_event(playing_event(1_250), 1);
+        apply_current_generation_event(playing_event(1_250), 1);
 
         assert!(IS_PLAYING.load(Ordering::SeqCst));
         assert!(playing_event_stamp().sequence > seq_before);
@@ -488,7 +605,7 @@ mod player_event_pump_policy {
         let track_id = synthetic_track();
 
         IS_PLAYING.store(true, Ordering::SeqCst);
-        apply_player_event(
+        apply_current_generation_event(
             PlayerEvent::Paused {
                 play_request_id: 1,
                 track_id: track_id.clone(),
@@ -500,7 +617,7 @@ mod player_event_pump_policy {
         assert_eq!(POSITION_MS.load(Ordering::SeqCst), 800);
 
         IS_PLAYING.store(true, Ordering::SeqCst);
-        apply_player_event(
+        apply_current_generation_event(
             PlayerEvent::Stopped {
                 play_request_id: 1,
                 track_id: track_id.clone(),
@@ -510,7 +627,7 @@ mod player_event_pump_policy {
         assert!(!IS_PLAYING.load(Ordering::SeqCst));
 
         IS_PLAYING.store(true, Ordering::SeqCst);
-        apply_player_event(
+        apply_current_generation_event(
             PlayerEvent::EndOfTrack {
                 play_request_id: 1,
                 track_id,
@@ -529,7 +646,7 @@ mod player_event_pump_policy {
         *CURRENT_TRACK_URI.lock().unwrap_or_else(|e| e.into_inner()) =
             Some("spotify:track:outgoing".to_string());
 
-        apply_player_event(
+        apply_current_generation_event(
             PlayerEvent::Loading {
                 play_request_id: 1,
                 track_id: synthetic_track(),
@@ -557,7 +674,7 @@ mod player_event_pump_policy {
             .lock()
             .unwrap_or_else(|e| e.into_inner()) = None;
 
-        apply_player_event(
+        apply_current_generation_event(
             PlayerEvent::SetQueue {
                 context_uri: "spotify:playlist:context".to_string(),
                 current_track: None,
@@ -581,7 +698,7 @@ mod player_event_pump_policy {
         let _guard = lock_lifecycle_test_globals();
         let _restore = RestorePlaybackGlobals(capture_playback_globals());
         set_active_device(false);
-        apply_player_event(
+        apply_current_generation_event(
             PlayerEvent::SessionConnected {
                 connection_id: "conn".to_string(),
                 user_name: String::new(),
@@ -591,7 +708,7 @@ mod player_event_pump_policy {
         assert!(is_active_device());
 
         POSITION_MS.store(1_200, Ordering::SeqCst);
-        apply_player_event(
+        apply_current_generation_event(
             PlayerEvent::SessionDisconnected {
                 connection_id: "conn".to_string(),
                 user_name: String::new(),

@@ -6,6 +6,9 @@ pub(crate) const ERROR_GENERAL: i32 = -1;
 pub(crate) const ERROR_NEEDS_REINIT: i32 = -2;
 /// Session is not yet connected; the caller should wait for readiness.
 pub(crate) const ERROR_NOT_CONNECTED: i32 = -3;
+/// The cached streaming credentials were definitively rejected during initialization.
+/// The account must authorize streaming again; this is not a reconnectable transport failure.
+pub(crate) const ERROR_CREDENTIALS_REJECTED: i32 = -4;
 
 /// Helper to check if session is connected. Returns ERROR_NOT_CONNECTED if not.
 ///
@@ -325,64 +328,6 @@ pub extern "C" fn spotty_playback_cleanup() {
             }
         }
     })
-}
-
-/// Tears down the current generation's owned resources.
-///
-/// The caller must hold the lifecycle lock and the store section. Every task handle is taken
-/// before cancellation and awaited without any global mutex guard held. This helper is called by
-/// the lifecycle owner only; generation child tasks request recovery, but never tear themselves
-/// down, so it cannot await or abort its own handle.
-pub(crate) async fn teardown_engine_resources(context: &str) {
-    let stop_tx = PLAYER_EVENT_TX
-        .lock()
-        .unwrap_or_else(|e| e.into_inner())
-        .take();
-    if let Some(tx) = stop_tx {
-        let _ = tx.send(());
-    }
-
-    // Take Spirc before calling into it. Calling while holding the registry lock would make a
-    // re-entrant callback observe a half-owned generation.
-    let spirc = SPIRC.lock().unwrap_or_else(|e| e.into_inner()).take();
-    if let Some(spirc) = spirc.as_ref() {
-        if spirc.shutdown().is_err() {
-            debug!("{}: spirc shutdown could not be queued", context);
-        }
-    }
-
-    // Take the Session before awaiting so the task registry and object slots have one owner. It
-    // is explicitly invalidated after the child tasks stop, before the last local clone is
-    // dropped; dropping Session alone does not close librespot's channels.
-    let session = SESSION.lock().unwrap_or_else(|e| e.into_inner()).take();
-
-    // Abort and join every task created for this generation. The task list is taken before the
-    // first await so a late task completion cannot race a new generation's publication.
-    let tasks = ENGINE_TASKS
-        .lock()
-        .unwrap_or_else(|e| e.into_inner())
-        .take()
-        .unwrap_or_default();
-    for task in &tasks {
-        task.abort();
-    }
-    for task in tasks {
-        let _ = task.await;
-    }
-
-    if let Some(session) = session.as_ref() {
-        session.shutdown();
-    }
-
-    // Tell the native renderer before dropping the Player; dropping it does not invoke Sink::stop.
-    proxy_sink::ProxySink::notify_player_gone();
-    *PLAYER.lock().unwrap_or_else(|e| e.into_inner()) = None;
-
-    // Drop the Spirc, Mixer and Session only after their tasks have stopped; those tasks retain
-    // clones of all three objects.
-    drop(spirc);
-    *MIXER.lock().unwrap_or_else(|e| e.into_inner()) = None;
-    drop(session);
 }
 
 /// Clears engine globals and session-scoped playback identity.

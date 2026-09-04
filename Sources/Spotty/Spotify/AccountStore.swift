@@ -170,6 +170,10 @@ final class AccountStore {
         defer { SpottyLog.accountSignposter.endInterval("Teardown", interval) }
         if let staleConnectionTask { await staleConnectionTask.value }
 
+        if requiresReauthentication, !initialIntent.clearGrant {
+            await environment.account.markReauthenticationRequired()
+        }
+
         _ = await coordinator.shutdownEngine()
         await coordinator.cleanupEngine()
         await coordinator.clearStreamingCredentials()
@@ -243,51 +247,59 @@ final class AccountStore {
 
     private func runConnection(interactive: Bool, generation: UInt64, epoch: UInt64) async {
         let grantState = await environment.account.grantState()
+        let persistedReauthentication = await environment.account.reauthenticationRequired()
         guard isCurrent(generation: generation, epoch: epoch) else { return }
+        if persistedReauthentication {
+            setRequiresReauthentication(true)
+        }
+
+        if interactive, grantState != .available || requiresReauthentication {
+            await performInteractiveConnect(generation: generation, epoch: epoch)
+            return
+        }
 
         switch grantState {
         case .available:
-            if requiresReauthentication {
-                if interactive {
-                    await performInteractiveConnect(generation: generation, epoch: epoch)
-                } else {
-                    phase = .failed(ConnectionSnapshotProjection.credentialsRejectedMessage)
-                }
-            } else {
-                await restoreGrant(generation: generation, epoch: epoch)
+            guard !requiresReauthentication else {
+                phase = .failed(ConnectionSnapshotProjection.credentialsRejectedMessage)
+                return
             }
+            await restoreGrant(generation: generation, epoch: epoch)
         case .absent:
-            if interactive {
-                await performInteractiveConnect(generation: generation, epoch: epoch)
-            } else {
-                phase = .signedOut
-            }
+            phase = .signedOut
         case .denied:
-            if interactive {
-                await performInteractiveConnect(generation: generation, epoch: epoch)
-            } else {
-                phase = .failed("Spotty cannot access its saved Spotify session. Allow Keychain access and try again.")
-            }
+            phase = .failed("Spotty cannot access its saved Spotify session. Allow Keychain access and try again.")
         case .failed:
-            if interactive {
-                await performInteractiveConnect(generation: generation, epoch: epoch)
-            } else {
-                phase = .failed("Spotty could not read its saved Spotify session. Try again or sign in again.")
-            }
+            phase = .failed("Spotty could not read its saved Spotify session. Try again or sign in again.")
         }
     }
 
     private func restoreGrant(generation: UInt64, epoch: UInt64) async {
-        if await initializePlayer(generation: generation, epoch: epoch, reportFailure: false) {
+        switch await initializePlayer(generation: generation, epoch: epoch, reportFailure: false) {
+        case .ready, .credentialsRejected:
             return
+        case .failed:
+            break
         }
         guard isCurrent(generation: generation, epoch: epoch) else { return }
+        guard !requiresReauthentication else {
+            phase = .failed(ConnectionSnapshotProjection.credentialsRejectedMessage)
+            return
+        }
 
         do {
             let token = try await environment.account.accessToken()
             guard isCurrent(generation: generation, epoch: epoch) else { return }
+            guard !requiresReauthentication else {
+                phase = .failed(ConnectionSnapshotProjection.credentialsRejectedMessage)
+                return
+            }
             let code = await coordinator.authorizeStreaming(with: token)
             guard isCurrent(generation: generation, epoch: epoch) else { return }
+            guard !requiresReauthentication else {
+                phase = .failed(ConnectionSnapshotProjection.credentialsRejectedMessage)
+                return
+            }
             guard code == 0 else {
                 phase = .failed(LiveSpotifyError.streamingAuthorization(code).localizedDescription)
                 return
@@ -308,13 +320,19 @@ final class AccountStore {
         do {
             let tokens = try await environment.account.authorizeInteractively()
             guard isCurrent(generation: generation, epoch: epoch) else { return }
+            // The OAuth response is now accepted. From this commit point onward cancellation is
+            // owned by the session teardown path, which drains persistence before clearing it.
+            phase = .connecting
             try await environment.account.adopt(tokens)
             guard isCurrent(generation: generation, epoch: epoch) else { return }
             setRequiresReauthentication(false)
-            phase = .connecting
 
             let code = await coordinator.authorizeStreaming(with: tokens.accessToken)
             guard isCurrent(generation: generation, epoch: epoch) else { return }
+            guard !requiresReauthentication else {
+                phase = .failed(ConnectionSnapshotProjection.credentialsRejectedMessage)
+                return
+            }
             guard code == 0 else { throw LiveSpotifyError.streamingAuthorization(code) }
             _ = await initializePlayer(generation: generation, epoch: epoch, reportFailure: true)
         } catch is CancellationError {
@@ -330,33 +348,55 @@ final class AccountStore {
         generation: UInt64,
         epoch: UInt64,
         reportFailure: Bool
-    ) async -> Bool {
+    ) async -> PlayerInitializationOutcome {
         let interval = SpottyLog.accountSignposter.beginInterval("Engine initialization")
         defer { SpottyLog.accountSignposter.endInterval("Engine initialization", interval) }
-        guard isCurrent(generation: generation, epoch: epoch) else { return false }
+        guard isCurrent(generation: generation, epoch: epoch) else { return .failed }
+        guard !requiresReauthentication else {
+            phase = .failed(ConnectionSnapshotProjection.credentialsRejectedMessage)
+            return .credentialsRejected
+        }
         phase = .connecting
         await coordinator.configureHighQualityPlayback()
-        guard isCurrent(generation: generation, epoch: epoch) else { return false }
+        guard isCurrent(generation: generation, epoch: epoch) else { return .failed }
+        guard !requiresReauthentication else {
+            phase = .failed(ConnectionSnapshotProjection.credentialsRejectedMessage)
+            return .credentialsRejected
+        }
         do {
             try environment.audioOutput.prepareForPlayback()
         } catch {
-            guard isCurrent(generation: generation, epoch: epoch) else { return false }
+            guard isCurrent(generation: generation, epoch: epoch) else { return .failed }
             SpottyLog.audio.error("Audio output preparation failed")
             phase = .failed(error.localizedDescription)
-            return false
+            return .failed
         }
         let result = await coordinator.initializeEngine()
-        guard isCurrent(generation: generation, epoch: epoch) else { return false }
+        guard isCurrent(generation: generation, epoch: epoch) else { return .failed }
+
+        if result.isCredentialsRejected || requiresReauthentication {
+            setRequiresReauthentication(true)
+            await environment.account.markReauthenticationRequired()
+            guard isCurrent(generation: generation, epoch: epoch) else { return .credentialsRejected }
+            phase = .failed(ConnectionSnapshotProjection.credentialsRejectedMessage)
+            return .credentialsRejected
+        }
 
         if result.isOK {
             phase = .ready
             onReady?()
-            return true
+            return .ready
         }
         if reportFailure {
             phase = .failed("Spotty Connect could not start (\(result.rawValue))")
         }
-        return false
+        return .failed
+    }
+
+    private enum PlayerInitializationOutcome {
+        case ready
+        case failed
+        case credentialsRejected
     }
 
     private func isCurrent(generation: UInt64, epoch: UInt64) -> Bool {

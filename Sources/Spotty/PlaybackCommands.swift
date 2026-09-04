@@ -8,7 +8,7 @@ struct AccountCommands: Commands {
             Button("Sign Out") {
                 Task { await player.logout() }
             }
-            .disabled(!player.isConnected)
+            .disabled(player.phase == .signedOut || player.isTearingDown)
 
             Divider()
         }

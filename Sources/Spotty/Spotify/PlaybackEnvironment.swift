@@ -7,7 +7,11 @@ nonisolated struct PlaybackEngineResult: Equatable, Sendable {
 
     static let ok = PlaybackEngineResult(rawValue: 0)
     static let error = PlaybackEngineResult(rawValue: -1)
+    /// Initialization proved that the cached streaming credential is unusable. This terminal
+    /// result keeps the Web API grant intact while the account owner requests fresh authorization.
+    static let credentialsRejected = PlaybackEngineResult(rawValue: -4)
     var isOK: Bool { rawValue == 0 }
+    var isCredentialsRejected: Bool { rawValue == Self.credentialsRejected.rawValue }
     var requiresReconnect: Bool { rawValue == -2 || rawValue == -3 }
 }
 
@@ -140,6 +144,8 @@ nonisolated protocol AccountSession: Sendable {
     func authorizeInteractively() async throws -> KeymasterTokens
     func hasGrant() async -> Bool
     func grantState() async -> KeymasterGrantState
+    func reauthenticationRequired() async -> Bool
+    func markReauthenticationRequired() async
     func accessToken() async throws -> String
     func adopt(_ tokens: KeymasterTokens) async throws
     func clear() async
@@ -152,12 +158,21 @@ extension AccountSession {
     func grantState() async -> KeymasterGrantState {
         await hasGrant() ? .available : .absent
     }
+
+    func reauthenticationRequired() async -> Bool { false }
+    func markReauthenticationRequired() async {}
 }
 
 nonisolated struct LiveAccountSession: AccountSession {
     func authorizeInteractively() async throws -> KeymasterTokens { try await KeymasterAuth.authorize() }
     func hasGrant() async -> Bool { await KeymasterSession.shared.hasGrant }
     func grantState() async -> KeymasterGrantState { await KeymasterSession.shared.retryGrantState() }
+    func reauthenticationRequired() async -> Bool {
+        await KeymasterSession.shared.reauthenticationRequired()
+    }
+    func markReauthenticationRequired() async {
+        await KeymasterSession.shared.markReauthenticationRequired()
+    }
     func accessToken() async throws -> String { try await KeymasterSession.shared.accessToken() }
     func adopt(_ tokens: KeymasterTokens) async throws { try await KeymasterSession.shared.adopt(tokens) }
     func clear() async { await KeymasterSession.shared.clear() }

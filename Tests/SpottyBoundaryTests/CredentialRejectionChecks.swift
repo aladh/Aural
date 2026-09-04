@@ -86,8 +86,173 @@ struct CredentialRejectionTests {
     }
 }
 
+@Suite("Account Connection Cancellation")
+struct AccountConnectionCancellationTests {
+    @Test @MainActor
+    func testOAuthAcceptanceCommitsBeforeAdoptAndLogoutDrains() async {
+        let cancelledAccount = GatedConnectAccount(parkAuthorization: true)
+        let cancelledEnvironment = CredentialRejectionEnvironment.make(
+            account: cancelledAccount,
+            engine: CredentialRejectionEngine()
+        )
+        let cancelledPlayer = PlaybackStore(
+            environment: cancelledEnvironment,
+            feedback: TransientFeedbackPresenter(clock: cancelledEnvironment.clock)
+        )
+
+        cancelledPlayer.connect()
+        #expect(
+            (await waitUntil {
+                cancelledPlayer.phase == .authorizing && cancelledAccount.authorizationEntered
+            }) == true,
+            "interactive authorization reaches its cancellable phase"
+        )
+        cancelledPlayer.cancelConnect()
+        #expect((cancelledPlayer.phase) == (.signedOut), "cancellation before OAuth acceptance signs out")
+
+        cancelledAccount.releaseAuthorization()
+        #expect(
+            (await waitUntil { cancelledAccount.authorizationReturned }) == true,
+            "the cancelled authorization task observes its late result"
+        )
+        #expect(
+            (cancelledAccount.adoptCount) == (0),
+            "a late OAuth result cannot persist after pre-acceptance cancellation"
+        )
+
+        let acceptedAccount = GatedConnectAccount(parkAuthorization: false)
+        let acceptedEnvironment = CredentialRejectionEnvironment.make(
+            account: acceptedAccount,
+            engine: CredentialRejectionEngine()
+        )
+        let acceptedPlayer = PlaybackStore(
+            environment: acceptedEnvironment,
+            feedback: TransientFeedbackPresenter(clock: acceptedEnvironment.clock)
+        )
+
+        acceptedPlayer.connect()
+        #expect(
+            (await waitUntil {
+                acceptedPlayer.phase == .connecting && acceptedAccount.adoptEntered
+            }) == true,
+            "a valid OAuth result commits the connecting phase before persistence"
+        )
+        acceptedPlayer.cancelConnect()
+        #expect(
+            (acceptedPlayer.phase) == (.connecting),
+            "cancelConnect does not interrupt an accepted OAuth result"
+        )
+        #expect((acceptedAccount.adoptCount) == (1), "the accepted result enters persistence")
+
+        let logout = Task { await acceptedPlayer.logout() }
+        #expect(
+            (await waitUntil { acceptedPlayer.isTearingDown }) == true,
+            "logout starts owned session teardown"
+        )
+        #expect(
+            (acceptedAccount.clearCount) == (0),
+            "logout waits for the accepted persistence operation before clearing the grant"
+        )
+
+        acceptedAccount.releaseAdoption()
+        await logout.value
+        #expect((acceptedAccount.adoptReturned) == true, "teardown drains the accepted operation")
+        #expect((acceptedAccount.clearCount) == (1), "logout clears the grant after draining")
+        #expect((acceptedPlayer.phase) == (.signedOut), "logout finishes signed out")
+    }
+}
+
 private enum CredentialRejectionTestFailure: Error {
     case unavailable
+}
+
+private final class GatedConnectAccount: AccountSession, @unchecked Sendable {
+    private let parkAuthorization: Bool
+    private let lock = NSLock()
+    private var authorizationContinuation: CheckedContinuation<KeymasterTokens, Never>?
+    private var adoptionContinuation: CheckedContinuation<Void, Never>?
+    private var authorizationEnteredStorage = false
+    private var authorizationReturnedStorage = false
+    private var adoptEnteredStorage = false
+    private var adoptReturnedStorage = false
+    private var adoptStorage = 0
+    private var clearStorage = 0
+
+    init(parkAuthorization: Bool) {
+        self.parkAuthorization = parkAuthorization
+    }
+
+    var authorizationEntered: Bool { lock.withLock { authorizationEnteredStorage } }
+    var authorizationReturned: Bool { lock.withLock { authorizationReturnedStorage } }
+    var adoptEntered: Bool { lock.withLock { adoptEnteredStorage } }
+    var adoptReturned: Bool { lock.withLock { adoptReturnedStorage } }
+    var adoptCount: Int { lock.withLock { adoptStorage } }
+    var clearCount: Int { lock.withLock { clearStorage } }
+
+    func authorizeInteractively() async throws -> KeymasterTokens {
+        if parkAuthorization {
+            _ = await withCheckedContinuation { continuation in
+                lock.withLock {
+                    authorizationEnteredStorage = true
+                    authorizationContinuation = continuation
+                }
+            }
+        } else {
+            lock.withLock { authorizationEnteredStorage = true }
+        }
+        lock.withLock { authorizationReturnedStorage = true }
+        return Self.tokens
+    }
+
+    func hasGrant() async -> Bool { false }
+    func grantState() async -> KeymasterGrantState { .absent }
+    func accessToken() async throws -> String { Self.tokens.accessToken }
+
+    func adopt(_: KeymasterTokens) async throws {
+        lock.withLock {
+            adoptStorage += 1
+        }
+        await withCheckedContinuation { continuation in
+            lock.withLock {
+                adoptEnteredStorage = true
+                adoptionContinuation = continuation
+            }
+        }
+        lock.withLock { adoptReturnedStorage = true }
+    }
+
+    func clear() async {
+        lock.withLock { clearStorage += 1 }
+    }
+
+    func revocations() -> AsyncStream<Void> {
+        AsyncStream { continuation in continuation.finish() }
+    }
+
+    func releaseAuthorization() {
+        let continuation = lock.withLock {
+            let continuation = authorizationContinuation
+            authorizationContinuation = nil
+            return continuation
+        }
+        continuation?.resume(returning: Self.tokens)
+    }
+
+    func releaseAdoption() {
+        let continuation = lock.withLock {
+            let continuation = adoptionContinuation
+            adoptionContinuation = nil
+            return continuation
+        }
+        continuation?.resume()
+    }
+
+    private static let tokens = KeymasterTokens(
+        accessToken: "gated-access",
+        refreshToken: "gated-refresh",
+        expiresAt: .distantFuture,
+        username: "gated-user"
+    )
 }
 
 private final class CredentialRejectionEngine: LocalPlaybackEngine, @unchecked Sendable {

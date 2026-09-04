@@ -144,6 +144,24 @@ pub(crate) fn stamped_snapshot<T>(build: impl FnOnce(SnapshotStamp) -> T) -> T {
         session_generation: SESSION_GENERATION.load(Ordering::SeqCst),
     })
 }
+
+/// Builds a snapshot revision for an explicitly owned engine generation.
+///
+/// Most publishers observe the current generation at the point they assemble their payload.
+/// A generation-scoped event publisher may have to release its short mutation gate before it
+/// enters Swift, though; using this helper keeps that callback stamped with the generation whose
+/// state produced it instead of whichever generation happened to be current at delivery time.
+pub(crate) fn stamped_snapshot_for_generation<T>(
+    session_generation: u64,
+    build: impl FnOnce(SnapshotStamp) -> T,
+) -> T {
+    let mut revision = SNAPSHOT_REVISION.lock().unwrap_or_else(|e| e.into_inner());
+    *revision = revision.saturating_add(1);
+    build(SnapshotStamp {
+        revision: *revision,
+        session_generation,
+    })
+}
 pub(crate) static SHUFFLE_STATE: AtomicBool = AtomicBool::new(false);
 pub(crate) static REPEAT_TRACK_STATE: AtomicBool = AtomicBool::new(false);
 pub(crate) static REPEAT_CONTEXT_STATE: AtomicBool = AtomicBool::new(false);
@@ -259,7 +277,7 @@ impl RecoveryIntent {
 ///
 /// Invalidity alone is not a sufficient trigger. `Session::is_invalid` is only set by
 /// `shutdown()`, so a session that was created but never managed to connect — exactly what
-/// a failed `init_player_async` leaves behind — reports itself valid forever. The state
+/// a failed `build_player_async` leaves behind — reports itself valid forever. The state
 /// that actually needs rescuing is "not connected and nobody is recovering", however it was
 /// reached: a session that died, or one that never came up.
 ///
@@ -324,7 +342,7 @@ pub(crate) fn set_active_device(active: bool) {
 /// Records activity without publishing, returning whether it changed.
 ///
 /// For callers that are mid-transition and will publish once when they are done —
-/// `init_player_async` still has to rehydrate after activating, and publishing in between
+/// `build_player_async` still has to rehydrate after activating, and publishing in between
 /// is what let Swift bootstrap against a half-built session.
 pub(crate) fn store_active_device(active: bool) -> bool {
     let changed = with_connection(|c| {
@@ -427,7 +445,7 @@ pub(crate) fn elapsed_since_wake_ms() -> u64 {
     now.saturating_sub(wake_ts)
 }
 
-// Generation counter for reconnection. Bumped once per rebuild, in init_player_async, and
+// Generation counter for reconnection. Bumped once per rebuild, in build_player_async, and
 // captured by every listener that rebuild creates. A listener whose captured generation no
 // longer matches belongs to a session that has already been replaced, and must not act.
 //
@@ -438,6 +456,37 @@ pub(crate) fn elapsed_since_wake_ms() -> u64 {
 // check unreachable. Now that a rebuild replaces the listener along with its session, the
 // listener captures the value directly and the check does what it claims.
 pub(crate) static SESSION_GENERATION: AtomicU64 = AtomicU64::new(0);
+
+/// Serializes short, synchronous mutations against the generation invalidation point.
+///
+/// The async lifecycle mutex cannot be used by player callbacks or synchronous FFI commands:
+/// lifecycle initialization deliberately holds it while waiting for rehydration. This gate is
+/// therefore intentionally small and synchronous. Callers must finish all state reads/writes or
+/// command-channel sends inside the closure, then invoke callbacks after it returns. No foreign
+/// callback may run while this mutex is held.
+static GENERATION_MUTATION_GATE: Lazy<Mutex<()>> = Lazy::new(|| Mutex::new(()));
+
+/// Runs one generation-owned synchronous operation while invalidation is excluded.
+pub(crate) fn with_generation_mutation<T>(work: impl FnOnce() -> T) -> T {
+    let _gate = GENERATION_MUTATION_GATE
+        .lock()
+        .unwrap_or_else(|error| error.into_inner());
+    work()
+}
+
+/// Runs `work` only while `generation` still owns the engine mutation point.
+///
+/// The generation check and the closure are protected by the same gate used by
+/// [`invalidate_cluster_generation`]. This closes the check-then-act window for event state
+/// writes and rehydration command sends without holding an async lifecycle lock.
+pub(crate) fn with_current_generation_mutation<T>(
+    generation: u64,
+    work: impl FnOnce() -> T,
+) -> Option<T> {
+    with_generation_mutation(|| {
+        listener_may_act(generation, SESSION_GENERATION.load(Ordering::SeqCst)).then(work)
+    })
+}
 /// Bumped only when the account itself goes away — logout, or app termination. Distinct from
 /// `SESSION_GENERATION`, which moves on every ordinary rebuild: cleanup and
 /// `build_player_async` both advance it, so a long-running streaming grant waiting on a

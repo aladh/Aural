@@ -28,6 +28,8 @@ void spotty_playback_free_string(char* _Nullable s);
 //                                             (call spotty_playback_init_player with NULL)
 //   SpottyPlaybackResultSessionNotConnected  (-3) = session not connected (command rejected,
 //                                             wait for session to connect)
+//   SpottyPlaybackResultCredentialsRejected  (-4) = cached streaming credentials rejected during
+//                                             initialization; authorize streaming again
 //
 // On SpottyPlaybackResultSessionDisconnected, the Spirc channel has closed (e.g., due
 // to idle timeout). Call spotty_playback_init_player() with NULL so it reconnects from the
@@ -35,11 +37,17 @@ void spotty_playback_free_string(char* _Nullable s);
 //
 // On SpottyPlaybackResultSessionNotConnected, the session is not yet connected. Wait
 // for the connection-state callback before retrying the command.
+//
+// SpottyPlaybackResultCredentialsRejected is returned only by initialization after Spotify
+// definitively rejects the cached streaming credentials. It is terminal for those credentials:
+// retain the separate Web API grant, ask the account owner for explicit authorization, and do not
+// retry initialization automatically with the same cache.
 typedef enum __attribute__((enum_extensibility(open))) SpottyPlaybackResult : int32_t {
     SpottyPlaybackResultOk = 0,
     SpottyPlaybackResultError = -1,
     SpottyPlaybackResultSessionDisconnected = -2,
     SpottyPlaybackResultSessionNotConnected = -3,
+    SpottyPlaybackResultCredentialsRejected = -4,
 } SpottyPlaybackResult;
 
 // ============================================================================

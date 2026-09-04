@@ -24,6 +24,46 @@ nonisolated struct KeymasterTokens: Sendable, Equatable, Codable {
     var expiresAt: Date
     /// The account the browser authorized as, which need not be the one signed in elsewhere.
     var username: String
+    /// Streaming credentials can be rejected while this Web API grant remains usable. Persisting
+    /// the marker with the grant prevents a relaunch from retrying the known-rejected streaming
+    /// credential before the user explicitly authorizes again.
+    var requiresReauthentication: Bool
+
+    init(
+        accessToken: String,
+        refreshToken: String,
+        expiresAt: Date,
+        username: String,
+        requiresReauthentication: Bool = false
+    ) {
+        self.accessToken = accessToken
+        self.refreshToken = refreshToken
+        self.expiresAt = expiresAt
+        self.username = username
+        self.requiresReauthentication = requiresReauthentication
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case accessToken
+        case refreshToken
+        case expiresAt
+        case username
+        case requiresReauthentication
+    }
+
+    init(from decoder: any Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        accessToken = try container.decode(String.self, forKey: .accessToken)
+        refreshToken = try container.decode(String.self, forKey: .refreshToken)
+        expiresAt = try container.decode(Date.self, forKey: .expiresAt)
+        username = try container.decode(String.self, forKey: .username)
+        // Older grants predate the rejection marker and are safe to restore normally.
+        requiresReauthentication =
+            try container.decodeIfPresent(
+                Bool.self,
+                forKey: .requiresReauthentication
+            ) ?? false
+    }
 
     /// Refresh once the access token has this many seconds or less of validity left.
     ///

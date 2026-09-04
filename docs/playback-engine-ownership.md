@@ -30,7 +30,10 @@ in the [enforcement inventory](architecture-enforcement.md).
 | --- | --- | --- |
 | `ffi.rs`, `runtime.rs` | Protocol/runtime adapter | Panic barrier, C string delivery, nested-runtime refusal |
 | `proxy_sink.rs` | Protocol/runtime adapter | Librespot's decoded PCM to the bounded Swift audio callback; no UI state crosses this path |
-| `session_lifecycle.rs` | Mixed | Librespot session, AP connect, credential cache, player, and mixer lifecycle. Spotty-owned cache path and logout cleanup stay next to that state. |
+| `session_lifecycle.rs` | Adapter | Serialized authorization, initialization exports, health checks, and reconnect orchestration. |
+| `session_construction.rs` | Adapter | Transactional session/player/Spirc construction, publication, and rollback guards. |
+| `engine_resources.rs` | Adapter | Shared resource extraction, graceful task shutdown, and cancellation-safe cleanup. |
+| `credentials_cache.rs` | App policy | Streaming cache path selection, retired-directory cleanup, and logout cache clearing. |
 | `lifecycle_serialization.rs` | Spotty-owned coordination that must stay with Rust globals | One async lifecycle mutex, reconnect unit outcomes, generation revalidation |
 | `connect.rs` | Mixed | Dealer subscribe, hidden-member bootstrap PUT, and protobuf parse are protocol. Device-list and connection-snapshot presentation are Swift-owned. `cluster_offer_decision`, bootstrap-vs-push linearization, and `is_active_in_cluster` (this engine's Connect role) remain Rust-owned Connect logic. |
 | `queue.rs` | Adapter | Forwards unfiltered `ProvidedTrack` rows and slim current-track identity as `SpottyQueueSnapshot`. Cluster protocol playback flags and `context_uri` cross separately as `SpottyPlaybackSnapshot`; local `PlayerEvent` playback snapshots send an empty context. Does **not** own delimiter hiding, upcoming presentation, or transport presentation. |
@@ -54,16 +57,18 @@ or a migration roadmap:
 - [#180](https://github.com/aladh/Spotty/issues/180): Session, mixer, player, Spirc, and listener
   tasks stay local until initialization succeeds. The generation commits all object slots and task
   handles together, and failed or superseded builds abort and join staged work. Teardown owns the
-  stop, cancellation, join, and generation invalidation sequence.
+  stop, cancellation, join, and generation invalidation sequence. Spirc gets a bounded opportunity
+  to finish gracefully; forced shutdown explicitly closes its Dealer connection before replacement.
 - [#181](https://github.com/aladh/Spotty/issues/181): Definitive streaming-credential rejection
   is classified using the public error kind and the two exact AP rejection categories at the
   pinned revision. Librespot keeps the detailed AP error type private, so this narrow adapter
   comparison must be audited on dependency updates; general permission failures never qualify.
   A definitive rejection clears only the engine's streaming credential cache
   for the current generation, stops retrying that credential, and crosses as a typed
-  `credentials_rejected` snapshot. Swift preserves the independent Keymaster grant and routes the
-  user to explicit reauthorization; refresh-revoked grants are cleared only for their owning
-  account generation.
+  `credentials_rejected` snapshot and a distinct initialization result. Swift stops launch restore
+  on that result, preserves the independent Keymaster grant, and persists the reauthorization
+  requirement with it. A fresh durably adopted grant clears the requirement; refresh-revoked grants
+  are cleared only for their owning account generation.
 - [#184](https://github.com/aladh/Spotty/issues/184): Playback and connection snapshots carry the
   protocol active-device fact with the observation. Swift derives ownership from that fact instead
   of depending on connection and playback callback arrival order.

@@ -6,6 +6,7 @@
 //! runtime contract.
 
 mod connect;
+mod engine_resources;
 mod ffi;
 mod lifecycle_serialization;
 mod player_control;
@@ -19,6 +20,7 @@ mod state;
 mod transport;
 
 pub(crate) use connect::*;
+pub(crate) use engine_resources::*;
 pub(crate) use ffi::*;
 pub(crate) use lifecycle_serialization::*;
 pub(crate) use player_control::*;

@@ -30,6 +30,29 @@ fn add_to_queue_invalid_argument_maps_to_general() {
 }
 
 #[test]
+fn initialization_failure_codes_keep_credentials_rejection_terminal() {
+    assert_eq!(
+        initialization_failure_code(InitializationFailure::CredentialsRejected),
+        ERROR_CREDENTIALS_REJECTED
+    );
+    assert_eq!(
+        initialization_failure_code(InitializationFailure::Transient),
+        ERROR_GENERAL
+    );
+
+    // A command-side PermissionDenied result has no captured initialization generation. Keep it
+    // ordinary; only the initialization transaction may publish the terminal result safely.
+    let err = librespot_core::Error::permission_denied(std::io::Error::other(
+        "Login failed with reason: Bad credentials",
+    ));
+    assert_eq!(
+        classify_spirc_command_failure(&err),
+        SpircCommandFailure::CredentialRejected
+    );
+    assert_eq!(classify_spirc_command_error(&err), ERROR_GENERAL);
+}
+
+#[test]
 fn classification_uses_kind_not_debug_text() {
     let internal_without_legacy_substring = librespot_core::Error::internal("synthetic");
     assert!(

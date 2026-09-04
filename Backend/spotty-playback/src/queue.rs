@@ -71,15 +71,36 @@ pub(crate) fn send_playback_state(player_state: &PlayerState, is_active_device: 
 /// Send playback state update from local player events (Playing, Paused)
 /// This is used when Spotty is the active device - state changes happen locally
 /// and don't come through Mercury cluster updates.
-pub(crate) fn send_local_playback_state(is_playing: bool, position_ms: u32) {
+pub(crate) struct LocalPlaybackStateNotification {
+    callback: PlaybackSnapshotCallback,
+    stamp: SnapshotStamp,
+    observation: PlaybackObservation,
+}
+
+/// Captures a local playback callback while the caller still owns the event generation.
+///
+/// The payload and revision are copied before the generation mutation gate is released. Swift
+/// must receive the generation that produced the event, even if a replacement session is
+/// installed before the callback can run.
+pub(crate) fn capture_local_playback_state(
+    is_playing: bool,
+    position_ms: u32,
+    session_generation: u64,
+) -> Option<LocalPlaybackStateNotification> {
+    capture_local_playback_state_with_owner(is_playing, position_ms, Some(session_generation))
+}
+
+fn capture_local_playback_state_with_owner(
+    is_playing: bool,
+    position_ms: u32,
+    session_generation: Option<u64>,
+) -> Option<LocalPlaybackStateNotification> {
     debug!(
         "send_local_playback_state called: is_playing={}, position_ms={}",
         is_playing, position_ms
     );
 
-    let Some(callback) = registered_callback(&CONTROL_CALLBACKS.playback_state) else {
-        return;
-    };
+    let callback = registered_callback(&CONTROL_CALLBACKS.playback_state)?;
 
     // Get track URI from local state
     let track_uri = CURRENT_TRACK_URI
@@ -93,7 +114,7 @@ pub(crate) fn send_local_playback_state(is_playing: bool, position_ms: u32) {
     let (shuffle, repeat_track, repeat_context) = current_playback_options();
     let local_is_active_device = is_active_device();
 
-    let (stamp, observation) = stamped_snapshot(|stamp| {
+    let build_observation = |stamp| {
         (
             stamp,
             PlaybackObservation {
@@ -114,7 +135,13 @@ pub(crate) fn send_local_playback_state(is_playing: bool, position_ms: u32) {
                 timestamp_ms: current_timestamp_ms() as i64,
             },
         )
-    });
+    };
+    let (stamp, observation) = match session_generation {
+        Some(session_generation) => {
+            stamped_snapshot_for_generation(session_generation, build_observation)
+        }
+        None => stamped_snapshot(build_observation),
+    };
 
     debug!(
         "Local PlaybackState: playing={}, paused={}, position={}ms, duration={}ms, shuffle={}, repeat_track={}, repeat_context={}",
@@ -127,7 +154,29 @@ pub(crate) fn send_local_playback_state(is_playing: bool, position_ms: u32) {
         observation.repeat_context
     );
 
+    Some(LocalPlaybackStateNotification {
+        callback,
+        stamp,
+        observation,
+    })
+}
+
+/// Delivers a previously captured local playback callback after all Rust state locks are gone.
+pub(crate) fn deliver_local_playback_state(notification: LocalPlaybackStateNotification) {
+    let LocalPlaybackStateNotification {
+        callback,
+        stamp,
+        observation,
+    } = notification;
     send_playback_snapshot(callback, stamp, &observation);
+}
+
+pub(crate) fn send_local_playback_state(is_playing: bool, position_ms: u32) {
+    if let Some(notification) =
+        capture_local_playback_state_with_owner(is_playing, position_ms, None)
+    {
+        deliver_local_playback_state(notification);
+    }
 }
 
 /// Converts a Connect-state track into current-track identity for a queue snapshot.

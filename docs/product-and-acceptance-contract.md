@@ -40,8 +40,9 @@ measured baselines belong in [playback engine ownership](playback-engine-ownersh
   artist, and available duration as the visible row. History may show artwork.
 - Closing the main window purges presentation caches but does not quit Spotty. The app remains in the
   Dock and reopens through the Dock icon or the standard macOS Window command.
-- Sign Out belongs in the macOS **Spotty** application menu, not in a custom profile card. There is
-  no app-specific Settings surface.
+- Sign Out belongs in the macOS **Spotty** application menu, not in a custom profile card. It remains
+  available while connecting or after a session failure; teardown drains accepted authorization
+  persistence before clearing the grant. There is no app-specific Settings surface.
 
 ## Playback presentation and ownership
 

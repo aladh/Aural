@@ -70,13 +70,13 @@ fn a_reconnect_loop_abandons_during_teardown() {
 
 #[test]
 fn a_reconnect_loop_does_not_abandon_because_of_its_own_rebuild() {
-    // Regression: each attempt calls init_player_async, which bumps the generation
+    // Regression: each attempt calls build_player_async, which bumps the generation
     // before it can fail. Comparing against the value captured at loop start made the
     // loop read its own rebuild as a foreign supersede and give up after one attempt,
     // killing the remaining nine backoff retries — and with the Player already torn
     // down by the preceding cleanup, playback stayed dead for the whole outage.
     let mut recovering = 2;
-    let after_own_failed_attempt = 3; // init_player_async bumped it, then errored
+    let after_own_failed_attempt = 3; // build_player_async bumped it, then errored
     assert!(!reconnect_may_proceed(
         recovering,
         after_own_failed_attempt,
@@ -493,6 +493,83 @@ fn a_run_is_superseded_when_the_generation_moves() {
     assert!(run_is_superseded(4, 5));
     // A teardown that reset the counter is a supersession too, not a match.
     assert!(run_is_superseded(4, 0));
+}
+
+#[test]
+fn generation_mutation_gate_serializes_event_state_and_invalidation() {
+    let _guard = lock_global_state();
+    let previous_generation = SESSION_GENERATION.swap(41, Ordering::SeqCst);
+    let (entered_tx, entered_rx) = std::sync::mpsc::channel();
+    let (release_tx, release_rx) = std::sync::mpsc::channel();
+    let event = std::thread::spawn(move || {
+        let applied = with_current_generation_mutation(41, || {
+            entered_tx
+                .send(())
+                .expect("the test must observe the event mutation before invalidation");
+            release_rx
+                .recv()
+                .expect("the test must release the event mutation");
+            true
+        });
+        assert_eq!(applied, Some(true));
+    });
+    entered_rx
+        .recv()
+        .expect("the event mutation should enter the generation gate");
+
+    let (invalidated_tx, invalidated_rx) = std::sync::mpsc::channel();
+    let invalidator = std::thread::spawn(move || {
+        invalidated_tx
+            .send(invalidate_cluster_generation())
+            .expect("the test must report invalidation");
+    });
+    let invalidation_blocked = invalidated_rx
+        .recv_timeout(Duration::from_millis(20))
+        .is_err();
+
+    release_tx
+        .send(())
+        .expect("the event mutation should be released");
+    event.join().expect("event mutation thread");
+    let invalidated = invalidated_rx
+        .recv_timeout(Duration::from_secs(1))
+        .expect("invalidation should finish after the event mutation");
+    invalidator.join().expect("invalidation thread");
+    assert!(
+        invalidation_blocked,
+        "invalidation must wait for the event's synchronous mutation to finish"
+    );
+    assert_eq!(invalidated, 42);
+    SESSION_GENERATION.store(previous_generation, Ordering::SeqCst);
+}
+
+#[test]
+fn generation_owned_snapshot_keeps_its_callback_owner() {
+    let _guard = lock_global_state();
+    let previous_generation = SESSION_GENERATION.swap(8, Ordering::SeqCst);
+    let stamp = stamped_snapshot_for_generation(7, |stamp| stamp);
+    SESSION_GENERATION.store(9, Ordering::SeqCst);
+
+    assert_eq!(stamp.session_generation, 7);
+    SESSION_GENERATION.store(previous_generation, Ordering::SeqCst);
+}
+
+#[test]
+fn stale_recovery_cannot_claim_the_reconnect_owner() {
+    let _guard = lock_global_state();
+    let previous_generation = SESSION_GENERATION.swap(8, Ordering::SeqCst);
+    let previous_reconnecting = RECONNECTING.swap(false, Ordering::SeqCst);
+    let intent = RecoveryIntent {
+        was_playing: true,
+        was_active: true,
+    };
+
+    let start = with_current_generation_mutation(7, || start_reconnect_loop(intent, 7));
+
+    assert!(start.is_none(), "a stale event must not claim recovery");
+    assert!(!RECONNECTING.load(Ordering::SeqCst));
+    RECONNECTING.store(previous_reconnecting, Ordering::SeqCst);
+    SESSION_GENERATION.store(previous_generation, Ordering::SeqCst);
 }
 
 fn lock_global_state() -> std::sync::MutexGuard<'static, ()> {
@@ -1007,6 +1084,7 @@ int main(void) {
     printf("enum|SpottyPlaybackResult|value|SpottyPlaybackResultError|%d\n", (int)SpottyPlaybackResultError);
     printf("enum|SpottyPlaybackResult|value|SpottyPlaybackResultSessionDisconnected|%d\n", (int)SpottyPlaybackResultSessionDisconnected);
     printf("enum|SpottyPlaybackResult|value|SpottyPlaybackResultSessionNotConnected|%d\n", (int)SpottyPlaybackResultSessionNotConnected);
+    printf("enum|SpottyPlaybackResult|value|SpottyPlaybackResultCredentialsRejected|%d\n", (int)SpottyPlaybackResultCredentialsRejected);
 
     EMIT_TYPE(SpottyPlaybackAudioControlEvent);
     printf("enum|SpottyPlaybackAudioControlEvent|value|SpottyPlaybackAudioControlEventStop|%d\n", (int)SpottyPlaybackAudioControlEventStop);
@@ -1207,6 +1285,10 @@ int main(void) {
         (
             "SpottyPlaybackResultSessionNotConnected",
             ERROR_NOT_CONNECTED,
+        ),
+        (
+            "SpottyPlaybackResultCredentialsRejected",
+            ERROR_CREDENTIALS_REJECTED,
         ),
     ] {
         rust_values.insert(

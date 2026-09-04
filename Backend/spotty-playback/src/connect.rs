@@ -118,7 +118,8 @@ fn wait_for_cluster_mapping_idle_locked(
 /// cleanup) does not wait for itself.
 pub(crate) fn invalidate_cluster_generation() -> u64 {
     let mut gate = wait_for_cluster_mapping_idle_locked(lock_cluster_apply());
-    let invalidated = SESSION_GENERATION.fetch_add(1, Ordering::SeqCst) + 1;
+    let invalidated =
+        with_generation_mutation(|| SESSION_GENERATION.fetch_add(1, Ordering::SeqCst) + 1);
     gate.pending.clear();
     gate.pushed_generation = None;
     invalidated
@@ -365,10 +366,57 @@ pub(crate) fn applied_cluster_ids() -> Vec<String> {
 /// together, so two concurrent publishers cannot end up with revisions that contradict
 /// the order they read state in. Delivery is deliberately left outside: the C snapshot
 /// callback re-enters Swift, which must never happen while a lock is held.
+pub(crate) struct ConnectionStateNotification {
+    callback: ConnectionSnapshotCallback,
+    stamp: SnapshotStamp,
+    state: ConnectionState,
+}
+
+/// Captures a connection callback for an explicit owner generation.
+///
+/// Event listeners release the generation mutation gate before entering Swift. Capturing the
+/// state, callback, revision, and owner generation together keeps a delayed callback from being
+/// relabeled as the replacement session.
+pub(crate) fn capture_connection_state_notification(
+    session_generation: u64,
+) -> Option<ConnectionStateNotification> {
+    let callback = registered_callback(&CONTROL_CALLBACKS.connection_state)?;
+    let (stamp, state) = stamped_snapshot_for_generation(session_generation, |stamp| {
+        (stamp, with_connection(|c| c.clone()))
+    });
+    Some(ConnectionStateNotification {
+        callback,
+        stamp,
+        state,
+    })
+}
+
+/// Captures the current connection observation while the revision helper also reads the current
+/// generation. This is the normal publisher path; callers that already own a listener generation
+/// use [`capture_connection_state_notification`] so a later replacement cannot relabel it.
+fn capture_current_connection_state_notification() -> Option<ConnectionStateNotification> {
+    let callback = registered_callback(&CONTROL_CALLBACKS.connection_state)?;
+    let (stamp, state) = stamped_snapshot(|stamp| (stamp, with_connection(|c| c.clone())));
+    Some(ConnectionStateNotification {
+        callback,
+        stamp,
+        state,
+    })
+}
+
+/// Delivers a captured connection callback without holding any Rust state lock.
+pub(crate) fn deliver_connection_state_notification(notification: ConnectionStateNotification) {
+    let ConnectionStateNotification {
+        callback,
+        stamp,
+        state,
+    } = notification;
+    send_connection_snapshot(callback, stamp, &state);
+}
+
 pub(crate) fn notify_connection_state_change() {
-    if let Some(callback) = registered_callback(&CONTROL_CALLBACKS.connection_state) {
-        let (stamp, state) = stamped_snapshot(|stamp| (stamp, with_connection(|c| c.clone())));
-        send_connection_snapshot(callback, stamp, &state);
+    if let Some(notification) = capture_current_connection_state_notification() {
+        deliver_connection_state_notification(notification);
     }
 }
 

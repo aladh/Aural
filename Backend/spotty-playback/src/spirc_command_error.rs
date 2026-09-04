@@ -1,4 +1,4 @@
-use crate::{ERROR_GENERAL, ERROR_NEEDS_REINIT};
+use crate::{ERROR_CREDENTIALS_REJECTED, ERROR_GENERAL, ERROR_NEEDS_REINIT};
 use librespot_core::error::ErrorKind;
 use std::fmt;
 
@@ -68,6 +68,19 @@ pub(crate) fn classify_initialization_error(err: &librespot_core::Error) -> Init
     }
 }
 
+/// Converts a failed initialization transaction to the stable C/Swift result code.
+///
+/// Credential rejection has its own terminal code so the account owner can retain the Web API
+/// grant while stopping automatic retries of the unusable streaming credentials. A transient
+/// constructor or transport failure remains the ordinary error; a closed Spirc command channel
+/// is the separate `ERROR_NEEDS_REINIT` result used only by command calls.
+pub(crate) const fn initialization_failure_code(failure: InitializationFailure) -> i32 {
+    match failure {
+        InitializationFailure::CredentialsRejected => ERROR_CREDENTIALS_REJECTED,
+        InitializationFailure::Transient => ERROR_GENERAL,
+    }
+}
+
 pub(crate) fn classify_spirc_command_failure(err: &librespot_core::Error) -> SpircCommandFailure {
     if is_definitive_credential_rejection(err) {
         SpircCommandFailure::CredentialRejected
@@ -97,9 +110,11 @@ pub(crate) fn classify_spirc_command_failure(err: &librespot_core::Error) -> Spi
 /// [`ERROR_GENERAL`]. Classification uses `kind` only; `Debug` text is not consulted.
 pub(crate) fn classify_spirc_command_error(err: &librespot_core::Error) -> i32 {
     match classify_spirc_command_failure(err) {
-        SpircCommandFailure::NeedsReinit | SpircCommandFailure::CredentialRejected => {
-            ERROR_NEEDS_REINIT
-        }
+        SpircCommandFailure::NeedsReinit => ERROR_NEEDS_REINIT,
+        // Commands can only observe a Spirc send result. They do not carry the captured
+        // initialization generation needed to publish a credential rejection safely, so keep
+        // this defensive variant ordinary until an initialization transaction handles it.
+        SpircCommandFailure::CredentialRejected => ERROR_GENERAL,
         SpircCommandFailure::Ordinary => ERROR_GENERAL,
     }
 }
