@@ -22,6 +22,7 @@ in the [enforcement inventory](architecture-enforcement.md).
 | `ResumeLoadPlan` | Resume-load target order from sticky resume-load URIs, for user resume and reconnect rehydration. `PlaybackStore` captures those URIs through the engine getters; `RustPlaybackEngine` iterates targets through `aural_playback_load`. The engine signals a reconnect window with `resume_pending` and holds readiness until a Swift load lands, a load reports `ERROR_NEEDS_REINIT` (dead Spirc, which ends the wait for that window and triggers a rebuild), or the window times out |
 | Catalog, OAuth, shuffle policy, HTTP retry | Unchanged; never belonged in Rust |
 | `OggVorbisDecoder` / `OggPageHeader` | Stage 1 of #201: a Swift wrapper over vendored stb_vorbis's pushdata API, plus a pure Ogg page scanner for later seeking. Not yet wired into playback — the audio-key/CDN/decrypt path and `AudioRenderer` still get PCM from `proxy_sink.rs` |
+| `OggSeeker` | Stage 1 of #201: pure time-to-byte-offset seek — bisects Ogg pages by granule position (`OggByteReader` is the seam a later slice adapts to the CDN fetcher/decryptor) so Spirc's millisecond seeks can restart Vorbis decode at the right page. Not yet wired into playback |
 
 ## Rust crate by module
 
