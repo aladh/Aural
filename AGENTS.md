@@ -54,7 +54,7 @@ material.
 | Product identity, capabilities, requirements, limitations | [README.md](README.md) |
 | UX rules and safe live-account acceptance | [Product and acceptance contract](docs/product-and-acceptance-contract.md) |
 | Accepted architecture | [ADR index](docs/architecture-decisions.md) |
-| Protocol notes, research, and measured baselines | [Related technical context](docs/architecture-decisions.md#related-technical-context) |
+| Protocol notes, engine ownership, and measured baselines | [Related technical context](docs/architecture-decisions.md#related-technical-context) |
 | Rule owners and enforcement gaps | [Architecture enforcement inventory](docs/architecture-enforcement.md) |
 | Fresh-clone setup, generated state, signing recovery | [Development setup](docs/development-setup.md) |
 | Commands, verification, PR/review, packaging, release | [Agent operations](CONTRIBUTING.md) |

@@ -151,8 +151,8 @@ measured baselines belong in [playback engine ownership](playback-engine-ownersh
 
 - Prefer Swift structured concurrency, `AsyncStream`, and Observation for new asynchronous state.
   Do not introduce Combine unless a publisher-native system boundary makes it materially simpler.
-- Keep the playback engine behind the boundary in the ADR index
-  ([ADR 001](ADR-001-playback-engine.md)); Swift continues to own product policy and presentation.
+- Keep the playback engine behind the boundary described in
+  [ADR 001](ADR-001-playback-engine.md); Swift continues to own product policy and presentation.
 - Production code must use live integrations. Deterministic checks use injected ports and reduced,
   synthetic fixtures—never captured account payloads.
 - Account-scoped work must retain the epoch, cancellation, and stale-result rules in
