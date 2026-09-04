@@ -241,8 +241,8 @@ public actor RangedAudioFetcher {
             let segmentEnd = segment.offset + segment.data.count
             guard segmentEnd > lastEnd else { continue }  // fully contained in `last`: drop it.
             var extended = last
-            let newBytesStart = lastEnd - segment.offset
-            extended.data.append(segment.data[(segment.data.startIndex + newBytesStart)...])
+            let newBytesStart = segment.data.startIndex + (lastEnd - segment.offset)
+            extended.data.append(segment.data[newBytesStart..<segment.data.endIndex])
             merged[merged.count - 1] = extended
         }
         segments = merged
