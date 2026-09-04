@@ -1,6 +1,9 @@
 # ADR 001: Playback engine boundary
 
-Status: accepted on 2026-08-18. Under staged review per #201.
+Status: accepted on 2026-08-18.
+
+Under staged review per #201. The decision below stands until a later record supersedes it;
+the replacement stages and their gates live in [playback engine ownership](playback-engine-ownership.md).
 
 Like all of Spotty, this decision concerns an unofficial, independent, educational client with no
 affiliation with Spotify AB, built on reverse-engineered Spotify interfaces; using it may violate
@@ -22,19 +25,20 @@ clone of any particular implementation.
 
 ## Decision
 
-- librespot is a contained leaf. Swift reaches it only through `Sources/AuralPlaybackCore`,
-  `PlaybackCore.swift`, and `RustPlaybackEngine`.
+Keep the embedded Rust/librespot core, but treat it as a replaceable leaf:
+
+- Swift reaches it only through `Sources/AuralPlaybackCore`, `PlaybackCore.swift`, and
+  `RustPlaybackEngine`.
 - Swift owns application logic: state, queue policy, presentation, resume policy, catalog, OAuth,
   persistence, and error policy. `AudioRenderer` stays native AVFoundation.
-- The leaf is being replaced in stages per #201: audio path, then session, then Spirc, each behind
-  a go/no-go gate. The leaf rule applies to whatever remains at each stage.
+- `AuralCore` is the testable Swift application implementation, not another playback
+  abstraction; no second engine-abstraction target is reintroduced.
 
 The live boundary is [playback engine ownership](playback-engine-ownership.md).
 
 ## Options rejected
 
-- Pure Swift engine now: verification cost and protocol churn outweigh the gain; the #201 gates
-  revisit this per stage.
+- Pure Swift engine now: verification cost and protocol churn outweigh the gain.
 - Spotify iOS SDK: an App Remote SDK that needs the Spotify app and offers no macOS engine.
 - Web Playback SDK in `WKWebView`: removes Rust but adds a JavaScript bridge, WebKit helper
   processes, a second client ID and setup flow, and REST device transfer.
@@ -43,8 +47,9 @@ The live boundary is [playback engine ownership](playback-engine-ownership.md).
 
 - One adapter file and one C header are the whole review surface for foreign-boundary changes.
 - librespot updates are protocol migrations, not routine dependency bumps.
-- Each #201 stage must keep the boundary narrow while responsibility moves across it.
+- Any staged replacement must keep the boundary narrow while responsibility moves across it.
 
 ## Revisit trigger
 
-The #159 spike result decides Stage 1 of #201.
+A supported macOS playback SDK, a measured WKWebView experiment that improves reliability and
+total resource use without adding user setup, or a passed gate in the staged review named above.

@@ -9,10 +9,10 @@ linking errors, not to silently change its decision.
 
 | Record | Status | Decision |
 | --- | --- | --- |
-| [ADR 001: Playback engine boundary](ADR-001-playback-engine.md) | Accepted; under staged review per #201 | Keep the playback engine a contained leaf behind one adapter and one C header; Swift owns application logic. The leaf is replaced in stages, and the boundary rule applies to whatever remains. |
+| [ADR 001: Playback engine boundary](ADR-001-playback-engine.md) | Accepted; revisit gated by #201 | Keep librespot as a contained, replaceable leaf behind one adapter and one C header; Swift owns application logic. |
 | [ADR 002: Atomic playback state and explicit dependency ownership](ADR-002-playback-state-and-dependencies.md) | Accepted | Use one reducer-owned playback snapshot, explicit dependency assembly, and generation-aware async ownership. |
-| [ADR 003: Keep PlaybackEffectRegistry; reject TCA and a generic Effect type](ADR-003-playback-command-effects.md) | Accepted | Keep store-level `PlaybackEffectRegistry`; do not adopt TCA or a generic Effect type. Reducer acceptance gates follow-ups through `playbackCommandFollowUp`; one reconnect rule. |
-| [ADR 004: Move Spotty-owned playback logic into Swift incrementally](ADR-004-swift-owned-playback-logic.md) | Accepted; Stage 0 of #201 | Rust stays a protocol/runtime adapter; Spotty-owned policy moves to Swift one owner at a time with its checks. Live classification is [playback engine ownership](playback-engine-ownership.md). |
+| [ADR 003: Keep PlaybackEffectRegistry; reject TCA and a generic Effect type](ADR-003-playback-command-effects.md) | Accepted | Keep store-level `PlaybackEffectRegistry`; do not adopt TCA or a generic Effect type. Reducer acceptance gates follow-ups through `playbackCommandFollowUp`; captured same-lifetime resolution and matching-snapshot reconciliation are the documented exceptions, consume-only acceptance cannot report coordinator failure, and one reconnect rule applies. |
+| [ADR 004: Move Spotty-owned playback logic into Swift incrementally](ADR-004-swift-owned-playback-logic.md) | Accepted; revisit gated by #201 | Rust stays a protocol/runtime adapter; Spotty-owned policy moves to Swift one owner at a time with its checks. Live classification is [playback engine ownership](playback-engine-ownership.md). |
 
 Related index: [Architecture enforcement inventory](architecture-enforcement.md) routes hard-rule
 families to their canonical decision, strongest proof, scoped agent guidance, and known enforcement

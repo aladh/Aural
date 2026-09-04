@@ -77,8 +77,17 @@ Caching that snapshot in Rust is adapter convenience, not a second app-facing st
   `RESUME_POSITION_MS`) to Swift, which would retire the three resume getters and the
   engine's `has_resume_identity` check
 
-Do not move PCM, Spirc, session connect, or dealer cluster fetch into Swift in order to
-satisfy this inventory.
+## Standing constraints
+
+- Do not move PCM, Spirc, session connect, or dealer cluster fetch into Swift to satisfy a slice
+  of this inventory. Only a measured #201 stage issue, with its go/no-go recorded, may move them.
+- Rehydrate before announcing readiness. Bootstrapping from the Web API on readiness reopens the
+  stale-position window the `resume_pending` hold exists to close.
+- Do not reintroduce `device_name`, `reconnect_attempt`, `connected_since_ms`, or
+  `session_connection_id` into `ConnectionState` or its snapshot; reconnect backoff stays
+  loop-local.
+- Do not widen `aural_playback_resume`; resume targets are Swift-owned loads.
+- Do not forward raw cluster protobuf to Swift ahead of a stage that owns the models.
 
 ## Measured baseline (2026-08-23)
 

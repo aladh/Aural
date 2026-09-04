@@ -1,6 +1,6 @@
 # ADR 004: Move Spotty-owned playback logic into Swift incrementally
 
-Status: accepted on 2026-09-02. Stage 0 of #201; #157 closed, #158 continues.
+Status: accepted on 2026-09-02. Revisit is gated by #201.
 
 Like all of Spotty, this decision concerns an unofficial, independent, experimental client with no
 affiliation with Spotify AB, built on reverse-engineered Spotify interfaces.

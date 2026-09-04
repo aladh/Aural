@@ -37,9 +37,13 @@ Keep `PlaybackEffectRegistry`. Do not adopt TCA. Do not introduce a generic Effe
 - A command starts only after the reducer accepts `commandStarted`; one pending command per
   `PlaybackCommandKind`.
 - Follow-ups after `commandFinished` go through `playbackCommandFollowUp`. Reducer acceptance is
-  the normal gate. A captured same-lifetime transport resolution is evaluated first: confirmed
-  reports success, superseded stays inert. Stale, teardown, epoch-invalidated, and non-transport
-  results stay inert.
+  the normal gate, with two documented same-lifetime exceptions:
+  - A captured transport resolution is evaluated before `finishAccepted`: confirmed keeps the
+    success presentation, superseded stays inert. Consume-only `commandFinished` acceptance only
+    removes the map entry, so it cannot turn a coordinator failure into `reportFailure`.
+  - A rejected same-lifetime transport finish with no pending command and no captured resolution
+    is already-reconciled success: a matching snapshot settled it. It is not inert.
+  Stale, teardown, epoch-invalidated, and non-transport results stay inert.
 - One reconnect rule: a reconnect-required result with any non-inert outcome rebuilds the engine,
   whether the finish was an accepted failure or a confirmed or already-reconciled success. A
   confirming snapshot settles what the UI shows, not whether the engine's command channel is
