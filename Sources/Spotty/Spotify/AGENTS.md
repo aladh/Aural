@@ -32,21 +32,14 @@ boundaries. Read the relevant ADRs and the
   `AsyncStream.Continuation.yield` or `onTermination` while the fan-out lock is held.
 - `QueueService` owns precedence and context identity. `QueueProtocolProjection` projects upcoming
   rows from unfiltered Connect tracks; metadata must not reorder or erase newer authoritative state.
-- `ConnectDeviceProjection` owns device activity, sort, and empty-type fallback.
-  `ConnectionSnapshotProjection` owns session phase and empty-device-ID fallback. Local display
-  name is Swift-owned; do not move presentation policy, `device_name`, or write-only reconnect
-  bookkeeping into Rust. Connection observations arrive as `SpottyConnectionSnapshot`, not JSON.
-  Playback observations arrive as `SpottyPlaybackSnapshot`, not JSON.
-  Device-list observations arrive as `SpottyDevicesSnapshot`, not JSON.
-  Queue observations arrive as `SpottyQueueSnapshot`, not JSON.
-- `PlaybackSnapshotProjection` owns engine playback transport, empty-URI identity, timestamp
-  correction, and omitted-repeat fallback. The engine sends protocol playing/paused flags and
-  cluster `context_uri`. User resume and reconnect rehydration capture sticky resume-load
-  URIs through FFI and iterate `ResumeLoadPlan` through `spotty_playback_load`; a connection
-  snapshot with `resumePending` and `spircReady` clear triggers one rehydration sequence per
-  engine session generation. Do not feed `playbackContextURI` into that plan: local
-  PlayerEvent snapshots send an empty context on purpose. Do not treat playback context as
-  QueueService mutation identity. Do not widen `spotty_playback_resume`.
+- Device, connection, and playback presentation policy stays in Swift. All four observation
+  families cross FFI as typed C snapshots. Read
+  [playback engine ownership](../../../docs/playback-engine-ownership.md) before changing projections,
+  snapshot fields, or reconnect behavior.
+- Resume and reconnect use `ResumeLoadPlan` over sticky resume-load URIs, not presentation
+  `playbackContextURI` (local `PlayerEvent` snapshots intentionally omit context). Playback context
+  is also distinct from `QueueService` mutation identity. Preserve one rehydration sequence per
+  engine session generation and the readiness hold; do not widen `spotty_playback_resume`.
 - Keep read-only catalog access separate from playlist mutation. Writes use `PlaylistMutating` and
   `PlaylistMutationController`; Pathfinder mutation DTOs do not enter views.
 - PCM goes directly from the engine adapter to `AudioRenderer`, never observable UI state. Keep

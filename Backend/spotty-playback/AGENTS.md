@@ -20,18 +20,12 @@ across the Swift/Rust boundary.
   Use `block_on_export`; call `refuse_if_nested_runtime` before mutating flags that nested `block_on`
   would have reached. Nested runtime re-entry returns `ERROR_GENERAL` and is not supersession.
 - Map panics to the defined sentinel. Do not replace the process panic hook, hold Rust locks while
-  invoking Swift, or assume the barrier makes invalid foreign pointers safe. When a sink or callback
-  is typed `Arc<dyn Trait>`, coerce a concrete `Arc` with `x.clone()` or `as Arc<dyn Trait>`;
-  `Arc::clone(&x)` infers the trait object from the expected type and fails to compile.
-- Rust emits bounded PCM and immutable protocol/state envelopes. Keep callbacks non-blocking. What
-  crosses the boundary, and which side owns each field, is
-  [playback engine ownership](../../docs/playback-engine-ownership.md); do not enumerate it here.
-  Hard rules: connection, playback, device-list, and queue observations are typed C snapshots, not
-  JSON. Do not synthesize presentation in Rust; send protocol rows and playing/paused flags. Do not
-  widen `spotty_playback_resume`. Do not send sticky context on local `PlayerEvent` snapshots. A
-  reconnect publishes `resume_pending` with `spirc_ready` clear and holds readiness until a Swift
-  load lands, a load reports a dead Spirc, or the window times out; do not rebuild a resume plan
-  in Rust.
+  invoking Swift, or assume the barrier makes invalid foreign pointers safe.
+- Rust emits bounded PCM and immutable protocol/state envelopes; callbacks stay non-blocking.
+  Connection, playback, device-list, and queue observations are typed C snapshots, not JSON.
+  Presentation and resume plans stay in Swift. Preserve the reconnect readiness hold and the
+  intentionally empty context on local `PlayerEvent` snapshots; follow
+  [playback engine ownership](../../docs/playback-engine-ownership.md) when changing these boundaries.
 - Keep the checked-in C header, exported symbol set, signatures, ownership, allocation, and callback
   lifetime aligned.
 - Treat librespot changes as protocol migrations. Preserve the ownership classification instead of
