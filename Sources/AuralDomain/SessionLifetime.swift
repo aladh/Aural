@@ -171,6 +171,13 @@ public func playbackCommandShouldAdmit(
 /// engine snapshot already matches `expectedTransport` without recording a resolution. A
 /// later rejected finish on that same lifetime with no pending transport command is then
 /// already-reconciled success.
+/// Reconnect-required outranks both reconciled-success paths: a confirming snapshot settles
+/// what the UI shows, not whether the engine's command channel is alive. A `.confirmed`
+/// resolution or an already-reconciled transport finish whose operation failed with
+/// reconnect-required reports `.reconnectAfterReconciledSuccess`, which keeps the
+/// presentation and rebuilds the connection. Without that, a stale Playing sample after
+/// sleep/wake could confirm a resume whose engine call returned a closed channel, and the
+/// app would show Playing with no audio and never reconnect.
 /// A known play target is confirmed only by that target's identity, not by a lagging prior
 /// track that happens to already be `.playing`. An unrelated or empty track supersedes the
 /// optimistic target: rollback is cleared and a later finish stays inert.
@@ -188,6 +195,10 @@ public func playbackCommandShouldAdmit(
 public enum PlaybackCommandFollowUp: Equatable, Sendable {
     case reportSuccess
     case reportFailure(reconnect: Bool)
+    /// Presentation is already reconciled (a same-lifetime snapshot confirmed the command), so
+    /// there is nothing to roll back or announce, but the engine reported a lifecycle failure
+    /// for that same command. The connection must still be rebuilt.
+    case reconnectAfterReconciledSuccess
     case inert
 }
 
@@ -205,9 +216,11 @@ public func playbackCommandFollowUp(
     guard !isTearingDown, capturedLifetime == currentLifetime else {
         return .inert
     }
+    let reconciledSuccess: PlaybackCommandFollowUp =
+        !operationSucceeded && requiresReconnect ? .reconnectAfterReconciledSuccess : .reportSuccess
     switch finishedCommandResolution {
     case .confirmed:
-        return .reportSuccess
+        return reconciledSuccess
     case .superseded:
         return .inert
     case nil:
@@ -217,7 +230,7 @@ public func playbackCommandFollowUp(
         return operationSucceeded ? .reportSuccess : .reportFailure(reconnect: requiresReconnect)
     }
     if pendingCommandID == nil, commandKind == .transport {
-        return .reportSuccess
+        return reconciledSuccess
     }
     return .inert
 }

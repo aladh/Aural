@@ -291,6 +291,11 @@ extension PlaybackStore {
         ) {
         case .reportSuccess:
             completion(true)
+        case .reconnectAfterReconciledSuccess:
+            // The snapshot already settled what the UI shows; the engine still lost its
+            // session under this command. No notice, no rollback, but rebuild the connection.
+            completion(true)
+            connect()
         case let .reportFailure(reconnect):
             if let notice {
                 showTransientCommandError(notice.message)

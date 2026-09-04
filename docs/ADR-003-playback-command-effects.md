@@ -65,7 +65,9 @@ acceptance is the normal gate. A captured same-lifetime transport resolution is 
 (confirmed success, superseded inert). Consume-only `commandFinished` acceptance exists only to
 remove that map entry and cannot turn a coordinator failure into `reportFailure`. A rejected
 transport finish may still report success when a same-lifetime snapshot already reconciled the
-pending expected transport without recording a resolution. Stale, superseded, teardown,
+pending expected transport without recording a resolution. Reconnect-required outranks both
+reconciled-success paths: the presentation stays, but the store rebuilds the connection
+(`reconnectAfterReconciledSuccess`). Stale, superseded, teardown,
 epoch-invalidated, and non-transport results stay inert. Command-error notices keep their existing
 timed lifetime; successful acknowledgements do not clear unrelated notices.
 
@@ -191,6 +193,9 @@ In `PlaybackStore+Commands`, local and remote live routes share `performAdmitted
 - A rejected finish on the same account/engine lifetime with no pending *transport* command and
   no captured resolution is already-reconciled success (matching snapshot). Target confirmation and
   supersession are keyed by command id so a later pause/resume cannot recycle the nil catch-all.
+- A confirmed or already-reconciled command whose engine call failed with reconnect-required
+  keeps its presentation and still reconnects: a confirming snapshot settles what the UI shows,
+  not whether the engine's command channel is alive.
 - Unknown ids stay reducer-rejected and inert. Epoch changes, teardown, non-transport
   kinds, and superseded ids stay inert even if a confirmation was captured.
 - Ordinary same-lifetime cancellation of the exact pending command id restores reducer-owned

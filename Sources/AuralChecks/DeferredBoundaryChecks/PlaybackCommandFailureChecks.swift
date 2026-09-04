@@ -473,6 +473,52 @@ func runPlaybackCommandFailureChecks(_ runner: CheckRunner) async {
         _ = await waitUntil { reconnectAccount.authorizeCount == 1 }
         runner.equal("reconnect-required starts connect after an accepted finish", reconnectAccount.authorizeCount, 1)
         await reconnect.player.shutdownForTermination()
+
+        // A snapshot can reconcile the pending transport before the engine call returns. That
+        // settles the presentation, but a reconnect-required result on that same call is a
+        // lifecycle fact and must still rebuild the connection.
+        let reconciledAccount = IdleAccount()
+        let reconciledEngine = GatedLocalEngine()
+        let reconciled = playbackStore(
+            commandEnvironment(
+                local: reconciledEngine,
+                remote: ScriptedRemoteClient(.succeed),
+                account: reconciledAccount
+            )
+        )
+        var reconciledCompletions: [Bool] = []
+        reconciled.performCommand(action, expecting: false, operation: .pause) { reconciledCompletions.append($0) }
+        runner.check(
+            "the gated engine call is in flight",
+            await waitUntil { reconciledEngine.enteredCount == 1 }
+        )
+        _ = reconciled.send(
+            .presentation(
+                PlaybackPresentationSnapshot(
+                    currentTrack: CurrentTrack(
+                        uri: "spotify:track:fixture",
+                        title: "Now",
+                        artist: "Artist",
+                        duration: 200,
+                        metadataSource: .catalog
+                    ),
+                    transport: .paused,
+                    timing: PlaybackTiming(position: 10, duration: 200, anchoredAt: Date())
+                )),
+            source: .user
+        )
+        runner.nil_(
+            "a matching snapshot reconciles the pending pause before the finish",
+            reconciled.state.pendingCommands[.transport]
+        )
+        reconciledEngine.finish(with: PlaybackEngineResult(rawValue: -2))
+        _ = await waitUntil { !reconciledCompletions.isEmpty }
+        runner.equal("already-reconciled reconnect-required finish completes as success", reconciledCompletions, [true])
+        runner.nil_("already-reconciled reconnect-required finish shows no command notice", reconciled.transientCommandError)
+        runner.equal("already-reconciled transport keeps the reconciled state", reconciled.state.transport, .paused)
+        _ = await waitUntil { reconciledAccount.authorizeCount == 1 }
+        runner.equal("already-reconciled reconnect-required finish still starts connect", reconciledAccount.authorizeCount, 1)
+        await reconciled.shutdownForTermination()
     }
 
     await runner.suite("Store remote rejection and cancellation") {

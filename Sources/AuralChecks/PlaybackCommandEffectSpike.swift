@@ -93,6 +93,9 @@ private final class CommandSession {
         ) {
         case .reportSuccess:
             completions.append(true)
+        case .reconnectAfterReconciledSuccess:
+            completions.append(true)
+            reconnectCount += 1
         case let .reportFailure(reconnect):
             completions.append(false)
             if reconnect { reconnectCount += 1 }
