@@ -149,13 +149,7 @@ private func runNoEventsAfterStoppedCheck(_ check: CheckRunner) async {
 /// to end with a `FakeByteSource`/`FakeSink` pair standing in for the CDN fetch and the renderer.
 @MainActor
 private func runFixtureDecodeThroughFakeSinkCheck(_ check: CheckRunner) async {
-    let data: Data
-    do {
-        data = try boundaryFixture(named: "tone-44100-stereo", extension: "ogg")
-    } catch {
-        check.check("tone-44100-stereo.ogg fixture absent (#209); pipeline decode check skipped", true)
-        return
-    }
+    guard let data = bundledToneFixture(check) else { return }
 
     let source = FakeByteSource(bytes: [UInt8](data))
     let sink = FakeSink()

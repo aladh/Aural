@@ -31,17 +31,10 @@ private func emptyBufferThrowsNeedMoreData() -> Bool {
 
 /// Feeds `Fixtures/tone-44100-stereo.ogg` through the decoder in 4 KiB slices and checks it
 /// against the file's own Ogg page framing. The fixture is a one-second synthetic 440 Hz tone
-/// (44.1 kHz stereo, libvorbis), never account-derived. Missing-file skip is a last-resort
-/// fallback if the bundle resource is absent.
+/// (44.1 kHz stereo, libvorbis), never account-derived.
 @MainActor
 private func runFixtureDecodeCheck(_ check: CheckRunner) {
-    let data: Data
-    do {
-        data = try boundaryFixture(named: "tone-44100-stereo", extension: "ogg")
-    } catch {
-        check.check("tone-44100-stereo.ogg fixture absent; decode check skipped", true)
-        return
-    }
+    guard let data = bundledToneFixture(check) else { return }
 
     let decoder = OggVorbisDecoder()
 
