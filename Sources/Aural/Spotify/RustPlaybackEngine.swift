@@ -78,6 +78,12 @@ nonisolated final class RustPlaybackEngine: LocalPlaybackEngine, @unchecked Send
     }
     func forceReconnect() -> Int32 { PlaybackCore.forceReconnect() }
 
+    /// Stage 1 scaffolding (#208): the AP audio-key request, forwarded so `PlaybackCore` stays
+    /// the only C importer. No caller yet.
+    func audioKey(trackGID: [UInt8], fileID: [UInt8]) -> Swift.Result<[UInt8], AudioKeyError> {
+        PlaybackCore.audioKey(trackGID: trackGID, fileID: fileID)
+    }
+
     /// Activate/`play()` first. On a non-reconnect failure, iterate Swift load targets.
     /// `PlaybackCoordinator` serializes this whole operation.
     private func resume(_ plan: ResumeLoadPlan) -> PlaybackEngineResult {

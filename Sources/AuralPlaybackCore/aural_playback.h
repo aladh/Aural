@@ -346,6 +346,22 @@ AuralPlaybackResult aural_playback_transfer_to_local(void);
 /// @param to_device_id The target device ID to transfer playback to
 AuralPlaybackResult aural_playback_transfer_playback(const char* to_device_id);
 
+/// Fetches the AES decryption key for one file over the existing AP session. Blocking;
+/// librespot times a single request out at 1500ms. Stage 1 scaffolding for #201/#208:
+/// nothing calls this yet.
+///
+/// Spotify throttles key requests, so the caller must cache a successful result per file id
+/// rather than re-requesting it on every playback attempt.
+///
+/// @param track_gid 16 raw bytes of the track's Spotify ID.
+/// @param file_id 20 raw bytes of the file ID (the specific encoded file being played).
+/// @param key_out Must point to 16 writable bytes; receives the raw AES key on success.
+AuralPlaybackResult aural_playback_audio_key(
+    const uint8_t* track_gid,
+    const uint8_t* file_id,
+    uint8_t* key_out
+);
+
 /// Adds a URI to the Connect queue.
 ///
 /// The shipped command forwards the string to Spirc as a single Spotify URI.
