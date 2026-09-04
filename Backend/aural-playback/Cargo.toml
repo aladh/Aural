@@ -28,6 +28,11 @@ log = "0.4"
 # itself; librespot's spclient takes them by these types.
 http = "1"
 
+# Aural patch: SpircPlayer trait so Spirc can drive a non-librespot player. See
+# Backend/vendor/librespot-connect/PATCHES.md.
+[patch."https://github.com/librespot-org/librespot"]
+librespot-connect = { path = "../vendor/librespot-connect" }
+
 [profile.release]
 opt-level = 3
 lto = true

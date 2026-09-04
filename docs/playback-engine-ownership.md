@@ -41,6 +41,8 @@ in the [enforcement inventory](architecture-enforcement.md).
 | `player_control.rs` | Adapter | Spirc play/pause/seek/shuffle/repeat/transfer/queue-add, plus FFI getters for sticky resume URIs |
 | `player_event_pump.rs` | Adapter | Local `PlayerEvent` → position and protocol playing/paused bits when this device is active |
 | `spirc_command_error.rs` | Adapter | Map librespot errors onto FFI codes Swift already understands |
+| `Backend/vendor/librespot-connect` | Vendored third-party, patched | librespot's `connect` crate pinned to the same rev as the git dependencies, patched so `Spirc::new` takes `Arc<dyn SpircPlayer>` instead of the concrete `Arc<Player>`. See its `PATCHES.md` for the exact diff. This is the seam Stage 1 needs to drive playback through a Swift-owned player without forking `Spirc`/`SpircTask`. |
+| `audio_key.rs` | Adapter | Stage 1 (#208) AP audio-key request over FFI. No caller yet; the consumer must cache successes per file id and coalesce concurrent misses |
 
 ### Planned owner per #201 stage
 
@@ -78,6 +80,10 @@ presentation.
 It returns null when no cluster snapshot has been received yet; null means "not told anything",
 which Swift must keep distinct from an empty queue.
 Caching that snapshot in Rust is adapter convenience, not a second app-facing store.
+
+`aural_playback_audio_key` fetches one file's AES decryption key over the existing AP session;
+it is Stage 1 scaffolding for #201/#208 and nothing calls it yet. Spotify throttles key requests,
+so the eventual consumer must cache successes per file id and coalesce concurrent misses.
 
 ## Remaining Spotty-owned logic in Rust
 
@@ -119,3 +125,15 @@ warranted; the cursor-based renderer is the lower-risk design.
 
 The browse path behind these numbers included surfaces that have since been removed, so a rerun
 must record its own commit and surfaces. #201 requires re-measurement at each stage boundary.
+
+### Binary size
+
+Every CI run's "Release distribution compile" job publishes a size table (app binary,
+`libaural_playback.a`, binary segment totals, archive exported symbol count) to the job
+summary via `Scripts/report-size.sh`, and uploads the same data as the `size-report` artifact
+(`size-report.json`, 30-day retention).
+
+To compare two runs: `gh run view <run-id>` for the job summary, or
+`gh run download <run-id> -n size-report` to fetch the JSON for a scripted diff.
+
+Pre-Stage-1 reference: fill in run id at switchover.

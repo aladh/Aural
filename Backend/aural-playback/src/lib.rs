@@ -5,6 +5,7 @@
 //! Connect, queue, transport, and player-event-pump responsibilities without changing that
 //! runtime contract.
 
+mod audio_key;
 mod connect;
 mod ffi;
 mod lifecycle_serialization;
@@ -33,7 +34,7 @@ pub(crate) use transport::*;
 
 pub(crate) use futures_util::StreamExt;
 pub(crate) use librespot_connect::{
-    ConnectConfig, LoadRequest, LoadRequestOptions, PlayingTrack, Spirc,
+    ConnectConfig, LoadRequest, LoadRequestOptions, PlayingTrack, Spirc, SpircPlayer,
 };
 pub(crate) use librespot_core::cache::Cache;
 pub(crate) use librespot_core::config::DeviceType;
