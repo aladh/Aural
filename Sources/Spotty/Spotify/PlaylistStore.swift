@@ -64,7 +64,13 @@ final class PlaylistStore {
     func load(_ item: CatalogItem, force: Bool = false) async {
         let currentSession = session.snapshot
         guard currentSession.isAvailable, item.kind == .playlist else { return }
-        if loadedURI == item.uri, loadedSessionSnapshot == currentSession, !force { return }
+        if loadedURI == item.uri,
+            loadedSessionSnapshot == currentSession,
+            error == nil,
+            !force
+        {
+            return
+        }
         if isLoading,
             loadedURI == item.uri,
             loadSessionSnapshot == currentSession,

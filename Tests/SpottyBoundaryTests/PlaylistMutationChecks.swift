@@ -235,10 +235,24 @@ struct PlaylistMutationTests {
                 "an empty playlist opened twice in one session fetches once"
             )
 
+            await services.setPlaylistError(PlaylistMutationCheckFailure.unavailable)
+            await catalog.playlistStore.load(item, force: true)
+            #expect((catalog.playlistStore.error) != nil, "a failed forced refresh keeps the empty cached result stale")
+            #expect((await services.playlistLoadCount) == (2), "the forced refresh attempts one playlist read")
+
+            await services.setPlaylistError(nil)
+            await catalog.playlistStore.load(item)
+            #expect((catalog.playlistStore.error) == nil, "a later non-forced retry clears the refresh error")
+            #expect((catalog.playlistStore.tracks) == ([]), "the successful retry remains authoritatively empty")
+            #expect(
+                (await services.playlistLoadCount) == (3),
+                "a refresh error prevents the cached empty result from masking a later retry"
+            )
+
             session.update(accountEpoch: 2, isAvailable: true)
             await catalog.playlistStore.load(item)
             #expect(
-                (await services.playlistLoadCount) == (2),
+                (await services.playlistLoadCount) == (4),
                 "an empty result from an earlier account session is fetched again"
             )
         }
