@@ -149,6 +149,16 @@ pub(crate) fn retire_previous_credentials_dir(previous: &std::path::Path) {
     }
 }
 
+fn retire_previous_credentials_cache() {
+    match previous_credentials_cache_dir() {
+        Ok(previous) => retire_previous_credentials_dir(&previous),
+        Err(error) => debug!(
+            "Previous streaming credential cache unavailable after connection: {}",
+            error.message()
+        ),
+    }
+}
+
 /// Resolves the live cache directory and removes it. Unavailable locations are success:
 /// there is no app-owned cache to clear, and the C ABI remains a void cleanup.
 pub(crate) fn clear_resolved_credentials() {
@@ -220,6 +230,10 @@ pub extern "C" fn spotty_playback_authorize_streaming(access_token: *const c_cha
                 .connect(credentials, true)
                 .await
                 .map_err(|e| format!("Connect failed: {:?}", e))?;
+            // Session::connect is the operation that persists a fresh grant. Retire the
+            // previous installation only after it has actually accepted the credentials;
+            // a failed authorization must leave the recovery cache available for retry.
+            retire_previous_credentials_cache();
             session.shutdown();
             Ok::<(), String>(())
         }) {
@@ -281,10 +295,6 @@ pub(crate) fn create_session(
             .credentials()
             .ok_or_else(|| "No streaming credentials: authorization required".to_string())?,
     };
-    // Once this launch has selected usable fresh or current credentials, the superseded
-    // cache must not remain as a second live account identity.
-    retire_previous_credentials_dir(&previous_cache_dir);
-
     let session = Session::new(session_config, Some(cache));
     Ok((session, credentials))
 }
@@ -795,6 +805,11 @@ pub(crate) async fn build_player_async(
 
     match create_and_store_spirc(&session, &credentials, player, mixer).await {
         Ok(spirc) => {
+            // `Spirc::new` has completed Session::connect and the login5 authorization
+            // needed by the player path. Retire the previous cache only after that
+            // connection succeeds; failed reconnects must preserve it for retry.
+            retire_previous_credentials_cache();
+
             // Passive startup by default: do not take over the active device on launch.
             // Re-activate only when reconnecting from a previously-active local session.
             //

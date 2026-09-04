@@ -1,6 +1,6 @@
 use crate::*;
 
-/// How often the playing-event waits re-read [`PLAYING_EVENT_SEQ`].
+/// How often the playing-event waits re-read [`PlayingEventStamp`].
 pub(crate) const PLAYING_EVENT_POLL_INTERVAL: Duration = Duration::from_millis(25);
 
 /// How long `resume_playback` gives `Spirc::play` before Swift may issue load fallbacks.
@@ -136,7 +136,7 @@ pub(crate) enum RehydrationOutcome {
 pub(crate) fn open_rehydration_window(generation: u64) -> u64 {
     REHYDRATION_WINDOW_GENERATION.store(generation, Ordering::SeqCst);
     REHYDRATION_NEEDS_REINIT.store(false, Ordering::SeqCst);
-    PLAYING_EVENT_SEQ.load(Ordering::SeqCst)
+    playing_event_stamp().sequence
 }
 
 /// Whether a rehydration load naming `generation` may run right now: that generation is the
@@ -158,11 +158,13 @@ pub(crate) fn note_load_needs_reinit(load_generation: u64) {
     }
 }
 
-/// Whether the most recent Playing event came from the pump of the generation that opened
-/// the current rehydration window.
-fn playing_event_belongs_to_window() -> bool {
-    PLAYING_EVENT_GENERATION.load(Ordering::SeqCst)
-        == REHYDRATION_WINDOW_GENERATION.load(Ordering::SeqCst)
+/// Whether one coherently published Playing event is newer than the window and came from the
+/// pump that owns it. Reading a single stamp prevents an old sequence from being paired with a
+/// newer generation while an event listener is publishing.
+fn playing_event_belongs_to_window(previous_seq: u64) -> bool {
+    let stamp = playing_event_stamp();
+    stamp.sequence > previous_seq
+        && stamp.generation == REHYDRATION_WINDOW_GENERATION.load(Ordering::SeqCst)
 }
 
 /// Waits inside the runtime for a Swift rehydration load to land, fail terminally, or time
@@ -174,7 +176,7 @@ pub(crate) async fn wait_for_rehydration(
 ) -> RehydrationOutcome {
     let deadline = tokio::time::Instant::now() + timeout;
     loop {
-        if playing_event_advanced(previous_seq) && playing_event_belongs_to_window() {
+        if playing_event_belongs_to_window(previous_seq) {
             return RehydrationOutcome::Playing;
         }
         if REHYDRATION_NEEDS_REINIT.load(Ordering::SeqCst) {
@@ -207,9 +209,9 @@ pub(crate) fn ensure_active_for_playback(spirc: &Arc<Spirc>) -> Result<(), i32> 
     Ok(())
 }
 
-/// Whether [`PLAYING_EVENT_SEQ`] has advanced past the value captured before a command.
+/// Whether the Playing-event sequence has advanced past the value captured before a command.
 pub(crate) fn playing_event_advanced(previous_seq: u64) -> bool {
-    PLAYING_EVENT_SEQ.load(Ordering::SeqCst) > previous_seq
+    playing_event_stamp().sequence > previous_seq
 }
 
 /// Waits for the Player to report playback, blocking the calling thread.
@@ -299,7 +301,7 @@ pub(crate) fn load_at_position(
     } else {
         ResumeLoadTarget::Track { uri, position_ms }
     };
-    let seq_before = PLAYING_EVENT_SEQ.load(Ordering::SeqCst);
+    let seq_before = playing_event_stamp().sequence;
     match issue_load_target(&spirc, target) {
         Some(0) => {
             if rehydrating {
@@ -384,7 +386,7 @@ pub(crate) fn resume_playback() -> i32 {
         return e;
     }
 
-    let play_seq_before = PLAYING_EVENT_SEQ.load(Ordering::SeqCst);
+    let play_seq_before = playing_event_stamp().sequence;
     if let Err(e) = spirc.play() {
         return spirc_error("Resume", &e);
     }

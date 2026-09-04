@@ -83,7 +83,8 @@ fi
 header_symbols="$(mktemp /tmp/spotty-header-symbols.XXXXXX)"
 library_symbols="$(mktemp /tmp/spotty-library-symbols.XXXXXX)"
 consumed_symbols="$(mktemp /tmp/spotty-consumed-symbols.XXXXXX)"
-trap 'rm -f "$header_symbols" "$library_symbols" "$consumed_symbols"' EXIT
+header_signatures="$(mktemp /tmp/spotty-header-signatures.XXXXXX)"
+trap 'rm -f "$header_symbols" "$library_symbols" "$consumed_symbols" "$header_signatures"' EXIT
 rg -o --pcre2 'spotty_playback_[a-z0-9_]+(?=\s*\()' \
     "$project_root/Sources/SpottyPlaybackCore/spotty_playback.h" | sort -u > "$header_symbols"
 (nm -gU "$backend_lib" 2>/dev/null || true) \
@@ -91,6 +92,28 @@ rg -o --pcre2 'spotty_playback_[a-z0-9_]+(?=\s*\()' \
     | sort -u > "$library_symbols"
 if ! diff -u "$header_symbols" "$library_symbols"; then
     print -u2 "The C header and libspotty_playback.a export different Spotty symbols"
+    exit 1
+fi
+
+# Match the C declarations' full function types against the Rust compile-time ABI fixture.
+# Clang's AST is the parser here: unlike a regex over declaration text, it handles comments,
+# attributes, typedefs, and multiline declarations before emitting one stable type spelling.
+# Nullability annotations are source-level ownership metadata and do not affect the ABI type.
+abi_signature_fixture="$project_root/Backend/spotty-playback/abi-signatures.txt"
+if ! command -v clang >/dev/null 2>&1; then
+    print -u2 "Clang is required to inspect the checked-in Spotty C ABI signatures"
+    exit 1
+fi
+if ! clang -x c -fsyntax-only -Xclang -ast-dump \
+    "$project_root/Sources/SpottyPlaybackCore/spotty_playback.h" 2>/dev/null \
+    | sed -nE "s/.*FunctionDecl .* (spotty_playback_[a-z0-9_]+) '([^']+)'$/\\1|\\2/p" \
+    | sed -E 's/ _Nullable| _Nonnull//g; s/ +/ /g' \
+    | sort -u > "$header_signatures"; then
+    print -u2 "Clang could not parse the checked-in Spotty C ABI header"
+    exit 1
+fi
+if ! diff -u "$abi_signature_fixture" "$header_signatures"; then
+    print -u2 "The C header and Rust Spotty ABI signature fixture differ"
     exit 1
 fi
 

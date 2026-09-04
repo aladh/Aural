@@ -95,7 +95,7 @@ root-to-nearest discovery for representative paths.
 | IDs | Invariant | Primary enforcement |
 | --- | --- | --- |
 | `ABI-SYM-001`, `ABI-USE-001` | Checked-in C declarations equal archive exports and every retained export is consumed by `PlaybackCore.swift` | Header/archive comparison and export-use checks in `Scripts/check.sh` |
-| `ABI-SIG-001` | C signatures stay compile-time compatible with Rust exports | Rust signature tests |
+| `ABI-SIG-001` | C signatures stay compile-time compatible with Rust exports | Clang-parsed header comparison against `abi-signatures.txt`, paired with Rust compile-time function assignments and fixture-parity tests |
 | `ABI-ARC-001` | The static archive is generated, untracked, and rebuilt when missing or stale | Build script, stale detection, gitignore, and tracked-artifact check |
 
 ### Focused source and topology checks

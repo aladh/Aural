@@ -11,14 +11,45 @@ pub(crate) static SPIRC: Lazy<Mutex<Option<Arc<Spirc>>>> = Lazy::new(|| Mutex::n
 /// commands must not store `true` here: `resume_playback` returns success
 /// without issuing play or its fallback whenever this flag is already set.
 pub(crate) static IS_PLAYING: AtomicBool = AtomicBool::new(false);
-pub(crate) static PLAYING_EVENT_SEQ: AtomicU64 = AtomicU64::new(0);
 
-/// Listener generation of the pump that last advanced [`PLAYING_EVENT_SEQ`], written just
-/// before the increment. A reconnect's rehydration window accepts a Playing event only when
-/// this matches the generation that opened the window: the pump gates events on the
-/// generation before applying them, but a pump preempted between that check and its
-/// increment could otherwise satisfy a window opened by a newer session.
-pub(crate) static PLAYING_EVENT_GENERATION: AtomicU64 = AtomicU64::new(0);
+/// One `PlayerEvent::Playing` publication.
+///
+/// The sequence gives ordinary play/load waits an edge to wait past. Reconnect rehydration
+/// additionally needs the listener generation that produced that exact edge. Keep both facts
+/// behind one mutex: separate atomics can be read as a record that was never published (for
+/// example, an old sequence paired with a newly written generation).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub(crate) struct PlayingEventStamp {
+    pub(crate) generation: u64,
+    pub(crate) sequence: u64,
+}
+
+pub(crate) static PLAYING_EVENT_STAMP: Lazy<Mutex<PlayingEventStamp>> =
+    Lazy::new(|| Mutex::new(PlayingEventStamp::default()));
+
+/// Publishes a Playing event as one coherent `(generation, sequence)` record.
+pub(crate) fn publish_playing_event(generation: u64) -> PlayingEventStamp {
+    let mut stamp = PLAYING_EVENT_STAMP
+        .lock()
+        .unwrap_or_else(|error| error.into_inner());
+    stamp.generation = generation;
+    stamp.sequence = stamp.sequence.wrapping_add(1);
+    *stamp
+}
+
+/// Reads the last Playing event's generation and sequence as one record.
+pub(crate) fn playing_event_stamp() -> PlayingEventStamp {
+    *PLAYING_EVENT_STAMP
+        .lock()
+        .unwrap_or_else(|error| error.into_inner())
+}
+
+#[cfg(test)]
+pub(crate) fn replace_playing_event_stamp_for_test(stamp: PlayingEventStamp) {
+    *PLAYING_EVENT_STAMP
+        .lock()
+        .unwrap_or_else(|error| error.into_inner()) = stamp;
+}
 
 /// Set while a `spotty_playback_resume` is working, so only one runs at a time.
 ///

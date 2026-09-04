@@ -269,7 +269,7 @@ fn rehydration_window_reports_playing_reinit_or_timeout() {
     REHYDRATION_NEEDS_REINIT.store(true, Ordering::SeqCst);
     let seq = open_rehydration_window(7);
     assert!(!REHYDRATION_NEEDS_REINIT.load(Ordering::SeqCst));
-    assert_eq!(seq, PLAYING_EVENT_SEQ.load(Ordering::SeqCst));
+    assert_eq!(seq, playing_event_stamp().sequence);
 
     assert_eq!(
         RUNTIME.block_on(wait_for_rehydration(seq, Duration::ZERO)),
@@ -291,14 +291,15 @@ fn rehydration_window_reports_playing_reinit_or_timeout() {
     REHYDRATION_NEEDS_REINIT.store(false, Ordering::SeqCst);
 
     // A Playing event from a superseded pump advances the sequence but not this window.
-    PLAYING_EVENT_GENERATION.store(6, Ordering::SeqCst);
-    PLAYING_EVENT_SEQ.fetch_add(1, Ordering::SeqCst);
+    publish_playing_event(6);
     assert_eq!(
         RUNTIME.block_on(wait_for_rehydration(seq, Duration::ZERO)),
         RehydrationOutcome::TimedOut
     );
 
-    PLAYING_EVENT_GENERATION.store(7, Ordering::SeqCst);
+    // Merely writing the generation must never validate the older sequence: the current
+    // generation has to publish its own Playing event.
+    publish_playing_event(7);
     assert_eq!(
         RUNTIME.block_on(wait_for_rehydration(seq, Duration::ZERO)),
         RehydrationOutcome::Playing
@@ -313,10 +314,11 @@ fn connection_state_starts_without_an_open_rehydration_window() {
 #[test]
 fn playing_event_waits_observe_sequence_advances_and_timeouts() {
     let _guard = lock_global_state();
-    let previous = PLAYING_EVENT_SEQ.fetch_add(1, Ordering::SeqCst);
+    let previous = playing_event_stamp().sequence;
+    publish_playing_event(0);
     assert!(playing_event_advanced(previous));
     assert!(wait_for_playing_event(previous, Duration::ZERO));
-    let current = PLAYING_EVENT_SEQ.load(Ordering::SeqCst);
+    let current = playing_event_stamp().sequence;
     assert!(!playing_event_advanced(current));
     assert!(!wait_for_playing_event(current, Duration::ZERO));
 }
@@ -694,63 +696,261 @@ fn audio_key_with_no_session_is_not_connected() {
     );
 }
 
-/// Compile-time ABI contract. The release archive is also checked with `nm`; these assignments
-/// make signature drift fail in the fast Rust test suite before reaching the linker check.
-///
-/// [`exported_c_functions_enter_through_the_panic_barrier`] extends this with a source-level
-/// check that every `extern "C"` body starts at a panic-barrier helper, so a new symbol cannot
-/// skip the boundary by being added only here.
+/// The checked-in C fixture uses Clang's canonical function-type spelling. Keep each row paired
+/// with a Rust assignment here: a changed Rust `extern "C"` definition fails to compile, while
+/// `Scripts/check.sh` compares these C spellings to the parsed header before linking the archive.
+#[derive(Debug, Eq, PartialEq)]
+struct ExportedCFunctionSignature {
+    name: String,
+    function_type: String,
+}
+
+fn exported_c_function_signatures() -> Vec<ExportedCFunctionSignature> {
+    let mut signatures = Vec::new();
+    macro_rules! signature {
+        ($function:ident, $rust_type:ty, $c_type:literal) => {{
+            let _: $rust_type = $function;
+            signatures.push(ExportedCFunctionSignature {
+                name: stringify!($function).to_owned(),
+                function_type: $c_type.to_owned(),
+            });
+        }};
+    }
+
+    signature!(
+        spotty_playback_add_to_queue,
+        extern "C" fn(*const c_char) -> i32,
+        "SpottyPlaybackResult (const char *)"
+    );
+    signature!(
+        spotty_playback_audio_key,
+        extern "C" fn(*const u8, *const u8, *mut u8) -> i32,
+        "SpottyPlaybackResult (const uint8_t *, const uint8_t *, uint8_t *)"
+    );
+    signature!(
+        spotty_playback_authorize_streaming,
+        extern "C" fn(*const c_char) -> i32,
+        "int32_t (const char *)"
+    );
+    signature!(spotty_playback_cleanup, extern "C" fn(), "void (void)");
+    signature!(
+        spotty_playback_clear_streaming_credentials,
+        extern "C" fn(),
+        "void (void)"
+    );
+    signature!(
+        spotty_playback_disconnect,
+        extern "C" fn() -> i32,
+        "SpottyPlaybackResult (void)"
+    );
+    signature!(
+        spotty_playback_force_reconnect,
+        extern "C" fn() -> i32,
+        "int32_t (void)"
+    );
+    signature!(
+        spotty_playback_free_queue_snapshot,
+        extern "C" fn(*mut SpottyQueueSnapshot),
+        "void (SpottyQueueSnapshot *)"
+    );
+    signature!(
+        spotty_playback_free_string,
+        extern "C" fn(*mut c_char),
+        "void (char *)"
+    );
+    signature!(
+        spotty_playback_get_position_ms,
+        extern "C" fn() -> u32,
+        "uint32_t (void)"
+    );
+    signature!(
+        spotty_playback_get_queue_snapshot,
+        extern "C" fn() -> *mut SpottyQueueSnapshot,
+        "SpottyQueueSnapshot * (void)"
+    );
+    signature!(
+        spotty_playback_get_resume_context_uri,
+        extern "C" fn() -> *mut c_char,
+        "char * (void)"
+    );
+    signature!(
+        spotty_playback_get_resume_position_ms,
+        extern "C" fn() -> u32,
+        "uint32_t (void)"
+    );
+    signature!(
+        spotty_playback_get_resume_track_uri,
+        extern "C" fn() -> *mut c_char,
+        "char * (void)"
+    );
+    signature!(
+        spotty_playback_init_player,
+        extern "C" fn(*const c_char) -> i32,
+        "SpottyPlaybackResult (const char *)"
+    );
+    signature!(
+        spotty_playback_load,
+        extern "C" fn(*const c_char, *const c_char, u32, bool, u64) -> i32,
+        "SpottyPlaybackResult (const char *, const char *, uint32_t, _Bool, uint64_t)"
+    );
+    signature!(
+        spotty_playback_next,
+        extern "C" fn() -> i32,
+        "SpottyPlaybackResult (void)"
+    );
+    signature!(
+        spotty_playback_pause,
+        extern "C" fn() -> i32,
+        "SpottyPlaybackResult (void)"
+    );
+    signature!(
+        spotty_playback_play_tracks,
+        extern "C" fn(*const c_char) -> i32,
+        "SpottyPlaybackResult (const char *)"
+    );
+    signature!(
+        spotty_playback_play_uri,
+        extern "C" fn(*const c_char, i32) -> i32,
+        "SpottyPlaybackResult (const char *, int32_t)"
+    );
+    signature!(
+        spotty_playback_previous,
+        extern "C" fn() -> i32,
+        "SpottyPlaybackResult (void)"
+    );
+    signature!(
+        spotty_playback_register_audio_control_callback,
+        extern "C" fn(extern "C" fn(u8)),
+        "void (AudioControlCallback)"
+    );
+    signature!(
+        spotty_playback_register_audio_data_callback,
+        extern "C" fn(extern "C" fn(*const f32, usize)),
+        "void (AudioDataCallback)"
+    );
+    signature!(
+        spotty_playback_register_connection_state_callback,
+        extern "C" fn(ConnectionSnapshotCallback),
+        "void (ConnectionStateCallback)"
+    );
+    signature!(
+        spotty_playback_register_devices_callback,
+        extern "C" fn(DevicesSnapshotCallback),
+        "void (DevicesCallback)"
+    );
+    signature!(
+        spotty_playback_register_playback_state_callback,
+        extern "C" fn(PlaybackSnapshotCallback),
+        "void (PlaybackStateCallback)"
+    );
+    signature!(
+        spotty_playback_register_queue_callback,
+        extern "C" fn(QueueSnapshotCallback),
+        "void (QueueCallback)"
+    );
+    signature!(
+        spotty_playback_resume,
+        extern "C" fn() -> i32,
+        "SpottyPlaybackResult (void)"
+    );
+    signature!(
+        spotty_playback_seek,
+        extern "C" fn(u32) -> i32,
+        "SpottyPlaybackResult (uint32_t)"
+    );
+    signature!(
+        spotty_playback_set_bitrate,
+        extern "C" fn(u8),
+        "void (uint8_t)"
+    );
+    signature!(
+        spotty_playback_set_gapless,
+        extern "C" fn(bool),
+        "void (_Bool)"
+    );
+    signature!(
+        spotty_playback_set_initial_volume,
+        extern "C" fn(u16),
+        "void (uint16_t)"
+    );
+    signature!(
+        spotty_playback_set_repeat_context,
+        extern "C" fn(bool) -> i32,
+        "SpottyPlaybackResult (_Bool)"
+    );
+    signature!(
+        spotty_playback_set_repeat_track,
+        extern "C" fn(bool) -> i32,
+        "SpottyPlaybackResult (_Bool)"
+    );
+    signature!(
+        spotty_playback_set_shuffle,
+        extern "C" fn(bool) -> i32,
+        "SpottyPlaybackResult (_Bool)"
+    );
+    signature!(
+        spotty_playback_shutdown,
+        extern "C" fn() -> i32,
+        "SpottyPlaybackResult (void)"
+    );
+    signature!(
+        spotty_playback_transfer_playback,
+        extern "C" fn(*const c_char) -> i32,
+        "SpottyPlaybackResult (const char *)"
+    );
+    signature!(
+        spotty_playback_transfer_to_local,
+        extern "C" fn() -> i32,
+        "SpottyPlaybackResult (void)"
+    );
+
+    signatures.sort_by(|a, b| a.name.cmp(&b.name));
+    signatures
+}
+
+fn parse_abi_signature_fixture(fixture: &str) -> Vec<ExportedCFunctionSignature> {
+    let mut signatures = fixture
+        .lines()
+        .filter(|line| !line.is_empty() && !line.starts_with('#'))
+        .map(|line| {
+            let (name, function_type) = line
+                .split_once('|')
+                .unwrap_or_else(|| panic!("ABI fixture row has no separator: {line}"));
+            assert!(
+                name.starts_with("spotty_playback_"),
+                "ABI fixture row has an invalid export name: {name}"
+            );
+            assert!(
+                !function_type.is_empty(),
+                "ABI fixture row has no type: {name}"
+            );
+            ExportedCFunctionSignature {
+                name: name.to_owned(),
+                function_type: function_type.to_owned(),
+            }
+        })
+        .collect::<Vec<_>>();
+    signatures.sort_by(|a, b| a.name.cmp(&b.name));
+    signatures
+}
+
+/// Compile-time ABI contract. The release archive is also checked with `nm`; the assignments
+/// make Rust signature drift fail in the fast test suite before reaching the linker check.
 #[test]
 fn exported_c_function_signatures_are_stable() {
-    let _: extern "C" fn(*mut c_char) = spotty_playback_free_string;
-    let _: extern "C" fn(*mut SpottyQueueSnapshot) = spotty_playback_free_queue_snapshot;
-    let _: extern "C" fn() = spotty_playback_clear_streaming_credentials;
-    let _: extern "C" fn() = spotty_playback_cleanup;
-    let _: [extern "C" fn() -> *mut c_char; 2] = [
-        spotty_playback_get_resume_context_uri,
-        spotty_playback_get_resume_track_uri,
-    ];
-    let _: extern "C" fn() -> *mut SpottyQueueSnapshot = spotty_playback_get_queue_snapshot;
+    let signatures = exported_c_function_signatures();
+    assert_eq!(signatures.len(), 38);
+}
 
-    let _: [extern "C" fn() -> i32; 8] = [
-        spotty_playback_force_reconnect,
-        spotty_playback_pause,
-        spotty_playback_resume,
-        spotty_playback_shutdown,
-        spotty_playback_disconnect,
-        spotty_playback_next,
-        spotty_playback_previous,
-        spotty_playback_transfer_to_local,
-    ];
-
-    let _: extern "C" fn(*const c_char) -> i32 = spotty_playback_authorize_streaming;
-    let _: extern "C" fn(*const c_char) -> i32 = spotty_playback_init_player;
-    let _: extern "C" fn(*const c_char) -> i32 = spotty_playback_play_tracks;
-    let _: extern "C" fn(*const c_char) -> i32 = spotty_playback_transfer_playback;
-    let _: extern "C" fn(*const c_char) -> i32 = spotty_playback_add_to_queue;
-    let _: extern "C" fn(*const c_char, i32) -> i32 = spotty_playback_play_uri;
-    let _: extern "C" fn(*const c_char, *const c_char, u32, bool, u64) -> i32 =
-        spotty_playback_load;
-    let _: extern "C" fn(*const u8, *const u8, *mut u8) -> i32 = spotty_playback_audio_key;
-    let _: extern "C" fn(u32) -> i32 = spotty_playback_seek;
-    let _: extern "C" fn() -> u32 = spotty_playback_get_position_ms;
-    let _: extern "C" fn() -> u32 = spotty_playback_get_resume_position_ms;
-    let _: extern "C" fn(u8) = spotty_playback_set_bitrate;
-    let _: extern "C" fn(u16) = spotty_playback_set_initial_volume;
-    let _: extern "C" fn(bool) -> i32 = spotty_playback_set_shuffle;
-    let _: extern "C" fn(bool) -> i32 = spotty_playback_set_repeat_context;
-    let _: extern "C" fn(bool) -> i32 = spotty_playback_set_repeat_track;
-    let _: extern "C" fn(bool) = spotty_playback_set_gapless;
-
-    let _: extern "C" fn(QueueSnapshotCallback) = spotty_playback_register_queue_callback;
-    let _: extern "C" fn(PlaybackSnapshotCallback) =
-        spotty_playback_register_playback_state_callback;
-    let _: extern "C" fn(DevicesSnapshotCallback) = spotty_playback_register_devices_callback;
-    let _: extern "C" fn(ConnectionSnapshotCallback) =
-        spotty_playback_register_connection_state_callback;
-    let _: extern "C" fn(extern "C" fn(*const f32, usize)) =
-        spotty_playback_register_audio_data_callback;
-    let _: extern "C" fn(extern "C" fn(u8)) = spotty_playback_register_audio_control_callback;
+/// The checked-in C fixture is compared to the header by `Scripts/check.sh`; this Rust-side
+/// assertion keeps its C spellings paired with the type-checked `extern "C"` definitions above.
+#[test]
+fn exported_c_function_signatures_match_fixture() {
+    let fixture = include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/abi-signatures.txt"));
+    assert_eq!(
+        parse_abi_signature_fixture(fixture),
+        exported_c_function_signatures()
+    );
 }
 
 #[test]

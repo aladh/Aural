@@ -100,8 +100,7 @@ fn apply_player_event(event: PlayerEvent, event_listener_generation: u64) {
             set_current_track_uri(track_uri);
             IS_PLAYING.store(true, Ordering::SeqCst);
             set_active_device(true);
-            PLAYING_EVENT_GENERATION.store(event_listener_generation, Ordering::SeqCst);
-            PLAYING_EVENT_SEQ.fetch_add(1, Ordering::SeqCst);
+            publish_playing_event(event_listener_generation);
             // Playback is running again, so any saved resume point belongs
             // to a deactivation that has been recovered from.
             RESUME_POSITION_MS.store(0, Ordering::SeqCst);
@@ -415,7 +414,7 @@ mod player_event_pump_policy {
     struct PlaybackGlobals {
         is_playing: bool,
         is_active: bool,
-        playing_seq: u64,
+        playing_event_stamp: PlayingEventStamp,
         resume_position_ms: u32,
         position_ms: u32,
         track_uri: Option<String>,
@@ -426,7 +425,7 @@ mod player_event_pump_policy {
         PlaybackGlobals {
             is_playing: IS_PLAYING.load(Ordering::SeqCst),
             is_active: is_active_device(),
-            playing_seq: PLAYING_EVENT_SEQ.load(Ordering::SeqCst),
+            playing_event_stamp: playing_event_stamp(),
             resume_position_ms: RESUME_POSITION_MS.load(Ordering::SeqCst),
             position_ms: POSITION_MS.load(Ordering::SeqCst),
             track_uri: CURRENT_TRACK_URI
@@ -443,7 +442,7 @@ mod player_event_pump_policy {
     fn restore_playback_globals(snapshot: PlaybackGlobals) {
         IS_PLAYING.store(snapshot.is_playing, Ordering::SeqCst);
         set_active_device(snapshot.is_active);
-        PLAYING_EVENT_SEQ.store(snapshot.playing_seq, Ordering::SeqCst);
+        replace_playing_event_stamp_for_test(snapshot.playing_event_stamp);
         RESUME_POSITION_MS.store(snapshot.resume_position_ms, Ordering::SeqCst);
         POSITION_MS.store(snapshot.position_ms, Ordering::SeqCst);
         *CURRENT_TRACK_URI.lock().unwrap_or_else(|e| e.into_inner()) = snapshot.track_uri;
@@ -465,12 +464,12 @@ mod player_event_pump_policy {
         let _guard = lock_lifecycle_test_globals();
         let _restore = RestorePlaybackGlobals(capture_playback_globals());
         IS_PLAYING.store(false, Ordering::SeqCst);
-        let seq_before = PLAYING_EVENT_SEQ.load(Ordering::SeqCst);
+        let seq_before = playing_event_stamp().sequence;
 
         apply_player_event(playing_event(1_250), 1);
 
         assert!(IS_PLAYING.load(Ordering::SeqCst));
-        assert!(PLAYING_EVENT_SEQ.load(Ordering::SeqCst) > seq_before);
+        assert!(playing_event_stamp().sequence > seq_before);
         assert_eq!(POSITION_MS.load(Ordering::SeqCst), 1_250);
         assert_eq!(
             CURRENT_TRACK_URI
