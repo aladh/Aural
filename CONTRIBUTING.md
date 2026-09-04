@@ -117,6 +117,13 @@ SwiftPM caches; cache hits may reduce latency but never coverage.
 Use `AURAL_CHECK_REPEATS=N ./Scripts/check.sh` with `N` from 1 through 25 when concurrency or lifetime
 work merits stress.
 
+### Rust conventions
+
+rustfmt (100 cols) and clippy `-D warnings` are enforced. Never hold a `std::sync::Mutex` guard while
+invoking a Swift callback: the lock is not reentrant, and a callback may call back into the crate.
+`Arc::clone(&x)` will not unsize-coerce to `Arc<dyn Trait>` when the expected type is the trait
+object; use `x.clone()` or an explicit `as Arc<dyn Trait>` on a concrete value instead.
+
 ## Clean and risk-specific verification
 
 For Rust, lifecycle, FFI, dependency, build, signing, packaging, CI, or release changes, run:

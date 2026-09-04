@@ -22,6 +22,21 @@ AuralCore codecs, adapters, stores, and injected workflows.
   polling under a `ContinuousClock` deadline, rechecked after cancellation), and settle negative
   assertions by awaiting `PlaybackEffectRegistry.settlement(of:)` rather than a fixed sleep.
 
+## Authoring rules CI enforces
+
+- `CheckRunner` methods (`check`, `equal`, ...) are `@MainActor`; any helper that calls them must be
+  `@MainActor` too.
+- In async check bodies never block: no `Thread.sleep`, no `DispatchSemaphore.wait`; use the harness
+  `waitUntil` helper. `NSLock.lock()`/`unlock()` are unavailable in async contexts — use `withLock`.
+- swift-format (120 cols) rejects a trailing closure passed directly as a `check.check(...)` argument;
+  bind it to a `let` first.
+- The registry name in `AuralChecksMain.swift` must derive from the run function name (`runFooChecks`
+  → `foo`); boundary suites register in `DeferredBoundaryChecks/BoundaryTests.swift` instead.
+- Swift 6 strict concurrency: a `@Sendable` closure (e.g. `Thread { }`, `Task.detached`) cannot
+  capture non-Sendable `self` or a protocol existential. Move the work to a `static` function taking
+  only Sendable parameters, or make the type `Sendable`.
+- Postfix range `a + b...` parses as `a + (b...)`; write `(a + b)...` or use a half-open range.
+
 Run the focused check product while iterating, then `./Scripts/check.sh` from the repository root.
 Suite selection (`--list` and suite names after `--`) is documented in
 [agent operations](../../CONTRIBUTING.md).
