@@ -160,11 +160,9 @@ final class PlaybackStore {
     /// but must not be counted as something the listener just played in this Spotty session.
     @ObservationIgnored var hasReceivedPlaybackSnapshot = false
     @ObservationIgnored let effects = PlaybackEffectRegistry()
-    /// True between `endSession` starting and the next `initializePlayer`. Backend events
-    /// are delivered as detached tasks, so one queued just before a logout can land after
-    /// the presentation was cleared; without this gate it would mark a signed-out
-    /// account's playback state `.ready` again.
-    @ObservationIgnored var isTearingDown = false
+    /// Observable while session teardown is active so native commands update their availability.
+    /// The same gate rejects queued engine events while the old session is being cleared.
+    var isTearingDown = false
     @ObservationIgnored var teardown = SessionTeardownCoalescer()
     @ObservationIgnored var teardownTask: Task<Void, Never>?
     @ObservationIgnored var terminationGate = PlaybackTerminationGate()
