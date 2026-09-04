@@ -9,6 +9,7 @@ private final class ScriptedLocalEngine: LocalPlaybackEngine, @unchecked Sendabl
     private let storedResumeContextURI: String?
     private let storedResumeTrackURI: String?
     private var storedOperations: [LocalPlaybackOperation] = []
+    private var storedForceReconnectCount = 0
 
     init(
         result: PlaybackEngineResult,
@@ -26,6 +27,12 @@ private final class ScriptedLocalEngine: LocalPlaybackEngine, @unchecked Sendabl
         lock.lock()
         defer { lock.unlock() }
         return storedOperations
+    }
+
+    var forceReconnectCount: Int {
+        lock.lock()
+        defer { lock.unlock() }
+        return storedForceReconnectCount
     }
 
     func events() -> AsyncStream<RustPlaybackEventEnvelope> {
@@ -50,7 +57,12 @@ private final class ScriptedLocalEngine: LocalPlaybackEngine, @unchecked Sendabl
     func cleanup() {}
     func clearStreamingCredentials() {}
     func disconnect() -> PlaybackEngineResult { .ok }
-    func forceReconnect() -> Int32 { 0 }
+    func forceReconnect() -> Int32 {
+        lock.lock()
+        storedForceReconnectCount += 1
+        lock.unlock()
+        return 0
+    }
 }
 
 private final class GatedLocalEngine: LocalPlaybackEngine, @unchecked Sendable {
@@ -58,6 +70,7 @@ private final class GatedLocalEngine: LocalPlaybackEngine, @unchecked Sendable {
     private var allowed = false
     private var result: PlaybackEngineResult
     private var storedEnteredCount = 0
+    private var storedForceReconnectCount = 0
 
     init(result: PlaybackEngineResult = .error) {
         self.result = result
@@ -67,6 +80,12 @@ private final class GatedLocalEngine: LocalPlaybackEngine, @unchecked Sendable {
         condition.lock()
         defer { condition.unlock() }
         return storedEnteredCount
+    }
+
+    var forceReconnectCount: Int {
+        condition.lock()
+        defer { condition.unlock() }
+        return storedForceReconnectCount
     }
 
     func events() -> AsyncStream<RustPlaybackEventEnvelope> {
@@ -93,7 +112,12 @@ private final class GatedLocalEngine: LocalPlaybackEngine, @unchecked Sendable {
     func cleanup() {}
     func clearStreamingCredentials() {}
     func disconnect() -> PlaybackEngineResult { .ok }
-    func forceReconnect() -> Int32 { 0 }
+    func forceReconnect() -> Int32 {
+        condition.lock()
+        storedForceReconnectCount += 1
+        condition.unlock()
+        return 0
+    }
 
     func finish(with result: PlaybackEngineResult) {
         condition.lock()
@@ -189,6 +213,33 @@ private final class IdleAccount: AccountSession, @unchecked Sendable {
         throw CancellationError()
     }
     func hasGrant() async -> Bool { false }
+    func accessToken() async throws -> String { "fixture-access" }
+    func adopt(_: KeymasterTokens) async throws {}
+    func clear() async {}
+    func revocations() -> AsyncStream<Void> {
+        AsyncStream { $0.finish() }
+    }
+}
+
+/// An account with a stored grant, so `restore()` reaches `.ready` without interactive auth.
+private final class GrantedAccount: AccountSession, @unchecked Sendable {
+    private let lock = NSLock()
+    private var storedAuthorizeCount = 0
+
+    var authorizeCount: Int {
+        lock.withLock { storedAuthorizeCount }
+    }
+
+    func authorizeInteractively() async throws -> KeymasterTokens {
+        lock.withLock { storedAuthorizeCount += 1 }
+        return KeymasterTokens(
+            accessToken: "fixture-access",
+            refreshToken: "fixture-refresh",
+            expiresAt: .distantFuture,
+            username: "fixture-user"
+        )
+    }
+    func hasGrant() async -> Bool { true }
     func accessToken() async throws -> String { "fixture-access" }
     func adopt(_: KeymasterTokens) async throws {}
     func clear() async {}
@@ -474,10 +525,34 @@ func runPlaybackCommandFailureChecks(_ runner: CheckRunner) async {
         runner.equal("reconnect-required starts connect after an accepted finish", reconnectAccount.authorizeCount, 1)
         await reconnect.player.shutdownForTermination()
 
+        // While the account is `.ready`, `connect()` is a no-op, so recovery must go through the
+        // engine's own rebuild rather than an interactive account connection.
+        let readyAccount = GrantedAccount()
+        let readyEngine = ScriptedLocalEngine(result: PlaybackEngineResult(rawValue: -2))
+        let ready = playbackStore(
+            commandEnvironment(
+                local: readyEngine,
+                remote: ScriptedRemoteClient(.succeed),
+                account: readyAccount
+            )
+        )
+        await ready.restore()
+        runner.equal("a granted account restores to ready", ready.phase, .ready)
+        var readyCompletions: [Bool] = []
+        ready.performCommand(action, expecting: false, operation: .pause) { readyCompletions.append($0) }
+        _ = await waitUntil { !readyCompletions.isEmpty }
+        runner.equal("reconnect-required on a ready session completes as failure", readyCompletions, [false])
+        runner.equal(
+            "reconnect-required on a ready session shows the action notice", ready.transientCommandError, action)
+        _ = await waitUntil { readyEngine.forceReconnectCount == 1 }
+        runner.equal("reconnect-required on a ready session rebuilds the engine", readyEngine.forceReconnectCount, 1)
+        runner.equal("reconnect-required on a ready session does not re-authorize", readyAccount.authorizeCount, 0)
+        await ready.shutdownForTermination()
+
         // A snapshot can reconcile the pending transport before the engine call returns. That
         // settles the presentation, but a reconnect-required result on that same call is a
-        // lifecycle fact and must still rebuild the connection.
-        let reconciledAccount = IdleAccount()
+        // lifecycle fact and must still rebuild the engine, on a ready session too.
+        let reconciledAccount = GrantedAccount()
         let reconciledEngine = GatedLocalEngine()
         let reconciled = playbackStore(
             commandEnvironment(
@@ -486,6 +561,8 @@ func runPlaybackCommandFailureChecks(_ runner: CheckRunner) async {
                 account: reconciledAccount
             )
         )
+        await reconciled.restore()
+        runner.equal("the reconciled fixture starts from a ready session", reconciled.phase, .ready)
         var reconciledCompletions: [Bool] = []
         reconciled.performCommand(action, expecting: false, operation: .pause) { reconciledCompletions.append($0) }
         runner.check(
@@ -518,9 +595,13 @@ func runPlaybackCommandFailureChecks(_ runner: CheckRunner) async {
         runner.nil_(
             "already-reconciled reconnect-required finish shows no command notice", reconciled.transientCommandError)
         runner.equal("already-reconciled transport keeps the reconciled state", reconciled.state.transport, .paused)
-        _ = await waitUntil { reconciledAccount.authorizeCount == 1 }
+        _ = await waitUntil { reconciledEngine.forceReconnectCount == 1 }
         runner.equal(
-            "already-reconciled reconnect-required finish still starts connect", reconciledAccount.authorizeCount, 1)
+            "already-reconciled reconnect-required finish still rebuilds the engine",
+            reconciledEngine.forceReconnectCount,
+            1
+        )
+        runner.equal("already-reconciled recovery does not re-authorize", reconciledAccount.authorizeCount, 0)
         await reconciled.shutdownForTermination()
     }
 

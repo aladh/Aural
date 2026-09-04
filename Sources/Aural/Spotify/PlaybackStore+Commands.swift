@@ -295,18 +295,38 @@ extension PlaybackStore {
             // The snapshot already settled what the UI shows; the engine still lost its
             // session under this command. No notice, no rollback, but rebuild the connection.
             completion(true)
-            connect()
+            recoverEngineAfterCommandFailure()
         case let .reportFailure(reconnect):
             if let notice {
                 showTransientCommandError(notice.message)
             }
             completion(false)
             if reconnect {
-                connect()
+                recoverEngineAfterCommandFailure()
             }
         case .inert:
             break
         }
+    }
+
+    /// Rebuilds the engine connection after a reconnect-required command failure.
+    ///
+    /// `AccountStore.connect()` only starts a connection while the account is not `.ready`.
+    /// A closed Spirc command channel or a lost session is reported by the engine while the
+    /// account is usually still `.ready` (the engine does not mark itself disconnected on that
+    /// classification), so a ready account goes through the engine's own rebuild, the same
+    /// `forceReconnect` path sleep/wake uses. Anything else falls back to the account connect.
+    func recoverEngineAfterCommandFailure() {
+        guard isConnected else {
+            connect()
+            return
+        }
+        effects.replace(
+            .engineRecovery,
+            with: Task { [weak self] in
+                guard let self else { return }
+                _ = await self.coordinator.forceReconnect()
+            })
     }
 
     func showTransientCommandError(_ message: String) {

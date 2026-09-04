@@ -247,12 +247,7 @@ func runSessionLifetimeChecks(_ check: CheckRunner) {
             .reportSuccess
         )
         check.equal(
-            "a matching snapshot then an ordinary late coordinator failure still reports success",
-            followUp(finishAccepted: false, succeeded: false, reconnect: false),
-            .reportSuccess
-        )
-        check.equal(
-            "already-reconciled transport success with an ordinary failure does not reconnect",
+            "already-reconciled transport success with an ordinary failure reports success",
             followUp(finishAccepted: false, succeeded: false, reconnect: false),
             .reportSuccess
         )

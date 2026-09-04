@@ -62,7 +62,7 @@ The registry stays a small `@MainActor` dictionary of tasks. The store continues
 to start work. The reducer continues to decide *whether* a result may mutate state. Command start
 still requires an accepted send. Command-finish follow-ups use `playbackCommandFollowUp`: reducer
 acceptance is the normal gate. A captured same-lifetime transport resolution is evaluated first
-(confirmed success, superseded inert). Consume-only `commandFinished` acceptance exists only to
+(confirmed keeps presentation, superseded inert). Consume-only `commandFinished` acceptance exists only to
 remove that map entry and cannot turn a coordinator failure into `reportFailure`. A rejected
 transport finish may still report success when a same-lifetime snapshot already reconciled the
 pending expected transport without recording a resolution. Reconnect-required outranks both
@@ -79,7 +79,7 @@ account invalidation drop the plan. Completion would still need the same explici
 reconciled-versus-stale follow-up policy as `playbackCommandFollowUp`.
 
 This is easier to test with a scripted `deliver` than unstructured `Task`s, and it makes the
-transport policy (one pending kind, unique command id, reconnect only after accepted failure)
+transport policy (one pending kind, unique command id, reconnect on any non-inert reconnect-required outcome)
 explicit. It does not help engine event streams, metadata, queue refresh, or notice dismissal,
 which already use the registry. Promoting it into `AuralDomain` would either leak coordinator types
 into the domain or invent a generic effect type this ADR rejects.
@@ -143,7 +143,7 @@ and a semantic comparison only; no TCA-shaped runtime or dependency remains.
 | Reducer-owned engine/revision gates | Unchanged. Effects must not reimplement them. | Same: still call `PlaybackReducer`. | Wrapping `PlaybackReducer` inside `Reduce` duplicates the store's `send` or moves Core types into a TCA feature. |
 | Rejected `send` / stale events | `playbackCommandFollowUp` treats matching-snapshot rejection as success and epoch/superseded rejection as inert. | Same. | Actions always enter the TCA reducer. Stale work is `.none` without mutation only if the wrapper checks `PlaybackReducer.reduce == false` before returning follow-up `Effect`s. That *is* Spotty's `send` Bool, reimplemented. |
 | Optimistic success / rollback | `commandStarted` / `commandFinished` already in the domain reducer. | Same events. | Same events if TCA defers to `PlaybackReducer`; duplicated if TCA state is a parallel model. |
-| Local reconnect-required | Typed `.reconnectRequired` from the coordinator; reconnect is **not** reducer state. Gate on accepted finish. | Same. | Follow-up `.run { await connect() }` from the failure action. Still a Core side effect. |
+| Local reconnect-required | Typed `.reconnectRequired` from the coordinator; reconnect is **not** reducer state. Any non-inert same-lifetime outcome (accepted failure, or confirmed / already-reconciled success) rebuilds the engine. | Same. | Follow-up `.run { await recover() }` from the failure action. Still a Core side effect. |
 | Remote failure | Typed `PlaybackCommandFailure` at the coordinator boundary (#17). Rollback is reducer-owned. | Same. | `Result` in `Action` helps tests; Spotty already has a Core-scoped command failure without TCA. |
 | MainActor / Sendable | Store and registry are `@MainActor`. Coordinator is an actor. Command closures hop back to the store. No new isolation model. | Same. | TCA `Store` / `@Dependency` / `Effect.run` (cooperative pool, `send` hops to the store) is a second isolation story beside `PlaybackEnvironment.live` and the coordinator actor. `PlaybackStore` is not a TCA `Store`. |
 | Deterministic tests | Reducer traces in `AuralChecks`; one scripted registry-shaped pause runtime in the spike; real `Task` cancel in `AuralBoundaryChecks`. | Scripted `deliver` is the nicest local ergonomics, but only for this workflow. | `TestStore` is excellent **if** the app is TCA. Adopting it for one command path still requires the package, macros, and wrapping the existing reducer. |
@@ -183,13 +183,17 @@ In `PlaybackStore+Commands`, local and remote live routes share `performAdmitted
 `playbackCommandFollowUp`:
 
 - Reducer-accepted success reports success.
-- Reducer-accepted failure may reconnect, except when the finish only consumed a captured
-  transport resolution.
+- One reconnect rule: a reconnect-required engine failure rebuilds the engine whenever the
+  outcome is not inert, whether the finish was an accepted failure or a confirmed /
+  already-reconciled success. Stale, superseded, teardown, and epoch-invalidated results do
+  not reconnect. A ready account recovers through the engine's own rebuild
+  (`forceReconnect`), since `AccountStore.connect()` only acts while the account is not ready.
 - `applyCommandOutcome` snapshots `transportCommandResolutions[id]` *before* `commandFinished`.
   The reducer consumes that entry (pending rollback, or consume-only when the snapshot already
   confirmed or superseded the command). Follow-up evaluates the captured optional resolution
-  before `finishAccepted`: confirmed reports success, superseded stays inert, so consume-only
-  acceptance cannot turn a coordinator failure into `reportFailure`.
+  before `finishAccepted`: confirmed keeps the success presentation (and still reconnects on a
+  reconnect-required failure), superseded stays inert, so consume-only acceptance cannot turn
+  a coordinator failure into `reportFailure`.
 - A rejected finish on the same account/engine lifetime with no pending *transport* command and
   no captured resolution is already-reconciled success (matching snapshot). Target confirmation and
   supersession are keyed by command id so a later pause/resume cannot recycle the nil catch-all.
