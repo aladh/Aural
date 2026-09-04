@@ -1,5 +1,4 @@
 import AppKit
-import AuralDomain
 import Foundation
 import SwiftUI
 @testable import AuralCore
