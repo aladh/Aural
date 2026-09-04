@@ -114,9 +114,18 @@ private func runEncryptedFixtureDecodeThroughPipeline(
         "encrypted fixture decode reaches .endOfTrack",
         await waitUntil(timeout: .seconds(10)) { collector.all.contains(where: isEndOfTrack) }
     )
+    let events = collector.all
+    let playingBeforeEnd: Bool
+    if let playingIndex = events.firstIndex(where: isPlaying),
+        let endOfTrackIndex = events.firstIndex(where: isEndOfTrack)
+    {
+        playingBeforeEnd = playingIndex < endOfTrackIndex
+    } else {
+        playingBeforeEnd = false
+    }
     check.check(
         "encrypted fixture decode emitted .playing before .endOfTrack",
-        collector.all.contains(where: isPlaying)
+        playingBeforeEnd
     )
 
     let totalFrames = sink.totalFrameCount
