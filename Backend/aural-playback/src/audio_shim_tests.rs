@@ -481,7 +481,8 @@ fn command_does_not_hold_a_lock_while_the_sink_reenters_report() {
         player: Mutex::new(None),
     });
     let resolver = Arc::new(FakeResolver::default());
-    let player = Arc::new(ShimPlayer::new(Arc::clone(&sink), resolver, 1));
+    let sink_dyn: Arc<dyn AudioCommandSink> = Arc::clone(&sink);
+    let player = Arc::new(ShimPlayer::new(sink_dyn, resolver, 1));
     *sink.player.lock().unwrap_or_else(|e| e.into_inner()) = Some(Arc::clone(&player));
 
     let (done_tx, done_rx) = std::sync::mpsc::channel();
