@@ -15,7 +15,7 @@ lets name it `SpircTask`, that starts and executes the event loop of the connect
 when awaited.
 
 A basic example in which the `Spirc` and `SpircTask` is used can be found here:
-[`examples/play_connect.rs`](../examples/play_connect.rs).
+[`examples/play_connect.rs`](https://github.com/librespot-org/librespot/blob/9c7d75615fc093bdcbdb29adbce3fed38c531852/examples/play_connect.rs).
 
 # Example
 

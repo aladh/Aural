@@ -31,6 +31,11 @@ change that unblocks that: a trait naming exactly the methods `SpircTask` calls,
    inherit from; no lint config in this vendored copy is a deliberate, minor deviation from
    upstream.
 
+5. **`README.md`** (doc-only) — the "basic example" link to `examples/play_connect.rs` pointed
+   at `../examples/play_connect.rs`, which doesn't exist in this vendored copy (only `connect/`
+   was vendored, not the rest of the librespot tree). Repointed at the upstream file at the pinned
+   rev instead, since `lib.rs` includes this README verbatim as its rustdoc.
+
 No other file changed. Callers pass `player.clone() as Arc<dyn SpircPlayer>`; behavior is
 unchanged because the only implementation in this codebase today is still librespot's `Player`.
 
