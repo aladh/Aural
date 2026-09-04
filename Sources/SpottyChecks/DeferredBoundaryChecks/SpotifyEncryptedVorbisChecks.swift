@@ -1,3 +1,4 @@
+import Testing
 import SpottyDomain
 import Foundation
 @testable import SpottyCore
@@ -6,62 +7,58 @@ import Foundation
 /// fixture (#209) in a 0xa7-byte Spotify header, AES-128-CTR encrypt it with a test key, serve
 /// the ciphertext through `RangedAudioFetcher`, and decode via `SpotifyTrackByteSource` +
 /// `VorbisDecodePipeline`. Never account-derived.
+@Test
 @MainActor
-func runSpotifyEncryptedVorbisChecks(_ check: CheckRunner) async {
-    await check.suite("Spotify encrypted Vorbis fixture") {
-        guard let ogg = bundledToneFixture(check) else { return }
+func testSpotifyEncryptedVorbis() async {
+    guard let ogg = bundledToneFixture() else { return }
 
-        let key = testFileKey
-        let plaintext = syntheticSpotifyAudioFile(ogg: ogg)
-        let ciphertext: Data
-        do {
-            ciphertext = try AESCTRDecryptor.decrypt(key: key, offset: 0, data: plaintext)
-        } catch {
-            check.check("CTR wrapping the synthetic file did not throw: \(error)", false)
-            return
-        }
-
-        let url = URL(string: "https://audio-ak.spotifycdn.com/audio/synthetic-tone")!
-        let transport = BlobRangedTransport(blob: ciphertext)
-        let fetcher = RangedAudioFetcher(url: url, transport: transport)
-        let source = SpotifyTrackByteSource(fetcher: fetcher, key: key, format: .oggVorbis160)
-
-        do {
-            let total = try await source.totalLength()
-            check.equal("byte source length is the encrypted file length", total, ciphertext.count)
-
-            let captureStart = SpotifyTrackByteSource.oggStartOffset
-            let requestedPrefix = min(64, ogg.count)
-            let oggPrefix = try await source.readRange(offset: captureStart, length: requestedPrefix)
-            check.equal("ranged decrypt at 0xa7 returns the requested length", oggPrefix.count, requestedPrefix)
-            check.equal("ranged decrypt at 0xa7 is the Ogg fixture prefix", oggPrefix, ogg.prefix(requestedPrefix))
-
-            let midOffset = captureStart + 17
-            let midLength = 48
-            guard midOffset + midLength <= plaintext.count else {
-                check.check("fixture is large enough for a mid-stream ranged decrypt", false)
-                return
-            }
-            let mid = try await source.readRange(offset: midOffset, length: midLength)
-            check.equal(
-                "mid-stream ranged decrypt matches the wrapped plaintext (counter carry past block 0)",
-                mid,
-                plaintext.subdata(in: midOffset..<(midOffset + midLength))
-            )
-        } catch {
-            check.check("ranged decrypt through SpotifyTrackByteSource did not throw: \(error)", false)
-            return
-        }
-
-        await runEncryptedFixtureDecodeThroughPipeline(check, source: source, ogg: ogg)
+    let key = testFileKey
+    let plaintext = syntheticSpotifyAudioFile(ogg: ogg)
+    let ciphertext: Data
+    do {
+        ciphertext = try AESCTRDecryptor.decrypt(key: key, offset: 0, data: plaintext)
+    } catch {
+        #expect((false) == true, "CTR wrapping the synthetic file did not throw: \(error)")
+        return
     }
+
+    let url = URL(string: "https://audio-ak.spotifycdn.com/audio/synthetic-tone")!
+    let transport = BlobRangedTransport(blob: ciphertext)
+    let fetcher = RangedAudioFetcher(url: url, transport: transport)
+    let source = SpotifyTrackByteSource(fetcher: fetcher, key: key, format: .oggVorbis160)
+
+    do {
+        let total = try await source.totalLength()
+        #expect((total) == (ciphertext.count), "byte source length is the encrypted file length")
+
+        let captureStart = SpotifyTrackByteSource.oggStartOffset
+        let requestedPrefix = min(64, ogg.count)
+        let oggPrefix = try await source.readRange(offset: captureStart, length: requestedPrefix)
+        #expect((oggPrefix.count) == (requestedPrefix), "ranged decrypt at 0xa7 returns the requested length")
+        #expect((oggPrefix) == (ogg.prefix(requestedPrefix)), "ranged decrypt at 0xa7 is the Ogg fixture prefix")
+
+        let midOffset = captureStart + 17
+        let midLength = 48
+        guard midOffset + midLength <= plaintext.count else {
+            #expect((false) == true, "fixture is large enough for a mid-stream ranged decrypt")
+            return
+        }
+        let mid = try await source.readRange(offset: midOffset, length: midLength)
+        #expect(
+            (mid) == (plaintext.subdata(in: midOffset..<(midOffset + midLength))),
+            "mid-stream ranged decrypt matches the wrapped plaintext (counter carry past block 0)")
+    } catch {
+        #expect((false) == true, "ranged decrypt through SpotifyTrackByteSource did not throw: \(error)")
+        return
+    }
+
+    await runEncryptedFixtureDecodeThroughPipeline(source: source, ogg: ogg)
 }
 
 /// Feeds the decrypting `SpotifyTrackByteSource` into `VorbisDecodePipeline` at the Ogg capture
 /// offset, the same start the live path uses after skipping Spotify's header.
 @MainActor
 private func runEncryptedFixtureDecodeThroughPipeline(
-    _ check: CheckRunner,
     source: SpotifyTrackByteSource,
     ogg: Data
 ) async {
@@ -76,10 +73,9 @@ private func runEncryptedFixtureDecodeThroughPipeline(
         startPositionMs: 0
     ) { collector.record($0) }
 
-    check.check(
-        "encrypted fixture decode reaches .endOfTrack",
-        await waitUntil(timeout: .seconds(10)) { collector.all.contains(where: isEndOfTrack) }
-    )
+    #expect(
+        (await waitUntil(timeout: .seconds(10)) { collector.all.contains(where: isEndOfTrack) }) == true,
+        "encrypted fixture decode reaches .endOfTrack")
     let events = collector.all
     let playingBeforeEnd: Bool
     if let playingIndex = events.firstIndex(where: isPlaying),
@@ -89,21 +85,16 @@ private func runEncryptedFixtureDecodeThroughPipeline(
     } else {
         playingBeforeEnd = false
     }
-    check.check(
-        "encrypted fixture decode emitted .playing before .endOfTrack",
-        playingBeforeEnd
-    )
+    #expect((playingBeforeEnd) == true, "encrypted fixture decode emitted .playing before .endOfTrack")
 
     let totalFrames = sink.totalFrameCount
-    check.check("encrypted fixture decode produced frames", totalFrames > 0)
+    #expect((totalFrames > 0) == true, "encrypted fixture decode produced frames")
     if let expectedFrames = lastGranulePosition(in: ogg) {
-        check.equal(
-            "encrypted fixture decoded frame count matches the last page's granule position",
-            Int64(totalFrames),
-            expectedFrames
-        )
+        #expect(
+            (Int64(totalFrames)) == (expectedFrames),
+            "encrypted fixture decoded frame count matches the last page's granule position")
     } else {
-        check.check("ogg fixture has a page with a resolved granule position", false)
+        #expect((false) == true, "ogg fixture has a page with a resolved granule position")
     }
 
     pipeline.stop()
