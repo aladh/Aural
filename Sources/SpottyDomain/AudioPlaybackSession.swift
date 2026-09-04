@@ -331,6 +331,9 @@ public struct AudioPlaybackSession: Sendable, Equatable {
                 reusingPreload: reusingPreload
             )
         )
+        if command.durationMs > 0 {
+            effects.append(report(.duration, durationMsOverride: command.durationMs))
+        }
         return effects
     }
 

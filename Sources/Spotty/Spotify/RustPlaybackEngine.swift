@@ -148,18 +148,22 @@ nonisolated final class RustPlaybackEngine: LocalPlaybackEngine, @unchecked Send
                 RustPlaybackEngine.swiftAudioPath?.deliver(command)
             }
             Task { await audioPath.run() }
-        }
-        PlaybackCore.registerAudioDataCallback { samples, count in
-            guard let samples else { return }
-            try? spottyAudioRendererResult.get().writeAudioData(samples, count: count)
-        }
-        PlaybackCore.registerAudioControlCallback { event in
-            guard let renderer = try? spottyAudioRendererResult.get() else { return }
-            switch event {
-            case .stop: renderer.stop()
-            case .start: renderer.start()
-            case .clear: renderer.flush()
-            @unknown default: break
+            // `SwiftAudioPath` owns start/stop/flush on the same renderer. Registering the
+            // shipped PCM/control callbacks as well would let `ProxySink::notify_player_gone`
+            // fight the mailbox for that renderer.
+        } else {
+            PlaybackCore.registerAudioDataCallback { samples, count in
+                guard let samples else { return }
+                try? spottyAudioRendererResult.get().writeAudioData(samples, count: count)
+            }
+            PlaybackCore.registerAudioControlCallback { event in
+                guard let renderer = try? spottyAudioRendererResult.get() else { return }
+                switch event {
+                case .stop: renderer.stop()
+                case .start: renderer.start()
+                case .clear: renderer.flush()
+                @unknown default: break
+                }
             }
         }
         PlaybackCore.registerPlaybackStateCallback { pointer in

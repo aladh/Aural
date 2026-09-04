@@ -162,6 +162,16 @@ fn wait_for_event(events: &mut PlayerEventChannel) -> PlayerEvent {
     panic!("no PlayerEvent arrived within the timeout");
 }
 
+/// File resolution is async: after `PlayRequestIdChanged`/`Loading`, wait for the Load
+/// command and the `TrackChanged` that carries duration to Spirc.
+fn wait_for_resolved_load(sink: &FakeSink, events: &mut PlayerEventChannel) -> AudioItem {
+    sink.wait_for_commands(1, Duration::from_secs(2));
+    match wait_for_event(events) {
+        PlayerEvent::TrackChanged { audio_item } => audio_item,
+        other => panic!("expected TrackChanged after a resolved Load, got {other:?}"),
+    }
+}
+
 fn shim_player(
     sink: Arc<FakeSink>,
     resolver: Arc<FakeResolver>,
@@ -191,7 +201,7 @@ fn load_emits_play_request_id_changed_then_loading_before_the_load_command() {
     let player = shim_player(Arc::clone(&sink), resolver, 1);
     let mut events = player.get_player_event_channel();
 
-    let play_request_id = player.load(track_id, true, 500);
+    let play_request_id = player.load(track_id.clone(), true, 500);
 
     let first = events
         .try_recv()
@@ -223,6 +233,15 @@ fn load_emits_play_request_id_changed_then_loading_before_the_load_command() {
     assert_eq!(commands[0].audio_format, AudioFileFormat::OGG_VORBIS_160);
     assert_eq!(commands[0].duration_ms, 4_000);
     assert!(commands[0].start_playing);
+
+    let changed = wait_for_event(&mut events);
+    match changed {
+        PlayerEvent::TrackChanged { audio_item } => {
+            assert_eq!(audio_item.duration_ms, 4_000);
+            assert_eq!(audio_item.track_id, track_id);
+        }
+        other => panic!("resolved Load must broadcast TrackChanged, got {other:?}"),
+    }
 }
 
 #[test]
@@ -255,6 +274,7 @@ fn stale_report_with_wrong_play_request_id_is_dropped() {
     let play_request_id = player.load(track_id, false, 0);
     events.try_recv().expect("PlayRequestIdChanged");
     events.try_recv().expect("Loading");
+    wait_for_resolved_load(&sink, &mut events);
 
     assert_eq!(player.stale_report_count(), 0);
     player.report(AudioReport {
@@ -283,6 +303,7 @@ fn stale_report_with_wrong_session_generation_is_dropped() {
     let play_request_id = player.load(track_id, false, 0);
     events.try_recv().expect("PlayRequestIdChanged");
     events.try_recv().expect("Loading");
+    wait_for_resolved_load(&sink, &mut events);
 
     player.report(AudioReport {
         session_generation: 10,
@@ -307,6 +328,7 @@ fn matching_report_emits_playing_with_current_track_id() {
     let play_request_id = player.load(track_id.clone(), false, 0);
     events.try_recv().expect("PlayRequestIdChanged");
     events.try_recv().expect("Loading");
+    wait_for_resolved_load(&sink, &mut events);
 
     player.report(AudioReport {
         session_generation: 3,
@@ -345,6 +367,7 @@ fn matching_end_of_track_report_emits_end_of_track() {
     let play_request_id = player.load(track_id.clone(), false, 0);
     events.try_recv().expect("PlayRequestIdChanged");
     events.try_recv().expect("Loading");
+    wait_for_resolved_load(&sink, &mut events);
 
     player.report(AudioReport {
         session_generation: 3,
@@ -632,8 +655,7 @@ fn filter_explicit_content_changed_ends_an_explicit_playing_track() {
     let play_request_id = player.load(track_id.clone(), false, 0);
     events.try_recv().expect("PlayRequestIdChanged");
     events.try_recv().expect("Loading");
-    // Wait for the Load command so `is_explicit` has been recorded from the resolved item.
-    sink.wait_for_commands(1, Duration::from_secs(2));
+    wait_for_resolved_load(&sink, &mut events);
 
     player.report(AudioReport {
         session_generation: 4,
@@ -677,7 +699,7 @@ fn filter_explicit_content_changed_does_not_end_a_non_explicit_track() {
     let play_request_id = player.load(track_id, false, 0);
     events.try_recv().expect("PlayRequestIdChanged");
     events.try_recv().expect("Loading");
-    sink.wait_for_commands(1, Duration::from_secs(2));
+    wait_for_resolved_load(&sink, &mut events);
 
     player.report(AudioReport {
         session_generation: 4,
@@ -712,7 +734,7 @@ fn filter_explicit_content_changed_off_never_ends_the_track() {
     let play_request_id = player.load(track_id, false, 0);
     events.try_recv().expect("PlayRequestIdChanged");
     events.try_recv().expect("Loading");
-    sink.wait_for_commands(1, Duration::from_secs(2));
+    wait_for_resolved_load(&sink, &mut events);
 
     player.report(AudioReport {
         session_generation: 4,

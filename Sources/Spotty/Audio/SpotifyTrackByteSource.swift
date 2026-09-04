@@ -137,7 +137,7 @@ final class SpotifyTrackByteSource: @unchecked Sendable {
     private func blocking<T: Sendable>(_ work: @escaping @Sendable () async throws -> T) throws -> T {
         let semaphore = DispatchSemaphore(value: 0)
         let box = BlockingReadBox<T>()
-        Task.detached(priority: .userInitiated) {
+        let task = Task.detached(priority: .userInitiated) {
             do {
                 box.value = .success(try await work())
             } catch {
@@ -146,6 +146,7 @@ final class SpotifyTrackByteSource: @unchecked Sendable {
             semaphore.signal()
         }
         guard semaphore.wait(timeout: .now() + Self.readTimeout) == .success else {
+            task.cancel()
             throw SpotifyTrackByteSourceError.timedOut
         }
         switch box.value {

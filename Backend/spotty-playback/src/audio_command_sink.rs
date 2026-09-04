@@ -143,6 +143,25 @@ impl AudioCommandSink for FfiAudioCommandSink {
     }
 }
 
+/// Builds the `ShimPlayer` that drives the Swift audio path, storing it in both [`PLAYER`]
+/// (for the trait-object callers) and [`SHIM_PLAYER`] (for `spotty_playback_report_audio`,
+/// which needs `ShimPlayer::report`).
+pub(crate) fn create_shim_player(session: &Session, generation: u64) -> Arc<dyn SpircPlayer> {
+    debug!(
+        "Player initialized: Swift audio path (ShimPlayer), generation={}",
+        generation
+    );
+    let sink: Arc<dyn AudioCommandSink> = Arc::new(FfiAudioCommandSink);
+    let resolver: Arc<dyn AudioItemResolver> =
+        Arc::new(SessionAudioItemResolver::new(session.clone()));
+    let player = Arc::new(ShimPlayer::new(sink, resolver, generation));
+    *SHIM_PLAYER.lock().unwrap_or_else(|e| e.into_inner()) = Some(Arc::clone(&player));
+
+    let player: Arc<dyn SpircPlayer> = player;
+    *PLAYER.lock().unwrap_or_else(|e| e.into_inner()) = Some(Arc::clone(&player));
+    player
+}
+
 /// Registers the sink Swift's audio path receives forwarded Spirc commands on.
 ///
 /// Call before `spotty_playback_init_player`: the presence of a registration is what makes the

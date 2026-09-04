@@ -68,15 +68,21 @@ private func runLoadDrivesSourceAndOutputCheck(_ check: CheckRunner) async {
     check.check("the output is started once the pipeline is installed", started)
     let loading = await waitUntil { await path.phase == .loading(playRequestID: 100) }
     check.check("phase stays .loading while the pipeline is parked", loading)
-    check.equal("a parked pipeline emits no reports", reports.all.count, 0)
+    check.equal(
+        "a parked pipeline's only report is the load's known duration",
+        reports.all.map(\.kind),
+        [AudioReportKind.duration]
+    )
 
     path.deliver(audioCommand(generation: 1, playRequestID: 100, kind: .stop))
     let stoppedOutput = await waitUntil(timeout: .seconds(5)) { output.stopCount >= 1 }
     check.check("stop tears the output down", stoppedOutput)
+    // `pipeline.stop()` joins the decode thread on the audio-path actor. Unpark the
+    // read so that join can finish before waiting on actor state.
+    release.signal()
     let stopped = await waitUntil(timeout: .seconds(5)) { await path.phase == .stopped }
     check.check("phase is .stopped after stop", stopped)
 
-    release.signal()
     runTask.cancel()
 }
 
@@ -122,6 +128,8 @@ private func runStaleGenerationProducesNoWorkCheck(_ check: CheckRunner) async {
     path.deliver(audioCommand(generation: 8, playRequestID: 2, kind: .load, fileID: fileB))
     let tornDown = await waitUntil(timeout: .seconds(5)) { output.stopCount >= 1 }
     check.check("the newer load tears the previous pipeline/output down first", tornDown)
+    // Unpark the first decode so teardown can leave the actor and the replacement load can run.
+    release.signal()
     let secondSource = await waitUntil(timeout: .seconds(5)) { provider.callCount == 2 }
     check.check("a newer-generation load creates a second source", secondSource)
     check.equal("the second load uses the new file id", provider.calls.last?.fileID ?? [], fileB)
@@ -130,11 +138,10 @@ private func runStaleGenerationProducesNoWorkCheck(_ check: CheckRunner) async {
     }
     check.check("later reports carry the new session generation", newStamp)
     check.check(
-        "no report still claims the abandoned generation",
-        !reports.all.contains { $0.sessionGeneration == 7 }
+        "no transport report still claims the abandoned generation",
+        !reports.all.contains { $0.sessionGeneration == 7 && $0.kind != .duration }
     )
 
-    release.signal()
     runTask.cancel()
 }
 

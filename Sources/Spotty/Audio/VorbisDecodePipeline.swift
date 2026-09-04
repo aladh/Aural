@@ -3,12 +3,12 @@
 //  Spotty
 //
 //  Stage 1 of #201, slice 2b (#208): drives `OggVorbisDecoder` from a `DecodeByteSource` to a
-//  `PCMSink` on a dedicated thread. Not yet wired into playback -- the CDN fetcher, AES-CTR
-//  decryptor, and `RustPlaybackEngine` wiring are other slices of #208. Nothing here decides how
-//  bytes are fetched or decrypted, or how PCM reaches the speakers; it only paces decode against
-//  the sink's backpressure and reports transport-relevant events. Byte-layout knowledge (e.g.
-//  where the Ogg stream actually starts in a Spotify file) belongs to that CDN/decrypt adapter,
-//  not here -- this type only ever sees the offset it is given.
+//  `PCMSink` on a dedicated thread. `SwiftAudioPath` constructs and starts it when the debug
+//  Swift audio-path switch is on. Nothing here decides how bytes are fetched or decrypted, or
+//  how PCM reaches the speakers; it only paces decode against the sink's backpressure and
+//  reports transport-relevant events. Byte-layout knowledge (e.g. where the Ogg stream
+//  actually starts in a Spotify file) belongs to that CDN/decrypt adapter, not here -- this
+//  type only ever sees the offset it is given.
 //
 //  Thread safety: `OggVorbisDecoder` requires a single owning thread end to end (see its own file
 //  header), so this pipeline spins one dedicated `Thread` per `start()` call. The decode loop

@@ -50,6 +50,7 @@ func runAudioPlaybackSessionChecks(_ check: CheckRunner) {
         checkPreloadOverwriteCancelsThePrevious(check)
         checkSeekClamp(check)
         checkLoadingPhaseHonorsTransportCommands(check)
+        checkLoadWithKnownDurationReportsOnce(check)
         checkTimeToPreloadNextOnce(check)
         checkEndOfTrackResetsToIdle(check)
         checkFailedReportsUnavailable(check)
@@ -233,6 +234,34 @@ private func checkLoadingPhaseHonorsTransportCommands(_ check: CheckRunner) {
         .loading(playRequestID: 100)
     )
     check.equal("the position is updated immediately", seekDuringLoad.positionMs, 3_000)
+}
+
+private func checkLoadWithKnownDurationReportsOnce(_ check: CheckRunner) {
+    var session = AudioPlaybackSession(sessionGeneration: 1)
+    let effects = session.apply(
+        command(playRequestID: 100, kind: .load, fileID: fileA, startPlaying: true, durationMs: 180_000)
+    )
+    check.equal(
+        "a load that already knows duration reports it once",
+        effects,
+        [
+            .beginLoad(session.current!, startPlaying: true, positionMs: 0, reusingPreload: false),
+            .report(
+                AudioReport(
+                    sessionGeneration: 1, playRequestID: 100, kind: .duration, positionMs: 0, durationMs: 180_000
+                )
+            ),
+        ]
+    )
+    check.equal("LoadedTrack keeps the command duration", session.current?.durationMs, Optional(180_000 as UInt32))
+
+    var unknown = AudioPlaybackSession(sessionGeneration: 1)
+    let unknownEffects = unknown.apply(command(playRequestID: 100, kind: .load, fileID: fileA, startPlaying: true))
+    check.equal(
+        "a load with unknown duration does not invent a duration report",
+        unknownEffects,
+        [.beginLoad(unknown.current!, startPlaying: true, positionMs: 0, reusingPreload: false)]
+    )
 }
 
 private func checkTimeToPreloadNextOnce(_ check: CheckRunner) {

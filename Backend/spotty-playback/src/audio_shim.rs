@@ -456,6 +456,7 @@ impl ShimPlayer {
                     if is_current {
                         if let Some(item) = &resolved {
                             guard.is_explicit = item.is_explicit;
+                            guard.duration_ms = item.duration_ms;
                         }
                     }
                     is_current
@@ -498,7 +499,7 @@ impl ShimPlayer {
             session_generation,
             play_request_id: request_id,
             kind,
-            track_uri: item.uri,
+            track_uri: item.uri.clone(),
             track_gid,
             file_id: file_id.0,
             audio_format,
@@ -506,6 +507,18 @@ impl ShimPlayer {
             start_playing,
             duration_ms: item.duration_ms,
         });
+
+        // Spirc's `update_duration` and the local `CURRENT_DURATION_MS` snapshot only
+        // listen for `TrackChanged`. Upstream `Player` broadcasts that with the resolved
+        // `AudioItem` on load; do the same here so Connect duration and the now-playing
+        // bar are not stuck at 0ms. Do not invent an `AudioItem` later from a duration
+        // report — this is the only place the full item exists.
+        if kind == AudioCommandKind::Load {
+            broadcast_event(
+                &event_senders,
+                PlayerEvent::TrackChanged { audio_item: item },
+            );
+        }
     }
 
     fn command(&self, kind: AudioCommandKind, position_ms: u32) {
@@ -622,9 +635,10 @@ impl ShimPlayer {
     /// A stale report belongs to a track or session that has already been replaced, so applying
     /// it would move state backwards or announce an event for the wrong track.
     ///
-    /// `AudioReportKind::Duration` has no matching `PlayerEvent` at this librespot rev — only
-    /// `TrackChanged { audio_item }` carries duration, and reconstructing a full `AudioItem`
-    /// here is not worth it for one field. It only updates the internal duration.
+    /// `AudioReportKind::Duration` only updates the internal duration. Connect and the local
+    /// snapshot learn duration from `TrackChanged`, which `resolve_and_send` already
+    /// broadcasts from the resolved `AudioItem` on `Load`. Do not reconstruct an `AudioItem`
+    /// here from a duration-only report.
     ///
     /// Returns whether the report was applied, so `spotty_playback_report_audio` can tell Swift
     /// that a report it sent was rejected as stale rather than silently swallowing it.

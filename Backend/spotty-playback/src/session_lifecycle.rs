@@ -696,30 +696,12 @@ pub extern "C" fn spotty_playback_init_player(access_token: *const c_char) -> i3
 ///
 /// `generation` stamps every `AudioCommand` the shim sends, so a report arriving from a Swift
 /// pipeline that belongs to a session already replaced is rejected rather than applied.
+/// The shim constructor lives next to `FfiAudioCommandSink` in `audio_command_sink.rs`.
 pub(crate) fn create_new_player(session: &Session, generation: u64) -> Arc<dyn SpircPlayer> {
     if swift_audio_path_enabled() {
         return create_shim_player(session, generation);
     }
     create_librespot_player(session)
-}
-
-/// Builds the `ShimPlayer` that drives the Swift audio path, storing it in both [`PLAYER`] (for
-/// the trait-object callers) and [`SHIM_PLAYER`] (for `spotty_playback_report_audio`, which needs
-/// `ShimPlayer::report`).
-fn create_shim_player(session: &Session, generation: u64) -> Arc<dyn SpircPlayer> {
-    debug!(
-        "Player initialized: Swift audio path (ShimPlayer), generation={}",
-        generation
-    );
-    let sink: Arc<dyn AudioCommandSink> = Arc::new(FfiAudioCommandSink);
-    let resolver: Arc<dyn AudioItemResolver> =
-        Arc::new(SessionAudioItemResolver::new(session.clone()));
-    let player = Arc::new(ShimPlayer::new(sink, resolver, generation));
-    *SHIM_PLAYER.lock().unwrap_or_else(|e| e.into_inner()) = Some(Arc::clone(&player));
-
-    let player: Arc<dyn SpircPlayer> = player;
-    *PLAYER.lock().unwrap_or_else(|e| e.into_inner()) = Some(Arc::clone(&player));
-    player
 }
 
 /// Builds librespot's own Player, decoding in-process and delivering PCM through `proxy_sink.rs`.
