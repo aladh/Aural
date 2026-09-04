@@ -1,3 +1,4 @@
+import Testing
 import SpottyDomain
 import Foundation
 
@@ -14,8 +15,9 @@ private func lifecycleEnvelope(event: PlaybackEvent) -> PlaybackEventEnvelope {
     )
 }
 
-func runPlaybackCommandLifecycleChecks(_ check: CheckRunner) {
-    check.suite("Typed expected fields on command start") {
+@Test
+func testPlaybackCommandLifecycle() {
+    do {
         let transportID = UUID(uuidString: "00000000-0000-0000-0000-0000000000A1")!
         let optionsID = UUID(uuidString: "00000000-0000-0000-0000-0000000000A2")!
         let transferID = UUID(uuidString: "00000000-0000-0000-0000-0000000000A3")!
@@ -60,13 +62,14 @@ func runPlaybackCommandLifecycleChecks(_ check: CheckRunner) {
                     ))
             )
         )
-        check.equal(
-            "transport records expected playback", state.pendingCommands[.transport]?.expectedTransport,
-            Optional(PlaybackTransportState.playing))
-        check.equal(
-            "transport records expected timing", state.pendingCommands[.transport]?.expectedTiming, Optional(timing))
-        check.equal(
-            "transport records expected track", state.pendingCommands[.transport]?.expectedTrack, Optional(track))
+        #expect(
+            (state.pendingCommands[.transport]?.expectedTransport) == (Optional(PlaybackTransportState.playing)),
+            "transport records expected playback")
+        #expect(
+            (state.pendingCommands[.transport]?.expectedTiming) == (Optional(timing)),
+            "transport records expected timing")
+        #expect(
+            (state.pendingCommands[.transport]?.expectedTrack) == (Optional(track)), "transport records expected track")
 
         _ = PlaybackReducer.reduce(
             &state,
@@ -82,14 +85,14 @@ func runPlaybackCommandLifecycleChecks(_ check: CheckRunner) {
                     ))
             )
         )
-        check.equal(
-            "options records expected shuffle", state.pendingCommands[.options]?.expectedShuffle, Optional(false))
-        check.equal(
-            "options records expected repeat flags", state.pendingCommands[.options]?.expectedRepeatFlags,
-            Optional(repeatFlags))
-        check.equal(
-            "an options command leaves the transport command pending", state.pendingCommands[.transport]?.id,
-            transportID)
+        #expect(
+            (state.pendingCommands[.options]?.expectedShuffle) == (Optional(false)), "options records expected shuffle")
+        #expect(
+            (state.pendingCommands[.options]?.expectedRepeatFlags) == (Optional(repeatFlags)),
+            "options records expected repeat flags")
+        #expect(
+            (state.pendingCommands[.transport]?.id) == (transportID),
+            "an options command leaves the transport command pending")
 
         _ = PlaybackReducer.reduce(
             &state,
@@ -104,11 +107,12 @@ func runPlaybackCommandLifecycleChecks(_ check: CheckRunner) {
                     ))
             )
         )
-        check.equal("transfer records expected owner", state.pendingCommands[.transfer]?.expectedOwner, Optional(owner))
-        check.equal("typed expected fields stay on their command kinds", state.pendingCommands.count, 3)
+        #expect(
+            (state.pendingCommands[.transfer]?.expectedOwner) == (Optional(owner)), "transfer records expected owner")
+        #expect((state.pendingCommands.count) == (3), "typed expected fields stay on their command kinds")
     }
 
-    check.suite("Ordinary cancellation rolls back only the matching command") {
+    do {
         let pauseID = UUID(uuidString: "00000000-0000-0000-0000-0000000000B1")!
         let otherID = UUID(uuidString: "00000000-0000-0000-0000-0000000000B2")!
         let priorTiming = PlaybackTiming(position: 40, duration: 200, anchoredAt: lifecycleDate)
@@ -144,7 +148,7 @@ func runPlaybackCommandLifecycleChecks(_ check: CheckRunner) {
                     ))
             )
         )
-        check.equal("pause applies optimistic paused transport", state.transport, .paused)
+        #expect((state.transport) == (.paused), "pause applies optimistic paused transport")
 
         let unknown = PlaybackReducer.reduce(
             &state,
@@ -152,9 +156,9 @@ func runPlaybackCommandLifecycleChecks(_ check: CheckRunner) {
                 event: .commandFinished(id: otherID, accepted: false, notice: nil)
             )
         )
-        check.check("a mismatched cancel id is rejected", !unknown)
-        check.equal("a mismatched cancel leaves optimistic pause", state.transport, .paused)
-        check.equal("a mismatched cancel leaves the pending command", state.pendingCommands[.transport]?.id, pauseID)
+        #expect((!unknown) == true, "a mismatched cancel id is rejected")
+        #expect((state.transport) == (.paused), "a mismatched cancel leaves optimistic pause")
+        #expect((state.pendingCommands[.transport]?.id) == (pauseID), "a mismatched cancel leaves the pending command")
 
         _ = PlaybackReducer.reduce(
             &state,
@@ -162,10 +166,10 @@ func runPlaybackCommandLifecycleChecks(_ check: CheckRunner) {
                 event: .commandFinished(id: pauseID, accepted: false, notice: nil)
             )
         )
-        check.equal("ordinary cancellation restores the captured transport", state.transport, .playing)
-        check.equal("ordinary cancellation restores the captured timing", state.timing, priorTiming)
-        check.nil_("ordinary cancellation clears the pending command", state.pendingCommands[.transport])
-        check.equal("ordinary cancellation does not replace an unrelated notice", state.notice, notice)
+        #expect((state.transport) == (.playing), "ordinary cancellation restores the captured transport")
+        #expect((state.timing) == (priorTiming), "ordinary cancellation restores the captured timing")
+        #expect((state.pendingCommands[.transport]) == nil, "ordinary cancellation clears the pending command")
+        #expect((state.notice) == (notice), "ordinary cancellation does not replace an unrelated notice")
 
         let confirmedID = UUID(uuidString: "00000000-0000-0000-0000-0000000000B4")!
         var confirmed = PlaybackState(
@@ -181,8 +185,9 @@ func runPlaybackCommandLifecycleChecks(_ check: CheckRunner) {
                 event: .commandFinished(id: confirmedID, accepted: false, notice: nil)
             )
         )
-        check.check("a confirmed cancel consumes the resolution", consumeOnly)
-        check.equal("a confirmed cancel does not restore transport", confirmed.transport, .paused)
-        check.check("a confirmed cancel does not leave a resolution", confirmed.transportCommandResolutions.isEmpty)
+        #expect((consumeOnly) == true, "a confirmed cancel consumes the resolution")
+        #expect((confirmed.transport) == (.paused), "a confirmed cancel does not restore transport")
+        #expect(
+            (confirmed.transportCommandResolutions.isEmpty) == true, "a confirmed cancel does not leave a resolution")
     }
 }

@@ -1,3 +1,4 @@
+import Testing
 import SpottyDomain
 import Foundation
 
@@ -80,8 +81,9 @@ private func reduceDevices(
     )
 }
 
-func runPlaybackReducerChecks(_ check: CheckRunner) {
-    check.suite("Playback reducer account and engine epochs") {
+@Test
+func testPlaybackReducer() {
+    do {
         let remote = PlaybackDevice(id: "phone", name: "Phone", type: "smartphone")
         var state = PlaybackState(
             accountEpoch: 4,
@@ -97,16 +99,16 @@ func runPlaybackReducerChecks(_ check: CheckRunner) {
             &state,
             envelope: envelope(account: 3, engine: 99, source: .account, event: .session(.failed("stale")))
         )
-        check.check("an old account callback is rejected", !staleAccountAccepted)
-        check.equal("an old account callback cannot mutate state", state, beforeStaleAccount)
+        #expect((!staleAccountAccepted) == true, "an old account callback is rejected")
+        #expect((state) == (beforeStaleAccount), "an old account callback cannot mutate state")
 
         let beforeStaleEngine = state
         let staleEngineAccepted = PlaybackReducer.reduce(
             &state,
             envelope: envelope(account: 4, engine: 6, source: .enginePlayback, event: .transport(.playing))
         )
-        check.check("a pre-restart engine callback is rejected", !staleEngineAccepted)
-        check.equal("a pre-restart engine callback cannot mutate state", state, beforeStaleEngine)
+        #expect((!staleEngineAccepted) == true, "a pre-restart engine callback is rejected")
+        #expect((state) == (beforeStaleEngine), "a pre-restart engine callback cannot mutate state")
 
         let pendingID = UUID(uuidString: "00000000-0000-0000-0000-000000000001")!
         _ = PlaybackReducer.reduce(
@@ -120,61 +122,61 @@ func runPlaybackReducerChecks(_ check: CheckRunner) {
                         id: pendingID, kind: .transport, expectedTransport: .playing, startedAt: traceDate))
             )
         )
-        check.notNil("the characterization starts with a pending command", state.pendingCommands[.transport])
+        #expect((state.pendingCommands[.transport]) != nil, "the characterization starts with a pending command")
 
         _ = PlaybackReducer.reduce(
             &state,
             envelope: envelope(
                 account: 4, engine: 8, source: .engineConnection, revision: 1, event: .session(.recovering))
         )
-        check.equal("a new engine epoch is adopted", state.engineEpoch, 8)
-        check.check("a new engine epoch clears old pending commands", state.pendingCommands.isEmpty)
-        check.equal("the new engine begins a fresh revision namespace", state.sourceRevisions[.engineConnection], 1)
+        #expect((state.engineEpoch) == (8), "a new engine epoch is adopted")
+        #expect((state.pendingCommands.isEmpty) == true, "a new engine epoch clears old pending commands")
+        #expect((state.sourceRevisions[.engineConnection]) == (1), "the new engine begins a fresh revision namespace")
 
         _ = PlaybackReducer.reduce(
             &state,
             envelope: envelope(account: 5, engine: 1, source: .account, revision: 1, event: .session(.connecting))
         )
-        check.equal("a new account epoch is adopted", state.accountEpoch, 5)
-        check.equal("engine epochs restart within a new account", state.engineEpoch, 1)
-        check.equal("the new account event is applied", state.session, .connecting)
-        check.equal("a new account cannot inherit playback ownership", state.owner, .none)
-        check.nil_("a new account cannot inherit the prior track", state.currentTrack)
-        check.check("a new account cannot inherit pending commands", state.pendingCommands.isEmpty)
+        #expect((state.accountEpoch) == (5), "a new account epoch is adopted")
+        #expect((state.engineEpoch) == (1), "engine epochs restart within a new account")
+        #expect((state.session) == (.connecting), "the new account event is applied")
+        #expect((state.owner) == (.none), "a new account cannot inherit playback ownership")
+        #expect((state.currentTrack) == nil, "a new account cannot inherit the prior track")
+        #expect((state.pendingCommands.isEmpty) == true, "a new account cannot inherit pending commands")
     }
 
-    check.suite("Playback reducer source revisions") {
+    do {
         var state = PlaybackState(accountEpoch: 1, engineEpoch: 1, session: .ready)
         let firstAccepted = PlaybackReducer.reduce(
             &state,
             envelope: envelope(source: .enginePlayback, revision: 10, event: .transport(.playing))
         )
-        check.check("the first revision is accepted", firstAccepted)
-        check.equal("accepted revisions are recorded", state.sourceRevisions[.enginePlayback], 10)
+        #expect((firstAccepted) == true, "the first revision is accepted")
+        #expect((state.sourceRevisions[.enginePlayback]) == (10), "accepted revisions are recorded")
 
         let afterFirst = state
         let olderAccepted = PlaybackReducer.reduce(
             &state,
             envelope: envelope(source: .enginePlayback, revision: 9, event: .transport(.paused))
         )
-        check.check("an older source revision is rejected", !olderAccepted)
-        check.equal("an older source revision changes nothing", state, afterFirst)
+        #expect((!olderAccepted) == true, "an older source revision is rejected")
+        #expect((state) == (afterFirst), "an older source revision changes nothing")
 
         let duplicateAccepted = PlaybackReducer.reduce(
             &state,
             envelope: envelope(source: .enginePlayback, revision: 10, event: .transport(.paused))
         )
-        check.check("a duplicate source revision is rejected", !duplicateAccepted)
-        check.equal("a duplicate source revision changes nothing", state, afterFirst)
+        #expect((!duplicateAccepted) == true, "a duplicate source revision is rejected")
+        #expect((state) == (afterFirst), "a duplicate source revision changes nothing")
 
         let independentAccepted = PlaybackReducer.reduce(
             &state,
             envelope: envelope(
                 source: .engineQueue, revision: 1, event: .notice(PlaybackNotice(message: "queue observed")))
         )
-        check.check("independent sources have independent revisions", independentAccepted)
-        check.equal("the playback revision remains intact", state.sourceRevisions[.enginePlayback], 10)
-        check.equal("the queue revision is tracked separately", state.sourceRevisions[.engineQueue], 1)
+        #expect((independentAccepted) == true, "independent sources have independent revisions")
+        #expect((state.sourceRevisions[.enginePlayback]) == (10), "the playback revision remains intact")
+        #expect((state.sourceRevisions[.engineQueue]) == (1), "the queue revision is tracked separately")
 
         let beforeInvalidCommandResult = state
         let unknownID = UUID(uuidString: "00000000-0000-0000-0000-000000000099")!
@@ -183,8 +185,8 @@ func runPlaybackReducerChecks(_ check: CheckRunner) {
             envelope: envelope(
                 source: .command, revision: 5, event: .commandFinished(id: unknownID, accepted: true, notice: nil))
         )
-        check.check("an acknowledgement for no pending command is rejected", !unknownAccepted)
-        check.equal("a rejected acknowledgement is transactionally inert", state, beforeInvalidCommandResult)
+        #expect((!unknownAccepted) == true, "an acknowledgement for no pending command is rejected")
+        #expect((state) == (beforeInvalidCommandResult), "a rejected acknowledgement is transactionally inert")
 
         state.devices = PlaybackDeviceSnapshot(
             devices: [PlaybackDevice(id: "new", name: "New", type: "computer")],
@@ -205,8 +207,8 @@ func runPlaybackReducerChecks(_ check: CheckRunner) {
                     ))
             )
         )
-        check.check("a stale embedded device revision is rejected", !staleDevicesAccepted)
-        check.equal("a stale device event cannot consume its envelope revision", state, beforeStaleDevices)
+        #expect((!staleDevicesAccepted) == true, "a stale embedded device revision is rejected")
+        #expect((state) == (beforeStaleDevices), "a stale device event cannot consume its envelope revision")
 
         _ = PlaybackReducer.reduce(
             &state,
@@ -217,11 +219,11 @@ func runPlaybackReducerChecks(_ check: CheckRunner) {
             &state,
             envelope: envelope(source: .account, revision: 19, event: .session(.ready))
         )
-        check.check("reset retains its revision barrier", !staleAfterResetAccepted)
-        check.equal("a stale pre-reset event cannot revive the session", state, afterReset)
+        #expect((!staleAfterResetAccepted) == true, "reset retains its revision barrier")
+        #expect((state) == (afterReset), "a stale pre-reset event cannot revive the session")
     }
 
-    check.suite("Playback reducer ordering-gate queries") {
+    do {
         var state = PlaybackState(accountEpoch: 1, engineEpoch: 1, session: .ready)
         _ = PlaybackReducer.reduce(
             &state,
@@ -229,45 +231,40 @@ func runPlaybackReducerChecks(_ check: CheckRunner) {
         )
         let beforeQuery = state
 
-        check.check(
-            "a newer playback revision would be accepted",
-            PlaybackReducer.accepts(
+        #expect(
+            (PlaybackReducer.accepts(
                 state,
                 accountEpoch: 1,
                 engineEpoch: 1,
                 source: .enginePlayback,
                 revision: 5
-            )
-        )
-        check.equal("an acceptance query does not record the revision", state, beforeQuery)
+            )) == true, "a newer playback revision would be accepted")
+        #expect((state) == (beforeQuery), "an acceptance query does not record the revision")
 
-        check.check(
-            "a duplicate playback revision would be rejected",
-            !PlaybackReducer.accepts(
+        #expect(
+            (!PlaybackReducer.accepts(
                 state,
                 accountEpoch: 1,
                 engineEpoch: 1,
                 source: .enginePlayback,
                 revision: 4
-            )
-        )
-        check.equal("a rejection query is also inert", state, beforeQuery)
+            )) == true, "a duplicate playback revision would be rejected")
+        #expect((state) == (beforeQuery), "a rejection query is also inert")
 
-        check.check(
-            "a higher engine epoch opens a fresh revision namespace for the query",
-            PlaybackReducer.accepts(
+        #expect(
+            (PlaybackReducer.accepts(
                 state,
                 accountEpoch: 1,
                 engineEpoch: 2,
                 source: .enginePlayback,
                 revision: 1
-            )
-        )
-        check.equal("a higher-epoch query does not adopt the epoch", state.engineEpoch, 1)
-        check.equal("a higher-epoch query does not clear recorded revisions", state.sourceRevisions[.enginePlayback], 4)
+            )) == true, "a higher engine epoch opens a fresh revision namespace for the query")
+        #expect((state.engineEpoch) == (1), "a higher-epoch query does not adopt the epoch")
+        #expect(
+            (state.sourceRevisions[.enginePlayback]) == (4), "a higher-epoch query does not clear recorded revisions")
     }
 
-    check.suite("Playback reducer device revisions across engine epochs") {
+    do {
         var state = PlaybackState(accountEpoch: 1, engineEpoch: 1, session: .ready)
         state.devices = PlaybackDeviceSnapshot(
             devices: [PlaybackDevice(id: "old", name: "Old", type: "computer")],
@@ -289,13 +286,13 @@ func runPlaybackReducerChecks(_ check: CheckRunner) {
                     ))
             )
         )
-        check.check("a new engine epoch accepts a restarted device revision", restartedDevicesAccepted)
-        check.equal("the restarted engine epoch is adopted", state.engineEpoch, 2)
-        check.equal("the new engine's device snapshot replaces the prior revision", state.devices.revision, 1)
-        check.equal("the new engine's active device is adopted", state.devices.localDeviceID, "restarted")
+        #expect((restartedDevicesAccepted) == true, "a new engine epoch accepts a restarted device revision")
+        #expect((state.engineEpoch) == (2), "the restarted engine epoch is adopted")
+        #expect((state.devices.revision) == (1), "the new engine's device snapshot replaces the prior revision")
+        #expect((state.devices.localDeviceID) == ("restarted"), "the new engine's active device is adopted")
     }
 
-    check.suite("Optimistic playback command reconciliation") {
+    do {
         let pauseID = UUID(uuidString: "00000000-0000-0000-0000-000000000010")!
         var state = PlaybackState(accountEpoch: 1, engineEpoch: 1, session: .ready, transport: .playing)
 
@@ -308,32 +305,32 @@ func runPlaybackReducerChecks(_ check: CheckRunner) {
                         id: pauseID, kind: .transport, expectedTransport: .paused, startedAt: traceDate))
             )
         )
-        check.equal("a pending pause updates the presentation immediately", state.transport, .paused)
-        check.equal("the pause command is tracked by kind", state.pendingCommands[.transport]?.id, pauseID)
+        #expect((state.transport) == (.paused), "a pending pause updates the presentation immediately")
+        #expect((state.pendingCommands[.transport]?.id) == (pauseID), "the pause command is tracked by kind")
 
         _ = PlaybackReducer.reduce(
             &state,
             envelope: envelope(source: .enginePlayback, revision: 1, event: .transport(.playing))
         )
-        check.equal("a contradictory stale snapshot cannot undo the optimistic pause", state.transport, .paused)
-        check.equal(
-            "the stale contradiction does not clear the pending command", state.pendingCommands[.transport]?.id, pauseID
-        )
+        #expect((state.transport) == (.paused), "a contradictory stale snapshot cannot undo the optimistic pause")
+        #expect(
+            (state.pendingCommands[.transport]?.id) == (pauseID),
+            "the stale contradiction does not clear the pending command")
 
         _ = PlaybackReducer.reduce(
             &state,
             envelope: envelope(source: .enginePlayback, revision: 2, event: .transport(.paused))
         )
-        check.equal("a matching authoritative snapshot keeps the expected state", state.transport, .paused)
-        check.nil_("a matching authoritative snapshot reconciles the command", state.pendingCommands[.transport])
+        #expect((state.transport) == (.paused), "a matching authoritative snapshot keeps the expected state")
+        #expect((state.pendingCommands[.transport]) == nil, "a matching authoritative snapshot reconciles the command")
 
         let afterReconcile = state
         let lateFinishAccepted = PlaybackReducer.reduce(
             &state,
             envelope: envelope(source: .command, event: .commandFinished(id: pauseID, accepted: true, notice: nil))
         )
-        check.check("a late finish after snapshot reconciliation is rejected", !lateFinishAccepted)
-        check.equal("a late finish cannot mutate already-reconciled state", state, afterReconcile)
+        #expect((!lateFinishAccepted) == true, "a late finish after snapshot reconciliation is rejected")
+        #expect((state) == (afterReconcile), "a late finish cannot mutate already-reconciled state")
 
         let resumeID = UUID(uuidString: "00000000-0000-0000-0000-000000000011")!
         _ = PlaybackReducer.reduce(
@@ -349,8 +346,8 @@ func runPlaybackReducerChecks(_ check: CheckRunner) {
             &state,
             envelope: envelope(source: .command, event: .commandFinished(id: resumeID, accepted: true, notice: nil))
         )
-        check.nil_("an accepted acknowledgement clears its exact command", state.pendingCommands[.transport])
-        check.equal("an accepted acknowledgement keeps the optimistic result", state.transport, .playing)
+        #expect((state.pendingCommands[.transport]) == nil, "an accepted acknowledgement clears its exact command")
+        #expect((state.transport) == (.playing), "an accepted acknowledgement keeps the optimistic result")
 
         let supersededID = UUID(uuidString: "00000000-0000-0000-0000-000000000013")!
         let replacementID = UUID(uuidString: "00000000-0000-0000-0000-000000000014")!
@@ -378,14 +375,14 @@ func runPlaybackReducerChecks(_ check: CheckRunner) {
             &state,
             envelope: envelope(source: .command, event: .commandFinished(id: supersededID, accepted: true, notice: nil))
         )
-        check.check("an acknowledgement for a superseded command is rejected", !supersededAccepted)
-        check.equal("a superseded acknowledgement cannot clear the replacement", state, afterReplacement)
+        #expect((!supersededAccepted) == true, "an acknowledgement for a superseded command is rejected")
+        #expect((state) == (afterReplacement), "a superseded acknowledgement cannot clear the replacement")
         _ = PlaybackReducer.reduce(
             &state,
             envelope: envelope(
                 source: .command, event: .commandFinished(id: replacementID, accepted: true, notice: nil))
         )
-        check.nil_("the replacement command reconciles by its own identity", state.pendingCommands[.transport])
+        #expect((state.pendingCommands[.transport]) == nil, "the replacement command reconciles by its own identity")
 
         let rejectedID = UUID(uuidString: "00000000-0000-0000-0000-000000000012")!
         _ = PlaybackReducer.reduce(
@@ -404,9 +401,9 @@ func runPlaybackReducerChecks(_ check: CheckRunner) {
                 event: .commandFinished(
                     id: rejectedID, accepted: false, notice: PlaybackNotice(message: "Pause failed")))
         )
-        check.nil_("a rejected acknowledgement clears its command", state.pendingCommands[.transport])
-        check.equal("a rejected acknowledgement rolls back its optimistic transport", state.transport, .playing)
-        check.equal("a rejected acknowledgement surfaces its notice", state.notice?.message, "Pause failed")
+        #expect((state.pendingCommands[.transport]) == nil, "a rejected acknowledgement clears its command")
+        #expect((state.transport) == (.playing), "a rejected acknowledgement rolls back its optimistic transport")
+        #expect((state.notice?.message) == ("Pause failed"), "a rejected acknowledgement surfaces its notice")
 
         let recoveryID = UUID(uuidString: "00000000-0000-0000-0000-000000000015")!
         _ = PlaybackReducer.reduce(
@@ -426,15 +423,13 @@ func runPlaybackReducerChecks(_ check: CheckRunner) {
             &state,
             envelope: envelope(source: .command, event: .commandFinished(id: recoveryID, accepted: true, notice: nil))
         )
-        check.equal(
-            "an accepted acknowledgement does not clear an unrelated prior notice",
-            state.notice?.message,
-            "Pause failed"
-        )
-        check.equal("an accepted acknowledgement keeps its optimistic transport", state.transport, .paused)
+        #expect(
+            (state.notice?.message) == ("Pause failed"),
+            "an accepted acknowledgement does not clear an unrelated prior notice")
+        #expect((state.transport) == (.paused), "an accepted acknowledgement keeps its optimistic transport")
     }
 
-    check.suite("Options command finish does not clobber engine repeat") {
+    do {
         let optionsID = UUID(uuidString: "00000000-0000-0000-0000-000000000021")!
         var state = PlaybackState(
             accountEpoch: 1,
@@ -470,12 +465,12 @@ func runPlaybackReducerChecks(_ check: CheckRunner) {
                     ))
             )
         )
-        check.equal(
-            "an engine snapshot can update repeat while a shuffle-less options command is pending",
-            state.options.repeatMode, .track)
-        check.equal(
-            "an engine snapshot does not confirm a shuffle-less options command", state.pendingCommands[.options]?.id,
-            optionsID)
+        #expect(
+            (state.options.repeatMode) == (.track),
+            "an engine snapshot can update repeat while a shuffle-less options command is pending")
+        #expect(
+            (state.pendingCommands[.options]?.id) == (optionsID),
+            "an engine snapshot does not confirm a shuffle-less options command")
         _ = PlaybackReducer.reduce(
             &state,
             envelope: envelope(
@@ -487,23 +482,19 @@ func runPlaybackReducerChecks(_ check: CheckRunner) {
                 )
             )
         )
-        check.nil_("a rejected options acknowledgement clears its command", state.pendingCommands[.options])
-        check.equal(
-            "a rejected options acknowledgement without expected repeat does not roll back repeat",
-            state.options.repeatMode,
-            .track
-        )
-        check.equal(
-            "a rejected options acknowledgement still surfaces its notice",
-            state.notice?.message,
-            "Could not update repeat"
-        )
-        check.equal(
-            "engine playback revision is recorded for identity-safe rollback", state.sourceRevisions[.enginePlayback], 7
-        )
-        check.equal(
-            "an engine snapshot without raw flags uses the display mode flags", state.options.repeatFlags,
-            RepeatMode.track.flags)
+        #expect((state.pendingCommands[.options]) == nil, "a rejected options acknowledgement clears its command")
+        #expect(
+            (state.options.repeatMode) == (.track),
+            "a rejected options acknowledgement without expected repeat does not roll back repeat")
+        #expect(
+            (state.notice?.message) == ("Could not update repeat"),
+            "a rejected options acknowledgement still surfaces its notice")
+        #expect(
+            (state.sourceRevisions[.enginePlayback]) == (7),
+            "engine playback revision is recorded for identity-safe rollback")
+        #expect(
+            (state.options.repeatFlags) == (RepeatMode.track.flags),
+            "an engine snapshot without raw flags uses the display mode flags")
 
         let bothTrueID = UUID(uuidString: "00000000-0000-0000-0000-000000000022")!
         var flagged = PlaybackState(accountEpoch: 1, engineEpoch: 1, session: .ready)
@@ -523,12 +514,10 @@ func runPlaybackReducerChecks(_ check: CheckRunner) {
                     ))
             )
         )
-        check.equal("a both-true snapshot still displays as track", flagged.options.repeatMode, .track)
-        check.equal(
-            "a both-true snapshot retains the raw context bit",
-            flagged.options.repeatFlags,
-            RepeatFlags(context: true, track: true)
-        )
+        #expect((flagged.options.repeatMode) == (.track), "a both-true snapshot still displays as track")
+        #expect(
+            (flagged.options.repeatFlags) == (RepeatFlags(context: true, track: true)),
+            "a both-true snapshot retains the raw context bit")
         _ = PlaybackReducer.reduce(
             &flagged,
             envelope: envelope(
@@ -543,11 +532,11 @@ func runPlaybackReducerChecks(_ check: CheckRunner) {
                     ))
             )
         )
-        check.equal(
-            "repeat start captures both-true raw flags", flagged.pendingCommands[.options]?.rollbackRepeatFlags,
-            RepeatFlags(context: true, track: true))
-        check.equal("repeat start applies canonical off flags", flagged.options.repeatFlags, RepeatMode.off.flags)
-        check.equal("repeat start displays off", flagged.options.repeatMode, RepeatMode.off)
+        #expect(
+            (flagged.pendingCommands[.options]?.rollbackRepeatFlags) == (RepeatFlags(context: true, track: true)),
+            "repeat start captures both-true raw flags")
+        #expect((flagged.options.repeatFlags) == (RepeatMode.off.flags), "repeat start applies canonical off flags")
+        #expect((flagged.options.repeatMode) == (RepeatMode.off), "repeat start displays off")
         _ = PlaybackReducer.reduce(
             &flagged,
             envelope: envelope(
@@ -556,12 +545,10 @@ func runPlaybackReducerChecks(_ check: CheckRunner) {
                     id: bothTrueID, accepted: false, notice: PlaybackNotice(message: "Could not update repeat"))
             )
         )
-        check.equal(
-            "a rejected repeat finish restores captured both-true flags",
-            flagged.options.repeatFlags,
-            RepeatFlags(context: true, track: true)
-        )
-        check.equal("a rejected repeat finish restores track display", flagged.options.repeatMode, .track)
+        #expect(
+            (flagged.options.repeatFlags) == (RepeatFlags(context: true, track: true)),
+            "a rejected repeat finish restores captured both-true flags")
+        #expect((flagged.options.repeatMode) == (.track), "a rejected repeat finish restores track display")
 
         var restored = PlaybackState(accountEpoch: 1, engineEpoch: 1, session: .ready)
         let priorBothTrue = RepeatFlags(context: true, track: true)
@@ -597,7 +584,7 @@ func runPlaybackReducerChecks(_ check: CheckRunner) {
                     ))
             )
         )
-        check.equal("optimistic both-true track → off displays off", restored.options.repeatMode, .off)
+        #expect((restored.options.repeatMode) == (.off), "optimistic both-true track → off displays off")
         _ = PlaybackReducer.reduce(
             &restored,
             envelope: envelope(
@@ -614,16 +601,15 @@ func runPlaybackReducerChecks(_ check: CheckRunner) {
                     ))
             )
         )
-        check.equal("intermediate (false, true) still displays as track", restored.options.repeatMode, .track)
-        check.equal(
-            "intermediate snapshot replaces optimistic off flags",
-            restored.options.repeatFlags,
-            intermediateFlags
+        #expect((restored.options.repeatMode) == (.track), "intermediate (false, true) still displays as track")
+        #expect(
+            (restored.options.repeatFlags) == (intermediateFlags), "intermediate snapshot replaces optimistic off flags"
         )
-        check.equal("an intermediate snapshot does not confirm off", restored.pendingCommands[.options]?.id, restoreID)
-        check.nil_(
-            "an intermediate snapshot is not confirmation or supersession",
-            restored.transportCommandResolutions[restoreID])
+        #expect(
+            (restored.pendingCommands[.options]?.id) == (restoreID), "an intermediate snapshot does not confirm off")
+        #expect(
+            (restored.transportCommandResolutions[restoreID]) == nil,
+            "an intermediate snapshot is not confirmation or supersession")
         _ = PlaybackReducer.reduce(
             &restored,
             envelope: envelope(
@@ -635,28 +621,21 @@ func runPlaybackReducerChecks(_ check: CheckRunner) {
                 )
             )
         )
-        check.equal("restored repeat mode is track", restored.options.repeatMode, .track)
-        check.equal(
-            "restored raw flags are the captured both-true pair",
-            restored.options.repeatFlags,
-            priorBothTrue
-        )
-        check.equal(
-            "a later track → off from restored flags plans both mutations",
-            RepeatTransitionPlan.planning(from: restored.options.repeatFlags, to: RepeatMode.off.flags).mutations,
-            [
-                RepeatFlagMutation(flag: .context, enabled: false),
-                RepeatFlagMutation(flag: .track, enabled: false),
-            ]
-        )
-        check.equal(
-            "ordinary (false, true) track → off remains one mutation",
-            RepeatTransitionPlan.planning(from: intermediateFlags, to: RepeatMode.off.flags).mutations,
-            [RepeatFlagMutation(flag: .track, enabled: false)]
-        )
+        #expect((restored.options.repeatMode) == (.track), "restored repeat mode is track")
+        #expect((restored.options.repeatFlags) == (priorBothTrue), "restored raw flags are the captured both-true pair")
+        #expect(
+            (RepeatTransitionPlan.planning(from: restored.options.repeatFlags, to: RepeatMode.off.flags).mutations)
+                == ([
+                    RepeatFlagMutation(flag: .context, enabled: false),
+                    RepeatFlagMutation(flag: .track, enabled: false),
+                ]), "a later track → off from restored flags plans both mutations")
+        #expect(
+            (RepeatTransitionPlan.planning(from: intermediateFlags, to: RepeatMode.off.flags).mutations)
+                == ([RepeatFlagMutation(flag: .track, enabled: false)]),
+            "ordinary (false, true) track → off remains one mutation")
     }
 
-    check.suite("Remote paused playback ownership") {
+    do {
         let remote = PlaybackDevice(id: "desktop", name: "Other Mac", type: "computer")
         let track = CurrentTrack(
             uri: "spotify:track:paused", title: "Paused Track", artist: "Artist", duration: 240,
@@ -671,20 +650,21 @@ func runPlaybackReducerChecks(_ check: CheckRunner) {
             envelope(source: .enginePlayback, revision: 2, event: .transport(.paused)),
         ])
         state = states.last ?? state
-        check.equal("paused playback retains the remote owner", state.owner, .remote(remote))
-        check.equal("remote pause is represented as paused, not stopped", state.transport, .paused)
-        check.equal("remote pause retains now-playing metadata", state.currentTrack, track)
+        #expect((state.owner) == (.remote(remote)), "paused playback retains the remote owner")
+        #expect((state.transport) == (.paused), "remote pause is represented as paused, not stopped")
+        #expect((state.currentTrack) == (track), "remote pause retains now-playing metadata")
     }
 
-    check.suite("Playback reducer device owner resolution") {
+    do {
         let pausedURI = "spotify:track:paused-remote"
         let cluster = [localComputer, inactivePhone]
 
         var launch = PlaybackState(accountEpoch: 1, engineEpoch: 1, session: .ready)
         _ = reduceDevices(&launch, devices: cluster, lastRemoteDeviceID: "phone", revision: 1)
-        check.equal("devices-first with no track is none", launch.owner, .none)
-        check.equal(
-            "the last-remote payload is stamped for later URI adoption", launch.devices.lastRemoteDeviceID, "phone")
+        #expect((launch.owner) == (.none), "devices-first with no track is none")
+        #expect(
+            (launch.devices.lastRemoteDeviceID) == ("phone"),
+            "the last-remote payload is stamped for later URI adoption")
         _ = PlaybackReducer.reduce(
             &launch,
             envelope: envelope(
@@ -693,21 +673,15 @@ func runPlaybackReducerChecks(_ check: CheckRunner) {
                 event: .currentTrack(CurrentTrack(uri: pausedURI))
             )
         )
-        check.equal(
-            "a later URI adopts the stamped last-remote candidate",
-            launch.owner,
-            .uncertain(inactivePhone)
-        )
-        check.equal(
-            "devices-then-track stays remote-routable",
-            connectCommandRoute(owner: launch.owner, localDeviceID: "local"),
-            .remote(from: "local", to: "phone")
-        )
+        #expect((launch.owner) == (.uncertain(inactivePhone)), "a later URI adopts the stamped last-remote candidate")
+        #expect(
+            (connectCommandRoute(owner: launch.owner, localDeviceID: "local")) == (.remote(from: "local", to: "phone")),
+            "devices-then-track stays remote-routable")
         _ = PlaybackReducer.reduce(
             &launch,
             envelope: envelope(source: .enginePlayback, revision: 2, event: .currentTrack(nil))
         )
-        check.equal("clearing the URI drops an uncertain last-remote owner", launch.owner, .none)
+        #expect((launch.owner) == (.none), "clearing the URI drops an uncertain last-remote owner")
 
         var missing = PlaybackState(accountEpoch: 1, engineEpoch: 1, session: .ready)
         _ = reduceDevices(&missing, devices: cluster, lastRemoteDeviceID: "missing-speaker", revision: 1)
@@ -724,12 +698,10 @@ func runPlaybackReducerChecks(_ check: CheckRunner) {
                     ))
             )
         )
-        check.equal("a stale last-remote after devices-then-track is uncertain(nil)", missing.owner, .uncertain(nil))
-        check.equal(
-            "a stale last-remote never becomes local",
-            connectCommandRoute(owner: missing.owner, localDeviceID: "local"),
-            .waitingForLocalIdentity
-        )
+        #expect((missing.owner) == (.uncertain(nil)), "a stale last-remote after devices-then-track is uncertain(nil)")
+        #expect(
+            (connectCommandRoute(owner: missing.owner, localDeviceID: "local")) == (.waitingForLocalIdentity),
+            "a stale last-remote never becomes local")
 
         var withTrack = PlaybackState(
             accountEpoch: 1,
@@ -738,11 +710,9 @@ func runPlaybackReducerChecks(_ check: CheckRunner) {
             currentTrack: CurrentTrack(uri: pausedURI)
         )
         _ = reduceDevices(&withTrack, devices: cluster, lastRemoteDeviceID: "phone", revision: 1)
-        check.equal(
-            "a no-active snapshot that already has a track uses last-remote",
-            withTrack.owner,
-            .uncertain(inactivePhone)
-        )
+        #expect(
+            (withTrack.owner) == (.uncertain(inactivePhone)),
+            "a no-active snapshot that already has a track uses last-remote")
 
         var namedPrevious = PlaybackState(
             accountEpoch: 1,
@@ -752,15 +722,13 @@ func runPlaybackReducerChecks(_ check: CheckRunner) {
             currentTrack: CurrentTrack(uri: pausedURI)
         )
         _ = reduceDevices(&namedPrevious, devices: cluster, revision: 1)
-        check.equal(
-            "a previous remote candidate refreshes from the device list",
-            namedPrevious.owner,
-            .uncertain(inactivePhone)
-        )
+        #expect(
+            (namedPrevious.owner) == (.uncertain(inactivePhone)),
+            "a previous remote candidate refreshes from the device list")
 
         var noTrack = PlaybackState(accountEpoch: 1, engineEpoch: 1, session: .ready, owner: .remote(inactivePhone))
         _ = reduceDevices(&noTrack, devices: cluster, lastRemoteDeviceID: "phone", revision: 1)
-        check.equal("no current track clears ownership even with a last remote", noTrack.owner, .none)
+        #expect((noTrack.owner) == (.none), "no current track clears ownership even with a last remote")
 
         var activeLocalState = PlaybackState(
             accountEpoch: 1,
@@ -774,8 +742,8 @@ func runPlaybackReducerChecks(_ check: CheckRunner) {
             lastRemoteDeviceID: "phone",
             revision: 1
         )
-        check.equal(
-            "an active local device wins over last-remote fallback", activeLocalState.owner, .local(activeLocal))
+        #expect(
+            (activeLocalState.owner) == (.local(activeLocal)), "an active local device wins over last-remote fallback")
 
         var activeRemoteState = PlaybackState(accountEpoch: 1, engineEpoch: 1, session: .ready)
         _ = reduceDevices(
@@ -784,7 +752,7 @@ func runPlaybackReducerChecks(_ check: CheckRunner) {
             lastRemoteDeviceID: "phone",
             revision: 1
         )
-        check.equal("an active remote device is remote ownership", activeRemoteState.owner, .remote(activePhone))
+        #expect((activeRemoteState.owner) == (.remote(activePhone)), "an active remote device is remote ownership")
 
         let connectionRemote = PlaybackDevice(id: "phone", name: "Phone", type: "smartphone", isActive: true)
         var connected = PlaybackState(accountEpoch: 1, engineEpoch: 1, session: .ready)
@@ -810,11 +778,9 @@ func runPlaybackReducerChecks(_ check: CheckRunner) {
                 event: .currentTrack(CurrentTrack(uri: pausedURI))
             )
         )
-        check.equal(
-            "a later URI does not weaken an identified remote owner from connection",
-            connected.owner,
-            .remote(connectionRemote)
-        )
+        #expect(
+            (connected.owner) == (.remote(connectionRemote)),
+            "a later URI does not weaken an identified remote owner from connection")
 
         var gated = PlaybackState(
             accountEpoch: 4,
@@ -833,45 +799,39 @@ func runPlaybackReducerChecks(_ check: CheckRunner) {
             account: 4
         )
         let afterAccepted = gated
-        check.check(
-            "a stale device revision is rejected",
-            !reduceDevices(
+        #expect(
+            (!reduceDevices(
                 &gated,
                 devices: [localComputer, activePhone],
                 lastRemoteDeviceID: "phone",
                 revision: 3,
                 engine: 7,
                 account: 4
-            )
-        )
-        check.equal("a stale device revision is inert", gated, afterAccepted)
-        check.check(
-            "a stale engine epoch is rejected",
-            !reduceDevices(
+            )) == true, "a stale device revision is rejected")
+        #expect((gated) == (afterAccepted), "a stale device revision is inert")
+        #expect(
+            (!reduceDevices(
                 &gated,
                 devices: [localComputer, activePhone],
                 lastRemoteDeviceID: "phone",
                 revision: 5,
                 engine: 6,
                 account: 4
-            )
-        )
-        check.equal("a stale engine epoch is inert", gated, afterAccepted)
-        check.check(
-            "a stale account epoch is rejected",
-            !reduceDevices(
+            )) == true, "a stale engine epoch is rejected")
+        #expect((gated) == (afterAccepted), "a stale engine epoch is inert")
+        #expect(
+            (!reduceDevices(
                 &gated,
                 devices: [localComputer, activePhone],
                 lastRemoteDeviceID: "phone",
                 revision: 5,
                 engine: 7,
                 account: 3
-            )
-        )
-        check.equal("a stale account epoch is inert", gated, afterAccepted)
+            )) == true, "a stale account epoch is rejected")
+        #expect((gated) == (afterAccepted), "a stale account epoch is inert")
     }
 
-    check.suite("Atomic engine snapshots") {
+    do {
         var state = PlaybackState(accountEpoch: 1, engineEpoch: 1, session: .connecting)
         let remote = PlaybackDevice(id: "phone", name: "Phone", type: "smartphone", isActive: true)
         _ = PlaybackReducer.reduce(
@@ -887,9 +847,9 @@ func runPlaybackReducerChecks(_ check: CheckRunner) {
                     ))
             )
         )
-        check.equal("connection snapshot changes session and owner together", state.session, .ready)
-        check.equal("connection snapshot owns the remote device", state.owner, .remote(remote))
-        check.equal("connection snapshot carries the local route identity", state.devices.localDeviceID, "spotty")
+        #expect((state.session) == (.ready), "connection snapshot changes session and owner together")
+        #expect((state.owner) == (.remote(remote)), "connection snapshot owns the remote device")
+        #expect((state.devices.localDeviceID) == ("spotty"), "connection snapshot carries the local route identity")
 
         let timing = PlaybackTiming(position: 42, duration: 180, anchoredAt: traceDate)
         _ = PlaybackReducer.reduce(
@@ -907,11 +867,11 @@ func runPlaybackReducerChecks(_ check: CheckRunner) {
                     ))
             )
         )
-        check.equal("one playback event installs track identity", state.currentTrack?.uri, "spotify:track:atomic")
-        check.equal("one playback event installs transport", state.transport, .paused)
-        check.equal("one playback event installs timing", state.timing, timing)
-        check.equal("one playback event installs shuffle", state.options.shuffle, true)
-        check.equal("one playback event installs repeat", state.options.repeatMode, .context)
+        #expect((state.currentTrack?.uri) == ("spotify:track:atomic"), "one playback event installs track identity")
+        #expect((state.transport) == (.paused), "one playback event installs transport")
+        #expect((state.timing) == (timing), "one playback event installs timing")
+        #expect((state.options.shuffle) == (true), "one playback event installs shuffle")
+        #expect((state.options.repeatMode) == (.context), "one playback event installs repeat")
 
         let afterFresh = state
         let staleAccepted = PlaybackReducer.reduce(
@@ -929,8 +889,8 @@ func runPlaybackReducerChecks(_ check: CheckRunner) {
                     ))
             )
         )
-        check.check("a stale atomic snapshot is rejected as one unit", !staleAccepted)
-        check.equal("a stale atomic snapshot cannot partially mutate state", state, afterFresh)
+        #expect((!staleAccepted) == true, "a stale atomic snapshot is rejected as one unit")
+        #expect((state) == (afterFresh), "a stale atomic snapshot cannot partially mutate state")
 
         _ = PlaybackReducer.reduce(
             &state,
@@ -945,14 +905,12 @@ func runPlaybackReducerChecks(_ check: CheckRunner) {
                     ))
             )
         )
-        check.equal(
-            "an inactive paused device becomes an explicit uncertain candidate",
-            state.owner,
-            .uncertain(PlaybackDevice(id: "phone", name: "Phone", type: "smartphone"))
-        )
+        #expect(
+            (state.owner) == (.uncertain(PlaybackDevice(id: "phone", name: "Phone", type: "smartphone"))),
+            "an inactive paused device becomes an explicit uncertain candidate")
     }
 
-    check.suite("Atomic playback presentation and metadata") {
+    do {
         let oldTrack = CurrentTrack(
             uri: "spotify:track:old",
             title: "Old title",
@@ -988,9 +946,9 @@ func runPlaybackReducerChecks(_ check: CheckRunner) {
                     ))
             )
         )
-        check.equal("one presentation event installs the complete track", state.currentTrack, newTrack)
-        check.equal("one presentation event installs transport", state.transport, .paused)
-        check.equal("one presentation event installs timing", state.timing, newTiming)
+        #expect((state.currentTrack) == (newTrack), "one presentation event installs the complete track")
+        #expect((state.transport) == (.paused), "one presentation event installs transport")
+        #expect((state.timing) == (newTiming), "one presentation event installs timing")
 
         let beforeStaleMetadata = state
         let staleAccepted = PlaybackReducer.reduce(
@@ -1008,8 +966,8 @@ func runPlaybackReducerChecks(_ check: CheckRunner) {
                     ))
             )
         )
-        check.check("metadata for a previous track is rejected", !staleAccepted)
-        check.equal("rejected metadata is transactionally inert", state, beforeStaleMetadata)
+        #expect((!staleAccepted) == true, "metadata for a previous track is rejected")
+        #expect((state) == (beforeStaleMetadata), "rejected metadata is transactionally inert")
 
         _ = PlaybackReducer.reduce(
             &state,
@@ -1026,9 +984,9 @@ func runPlaybackReducerChecks(_ check: CheckRunner) {
                     ))
             )
         )
-        check.equal("metadata fields arrive as one coherent value", state.currentTrack?.title, "Resolved")
-        check.equal("metadata provenance is retained", state.currentTrack?.metadataSource, .connect)
-        check.equal("metadata duration updates playback timing atomically", state.timing.duration, 245)
+        #expect((state.currentTrack?.title) == ("Resolved"), "metadata fields arrive as one coherent value")
+        #expect((state.currentTrack?.metadataSource) == (.connect), "metadata provenance is retained")
+        #expect((state.timing.duration) == (245), "metadata duration updates playback timing atomically")
 
         let beforeStaleMetadataAccount = state
         let staleMetadataAccount = PlaybackReducer.reduce(
@@ -1047,8 +1005,8 @@ func runPlaybackReducerChecks(_ check: CheckRunner) {
                     ))
             )
         )
-        check.check("metadata from a previous account is rejected", !staleMetadataAccount)
-        check.equal("stale-account metadata is inert", state, beforeStaleMetadataAccount)
+        #expect((!staleMetadataAccount) == true, "metadata from a previous account is rejected")
+        #expect((state) == (beforeStaleMetadataAccount), "stale-account metadata is inert")
 
         let beforeStaleMetadataEngine = state
         let staleMetadataEngine = PlaybackReducer.reduce(
@@ -1067,11 +1025,11 @@ func runPlaybackReducerChecks(_ check: CheckRunner) {
                     ))
             )
         )
-        check.check("metadata from a previous engine is rejected", !staleMetadataEngine)
-        check.equal("stale-engine metadata is inert", state, beforeStaleMetadataEngine)
+        #expect((!staleMetadataEngine) == true, "metadata from a previous engine is rejected")
+        #expect((state) == (beforeStaleMetadataEngine), "stale-engine metadata is inert")
     }
 
-    check.suite("Timing outcomes use reducer identity") {
+    do {
         var state = PlaybackState(
             accountEpoch: 2,
             engineEpoch: 3,
@@ -1090,8 +1048,8 @@ func runPlaybackReducerChecks(_ check: CheckRunner) {
                 event: .timing(position: 42, duration: 200, anchoredAt: traceDate)
             )
         )
-        check.check("a same-lifetime position refresh is accepted", accepted)
-        check.equal("accepted timing replaces the anchored position", state.timing.position, 42)
+        #expect((accepted) == true, "a same-lifetime position refresh is accepted")
+        #expect((state.timing.position) == (42), "accepted timing replaces the anchored position")
 
         let beforeStaleAccount = state
         let staleAccount = PlaybackReducer.reduce(
@@ -1103,8 +1061,8 @@ func runPlaybackReducerChecks(_ check: CheckRunner) {
                 event: .timing(position: 99, duration: 200, anchoredAt: traceDate)
             )
         )
-        check.check("a stale-account position refresh is rejected", !staleAccount)
-        check.equal("a stale-account position refresh is inert", state, beforeStaleAccount)
+        #expect((!staleAccount) == true, "a stale-account position refresh is rejected")
+        #expect((state) == (beforeStaleAccount), "a stale-account position refresh is inert")
 
         let beforeStaleEngine = state
         let staleEngine = PlaybackReducer.reduce(
@@ -1116,14 +1074,14 @@ func runPlaybackReducerChecks(_ check: CheckRunner) {
                 event: .timing(position: 99, duration: 200, anchoredAt: traceDate)
             )
         )
-        check.check("a stale-engine position refresh is rejected", !staleEngine)
-        check.equal("a stale-engine position refresh is inert", state, beforeStaleEngine)
+        #expect((!staleEngine) == true, "a stale-engine position refresh is rejected")
+        #expect((state) == (beforeStaleEngine), "a stale-engine position refresh is inert")
 
         _ = PlaybackReducer.reduce(
             &state,
             envelope: envelope(account: 2, engine: 3, source: .user, event: .transport(.paused))
         )
-        check.equal("pause transport keeps the existing timing anchor", state.timing.anchoredAt, traceDate)
+        #expect((state.timing.anchoredAt) == (traceDate), "pause transport keeps the existing timing anchor")
 
         let seekAt = traceDate.addingTimeInterval(30)
         _ = PlaybackReducer.reduce(
@@ -1135,7 +1093,7 @@ func runPlaybackReducerChecks(_ check: CheckRunner) {
                 event: .timing(position: 80, duration: 200, anchoredAt: seekAt)
             )
         )
-        check.equal("seek replaces the pause anchor", state.timing.anchoredAt, seekAt)
+        #expect((state.timing.anchoredAt) == (seekAt), "seek replaces the pause anchor")
 
         _ = PlaybackReducer.reduce(
             &state,
@@ -1152,16 +1110,14 @@ func runPlaybackReducerChecks(_ check: CheckRunner) {
                     ))
             )
         )
-        check.equal(
-            "engine timing uses the snapshot anchor, not the source revision",
-            state.timing.anchoredAt,
-            seekAt.addingTimeInterval(1)
-        )
-        check.equal(
-            "engine playback records the backend revision separately", state.sourceRevisions[.enginePlayback], 7)
+        #expect(
+            (state.timing.anchoredAt) == (seekAt.addingTimeInterval(1)),
+            "engine timing uses the snapshot anchor, not the source revision")
+        #expect(
+            (state.sourceRevisions[.enginePlayback]) == (7), "engine playback records the backend revision separately")
     }
 
-    check.suite("Engine playback adopts protocol context URI") {
+    do {
         var state = PlaybackState(
             accountEpoch: 1,
             engineEpoch: 1,
@@ -1189,16 +1145,8 @@ func runPlaybackReducerChecks(_ check: CheckRunner) {
                     ))
             )
         )
-        check.equal(
-            "playback context is the protocol playlist URI",
-            state.playbackContextURI,
-            "spotify:playlist:ctx"
-        )
-        check.equal(
-            "queue mutation identity is unchanged",
-            state.queue.contextURI,
-            "spotify:track:now"
-        )
+        #expect((state.playbackContextURI) == ("spotify:playlist:ctx"), "playback context is the protocol playlist URI")
+        #expect((state.queue.contextURI) == ("spotify:track:now"), "queue mutation identity is unchanged")
 
         _ = PlaybackReducer.reduce(
             &state,
@@ -1214,31 +1162,29 @@ func runPlaybackReducerChecks(_ check: CheckRunner) {
                     ))
             )
         )
-        check.nil_("an empty protocol context clears playback context", state.playbackContextURI)
-        check.equal(
-            "queue mutation identity still survives a missing protocol context",
-            state.queue.contextURI,
-            "spotify:track:now"
-        )
+        #expect((state.playbackContextURI) == nil, "an empty protocol context clears playback context")
+        #expect(
+            (state.queue.contextURI) == ("spotify:track:now"),
+            "queue mutation identity still survives a missing protocol context")
     }
 
-    check.suite("Queue precedence and identity") {
+    do {
         var state = PlaybackState(accountEpoch: 1, engineEpoch: 1, session: .ready)
         let provisionalEmpty = queue([], source: .provisional, completeness: .partial, revision: 100)
         let exact = queue([item("a"), item("b")], source: .webAPI, completeness: .complete, revision: 1)
 
         _ = PlaybackReducer.reduce(
             &state, envelope: envelope(source: .engineQueue, revision: 1, event: .queue(provisionalEmpty)))
-        check.check("a first provisional empty queue can characterize absence", state.queue.entries.isEmpty)
-        check.equal("the provisional source remains explicit", state.queue.source, .provisional)
+        #expect((state.queue.entries.isEmpty) == true, "a first provisional empty queue can characterize absence")
+        #expect((state.queue.source) == (.provisional), "the provisional source remains explicit")
 
         _ = PlaybackReducer.reduce(&state, envelope: envelope(source: .engineQueue, revision: 2, event: .queue(exact)))
-        check.equal("an exact queue outranks a higher-revision provisional queue", state.queue, exact)
+        #expect((state.queue) == (exact), "an exact queue outranks a higher-revision provisional queue")
 
         let laterProvisionalEmpty = queue([], source: .provisional, completeness: .complete, revision: 999)
         _ = PlaybackReducer.reduce(
             &state, envelope: envelope(source: .engineQueue, revision: 3, event: .queue(laterProvisionalEmpty)))
-        check.equal("a later provisional empty cannot erase an exact queue", state.queue, exact)
+        #expect((state.queue) == (exact), "a later provisional empty cannot erase an exact queue")
 
         let connectQueue = queue(
             [item("connect", occurrence: 4, provider: "queue", uid: "occ-connect")],
@@ -1248,14 +1194,12 @@ func runPlaybackReducerChecks(_ check: CheckRunner) {
         )
         _ = PlaybackReducer.reduce(
             &state, envelope: envelope(source: .engineQueue, revision: 4, event: .queue(connectQueue)))
-        check.equal(
-            "a complete Connect snapshot owns occurrence order over Web API",
-            state.queue.entries.map(\.uri),
-            connectQueue.entries.map(\.uri)
-        )
-        check.equal("Connect remains the ordering source", state.queue.source, .connect)
-        check.equal("Connect keeps its typed occurrence", state.queue.entries.first?.occurrence, 4)
-        check.equal("Connect keeps its occurrence uid", state.queue.entries.first?.uid, "occ-connect")
+        #expect(
+            (state.queue.entries.map(\.uri)) == (connectQueue.entries.map(\.uri)),
+            "a complete Connect snapshot owns occurrence order over Web API")
+        #expect((state.queue.source) == (.connect), "Connect remains the ordering source")
+        #expect((state.queue.entries.first?.occurrence) == (4), "Connect keeps its typed occurrence")
+        #expect((state.queue.entries.first?.uid) == ("occ-connect"), "Connect keeps its occurrence uid")
 
         let webReorder = queue(
             [item("c"), item("a")],
@@ -1265,48 +1209,40 @@ func runPlaybackReducerChecks(_ check: CheckRunner) {
         )
         _ = PlaybackReducer.reduce(
             &state, envelope: envelope(source: .engineQueue, revision: 5, event: .queue(webReorder)))
-        check.equal(
-            "a same-context Web refresh cannot reorder complete Connect occurrences",
-            state.queue.entries.map(\.uri),
-            connectQueue.entries.map(\.uri)
-        )
-        check.equal("Web refresh does not take ownership of Connect order", state.queue.source, .connect)
-        check.equal("Web refresh does not replace Connect typed occurrence", state.queue.entries.first?.occurrence, 4)
-        check.equal(
-            "Web refresh does not replace Connect occurrence uid", state.queue.entries.first?.uid, "occ-connect")
-        check.equal(
-            "a high-revision Web refresh does not overwrite the Connect ordering revision",
-            state.queue.revision,
-            connectQueue.revision
-        )
-        check.equal(
-            "a high-revision Web refresh does not overwrite Connect receivedAt",
-            state.queue.receivedAt,
-            connectQueue.receivedAt
-        )
+        #expect(
+            (state.queue.entries.map(\.uri)) == (connectQueue.entries.map(\.uri)),
+            "a same-context Web refresh cannot reorder complete Connect occurrences")
+        #expect((state.queue.source) == (.connect), "Web refresh does not take ownership of Connect order")
+        #expect((state.queue.entries.first?.occurrence) == (4), "Web refresh does not replace Connect typed occurrence")
+        #expect(
+            (state.queue.entries.first?.uid) == ("occ-connect"), "Web refresh does not replace Connect occurrence uid")
+        #expect(
+            (state.queue.revision) == (connectQueue.revision),
+            "a high-revision Web refresh does not overwrite the Connect ordering revision")
+        #expect(
+            (state.queue.receivedAt) == (connectQueue.receivedAt),
+            "a high-revision Web refresh does not overwrite Connect receivedAt")
 
         let exactNewer = queue([item("c")], source: .webAPI, completeness: .complete, revision: 2)
         _ = PlaybackReducer.reduce(
             &state, envelope: envelope(source: .engineQueue, revision: 6, event: .queue(exactNewer)))
-        check.equal(
-            "a newer Web snapshot still cannot replace complete Connect order",
-            state.queue.entries.map(\.uri),
-            connectQueue.entries.map(\.uri)
-        )
+        #expect(
+            (state.queue.entries.map(\.uri)) == (connectQueue.entries.map(\.uri)),
+            "a newer Web snapshot still cannot replace complete Connect order")
 
         let exactStale = queue([item("stale")], source: .connect, completeness: .complete, revision: 1)
         _ = PlaybackReducer.reduce(
             &state, envelope: envelope(source: .engineQueue, revision: 7, event: .queue(exactStale)))
-        check.equal(
-            "an older Connect queue-source revision is ignored", state.queue.entries.map(\.uri),
-            connectQueue.entries.map(\.uri))
+        #expect(
+            (state.queue.entries.map(\.uri)) == (connectQueue.entries.map(\.uri)),
+            "an older Connect queue-source revision is ignored")
 
         let lowerCompleteness = queue([], source: .connect, completeness: .metadataOnly, revision: 2)
         _ = PlaybackReducer.reduce(
             &state, envelope: envelope(source: .engineQueue, revision: 8, event: .queue(lowerCompleteness)))
-        check.equal(
-            "equal-revision metadata cannot downgrade an exact URI queue", state.queue.entries.map(\.uri),
-            connectQueue.entries.map(\.uri))
+        #expect(
+            (state.queue.entries.map(\.uri)) == (connectQueue.entries.map(\.uri)),
+            "equal-revision metadata cannot downgrade an exact URI queue")
 
         let duplicates = queue(
             [
@@ -1319,17 +1255,17 @@ func runPlaybackReducerChecks(_ check: CheckRunner) {
         )
         _ = PlaybackReducer.reduce(
             &state, envelope: envelope(source: .engineQueue, revision: 9, event: .queue(duplicates)))
-        check.equal(
-            "duplicate queue uris preserve source order", state.queue.entries.map(\.uri),
-            ["spotify:track:same", "spotify:track:same", "spotify:track:tail"])
-        check.equal("the later Connect occurrence list keeps its own revision", state.queue.revision, 3)
-        check.equal(
-            "duplicate queue rows retain typed occurrence order", state.queue.entries.map(\.occurrence), [0, 1, 2])
-        let duplicateIDs = state.queue.entries.map(\.id)
-        check.check(
-            "duplicate queue occurrences retain distinct identities",
-            duplicateIDs.count == 3 && Set(duplicateIDs).count == duplicateIDs.count
+        #expect(
+            (state.queue.entries.map(\.uri)) == (["spotify:track:same", "spotify:track:same", "spotify:track:tail"]),
+            "duplicate queue uris preserve source order")
+        #expect((state.queue.revision) == (3), "the later Connect occurrence list keeps its own revision")
+        #expect(
+            (state.queue.entries.map(\.occurrence)) == ([0, 1, 2]), "duplicate queue rows retain typed occurrence order"
         )
+        let duplicateIDs = state.queue.entries.map(\.id)
+        #expect(
+            (duplicateIDs.count == 3 && Set(duplicateIDs).count == duplicateIDs.count) == true,
+            "duplicate queue occurrences retain distinct identities")
 
         var newContext = queue(
             [item("new-context", provider: "queue")],
@@ -1343,7 +1279,7 @@ func runPlaybackReducerChecks(_ check: CheckRunner) {
             &state,
             envelope: envelope(source: .engineQueue, revision: 10, event: .queue(newContext))
         )
-        check.equal("a new playback context resets old Web queue precedence", state.queue, newContext)
+        #expect((state.queue) == (newContext), "a new playback context resets old Web queue precedence")
 
         var olderOtherContext = queue(
             [item("late-old")],
@@ -1357,7 +1293,7 @@ func runPlaybackReducerChecks(_ check: CheckRunner) {
             &state,
             envelope: envelope(source: .engineQueue, revision: 11, event: .queue(olderOtherContext))
         )
-        check.equal("an older queue from another context cannot return late", state.queue, newContext)
+        #expect((state.queue) == (newContext), "an older queue from another context cannot return late")
 
         let beforeStaleAccountQueue = state
         let staleAccountQueue = PlaybackReducer.reduce(
@@ -1369,8 +1305,8 @@ func runPlaybackReducerChecks(_ check: CheckRunner) {
                 event: .queue(queue([item("stale-account")], source: .webAPI, completeness: .complete, revision: 100))
             )
         )
-        check.check("a stale-account queue snapshot is rejected", !staleAccountQueue)
-        check.equal("a stale-account queue snapshot is inert", state, beforeStaleAccountQueue)
+        #expect((!staleAccountQueue) == true, "a stale-account queue snapshot is rejected")
+        #expect((state) == (beforeStaleAccountQueue), "a stale-account queue snapshot is inert")
 
         let beforeStaleEngineQueue = state
         let staleEngineQueue = PlaybackReducer.reduce(
@@ -1382,11 +1318,11 @@ func runPlaybackReducerChecks(_ check: CheckRunner) {
                 event: .queue(queue([item("stale-engine")], source: .webAPI, completeness: .complete, revision: 100))
             )
         )
-        check.check("a stale-engine queue snapshot is rejected", !staleEngineQueue)
-        check.equal("a stale-engine queue snapshot is inert", state, beforeStaleEngineQueue)
+        #expect((!staleEngineQueue) == true, "a stale-engine queue snapshot is rejected")
+        #expect((state) == (beforeStaleEngineQueue), "a stale-engine queue snapshot is inert")
     }
 
-    check.suite("Playback reset invariants") {
+    do {
         let command = PendingPlaybackCommand(
             id: UUID(uuidString: "00000000-0000-0000-0000-000000000020")!,
             kind: .transport,
@@ -1414,17 +1350,17 @@ func runPlaybackReducerChecks(_ check: CheckRunner) {
             &state,
             envelope: envelope(account: 2, engine: 3, source: .account, revision: 2, event: .reset(session: .signedOut))
         )
-        check.equal("reset keeps the current account epoch", state.accountEpoch, 2)
-        check.equal("reset keeps the current engine epoch", state.engineEpoch, 3)
-        check.equal("reset installs the requested session phase", state.session, .signedOut)
-        check.equal("reset clears ownership", state.owner, .none)
-        check.equal("reset stops transport", state.transport, .stopped)
-        check.nil_("reset clears the current track", state.currentTrack)
-        check.equal("reset clears timing", state.timing.position, 0)
-        check.check("reset clears the queue", state.queue.entries.isEmpty)
-        check.check("reset clears devices", state.devices.devices.isEmpty)
-        check.check("reset clears every pending command", state.pendingCommands.isEmpty)
-        check.nil_("reset clears notices", state.notice)
-        check.equal("reset retains only its own revision barrier", state.sourceRevisions, [.account: 2])
+        #expect((state.accountEpoch) == (2), "reset keeps the current account epoch")
+        #expect((state.engineEpoch) == (3), "reset keeps the current engine epoch")
+        #expect((state.session) == (.signedOut), "reset installs the requested session phase")
+        #expect((state.owner) == (.none), "reset clears ownership")
+        #expect((state.transport) == (.stopped), "reset stops transport")
+        #expect((state.currentTrack) == nil, "reset clears the current track")
+        #expect((state.timing.position) == (0), "reset clears timing")
+        #expect((state.queue.entries.isEmpty) == true, "reset clears the queue")
+        #expect((state.devices.devices.isEmpty) == true, "reset clears devices")
+        #expect((state.pendingCommands.isEmpty) == true, "reset clears every pending command")
+        #expect((state.notice) == nil, "reset clears notices")
+        #expect((state.sourceRevisions) == ([.account: 2]), "reset retains only its own revision barrier")
     }
 }

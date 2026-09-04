@@ -1,25 +1,23 @@
+import Testing
 import Foundation
 
-func runPlaybackProjectionContractChecks(_ check: CheckRunner) {
-    check.suite("PlaybackStore projection contract") {
+@Test
+func testPlaybackProjectionContract() {
+    do {
         let writable = """
             var phase: Phase {
                 get { state.session }
                 set { state.session = newValue }
             }
             """
-        check.equal(
-            "an explicit setter on a projection is reported",
-            PlaybackStoreProjectionContract.explicitSetterLines(in: writable)
-                .map { $0.trimmingCharacters(in: .whitespaces) },
-            ["set { state.session = newValue }"]
-        )
-        check.check(
-            "a parameterized setter is reported",
-            PlaybackStoreProjectionContract.isExplicitSetterLine(
+        #expect(
+            (PlaybackStoreProjectionContract.explicitSetterLines(in: writable)
+                .map { $0.trimmingCharacters(in: .whitespaces) }) == (["set { state.session = newValue }"]),
+            "an explicit setter on a projection is reported")
+        #expect(
+            (PlaybackStoreProjectionContract.isExplicitSetterLine(
                 "        set(newValue) { state.session = newValue }"
-            )
-        )
+            )) == true, "a parameterized setter is reported")
 
         let projectionsFile = """
             extension PlaybackStore {
@@ -28,30 +26,22 @@ func runPlaybackProjectionContractChecks(_ check: CheckRunner) {
                 func displayedPosition(at date: Date) -> TimeInterval { position }
             }
             """
-        check.equal(
-            "read-only projection files have no setter lines",
-            PlaybackStoreProjectionContract.explicitSetterLines(in: projectionsFile),
-            []
-        )
-        check.check(
-            "set* methods are not setter accessors",
-            !PlaybackStoreProjectionContract.isExplicitSetterLine(
+        #expect(
+            (PlaybackStoreProjectionContract.explicitSetterLines(in: projectionsFile)) == ([]),
+            "read-only projection files have no setter lines")
+        #expect(
+            (!PlaybackStoreProjectionContract.isExplicitSetterLine(
                 "    func setNotice(_ message: String?) {}"
-            )
-        )
-        check.check(
-            "didSet observers are not setter accessors",
-            !PlaybackStoreProjectionContract.isExplicitSetterLine("        didSet { }")
-        )
-        check.check(
-            "an inline get/set accessor is reported",
-            PlaybackStoreProjectionContract.isExplicitSetterLine(
+            )) == true, "set* methods are not setter accessors")
+        #expect(
+            (!PlaybackStoreProjectionContract.isExplicitSetterLine("        didSet { }")) == true,
+            "didSet observers are not setter accessors")
+        #expect(
+            (PlaybackStoreProjectionContract.isExplicitSetterLine(
                 "    var phase: Phase { get { state.session } set { state.session = newValue } }"
-            )
-        )
-        check.equal(
-            "comment and string near-misses do not produce setter lines",
-            PlaybackStoreProjectionContract.explicitSetterLines(
+            )) == true, "an inline get/set accessor is reported")
+        #expect(
+            (PlaybackStoreProjectionContract.explicitSetterLines(
                 in: #"""
                     // set { state.session = newValue }
                     var phase: Phase { state.session } // set { }
@@ -64,37 +54,36 @@ func runPlaybackProjectionContractChecks(_ check: CheckRunner) {
                     set { state.session = newValue }
                     """
                     """#
-            ),
-            []
-        )
-        check.equal(
-            "an accessor after a multiline string is still reported",
-            PlaybackStoreProjectionContract.explicitSetterLines(
+            )) == ([]), "comment and string near-misses do not produce setter lines")
+        #expect(
+            (PlaybackStoreProjectionContract.explicitSetterLines(
                 in: #"""
                     let documented = """
                     set { ignored }
                     """
                         set { state.session = newValue }
                     """#
-            ).map { $0.trimmingCharacters(in: .whitespaces) },
-            ["set { state.session = newValue }"]
-        )
+            ).map { $0.trimmingCharacters(in: .whitespaces) }) == (["set { state.session = newValue }"]),
+            "an accessor after a multiline string is still reported")
 
-        check.noThrow("production PlaybackStore projections are readable") {
-            let projectionsURL = URL(fileURLWithPath: #filePath)
-                .deletingLastPathComponent()
-                .deletingLastPathComponent()
-                .appending(path: "Spotty/Spotify/PlaybackStore+Projections.swift")
-            let source = try String(contentsOf: projectionsURL, encoding: .utf8)
-            check.equal(
-                "production PlaybackStore projections have no explicit setters",
-                PlaybackStoreProjectionContract.explicitSetterLines(in: source),
-                []
-            )
+        do {
+            do {
+                let projectionsURL = URL(fileURLWithPath: #filePath)
+                    .deletingLastPathComponent()
+                    .deletingLastPathComponent()
+                    .appending(path: "Spotty/Spotify/PlaybackStore+Projections.swift")
+                let source = try String(contentsOf: projectionsURL, encoding: .utf8)
+                #expect(
+                    (PlaybackStoreProjectionContract.explicitSetterLines(in: source)) == ([]),
+                    "production PlaybackStore projections have no explicit setters")
+
+            } catch {
+                Issue.record("\("production PlaybackStore projections are readable"): unexpected error \(error)")
+            }
         }
     }
 
-    check.suite("CurrentTrackRow accessibility contract") {
+    do {
         let expectedLabel = ".accessibilityLabel(currentTrackAccessibilityLabel)"
         let expectedIdentity =
             "let identity = \"Now playing \\(player.displayedTrackTitle) by \\(player.displayedArtistName)\""
@@ -108,107 +97,89 @@ func runPlaybackProjectionContractChecks(_ check: CheckRunner) {
         let expectedArtist =
             "var displayedArtistName: String { catalogCurrentTrack?.artist ?? artistName }"
 
-        check.check(
-            "a line-commented expected label does not satisfy the check",
-            !PlaybackStoreProjectionContract.containsUncommented(
+        #expect(
+            (!PlaybackStoreProjectionContract.containsUncommented(
                 ".accessibilityLabel(\"fallback\") // \(expectedLabel)",
                 expectedLabel
-            )
-        )
-        check.check(
-            "a block-commented expected label does not satisfy the check",
-            !PlaybackStoreProjectionContract.containsUncommented(
+            )) == true, "a line-commented expected label does not satisfy the check")
+        #expect(
+            (!PlaybackStoreProjectionContract.containsUncommented(
                 ".accessibilityLabel(\"fallback\")\n/* \(expectedLabel) */",
                 expectedLabel
-            )
-        )
-        check.check(
-            "an active expected label satisfies the check",
-            PlaybackStoreProjectionContract.containsUncommented("        \(expectedLabel)\n", expectedLabel)
-        )
-        check.check(
-            "a quoted block-comment marker does not hide an active expected label",
-            PlaybackStoreProjectionContract.containsUncommented(
+            )) == true, "a block-commented expected label does not satisfy the check")
+        #expect(
+            (PlaybackStoreProjectionContract.containsUncommented("        \(expectedLabel)\n", expectedLabel)) == true,
+            "an active expected label satisfies the check")
+        #expect(
+            (PlaybackStoreProjectionContract.containsUncommented(
                 "let marker = \"/*\"\n        \(expectedLabel)\n",
                 expectedLabel
-            )
-        )
-        check.check(
-            "a quoted URL does not hide an active expected label",
-            PlaybackStoreProjectionContract.containsUncommented(
+            )) == true, "a quoted block-comment marker does not hide an active expected label")
+        #expect(
+            (PlaybackStoreProjectionContract.containsUncommented(
                 "let artwork = \"https://example.invalid/track\"\n        \(expectedLabel)\n",
                 expectedLabel
-            )
-        )
-        check.check(
-            "a line-commented displayedTrackTitle does not satisfy the check",
-            !PlaybackStoreProjectionContract.containsUncommented(
+            )) == true, "a quoted URL does not hide an active expected label")
+        #expect(
+            (!PlaybackStoreProjectionContract.containsUncommented(
                 "var displayedTrackTitle: String { trackTitle } // \(expectedTitle)",
                 expectedTitle
-            )
-        )
-        check.check(
-            "a block-commented displayedTrackTitle does not satisfy the check",
-            !PlaybackStoreProjectionContract.containsUncommented(
+            )) == true, "a line-commented displayedTrackTitle does not satisfy the check")
+        #expect(
+            (!PlaybackStoreProjectionContract.containsUncommented(
                 "var displayedTrackTitle: String { trackTitle }\n/* \(expectedTitle) */",
                 expectedTitle
-            )
-        )
-        check.check(
-            "a line-commented displayedArtistName does not satisfy the check",
-            !PlaybackStoreProjectionContract.containsUncommented(
+            )) == true, "a block-commented displayedTrackTitle does not satisfy the check")
+        #expect(
+            (!PlaybackStoreProjectionContract.containsUncommented(
                 "var displayedArtistName: String { artistName } // \(expectedArtist)",
                 expectedArtist
-            )
-        )
-        check.check(
-            "a block-commented displayedArtistName does not satisfy the check",
-            !PlaybackStoreProjectionContract.containsUncommented(
+            )) == true, "a line-commented displayedArtistName does not satisfy the check")
+        #expect(
+            (!PlaybackStoreProjectionContract.containsUncommented(
                 "var displayedArtistName: String { artistName }\n/* \(expectedArtist) */",
                 expectedArtist
-            )
-        )
+            )) == true, "a block-commented displayedArtistName does not satisfy the check")
 
-        check.noThrow("production CurrentTrackRow VoiceOver uses displayed projections") {
-            let sources = URL(fileURLWithPath: #filePath)
-                .deletingLastPathComponent()
-                .deletingLastPathComponent()
-            let panel = try String(
-                contentsOf: sources.appending(path: "Spotty/Views/SidePanelView.swift"),
-                encoding: .utf8
-            )
-            let projections = try String(
-                contentsOf: sources.appending(path: "Spotty/Spotify/PlaybackStore+Projections.swift"),
-                encoding: .utf8
-            )
-            check.check(
-                "production VoiceOver label uses the duration-aware helper",
-                PlaybackStoreProjectionContract.containsUncommented(panel, expectedLabel)
-            )
-            check.check(
-                "production VoiceOver identity uses displayedTrackTitle and displayedArtistName",
-                PlaybackStoreProjectionContract.containsUncommented(panel, expectedIdentity)
-            )
-            check.check(
-                "production VoiceOver identity includes a valid duration",
-                PlaybackStoreProjectionContract.containsUncommented(panel, expectedDuration)
-            )
-            check.check(
-                "upcoming queue VoiceOver computes a valid duration",
-                PlaybackStoreProjectionContract.containsUncommented(panel, expectedUpcomingDuration)
-            )
-            check.check(
-                "upcoming queue VoiceOver includes its displayed duration",
-                PlaybackStoreProjectionContract.containsUncommented(panel, expectedUpcomingLabel)
-            )
-            check.check(
-                "displayedTrackTitle prefers catalog then engine fallback",
-                PlaybackStoreProjectionContract.containsUncommented(projections, expectedTitle)
-            )
-            check.check(
-                "displayedArtistName prefers catalog then engine fallback",
-                PlaybackStoreProjectionContract.containsUncommented(projections, expectedArtist)
-            )
+        do {
+            do {
+                let sources = URL(fileURLWithPath: #filePath)
+                    .deletingLastPathComponent()
+                    .deletingLastPathComponent()
+                let panel = try String(
+                    contentsOf: sources.appending(path: "Spotty/Views/SidePanelView.swift"),
+                    encoding: .utf8
+                )
+                let projections = try String(
+                    contentsOf: sources.appending(path: "Spotty/Spotify/PlaybackStore+Projections.swift"),
+                    encoding: .utf8
+                )
+                #expect(
+                    (PlaybackStoreProjectionContract.containsUncommented(panel, expectedLabel)) == true,
+                    "production VoiceOver label uses the duration-aware helper")
+                #expect(
+                    (PlaybackStoreProjectionContract.containsUncommented(panel, expectedIdentity)) == true,
+                    "production VoiceOver identity uses displayedTrackTitle and displayedArtistName")
+                #expect(
+                    (PlaybackStoreProjectionContract.containsUncommented(panel, expectedDuration)) == true,
+                    "production VoiceOver identity includes a valid duration")
+                #expect(
+                    (PlaybackStoreProjectionContract.containsUncommented(panel, expectedUpcomingDuration)) == true,
+                    "upcoming queue VoiceOver computes a valid duration")
+                #expect(
+                    (PlaybackStoreProjectionContract.containsUncommented(panel, expectedUpcomingLabel)) == true,
+                    "upcoming queue VoiceOver includes its displayed duration")
+                #expect(
+                    (PlaybackStoreProjectionContract.containsUncommented(projections, expectedTitle)) == true,
+                    "displayedTrackTitle prefers catalog then engine fallback")
+                #expect(
+                    (PlaybackStoreProjectionContract.containsUncommented(projections, expectedArtist)) == true,
+                    "displayedArtistName prefers catalog then engine fallback")
+
+            } catch {
+                Issue.record(
+                    "\("production CurrentTrackRow VoiceOver uses displayed projections"): unexpected error \(error)")
+            }
         }
     }
 }

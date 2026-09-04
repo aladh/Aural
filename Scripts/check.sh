@@ -151,43 +151,38 @@ swift_arguments+=("${spotty_swiftc_warnings_as_errors[@]}")
 
 swift build "${swift_arguments[@]}"
 
-# Pure domain and deterministic scenario checks are a separate product so the
-# assertion harness and fixtures never ship in the application executable.
-# The gate always runs every registered suite. Suite-name arguments exist for
-# local iteration only and are not passed here.
-check_arguments=(
+# Pure domain and deterministic scenario tests stay separate from the shipping
+# application target. SwiftPM discovers and runs them through Swift Testing.
+domain_test_arguments=(
     --disable-sandbox
     --package-path "$project_root"
     --configuration "$build_configuration"
-    --product SpottyChecks
+    --filter SpottyDomainTests
     "${spotty_swiftc_warnings_as_errors[@]}"
 )
-swift build "${check_arguments[@]}"
-checks_path="$(swift build "${check_arguments[@]}" --show-bin-path)/SpottyChecks"
 repeat_count="${SPOTTY_CHECK_REPEATS:-1}"
 if ! [[ "$repeat_count" =~ '^[1-9][0-9]*$' ]] || (( repeat_count > 25 )); then
     print -u2 "SPOTTY_CHECK_REPEATS must be between 1 and 25"
     exit 2
 fi
 for (( run = 1; run <= repeat_count; run++ )); do
-    "$checks_path"
+    swift test "${domain_test_arguments[@]}"
 done
 
 # Concrete codecs/parsers and injected coordinator/queue workflows compile against the real app
-# core in a second non-shipping executable. It deliberately stays a debug build because it uses
-# `@testable import SpottyCore`; the shipping Spotty and pure-domain products above still honor a
-# requested release configuration without enabling testability in production code.
-boundary_arguments=(
+# core in a separate debug test target because it uses `@testable import SpottyCore`. The shipping
+# Spotty and pure-domain tests above still honor a requested release configuration without enabling
+# testability in production code.
+boundary_test_arguments=(
     --disable-sandbox
+    --no-parallel
     --package-path "$project_root"
     --configuration debug
-    --product SpottyBoundaryChecks
+    --filter SpottyBoundaryTests
     "${spotty_swiftc_warnings_as_errors[@]}"
 )
-swift build "${boundary_arguments[@]}"
-boundary_checks_path="$(swift build "${boundary_arguments[@]}" --show-bin-path)/SpottyBoundaryChecks"
 for (( run = 1; run <= repeat_count; run++ )); do
-    "$boundary_checks_path"
+    swift test "${boundary_test_arguments[@]}"
 done
 
 # Architectural dependency rules. The domain must stay portable and deterministic,
@@ -309,7 +304,7 @@ if rg -n '\.draggable\(|\.dropDestination\(|onDrop\(' \
 fi
 
 if find "$project_root/Sources/Spotty" -type d -name LogicChecks -print -quit | rg -q .; then
-    print -u2 "Logic checks must live in SpottyChecks, not the shipping app target"
+    print -u2 "Logic tests must live in Spotty's non-shipping test targets, not the app target"
     exit 1
 fi
 

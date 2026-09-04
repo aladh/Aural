@@ -104,7 +104,7 @@ Spotify account; playback is opt-in during acceptance testing.
 ## SwiftPM archive caveat
 
 Plain `swift build` is not a complete build path for products that link `SpottyCore`, notably `Spotty`
-and `SpottyBoundaryChecks`. SwiftPM links `Backend/lib/libspotty_playback.a` into those products, but
+and `SpottyBoundaryTests`. SwiftPM links `Backend/lib/libspotty_playback.a` into those products, but
 the generated archive is outside its dependency graph: a missing archive produces a linker error,
 and Rust source changes do not rebuild it or necessarily relink an already-built Swift product.
 The build and package commands in [CONTRIBUTING.md](../CONTRIBUTING.md) handle the archive. For

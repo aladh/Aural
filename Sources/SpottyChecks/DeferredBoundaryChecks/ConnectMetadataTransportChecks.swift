@@ -1,3 +1,4 @@
+import Testing
 import SpottyDomain
 import Foundation
 @testable import SpottyCore
@@ -10,41 +11,39 @@ private let metadataBody = Data(
         .utf8
 )
 
+@Test
 @MainActor
-func runConnectMetadataTransportChecks(_ check: CheckRunner) async {
-    await check.suite("Connect metadata is one signed GET") {
+func testConnectMetadataTransport() async {
+    do {
         let transport = RecordingConnectTransport(steps: [.http(status: 200, body: metadataBody)])
         let metadata: SpotifyConnectTrackMetadata?
         do {
             metadata = try await connectAPI(transport: transport.send).trackMetadata(for: fixtureURI)
         } catch {
-            check.check("successful metadata throws \(error)", false)
+            #expect((false) == true, "successful metadata throws \(error)")
             metadata = nil
         }
 
-        check.equal("title is decoded", metadata?.title, "Fixture Title")
-        check.equal("artists are joined", metadata?.artist, "First, Second")
-        check.equal("duration is milliseconds", metadata?.duration, 123.0)
-        check.equal(
-            "largest cover becomes the artwork URL",
-            metadata?.artworkURL,
-            URL(string: "https://i.scdn.co/image/large")
-        )
-        check.equal("the requested URI is preserved", metadata?.uri, fixtureURI)
-        check.equal("successful metadata is one GET", transport.methods, ["GET"])
-        check.equal("successful metadata is one attempt", transport.callCount, 1)
-        check.check(
-            "the GET is the metadata track path",
-            transport.paths.allSatisfy { path in
+        #expect((metadata?.title) == ("Fixture Title"), "title is decoded")
+        #expect((metadata?.artist) == ("First, Second"), "artists are joined")
+        #expect((metadata?.duration) == (123.0), "duration is milliseconds")
+        #expect(
+            (metadata?.artworkURL) == (URL(string: "https://i.scdn.co/image/large")),
+            "largest cover becomes the artwork URL")
+        #expect((metadata?.uri) == (fixtureURI), "the requested URI is preserved")
+        #expect((transport.methods) == (["GET"]), "successful metadata is one GET")
+        #expect((transport.callCount) == (1), "successful metadata is one attempt")
+        #expect(
+            (transport.paths.allSatisfy { path in
                 path.hasPrefix("/metadata/4/track/") && path.contains("market=from_token")
-            })
-        check.equal("the GET carries the bearer", transport.authorizationTokens, ["fixture-access"])
-        check.equal("the GET carries the client token", transport.clientTokens, ["fixture-client"])
-        check.equal("the GET is desktop-client signed", transport.appPlatforms, [SpotifyCredentials.appPlatform])
-        check.equal("the GET carries the xpui origin", transport.origins, [SpotifyCredentials.origin])
+            }) == true, "the GET is the metadata track path")
+        #expect((transport.authorizationTokens) == (["fixture-access"]), "the GET carries the bearer")
+        #expect((transport.clientTokens) == (["fixture-client"]), "the GET carries the client token")
+        #expect((transport.appPlatforms) == ([SpotifyCredentials.appPlatform]), "the GET is desktop-client signed")
+        #expect((transport.origins) == ([SpotifyCredentials.origin]), "the GET carries the xpui origin")
     }
 
-    await check.suite("Concurrent metadata fetches do not emit OPTIONS") {
+    do {
         let transport = RecordingConnectTransport(steps: [
             .http(status: 200, body: metadataBody),
             .http(status: 200, body: metadataBody),
@@ -54,63 +53,55 @@ func runConnectMetadataTransportChecks(_ check: CheckRunner) async {
         async let second = api.trackMetadata(for: otherFixtureURI)
         let titles = [(try? await first)?.title, (try? await second)?.title]
 
-        check.check("both concurrent fetches succeed", titles.allSatisfy { $0 == "Fixture Title" })
-        check.equal("two tracks are two GETs", transport.methods, ["GET", "GET"])
-        check.equal("two tracks are two attempts", transport.callCount, 2)
-        check.check("distinct track URLs stay distinct", Set(transport.paths).count == 2)
+        #expect((titles.allSatisfy { $0 == "Fixture Title" }) == true, "both concurrent fetches succeed")
+        #expect((transport.methods) == (["GET", "GET"]), "two tracks are two GETs")
+        #expect((transport.callCount) == (2), "two tracks are two attempts")
+        #expect((Set(transport.paths).count == 2) == true, "distinct track URLs stay distinct")
     }
 
-    await check.suite("Connect metadata replay budget stays GET") {
+    do {
         let budget = SpotifyTransientRetry.maximumAttempts
         let exhausted = RecordingConnectTransport(
             steps: Array(repeating: .http(status: 502, body: Data()), count: budget)
         )
         await expectThrown(
-            check,
             "HTTP 502 stays requestFailed after the budget",
             SpotifyConnectAPIError.requestFailed(502)
         ) {
             _ = try await connectAPI(transport: exhausted.send).trackMetadata(for: fixtureURI)
         }
-        check.equal(
-            "every replayable attempt is GET",
-            exhausted.methods,
-            Array(repeating: "GET", count: budget)
-        )
+        #expect((exhausted.methods) == (Array(repeating: "GET", count: budget)), "every replayable attempt is GET")
     }
 
-    await check.suite("Connect metadata decoder failures") {
+    do {
         let unused = RecordingConnectTransport(steps: [.http(status: 200, body: metadataBody)])
         await expectThrown(
-            check,
             "an invalid track URI never hits the wire",
             SpotifyConnectAPIError.invalidTrackURI
         ) {
             _ = try await connectAPI(transport: unused.send).trackMetadata(for: "spotify:album:not-a-track")
         }
-        check.equal("invalid URI is zero attempts", unused.callCount, 0)
+        #expect((unused.callCount) == (0), "invalid URI is zero attempts")
 
         let malformed = RecordingConnectTransport(steps: [.http(status: 200, body: Data("{}".utf8))])
         await expectThrown(
-            check,
             "an empty JSON object is malformed",
             SpotifyConnectAPIError.malformedResponse
         ) {
             _ = try await connectAPI(transport: malformed.send).trackMetadata(for: fixtureURI)
         }
-        check.equal("malformed JSON is one GET", malformed.methods, ["GET"])
+        #expect((malformed.methods) == (["GET"]), "malformed JSON is one GET")
 
         let emptyTitle = RecordingConnectTransport(steps: [
             .http(status: 200, body: Data(#"{"name":""}"#.utf8))
         ])
         await expectThrown(
-            check,
             "an empty title is malformed",
             SpotifyConnectAPIError.malformedResponse
         ) {
             _ = try await connectAPI(transport: emptyTitle.send).trackMetadata(for: fixtureURI)
         }
-        check.equal("empty title is one GET", emptyTitle.methods, ["GET"])
+        #expect((emptyTitle.methods) == (["GET"]), "empty title is one GET")
     }
 }
 
@@ -127,18 +118,17 @@ private func connectAPI(transport: @escaping SpotifyCredentials.Transport) -> Sp
 
 @MainActor
 private func expectThrown<Failure: Error & Equatable>(
-    _ check: CheckRunner,
     _ label: String,
     _ expected: Failure,
     perform: () async throws -> Void
 ) async {
     do {
         try await perform()
-        check.check("\(label) throws", false)
+        #expect((false) == true, "\(label) throws")
     } catch let error as Failure {
-        check.equal(label, error, expected)
+        #expect((error) == (expected), "\(label)")
     } catch {
-        check.check("\(label) throws \(Failure.self), got \(error)", false)
+        #expect((false) == true, "\(label) throws \(Failure.self), got \(error)")
     }
 }
 

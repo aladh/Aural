@@ -1,126 +1,101 @@
+import Testing
 import SpottyDomain
 import Foundation
 @testable import SpottyCore
 
+@Test
 @MainActor
-func runMediaSelectionChecks(_ runner: CheckRunner) {
-    runner.suite("Media selection restoration") {
+func testMediaSelection() {
+    do {
         let uri = "spotify:playlist:remembered-private-id"
         let remembered = item(uri: uri, title: "Remembered", kind: .playlist)
         var model = MediaSelectionModel()
 
-        runner.equal("playlist selection navigates", model.select(remembered), .navigate)
-        runner.equal("playlist selection is retained", model.selection, .playlist(uri))
+        #expect((model.select(remembered)) == (.navigate), "playlist selection navigates")
+        #expect((model.selection) == (.playlist(uri)), "playlist selection is retained")
 
         let restored = MediaSelectionModel(rawValue: model.rawValue)
-        runner.equal("persisted selection round-trips", restored?.selection, .playlist(uri))
-        runner.equal(
-            "remembered metadata round-trips",
-            restored?.item(uri: uri, kind: .playlist, metadataItem: nil),
-            remembered
-        )
+        #expect((restored?.selection) == (.playlist(uri)), "persisted selection round-trips")
+        #expect(
+            (restored?.item(uri: uri, kind: .playlist, metadataItem: nil)) == (remembered),
+            "remembered metadata round-trips")
 
         let metadata = item(uri: uri, title: "Metadata", kind: .playlist)
-        runner.equal(
-            "metadata supersedes remembered fallback",
-            restored?.item(uri: uri, kind: .playlist, metadataItem: metadata),
-            metadata
-        )
+        #expect(
+            (restored?.item(uri: uri, kind: .playlist, metadataItem: metadata)) == (metadata),
+            "metadata supersedes remembered fallback")
 
         let library = item(uri: uri, title: "Library", kind: .playlist)
-        runner.equal(
-            "library playlist has first precedence",
-            restored?.item(
+        #expect(
+            (restored?.item(
                 uri: uri,
                 kind: .playlist,
                 playlists: [library],
                 metadataItem: metadata
-            ),
-            library
-        )
+            )) == (library), "library playlist has first precedence")
 
         var sameSelection = restored ?? MediaSelectionModel()
         sameSelection.updateSelection(.playlist(uri))
-        runner.equal(
-            "same selection preserves remembered fallback",
-            sameSelection.item(uri: uri, kind: .playlist, metadataItem: nil),
-            remembered
-        )
+        #expect(
+            (sameSelection.item(uri: uri, kind: .playlist, metadataItem: nil)) == (remembered),
+            "same selection preserves remembered fallback")
 
         sameSelection.updateSelection(.album("spotify:album:different"))
-        runner.nil_(
-            "different selection clears remembered fallback",
-            sameSelection.item(uri: uri, kind: .playlist, metadataItem: nil)
-        )
+        #expect(
+            (sameSelection.item(uri: uri, kind: .playlist, metadataItem: nil)) == nil,
+            "different selection clears remembered fallback")
 
         var resetModel = restored ?? MediaSelectionModel()
         resetModel.reset()
-        runner.equal("account reset returns home", resetModel.selection, .destination(.home))
-        runner.nil_(
-            "account reset clears remembered fallback",
-            resetModel.item(uri: uri, kind: .playlist, metadataItem: nil)
-        )
+        #expect((resetModel.selection) == (.destination(.home)), "account reset returns home")
+        #expect(
+            (resetModel.item(uri: uri, kind: .playlist, metadataItem: nil)) == nil,
+            "account reset clears remembered fallback")
 
         let malformed = MediaSelectionModel(rawValue: "not persisted selection state")
-        runner.equal("malformed persistence falls back home", malformed?.selection, .destination(.home))
+        #expect((malformed?.selection) == (.destination(.home)), "malformed persistence falls back home")
 
         let legacyURI = "spotify:artist:legacy"
         var legacy = MediaSelectionModel(rawValue: SidebarSelection.artist(legacyURI).rawValue)
-        runner.equal(
-            "legacy scene selection remains restorable",
-            legacy?.selection,
-            .artist(legacyURI)
-        )
-        runner.check(
-            "legacy sibling metadata migrates once",
-            legacy?.migrateLegacyMetadata(
+        #expect((legacy?.selection) == (.artist(legacyURI)), "legacy scene selection remains restorable")
+        #expect(
+            (legacy?.migrateLegacyMetadata(
                 title: "Legacy artist",
                 subtitle: "Legacy subtitle",
                 artworkURL: "https://example.invalid/legacy.jpg"
-            ) == true
-        )
+            ) == true) == true, "legacy sibling metadata migrates once")
         let migratedLegacyItem = item(uri: legacyURI, title: "Legacy artist", kind: .artist)
         let migrated = legacy.flatMap { MediaSelectionModel(rawValue: $0.rawValue) }
-        runner.equal(
-            "legacy metadata mounts a usable restored item",
-            migrated?.item(uri: legacyURI, kind: .artist, metadataItem: nil),
-            CatalogItem(
-                id: migratedLegacyItem.id,
-                uri: migratedLegacyItem.uri,
-                title: migratedLegacyItem.title,
-                subtitle: "Legacy subtitle",
-                artworkURL: URL(string: "https://example.invalid/legacy.jpg"),
-                kind: .artist
-            )
-        )
+        #expect(
+            (migrated?.item(uri: legacyURI, kind: .artist, metadataItem: nil))
+                == (CatalogItem(
+                    id: migratedLegacyItem.id,
+                    uri: migratedLegacyItem.uri,
+                    title: migratedLegacyItem.title,
+                    subtitle: "Legacy subtitle",
+                    artworkURL: URL(string: "https://example.invalid/legacy.jpg"),
+                    kind: .artist
+                )), "legacy metadata mounts a usable restored item")
 
         let trackURI = "spotify:track:private-track-id"
-        runner.equal(
-            "track selection routes playback",
-            model.select(item(uri: trackURI, title: "Track", kind: .track)),
-            .play(trackURI)
-        )
-        runner.equal("track selection preserves navigation", model.selection, .playlist(uri))
-        runner.equal(
-            "track selection preserves remembered fallback",
-            model.item(uri: uri, kind: .playlist, metadataItem: nil),
-            remembered
-        )
+        #expect(
+            (model.select(item(uri: trackURI, title: "Track", kind: .track))) == (.play(trackURI)),
+            "track selection routes playback")
+        #expect((model.selection) == (.playlist(uri)), "track selection preserves navigation")
+        #expect(
+            (model.item(uri: uri, kind: .playlist, metadataItem: nil)) == (remembered),
+            "track selection preserves remembered fallback")
 
         let unknownURI = "spotify:episode:private-unknown-id"
-        runner.equal(
-            "unknown selection routes playback",
-            model.select(item(uri: unknownURI, title: "Unknown", kind: .unknown)),
-            .play(unknownURI)
-        )
-        runner.equal("unknown selection preserves navigation", model.selection, .playlist(uri))
-        runner.equal(
-            "unknown selection preserves remembered fallback",
-            model.item(uri: uri, kind: .playlist, metadataItem: nil),
-            remembered
-        )
-        runner.equal("diagnostics retain only the media kind", model.diagnosticLabel, "media:playlist")
-        runner.check("diagnostics omit the selected URI", !model.diagnosticLabel.contains("private-id"))
+        #expect(
+            (model.select(item(uri: unknownURI, title: "Unknown", kind: .unknown))) == (.play(unknownURI)),
+            "unknown selection routes playback")
+        #expect((model.selection) == (.playlist(uri)), "unknown selection preserves navigation")
+        #expect(
+            (model.item(uri: uri, kind: .playlist, metadataItem: nil)) == (remembered),
+            "unknown selection preserves remembered fallback")
+        #expect((model.diagnosticLabel) == ("media:playlist"), "diagnostics retain only the media kind")
+        #expect((!model.diagnosticLabel.contains("private-id")) == true, "diagnostics omit the selected URI")
     }
 }
 

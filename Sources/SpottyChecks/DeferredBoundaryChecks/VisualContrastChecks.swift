@@ -1,23 +1,22 @@
+import Testing
 import AppKit
 import Foundation
 import SwiftUI
 @testable import SpottyCore
 
+@Test
 @MainActor
-func runVisualContrastChecks(_ runner: CheckRunner) {
-    runner.suite("Data-column and progress-rail contrast against their canvases") {
-        runner.check(
-            "data column text clears WCAG AA normal-text contrast on the catalog canvas",
-            contrastRatio(SpottyPalette.dataText, SpottyPalette.catalogCanvas) >= 4.5
-        )
-        runner.check(
-            "the unfilled progress rail clears WCAG AA non-text contrast on the player shelf",
-            contrastRatio(SpottyPalette.progressTrack, SpottyPalette.playerShelf) >= 3.0
-        )
-        runner.check(
-            "remote playback footer text clears WCAG AA normal-text contrast on the media green banner",
-            contrastRatio(SpottyPalette.remotePlaybackForeground, SpottyPalette.mediaGreen) >= 4.5
-        )
+func testVisualContrast() {
+    do {
+        #expect(
+            (contrastRatio(SpottyPalette.dataText, SpottyPalette.catalogCanvas) >= 4.5) == true,
+            "data column text clears WCAG AA normal-text contrast on the catalog canvas")
+        #expect(
+            (contrastRatio(SpottyPalette.progressTrack, SpottyPalette.playerShelf) >= 3.0) == true,
+            "the unfilled progress rail clears WCAG AA non-text contrast on the player shelf")
+        #expect(
+            (contrastRatio(SpottyPalette.remotePlaybackForeground, SpottyPalette.mediaGreen) >= 4.5) == true,
+            "remote playback footer text clears WCAG AA normal-text contrast on the media green banner")
     }
 }
 

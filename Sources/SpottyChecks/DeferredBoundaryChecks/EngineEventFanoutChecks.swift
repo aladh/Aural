@@ -1,3 +1,4 @@
+import Testing
 import SpottyDomain
 import Foundation
 @testable import SpottyCore
@@ -5,32 +6,28 @@ import Foundation
 /// Barrier-controlled checks for process-local engine event delivery order.
 ///
 /// Timeouts are hang watchdogs only. Thread A/B ordering is forced with semaphores, not sleeps.
+@Test
 @MainActor
-func runEngineEventFanoutChecks(_ check: CheckRunner) {
-    check.suite("Engine event fan-out ordering") {
+func testEngineEventFanout() {
+    do {
         let inverted = AssignThenYieldAfterUnlockFanout()
-        check.equal(
-            "assign-then-yield-after-unlock delivers B before A under A-prepare/B-complete/A-yield",
-            collectInversionSchedule(inverted),
-            [2, 1]
-        )
+        #expect(
+            (collectInversionSchedule(inverted)) == ([2, 1]),
+            "assign-then-yield-after-unlock delivers B before A under A-prepare/B-complete/A-yield")
 
         let serialized = EngineEventFanout(clock: SystemPlaybackClock())
-        check.equal(
-            "serialized assignment and delivery keeps A before B under the same schedule",
-            collectInversionSchedule(serialized),
-            [1, 2]
-        )
+        #expect(
+            (collectInversionSchedule(serialized)) == ([1, 2]),
+            "serialized assignment and delivery keeps A before B under the same schedule")
 
         let multi = EngineEventFanout(clock: SystemPlaybackClock())
         let both = collectInversionSchedule(multi, subscriberCount: 2)
-        check.equal("first subscriber sees increasing sequences under inversion schedule", both[0], [1, 2])
-        check.equal("second subscriber sees the same increasing sequences", both[1], [1, 2])
+        #expect((both[0]) == ([1, 2]), "first subscriber sees increasing sequences under inversion schedule")
+        #expect((both[1]) == ([1, 2]), "second subscriber sees the same increasing sequences")
 
         let kinds = EngineEventFanout(clock: SystemPlaybackClock())
-        check.equal(
-            "mixed playback/queue/connection/devices kinds stay in assigned order",
-            collectSequential(
+        #expect(
+            (collectSequential(
                 kinds,
                 events: [
                     playbackEvent(),
@@ -38,14 +35,13 @@ func runEngineEventFanoutChecks(_ check: CheckRunner) {
                     connectionEvent(),
                     devicesEvent(),
                 ]
-            ).map(\.sequence),
-            [1, 2, 3, 4]
+            ).map(\.sequence)) == ([1, 2, 3, 4]), "mixed playback/queue/connection/devices kinds stay in assigned order"
         )
 
-        runTerminationAroundDelivery(check)
-        runTerminationDuringDelivery(check)
-        runEmitAfterLastSubscriber(check)
-        runFixedClockReceiptTimestamps(check)
+        runTerminationAroundDelivery()
+        runTerminationDuringDelivery()
+        runEmitAfterLastSubscriber()
+        runFixedClockReceiptTimestamps()
     }
 }
 
@@ -232,7 +228,7 @@ private func collectSequential(
 }
 
 @MainActor
-private func runTerminationAroundDelivery(_ check: CheckRunner) {
+private func runTerminationAroundDelivery() {
     let fanout = EngineEventFanout(clock: SystemPlaybackClock())
     let surviving = FanoutRecorder<UInt64>()
     let survivingStart = DispatchSemaphore(value: 0)
@@ -262,7 +258,7 @@ private func runTerminationAroundDelivery(_ check: CheckRunner) {
     }
 
     guard wait(survivingStart), wait(cancelledStart) else {
-        check.check("termination-around subscribers started", false)
+        #expect((false) == true, "termination-around subscribers started")
         return
     }
 
@@ -277,25 +273,24 @@ private func runTerminationAroundDelivery(_ check: CheckRunner) {
         finishedA.signal()
     }
     guard wait(preparedA) else {
-        check.check("A paused before yield", false)
+        #expect((false) == true, "A paused before yield")
         return
     }
     cancelledTask.cancel()
-    check.check(
-        "cancelled subscriber terminates while A is paused before yield",
-        wait(cancelledTerminated) && wait(cancelledDone)
-    )
+    #expect(
+        (wait(cancelledTerminated) && wait(cancelledDone)) == true,
+        "cancelled subscriber terminates while A is paused before yield")
 
     Thread.detachNewThread {
         fanout.emit(queueEvent())
     }
     releaseA.signal()
-    check.check("delivery after cancel completes", wait(finishedA) && wait(survivingDone))
-    check.equal("surviving subscriber still receives both assigned sequences", surviving.load(), [1, 2])
+    #expect((wait(finishedA) && wait(survivingDone)) == true, "delivery after cancel completes")
+    #expect((surviving.load()) == ([1, 2]), "surviving subscriber still receives both assigned sequences")
 }
 
 @MainActor
-private func runTerminationDuringDelivery(_ check: CheckRunner) {
+private func runTerminationDuringDelivery() {
     let fanout = EngineEventFanout(clock: SystemPlaybackClock())
     let surviving = FanoutRecorder<UInt64>()
     let partial = FanoutRecorder<UInt64>()
@@ -329,19 +324,19 @@ private func runTerminationDuringDelivery(_ check: CheckRunner) {
     }
 
     guard wait(survivingStart), wait(partialStart) else {
-        check.check("termination-during subscribers started", false)
+        #expect((false) == true, "termination-during subscribers started")
         return
     }
     fanout.emit(playbackEvent())
-    check.check("partial subscriber observed the first envelope", wait(sawFirst))
+    #expect((wait(sawFirst)) == true, "partial subscriber observed the first envelope")
     fanout.emit(queueEvent())
-    check.check("both consumers finished after the second emit", wait(survivingDone) && wait(partialDone))
-    check.equal("partial subscriber received the first envelope once", partial.load(), [1])
-    check.equal("surviving subscriber received both envelopes once", surviving.load(), [1, 2])
+    #expect((wait(survivingDone) && wait(partialDone)) == true, "both consumers finished after the second emit")
+    #expect((partial.load()) == ([1]), "partial subscriber received the first envelope once")
+    #expect((surviving.load()) == ([1, 2]), "surviving subscriber received both envelopes once")
 }
 
 @MainActor
-private func runEmitAfterLastSubscriber(_ check: CheckRunner) {
+private func runEmitAfterLastSubscriber() {
     let fanout = EngineEventFanout(clock: SystemPlaybackClock())
     let terminated = DispatchSemaphore(value: 0)
     let start = DispatchSemaphore(value: 0)
@@ -353,19 +348,19 @@ private func runEmitAfterLastSubscriber(_ check: CheckRunner) {
         for await _ in stream {}
     }
     guard wait(start) else {
-        check.check("last-subscriber start", false)
+        #expect((false) == true, "last-subscriber start")
         return
     }
     task.cancel()
-    check.check("last subscriber termination is observed", wait(terminated))
+    #expect((wait(terminated)) == true, "last subscriber termination is observed")
     fanout.emit(playbackEvent())
     fanout.emit(queueEvent())
     let after = collectSequential(fanout, events: [connectionEvent(), devicesEvent()]).map(\.sequence)
-    check.equal("later subscriber observes later sequences without duplicates or a rewind", after, [3, 4])
+    #expect((after) == ([3, 4]), "later subscriber observes later sequences without duplicates or a rewind")
 }
 
 @MainActor
-private func runFixedClockReceiptTimestamps(_ check: CheckRunner) {
+private func runFixedClockReceiptTimestamps() {
     let origin = Date(timeIntervalSince1970: 2_000_000)
     let frozen = EngineEventFanout(clock: FrozenFanoutClock(date: origin))
     let events = [
@@ -377,14 +372,12 @@ private func runFixedClockReceiptTimestamps(_ check: CheckRunner) {
     let both = collectSequential(frozen, events: events, subscriberCount: 2)
     let sequences = both.map { $0.map(\.sequence) }
     let receipts = both.map { $0.map(\.receivedAt) }
-    check.equal("first subscriber sees increasing sequences under a frozen clock", sequences[0], [1, 2, 3, 4])
-    check.equal("second subscriber sees the same sequences", sequences[1], [1, 2, 3, 4])
-    check.equal(
-        "every event kind is stamped with the injected receipt time",
-        receipts[0],
-        Array(repeating: origin, count: events.count)
-    )
-    check.equal("both subscribers observe the same receipt timestamps", receipts[1], receipts[0])
+    #expect((sequences[0]) == ([1, 2, 3, 4]), "first subscriber sees increasing sequences under a frozen clock")
+    #expect((sequences[1]) == ([1, 2, 3, 4]), "second subscriber sees the same sequences")
+    #expect(
+        (receipts[0]) == (Array(repeating: origin, count: events.count)),
+        "every event kind is stamped with the injected receipt time")
+    #expect((receipts[1]) == (receipts[0]), "both subscribers observe the same receipt timestamps")
 }
 
 private func wait(_ semaphore: DispatchSemaphore) -> Bool {

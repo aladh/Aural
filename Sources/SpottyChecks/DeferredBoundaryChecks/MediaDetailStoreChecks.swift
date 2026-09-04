@@ -1,3 +1,4 @@
+import Testing
 import SpottyDomain
 import Foundation
 @testable import SpottyCore
@@ -275,8 +276,9 @@ private func startJoiningArtistLoad(_ store: ArtistDetailStore, item: CatalogIte
     )
 }
 
+@Test
 @MainActor
-func runMediaDetailStoreChecks(_ runner: CheckRunner) async {
+func testMediaDetailStore() async {
     let firstAlbumValue: PathfinderAlbumUnion
     let secondAlbumValue: PathfinderAlbumUnion
     let firstArtistValue: PathfinderArtistUnion
@@ -287,7 +289,7 @@ func runMediaDetailStoreChecks(_ runner: CheckRunner) async {
         firstArtistValue = try firstArtist()
         secondArtistValue = try secondArtist()
     } catch {
-        runner.check("synthetic media-detail fixtures decode", false)
+        #expect((false) == true, "synthetic media-detail fixtures decode")
         return
     }
 
@@ -296,258 +298,215 @@ func runMediaDetailStoreChecks(_ runner: CheckRunner) async {
     let firstArtistItem = artistItem("first")
     let secondArtistItem = artistItem("second")
 
-    await runner.suite("Media detail same-selection join") {
+    do {
         let provider = GatedAlbumCatalog()
         let session = CatalogSessionAvailability(accountEpoch: 1, isAvailable: true)
         let (store, _) = makeAlbumStore(provider: provider, session: session)
 
         let firstLoad = Task { await store.load(firstAlbumItem) }
-        runner.check(
-            "the first album request parks",
-            await waitUntil { await provider.requestCount == 1 }
-        )
+        #expect((await waitUntil { await provider.requestCount == 1 }) == true, "the first album request parks")
         let follower = startJoiningAlbumLoad(store, item: firstAlbumItem)
-        runner.check(
-            "the duplicate caller entered load",
-            await waitUntil { follower.hasEntered() }
-        )
-        runner.equal("a duplicate current-selection request joins the in-flight work", await provider.requestCount, 1)
-        runner.check("the joined album stays loading", store.isLoading)
-        runner.check("the duplicate caller is still waiting on the in-flight request", !follower.hasFinished())
-        runner.equal("join does not clear the current selection", store.item?.uri, "spotify:album:first")
+        #expect((await waitUntil { follower.hasEntered() }) == true, "the duplicate caller entered load")
+        #expect((await provider.requestCount) == (1), "a duplicate current-selection request joins the in-flight work")
+        #expect((store.isLoading) == true, "the joined album stays loading")
+        #expect((!follower.hasFinished()) == true, "the duplicate caller is still waiting on the in-flight request")
+        #expect((store.item?.uri) == ("spotify:album:first"), "join does not clear the current selection")
 
         await provider.completeNext(.album(firstAlbumValue))
         await firstLoad.value
         await follower.task.value
-        runner.check("the duplicate caller finishes after the in-flight request", follower.hasFinished())
-        runner.equal("joined consumers publish one album", store.tracks.map(\.uri), ["spotify:track:first"])
-        runner.equal("joined consumers publish the release date", store.releaseDate, "2024-01-02")
-        runner.check("joined loading finishes", !store.isLoading)
-        runner.nil_("join does not surface an error", store.error)
+        #expect((follower.hasFinished()) == true, "the duplicate caller finishes after the in-flight request")
+        #expect((store.tracks.map(\.uri)) == (["spotify:track:first"]), "joined consumers publish one album")
+        #expect((store.releaseDate) == ("2024-01-02"), "joined consumers publish the release date")
+        #expect((!store.isLoading) == true, "joined loading finishes")
+        #expect((store.error) == nil, "join does not surface an error")
 
         await store.load(firstAlbumItem)
-        runner.equal("a completed same-session album is not fetched again", await provider.requestCount, 1)
+        #expect((await provider.requestCount) == (1), "a completed same-session album is not fetched again")
     }
 
-    await runner.suite("Media detail join claim survives owner cancel") {
+    do {
         let provider = GatedAlbumCatalog()
         let session = CatalogSessionAvailability(accountEpoch: 1, isAvailable: true)
         let (store, _) = makeAlbumStore(provider: provider, session: session)
 
         let owner = Task { await store.load(firstAlbumItem) }
-        runner.check(
-            "the owner album request parks",
-            await waitUntil { await provider.requestCount == 1 }
-        )
+        #expect((await waitUntil { await provider.requestCount == 1 }) == true, "the owner album request parks")
         let joiner = startJoiningAlbumLoad(store, item: firstAlbumItem)
-        runner.check(
-            "the joiner entered load",
-            await waitUntil { joiner.hasEntered() }
-        )
-        runner.equal("the joiner claimed the in-flight request", await provider.requestCount, 1)
-        runner.check("the joiner is waiting on the claimed flight", !joiner.hasFinished())
+        #expect((await waitUntil { joiner.hasEntered() }) == true, "the joiner entered load")
+        #expect((await provider.requestCount) == (1), "the joiner claimed the in-flight request")
+        #expect((!joiner.hasFinished()) == true, "the joiner is waiting on the claimed flight")
 
         owner.cancel()
-        runner.equal(
-            "owner cancel does not start a second provider request after a join claim",
-            await provider.requestCount,
-            1
-        )
-        runner.check("the joiner remains on the live flight after owner cancel", !joiner.hasFinished())
+        #expect(
+            (await provider.requestCount) == (1),
+            "owner cancel does not start a second provider request after a join claim")
+        #expect((!joiner.hasFinished()) == true, "the joiner remains on the live flight after owner cancel")
 
         await provider.completeNext(.album(firstAlbumValue))
         await joiner.task.value
         await owner.value
-        runner.check("the joiner finishes after the claimed flight", joiner.hasFinished())
-        runner.equal("the joiner receives the in-flight result", store.tracks.map(\.uri), ["spotify:track:first"])
-        runner.check("claimed-flight loading finishes", !store.isLoading)
-        runner.nil_("claimed-flight success does not surface an error", store.error)
+        #expect((joiner.hasFinished()) == true, "the joiner finishes after the claimed flight")
+        #expect((store.tracks.map(\.uri)) == (["spotify:track:first"]), "the joiner receives the in-flight result")
+        #expect((!store.isLoading) == true, "claimed-flight loading finishes")
+        #expect((store.error) == nil, "claimed-flight success does not surface an error")
     }
 
-    await runner.suite("Media detail cancelled owner does not join") {
+    do {
         let provider = GatedAlbumCatalog()
         let session = CatalogSessionAvailability(accountEpoch: 1, isAvailable: true)
         let (store, _) = makeAlbumStore(provider: provider, session: session)
 
         let owner = Task { await store.load(firstAlbumItem) }
-        runner.check(
-            "the owner album request parks",
-            await waitUntil { await provider.requestCount == 1 }
-        )
+        #expect((await waitUntil { await provider.requestCount == 1 }) == true, "the owner album request parks")
         owner.cancel()
         // Drain last-claim release so this admission observes no live flight.
         for _ in 0..<16 { await Task.yield() }
         let reload = Task { await store.load(firstAlbumItem) }
-        runner.check(
-            "reloading the same URI after owner cancellation starts a new provider request",
-            await waitUntil { await provider.requestCount == 2 }
-        )
-        runner.check("the replacement flight owns loading", store.isLoading)
+        #expect(
+            (await waitUntil { await provider.requestCount == 2 }) == true,
+            "reloading the same URI after owner cancellation starts a new provider request")
+        #expect((store.isLoading) == true, "the replacement flight owns loading")
 
         await provider.completeNext(.cancelled)
         await owner.value
-        runner.check("the cancelled owner does not publish", store.tracks.isEmpty)
-        runner.nil_("the cancelled owner does not surface an error", store.error)
+        #expect((store.tracks.isEmpty) == true, "the cancelled owner does not publish")
+        #expect((store.error) == nil, "the cancelled owner does not surface an error")
 
         await provider.completeNext(.album(firstAlbumValue))
         await reload.value
-        runner.equal("the replacement flight publishes", store.tracks.map(\.uri), ["spotify:track:first"])
-        runner.check("the replacement flight clears loading", !store.isLoading)
+        #expect((store.tracks.map(\.uri)) == (["spotify:track:first"]), "the replacement flight publishes")
+        #expect((!store.isLoading) == true, "the replacement flight clears loading")
     }
 
-    await runner.suite("Media detail selection supersession and late finish") {
+    do {
         let provider = GatedAlbumCatalog()
         let session = CatalogSessionAvailability(accountEpoch: 1, isAvailable: true)
         let (store, _) = makeAlbumStore(provider: provider, session: session)
 
         let stale = Task { await store.load(firstAlbumItem) }
-        runner.check(
-            "the superseded album request parks",
-            await waitUntil { await provider.requestCount == 1 }
-        )
+        #expect((await waitUntil { await provider.requestCount == 1 }) == true, "the superseded album request parks")
 
         let current = Task { await store.load(secondAlbumItem) }
-        runner.check(
-            "a different selection starts a new request instead of joining",
-            await waitUntil { await provider.requestCount == 2 }
-        )
-        runner.check("the newest flight owns loading", store.isLoading)
-        runner.equal("the newest selection is presented immediately", store.item?.uri, "spotify:album:second")
-        runner.equal("a new selection clears the previous tracks", store.tracks.map(\.uri), [])
-        runner.nil_("a new selection clears the previous error", store.error)
+        #expect(
+            (await waitUntil { await provider.requestCount == 2 }) == true,
+            "a different selection starts a new request instead of joining")
+        #expect((store.isLoading) == true, "the newest flight owns loading")
+        #expect((store.item?.uri) == ("spotify:album:second"), "the newest selection is presented immediately")
+        #expect((store.tracks.map(\.uri)) == ([]), "a new selection clears the previous tracks")
+        #expect((store.error) == nil, "a new selection clears the previous error")
 
         await provider.completeNext(.album(firstAlbumValue))
         await stale.value
-        runner.check("a stale success leaves the new request loading", store.isLoading)
-        runner.equal("a stale success does not publish tracks", store.tracks.map(\.uri), [])
-        runner.equal("a stale success does not publish a release date", store.releaseDate, "")
-        runner.nil_("a stale success does not surface an error", store.error)
+        #expect((store.isLoading) == true, "a stale success leaves the new request loading")
+        #expect((store.tracks.map(\.uri)) == ([]), "a stale success does not publish tracks")
+        #expect((store.releaseDate) == (""), "a stale success does not publish a release date")
+        #expect((store.error) == nil, "a stale success does not surface an error")
 
         let joiner = startJoiningAlbumLoad(store, item: secondAlbumItem)
-        runner.check(
-            "the later same-selection caller entered load",
-            await waitUntil { joiner.hasEntered() }
-        )
-        runner.equal(
-            "the old request cannot clear the new request's in-flight task",
-            await provider.requestCount,
-            2
-        )
-        runner.check("a later same-selection caller is still waiting on the newest flight", !joiner.hasFinished())
+        #expect((await waitUntil { joiner.hasEntered() }) == true, "the later same-selection caller entered load")
+        #expect((await provider.requestCount) == (2), "the old request cannot clear the new request's in-flight task")
+        #expect((!joiner.hasFinished()) == true, "a later same-selection caller is still waiting on the newest flight")
 
         await provider.completeNext(.album(secondAlbumValue))
         await current.value
         await joiner.task.value
-        runner.check("the later same-selection caller finishes with the newest flight", joiner.hasFinished())
-        runner.equal("only the current selection publishes", store.tracks.map(\.uri), ["spotify:track:second"])
-        runner.equal("only the current selection publishes a release date", store.releaseDate, "2025-03-04")
-        runner.check("the newest flight clears loading", !store.isLoading)
+        #expect((joiner.hasFinished()) == true, "the later same-selection caller finishes with the newest flight")
+        #expect((store.tracks.map(\.uri)) == (["spotify:track:second"]), "only the current selection publishes")
+        #expect((store.releaseDate) == ("2025-03-04"), "only the current selection publishes a release date")
+        #expect((!store.isLoading) == true, "the newest flight clears loading")
     }
 
-    await runner.suite("Media detail stale failure and cancellation stay inert") {
+    do {
         let provider = GatedAlbumCatalog()
         let session = CatalogSessionAvailability(accountEpoch: 1, isAvailable: true)
         let (store, _) = makeAlbumStore(provider: provider, session: session)
 
         let stale = Task { await store.load(firstAlbumItem) }
-        runner.check(
-            "the failing album request parks",
-            await waitUntil { await provider.requestCount == 1 }
-        )
+        #expect((await waitUntil { await provider.requestCount == 1 }) == true, "the failing album request parks")
         let current = Task { await store.load(secondAlbumItem) }
-        runner.check(
-            "a different selection supersedes the failing request",
-            await waitUntil { await provider.requestCount == 2 }
-        )
+        #expect(
+            (await waitUntil { await provider.requestCount == 2 }) == true,
+            "a different selection supersedes the failing request")
 
         await provider.completeNext(.failure(.unavailable))
         await stale.value
-        runner.check("a stale failure leaves the new request loading", store.isLoading)
-        runner.nil_("a stale failure does not surface an error", store.error)
+        #expect((store.isLoading) == true, "a stale failure leaves the new request loading")
+        #expect((store.error) == nil, "a stale failure does not surface an error")
 
         await provider.completeNext(.urlCancelled)
         await current.value
-        runner.check("cancellation clears only the cancelled flight's loading", !store.isLoading)
-        runner.nil_("cancellation does not surface a user-facing error", store.error)
-        runner.equal("cancellation does not publish tracks", store.tracks.map(\.uri), [])
+        #expect((!store.isLoading) == true, "cancellation clears only the cancelled flight's loading")
+        #expect((store.error) == nil, "cancellation does not surface a user-facing error")
+        #expect((store.tracks.map(\.uri)) == ([]), "cancellation does not publish tracks")
     }
 
-    await runner.suite("Media detail session supersession") {
+    do {
         let provider = GatedAlbumCatalog()
         let session = CatalogSessionAvailability(accountEpoch: 1, isAvailable: true)
         let (store, _) = makeAlbumStore(provider: provider, session: session)
 
         let staleEpoch = Task { await store.load(firstAlbumItem) }
-        runner.check(
-            "the pre-epoch album request parks",
-            await waitUntil { await provider.requestCount == 1 }
-        )
+        #expect((await waitUntil { await provider.requestCount == 1 }) == true, "the pre-epoch album request parks")
         session.update(accountEpoch: 2, isAvailable: true)
         await provider.completeNext(.album(firstAlbumValue))
         await staleEpoch.value
-        runner.equal("an older account epoch cannot publish tracks", store.tracks.map(\.uri), [])
-        runner.equal("an older account epoch cannot publish a release date", store.releaseDate, "")
+        #expect((store.tracks.map(\.uri)) == ([]), "an older account epoch cannot publish tracks")
+        #expect((store.releaseDate) == (""), "an older account epoch cannot publish a release date")
 
         let staleRevision = Task { await store.load(firstAlbumItem) }
-        runner.check(
-            "the pre-reconnect album request parks",
-            await waitUntil { await provider.requestCount == 2 }
-        )
+        #expect((await waitUntil { await provider.requestCount == 2 }) == true, "the pre-reconnect album request parks")
         session.update(accountEpoch: 2, isAvailable: false)
         session.update(accountEpoch: 2, isAvailable: true)
         await provider.completeNext(.album(firstAlbumValue))
         await staleRevision.value
-        runner.equal("a pre-reconnect album result cannot publish", store.tracks.map(\.uri), [])
+        #expect((store.tracks.map(\.uri)) == ([]), "a pre-reconnect album result cannot publish")
 
         let current = Task { await store.load(firstAlbumItem) }
-        runner.check(
-            "a new catalog session starts a distinct album request",
-            await waitUntil { await provider.requestCount == 3 }
-        )
+        #expect(
+            (await waitUntil { await provider.requestCount == 3 }) == true,
+            "a new catalog session starts a distinct album request")
         await provider.completeNext(.album(secondAlbumValue))
         await current.value
-        runner.equal("the current session publishes album tracks", store.tracks.map(\.uri), ["spotify:track:second"])
+        #expect((store.tracks.map(\.uri)) == (["spotify:track:second"]), "the current session publishes album tracks")
 
         session.update(accountEpoch: 3, isAvailable: true)
         let afterEpoch = Task { await store.load(firstAlbumItem) }
-        runner.check(
-            "a later account epoch reloads a previously loaded album",
-            await waitUntil { await provider.requestCount == 4 }
-        )
+        #expect(
+            (await waitUntil { await provider.requestCount == 4 }) == true,
+            "a later account epoch reloads a previously loaded album")
         await provider.completeNext(.album(firstAlbumValue))
         await afterEpoch.value
-        runner.equal("the later account epoch publishes album tracks", store.tracks.map(\.uri), ["spotify:track:first"])
+        #expect(
+            (store.tracks.map(\.uri)) == (["spotify:track:first"]), "the later account epoch publishes album tracks")
     }
 
-    await runner.suite("Media detail reset and teardown") {
+    do {
         let provider = GatedAlbumCatalog()
         let session = CatalogSessionAvailability(accountEpoch: 1, isAvailable: true)
         let (store, _) = makeAlbumStore(provider: provider, session: session)
 
         let inflight = Task { await store.load(firstAlbumItem) }
-        runner.check(
-            "the torn-down album request parks",
-            await waitUntil { await provider.requestCount == 1 }
-        )
-        runner.check("teardown starts from a loading album", store.isLoading)
+        #expect((await waitUntil { await provider.requestCount == 1 }) == true, "the torn-down album request parks")
+        #expect((store.isLoading) == true, "teardown starts from a loading album")
 
         store.reset()
-        runner.check("reset clears album loading", !store.isLoading)
-        runner.nil_("reset clears the current album", store.item)
-        runner.equal("reset clears album tracks", store.tracks.map(\.uri), [])
-        runner.equal("reset clears the release date", store.releaseDate, "")
-        runner.nil_("reset clears album errors", store.error)
+        #expect((!store.isLoading) == true, "reset clears album loading")
+        #expect((store.item) == nil, "reset clears the current album")
+        #expect((store.tracks.map(\.uri)) == ([]), "reset clears album tracks")
+        #expect((store.releaseDate) == (""), "reset clears the release date")
+        #expect((store.error) == nil, "reset clears album errors")
 
         await provider.completeNext(.album(firstAlbumValue))
         await inflight.value
-        runner.equal("a torn-down album success cannot publish tracks", store.tracks.map(\.uri), [])
-        runner.equal("a torn-down album success cannot restore a release date", store.releaseDate, "")
-        runner.check("a torn-down album success cannot restore loading", !store.isLoading)
-        runner.nil_("a torn-down album success cannot surface an error", store.error)
-        runner.nil_("a torn-down album success cannot restore the selection", store.item)
+        #expect((store.tracks.map(\.uri)) == ([]), "a torn-down album success cannot publish tracks")
+        #expect((store.releaseDate) == (""), "a torn-down album success cannot restore a release date")
+        #expect((!store.isLoading) == true, "a torn-down album success cannot restore loading")
+        #expect((store.error) == nil, "a torn-down album success cannot surface an error")
+        #expect((store.item) == nil, "a torn-down album success cannot restore the selection")
     }
 
-    await runner.suite("Media detail invalid URI") {
+    do {
         let albumProvider = GatedAlbumCatalog()
         let artistProvider = GatedArtistCatalog()
         let session = CatalogSessionAvailability(accountEpoch: 1, isAvailable: true)
@@ -558,176 +517,155 @@ func runMediaDetailStoreChecks(_ runner: CheckRunner) async {
         let wrongKind = artistItem("first", uri: "spotify:album:first")
 
         await albumStore.load(invalidAlbum)
-        runner.equal("an invalid album URI does not call the provider", await albumProvider.requestCount, 0)
-        runner.equal(
-            "an invalid album URI surfaces a stable error",
-            albumStore.error,
-            "Spotify returned an invalid album address."
-        )
-        runner.check("an invalid album URI does not stay loading", !albumStore.isLoading)
-        runner.equal("an invalid album URI still presents the selection", albumStore.item?.uri, "not-an-album-uri")
+        #expect((await albumProvider.requestCount) == (0), "an invalid album URI does not call the provider")
+        #expect(
+            (albumStore.error) == ("Spotify returned an invalid album address."),
+            "an invalid album URI surfaces a stable error")
+        #expect((!albumStore.isLoading) == true, "an invalid album URI does not stay loading")
+        #expect((albumStore.item?.uri) == ("not-an-album-uri"), "an invalid album URI still presents the selection")
 
         await albumStore.load(invalidAlbum)
-        runner.equal(
-            "retrying an invalid album URI still does not call the provider", await albumProvider.requestCount, 0)
+        #expect(
+            (await albumProvider.requestCount) == (0), "retrying an invalid album URI still does not call the provider")
 
         await albumStore.load(wrongKind)
-        runner.equal("a non-album selection is ignored", await albumProvider.requestCount, 0)
-        runner.equal("a non-album selection leaves the invalid album state", albumStore.item?.uri, "not-an-album-uri")
+        #expect((await albumProvider.requestCount) == (0), "a non-album selection is ignored")
+        #expect((albumStore.item?.uri) == ("not-an-album-uri"), "a non-album selection leaves the invalid album state")
 
         await artistStore.load(invalidArtist)
-        runner.equal("an invalid artist URI does not call overview", await artistProvider.overviewRequestCount, 0)
-        runner.equal("an invalid artist URI does not call discography", await artistProvider.discographyRequestCount, 0)
-        runner.equal(
-            "an invalid artist URI surfaces a stable error",
-            artistStore.error,
-            "Spotify returned an invalid artist address."
-        )
-        runner.check("an invalid artist URI does not stay loading", !artistStore.isLoading)
+        #expect((await artistProvider.overviewRequestCount) == (0), "an invalid artist URI does not call overview")
+        #expect(
+            (await artistProvider.discographyRequestCount) == (0), "an invalid artist URI does not call discography")
+        #expect(
+            (artistStore.error) == ("Spotify returned an invalid artist address."),
+            "an invalid artist URI surfaces a stable error")
+        #expect((!artistStore.isLoading) == true, "an invalid artist URI does not stay loading")
     }
 
-    await runner.suite("Album metadata side effects") {
+    do {
         let provider = GatedAlbumCatalog()
         let session = CatalogSessionAvailability(accountEpoch: 1, isAvailable: true)
         let attributes = RecordingAttributes()
         let (store, metadata) = makeAlbumStore(provider: provider, session: session, attributes: attributes)
 
         let stale = Task { await store.load(firstAlbumItem) }
-        runner.check(
-            "the stale metadata request parks",
-            await waitUntil { await provider.requestCount == 1 }
-        )
+        #expect((await waitUntil { await provider.requestCount == 1 }) == true, "the stale metadata request parks")
         let current = Task { await store.load(secondAlbumItem) }
-        runner.check(
-            "the current album metadata request parks",
-            await waitUntil { await provider.requestCount == 2 }
-        )
+        #expect(
+            (await waitUntil { await provider.requestCount == 2 }) == true, "the current album metadata request parks")
 
         await provider.completeNext(.album(firstAlbumValue))
         await stale.value
-        runner.nil_("a stale album success does not cache tracks", metadata.knownTrack(for: "spotify:track:first"))
-        runner.equal("a stale album success does not start attribute enrichment", await attributes.requestCount, 0)
+        #expect((metadata.knownTrack(for: "spotify:track:first")) == nil, "a stale album success does not cache tracks")
+        #expect((await attributes.requestCount) == (0), "a stale album success does not start attribute enrichment")
 
         await provider.completeNext(.album(secondAlbumValue))
         await current.value
-        runner.equal(
-            "the current album publishes metadata",
-            metadata.knownTrack(for: "spotify:track:second")?.title,
-            "Second Track"
-        )
-        runner.nil_(
-            "the current album does not keep stale album metadata", metadata.knownTrack(for: "spotify:track:first"))
-        runner.check(
-            "the current album starts attribute enrichment",
-            await waitUntil { await attributes.requestCount == 1 }
-        )
-        runner.equal(
-            "attribute enrichment uses the current album tracks", await attributes.requestedURIs,
-            ["spotify:track:second"])
+        #expect(
+            (metadata.knownTrack(for: "spotify:track:second")?.title) == ("Second Track"),
+            "the current album publishes metadata")
+        #expect(
+            (metadata.knownTrack(for: "spotify:track:first")) == nil,
+            "the current album does not keep stale album metadata")
+        #expect(
+            (await waitUntil { await attributes.requestCount == 1 }) == true,
+            "the current album starts attribute enrichment")
+        #expect(
+            (await attributes.requestedURIs) == (["spotify:track:second"]),
+            "attribute enrichment uses the current album tracks")
     }
 
-    await runner.suite("Artist same-selection join and parallel completion") {
+    do {
         let provider = GatedArtistCatalog()
         let session = CatalogSessionAvailability(accountEpoch: 1, isAvailable: true)
         let store = makeArtistStore(provider: provider, session: session)
 
         let firstLoad = Task { await store.load(firstArtistItem) }
-        runner.check(
-            "artist overview and discography both park",
-            await waitUntilArtistPair(provider, overview: 1, discography: 1)
-        )
+        #expect(
+            (await waitUntilArtistPair(provider, overview: 1, discography: 1)) == true,
+            "artist overview and discography both park")
         let follower = startJoiningArtistLoad(store, item: firstArtistItem)
-        runner.check(
-            "the duplicate artist caller entered load",
-            await waitUntil { follower.hasEntered() }
-        )
-        runner.equal("duplicate artist overview is not requested", await provider.overviewRequestCount, 1)
-        runner.equal("duplicate artist discography is not requested", await provider.discographyRequestCount, 1)
-        runner.check("the artist stays loading until both fetches finish", store.isLoading)
-        runner.check("the duplicate artist caller is still waiting", !follower.hasFinished())
-        runner.equal("partial artist completion does not publish yet", store.releases.map(\.uri), [])
+        #expect((await waitUntil { follower.hasEntered() }) == true, "the duplicate artist caller entered load")
+        #expect((await provider.overviewRequestCount) == (1), "duplicate artist overview is not requested")
+        #expect((await provider.discographyRequestCount) == (1), "duplicate artist discography is not requested")
+        #expect((store.isLoading) == true, "the artist stays loading until both fetches finish")
+        #expect((!follower.hasFinished()) == true, "the duplicate artist caller is still waiting")
+        #expect((store.releases.map(\.uri)) == ([]), "partial artist completion does not publish yet")
 
         await provider.completeOverview(.artist(firstArtistValue))
         for _ in 0..<32 { await Task.yield() }
-        runner.check("overview alone does not finish loading", store.isLoading)
-        runner.equal("overview alone does not publish releases", store.releases.map(\.uri), [])
-        runner.check("overview alone does not finish the joined caller", !follower.hasFinished())
+        #expect((store.isLoading) == true, "overview alone does not finish loading")
+        #expect((store.releases.map(\.uri)) == ([]), "overview alone does not publish releases")
+        #expect((!follower.hasFinished()) == true, "overview alone does not finish the joined caller")
 
         await provider.completeDiscography(.artist(firstArtistValue))
         await firstLoad.value
         await follower.task.value
-        runner.check("the duplicate artist caller finishes after both fetches", follower.hasFinished())
-        runner.equal(
-            "artist mapping uses the profile name after both fetches complete",
-            store.releases.map(\.uri),
-            ["spotify:album:first-release"]
-        )
-        runner.equal(
-            "artist mapping uses the profile as the release subtitle", store.releases.first?.subtitle, "First Artist")
-        runner.check("parallel artist loading finishes once", !store.isLoading)
+        #expect((follower.hasFinished()) == true, "the duplicate artist caller finishes after both fetches")
+        #expect(
+            (store.releases.map(\.uri)) == (["spotify:album:first-release"]),
+            "artist mapping uses the profile name after both fetches complete")
+        #expect(
+            (store.releases.first?.subtitle) == ("First Artist"),
+            "artist mapping uses the profile as the release subtitle")
+        #expect((!store.isLoading) == true, "parallel artist loading finishes once")
 
         await store.load(firstArtistItem)
-        runner.equal("a completed same-session artist is not fetched again", await provider.overviewRequestCount, 1)
-        runner.equal(
-            "a completed same-session discography is not fetched again", await provider.discographyRequestCount, 1)
+        #expect((await provider.overviewRequestCount) == (1), "a completed same-session artist is not fetched again")
+        #expect(
+            (await provider.discographyRequestCount) == (1), "a completed same-session discography is not fetched again"
+        )
     }
 
-    await runner.suite("Artist selection supersession stays inert") {
+    do {
         let provider = GatedArtistCatalog()
         let session = CatalogSessionAvailability(accountEpoch: 1, isAvailable: true)
         let store = makeArtistStore(provider: provider, session: session)
 
         let stale = Task { await store.load(firstArtistItem) }
-        runner.check(
-            "the superseded artist pair parks",
-            await waitUntilArtistPair(provider, overview: 1, discography: 1)
-        )
+        #expect(
+            (await waitUntilArtistPair(provider, overview: 1, discography: 1)) == true,
+            "the superseded artist pair parks")
         let current = Task { await store.load(secondArtistItem) }
-        runner.check(
-            "a different artist starts a new parallel pair",
-            await waitUntilArtistPair(provider, overview: 2, discography: 2)
-        )
-        runner.equal("the newest artist is presented immediately", store.item?.uri, "spotify:artist:second")
-        runner.equal("a new artist clears previous releases", store.releases.map(\.uri), [])
+        #expect(
+            (await waitUntilArtistPair(provider, overview: 2, discography: 2)) == true,
+            "a different artist starts a new parallel pair")
+        #expect((store.item?.uri) == ("spotify:artist:second"), "the newest artist is presented immediately")
+        #expect((store.releases.map(\.uri)) == ([]), "a new artist clears previous releases")
 
         await provider.completeOverview(.artist(firstArtistValue))
         await provider.completeDiscography(.artist(firstArtistValue))
         await stale.value
-        runner.check("a stale artist pair leaves the new request loading", store.isLoading)
-        runner.equal("a stale artist pair does not publish", store.releases.map(\.uri), [])
+        #expect((store.isLoading) == true, "a stale artist pair leaves the new request loading")
+        #expect((store.releases.map(\.uri)) == ([]), "a stale artist pair does not publish")
 
         await provider.completeOverview(.artist(secondArtistValue))
         await provider.completeDiscography(.artist(secondArtistValue))
         await current.value
-        runner.equal(
-            "only the current artist publishes",
-            store.releases.map(\.uri),
-            ["spotify:album:second-release"]
-        )
-        runner.equal("the current artist profile names the releases", store.releases.first?.subtitle, "Second Artist")
-        runner.check("the current artist clears loading", !store.isLoading)
+        #expect((store.releases.map(\.uri)) == (["spotify:album:second-release"]), "only the current artist publishes")
+        #expect((store.releases.first?.subtitle) == ("Second Artist"), "the current artist profile names the releases")
+        #expect((!store.isLoading) == true, "the current artist clears loading")
     }
 
-    await runner.suite("Artist reset invalidates outstanding work") {
+    do {
         let provider = GatedArtistCatalog()
         let session = CatalogSessionAvailability(accountEpoch: 1, isAvailable: true)
         let store = makeArtistStore(provider: provider, session: session)
 
         let inflight = Task { await store.load(firstArtistItem) }
-        runner.check(
-            "the torn-down artist pair parks",
-            await waitUntilArtistPair(provider, overview: 1, discography: 1)
-        )
+        #expect(
+            (await waitUntilArtistPair(provider, overview: 1, discography: 1)) == true,
+            "the torn-down artist pair parks")
         store.reset()
-        runner.check("reset clears artist loading", !store.isLoading)
-        runner.nil_("reset clears the current artist", store.item)
-        runner.equal("reset clears releases", store.releases.map(\.uri), [])
+        #expect((!store.isLoading) == true, "reset clears artist loading")
+        #expect((store.item) == nil, "reset clears the current artist")
+        #expect((store.releases.map(\.uri)) == ([]), "reset clears releases")
 
         await provider.completeOverview(.artist(firstArtistValue))
         await provider.completeDiscography(.artist(firstArtistValue))
         await inflight.value
-        runner.equal("a torn-down artist success cannot publish", store.releases.map(\.uri), [])
-        runner.check("a torn-down artist success cannot restore loading", !store.isLoading)
-        runner.nil_("a torn-down artist success cannot restore the selection", store.item)
+        #expect((store.releases.map(\.uri)) == ([]), "a torn-down artist success cannot publish")
+        #expect((!store.isLoading) == true, "a torn-down artist success cannot restore loading")
+        #expect((store.item) == nil, "a torn-down artist success cannot restore the selection")
     }
 }

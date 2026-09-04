@@ -1,3 +1,4 @@
+import Testing
 import SpottyDomain
 import Foundation
 
@@ -209,47 +210,48 @@ private final class RegistryRuntime {
     }
 }
 
-func runPlaybackCommandEffectSpikeChecks(_ check: CheckRunner) {
-    check.suite("Registry pause workflow") {
+@Test
+func testPlaybackCommandEffectSpike() {
+    do {
         let success = RegistryRuntime()
-        check.check("pause is accepted while idle", success.requestPause())
-        check.equal("optimistic pause is visible immediately", success.transport, .paused)
+        #expect((success.requestPause()) == true, "pause is accepted while idle")
+        #expect((success.transport) == (.paused), "optimistic pause is visible immediately")
         success.deliver(.succeeded)
-        check.equal("success keeps the paused transport", success.transport, .paused)
-        check.nil_("success clears pending command", success.pending)
-        check.equal("success completion is reported", success.session.completions, [true])
-        check.equal("success does not reconnect", success.session.reconnectCount, 0)
+        #expect((success.transport) == (.paused), "success keeps the paused transport")
+        #expect((success.pending) == nil, "success clears pending command")
+        #expect((success.session.completions) == ([true]), "success completion is reported")
+        #expect((success.session.reconnectCount) == (0), "success does not reconnect")
 
         let failure = RegistryRuntime()
         _ = failure.requestPause()
         failure.deliver(.remoteFailed)
-        check.equal("failure rolls transport back", failure.transport, .playing)
-        check.equal("failure completion is reported", failure.session.completions, [false])
-        check.equal("remote failure does not reconnect", failure.session.reconnectCount, 0)
+        #expect((failure.transport) == (.playing), "failure rolls transport back")
+        #expect((failure.session.completions) == ([false]), "failure completion is reported")
+        #expect((failure.session.reconnectCount) == (0), "remote failure does not reconnect")
 
         let reconnect = RegistryRuntime()
         _ = reconnect.requestPause()
         reconnect.deliver(.reconnectRequired)
-        check.equal("reconnect runs only after an accepted finish", reconnect.session.reconnectCount, 1)
-        check.equal("reconnect-required is a failed completion", reconnect.session.completions, [false])
+        #expect((reconnect.session.reconnectCount) == (1), "reconnect runs only after an accepted finish")
+        #expect((reconnect.session.completions) == ([false]), "reconnect-required is a failed completion")
     }
 
-    check.suite("Matching snapshot then successful finish") {
+    do {
         let runtime = RegistryRuntime()
         _ = runtime.requestPause()
         let commandID = runtime.pending?.id
-        check.notNil("pause is pending before the snapshot", commandID)
+        #expect((commandID) != nil, "pause is pending before the snapshot")
         let reconciled = runtime.session.send(
             .transport(.paused),
             source: .enginePlayback,
             revision: 1
         )
-        check.check("a matching paused snapshot is accepted", reconciled)
-        check.nil_("the snapshot reconciles the pending command", runtime.pending)
-        check.equal("the snapshot keeps the optimistic pause", runtime.transport, .paused)
+        #expect((reconciled) == true, "a matching paused snapshot is accepted")
+        #expect((runtime.pending) == nil, "the snapshot reconciles the pending command")
+        #expect((runtime.transport) == (.paused), "the snapshot keeps the optimistic pause")
         runtime.deliver(.succeeded)
-        check.equal("already-reconciled success still reports the completion", runtime.session.completions, [true])
-        check.equal("already-reconciled success does not reconnect", runtime.session.reconnectCount, 0)
+        #expect((runtime.session.completions) == ([true]), "already-reconciled success still reports the completion")
+        #expect((runtime.session.reconnectCount) == (0), "already-reconciled success does not reconnect")
 
         let lateFailure = RegistryRuntime()
         _ = lateFailure.requestPause()
@@ -258,71 +260,71 @@ func runPlaybackCommandEffectSpikeChecks(_ check: CheckRunner) {
             source: .enginePlayback,
             revision: 1
         )
-        check.nil_("the snapshot reconciles before the late failure", lateFailure.pending)
+        #expect((lateFailure.pending) == nil, "the snapshot reconciles before the late failure")
         lateFailure.deliver(.reconnectRequired)
-        check.equal(
-            "a late reconnect-required failure keeps the reconciled completion",
-            lateFailure.session.completions,
-            [true]
-        )
-        check.equal("a late reconnect-required failure still reconnects", lateFailure.session.reconnectCount, 1)
-        check.equal("a late coordinator failure does not roll back the confirmed pause", lateFailure.transport, .paused)
-        check.nil_("a late coordinator failure does not surface an error notice", lateFailure.session.state.notice)
+        #expect(
+            (lateFailure.session.completions) == ([true]),
+            "a late reconnect-required failure keeps the reconciled completion")
+        #expect((lateFailure.session.reconnectCount) == (1), "a late reconnect-required failure still reconnects")
+        #expect(
+            (lateFailure.transport) == (.paused), "a late coordinator failure does not roll back the confirmed pause")
+        #expect(
+            (lateFailure.session.state.notice) == nil, "a late coordinator failure does not surface an error notice")
     }
 
-    check.suite("Cancel in flight restores captured pause") {
+    do {
         let runtime = RegistryRuntime()
         _ = runtime.requestPause()
         runtime.cancelInFlight()
         runtime.deliver(.succeeded)
-        check.equal("cancellation restores the captured transport", runtime.transport, .playing)
-        check.nil_("cancellation clears the pending command", runtime.pending)
-        check.equal("cancelled work reports failure once", runtime.session.completions, [false])
-        check.equal("cancelled work does not reconnect", runtime.session.reconnectCount, 0)
-        check.check("a later pause of the same kind is admitted", runtime.requestPause())
-        check.equal("the later pause applies optimistic paused transport", runtime.transport, .paused)
+        #expect((runtime.transport) == (.playing), "cancellation restores the captured transport")
+        #expect((runtime.pending) == nil, "cancellation clears the pending command")
+        #expect((runtime.session.completions) == ([false]), "cancelled work reports failure once")
+        #expect((runtime.session.reconnectCount) == (0), "cancelled work does not reconnect")
+        #expect((runtime.requestPause()) == true, "a later pause of the same kind is admitted")
+        #expect((runtime.transport) == (.paused), "the later pause applies optimistic paused transport")
 
         let confirmed = RegistryRuntime()
         _ = confirmed.requestPause()
         let commandID = confirmed.pending?.id
-        check.notNil("pause is pending before the snapshot", commandID)
+        #expect((commandID) != nil, "pause is pending before the snapshot")
         _ = confirmed.session.send(
             .transport(.paused),
             source: .enginePlayback,
             revision: 1
         )
-        check.nil_("the snapshot reconciles the pending command", confirmed.pending)
+        #expect((confirmed.pending) == nil, "the snapshot reconciles the pending command")
         confirmed.cancelInFlight()
-        check.equal("confirmed cancellation keeps the paused transport", confirmed.transport, .paused)
-        check.check("confirmed cancellation reports no completion", confirmed.session.completions.isEmpty)
+        #expect((confirmed.transport) == (.paused), "confirmed cancellation keeps the paused transport")
+        #expect((confirmed.session.completions.isEmpty) == true, "confirmed cancellation reports no completion")
 
         let stale = RegistryRuntime()
         _ = stale.requestPause()
         stale.session.restartEngine()
         stale.cancelInFlight()
-        check.check("stale cancellation reports no completion", stale.session.completions.isEmpty)
-        check.nil_("engine-epoch invalidation already dropped the pending command", stale.pending)
+        #expect((stale.session.completions.isEmpty) == true, "stale cancellation reports no completion")
+        #expect((stale.pending) == nil, "engine-epoch invalidation already dropped the pending command")
     }
 
-    check.suite("Stale finishes stay inert") {
+    do {
         let engine = RegistryRuntime()
         _ = engine.requestPause()
         engine.session.restartEngine()
         engine.deliver(.reconnectRequired)
-        check.equal("engine-epoch invalidation does not reconnect", engine.session.reconnectCount, 0)
-        check.check("engine-epoch invalidation reports no completion", engine.session.completions.isEmpty)
+        #expect((engine.session.reconnectCount) == (0), "engine-epoch invalidation does not reconnect")
+        #expect((engine.session.completions.isEmpty) == true, "engine-epoch invalidation reports no completion")
 
         let account = RegistryRuntime()
         _ = account.requestPause()
         account.invalidateAccount()
         account.deliver(.reconnectRequired)
-        check.equal("account-epoch invalidation does not reconnect", account.session.reconnectCount, 0)
-        check.check("account-epoch invalidation reports no completion", account.session.completions.isEmpty)
+        #expect((account.session.reconnectCount) == (0), "account-epoch invalidation does not reconnect")
+        #expect((account.session.completions.isEmpty) == true, "account-epoch invalidation reports no completion")
 
         let superseded = RegistryRuntime()
-        check.check("the original pause starts", superseded.requestPause())
+        #expect((superseded.requestPause()) == true, "the original pause starts")
         let originalID = superseded.pending?.id
-        check.notNil("the original pause is pending", originalID)
+        #expect((originalID) != nil, "the original pause is pending")
         let replacementID = UUID(uuidString: "00000000-0000-0000-0000-000000000022")!
         _ = superseded.session.send(
             .commandStarted(
@@ -333,22 +335,22 @@ func runPlaybackCommandEffectSpikeChecks(_ check: CheckRunner) {
                     startedAt: spikeDate
                 ))
         )
-        check.equal("the reducer replacement owns the pending slot", superseded.pending?.id, replacementID)
-        check.equal("the replacement updates optimistic transport", superseded.transport, .playing)
+        #expect((superseded.pending?.id) == (replacementID), "the reducer replacement owns the pending slot")
+        #expect((superseded.transport) == (.playing), "the replacement updates optimistic transport")
         superseded.deliver(.succeeded)
-        check.check("the superseded original reports no completion", superseded.session.completions.isEmpty)
-        check.equal("the replacement remains pending after the stale finish", superseded.pending?.id, replacementID)
-        check.equal("the superseded finish cannot roll back the replacement", superseded.transport, .playing)
-        check.check("the original id is not the replacement id", originalID != replacementID)
+        #expect((superseded.session.completions.isEmpty) == true, "the superseded original reports no completion")
+        #expect((superseded.pending?.id) == (replacementID), "the replacement remains pending after the stale finish")
+        #expect((superseded.transport) == (.playing), "the superseded finish cannot roll back the replacement")
+        #expect((originalID != replacementID) == true, "the original id is not the replacement id")
     }
 
-    check.suite("TCA cancelInFlight diverges from Spotty") {
+    do {
         let runtime = RegistryRuntime()
-        check.check("the first pause starts", runtime.requestPause())
-        check.check(
-            "Spotty refuses a second transport command while one is pending; TCA cancellable(id:cancelInFlight: true) would cancel and replace it",
-            !runtime.requestPause()
+        #expect((runtime.requestPause()) == true, "the first pause starts")
+        #expect(
+            (!runtime.requestPause()) == true,
+            "Spotty refuses a second transport command while one is pending; TCA cancellable(id:cancelInFlight: true) would cancel and replace it"
         )
-        check.equal("the refused attempt completes immediately as failure", runtime.session.completions, [false])
+        #expect((runtime.session.completions) == ([false]), "the refused attempt completes immediately as failure")
     }
 }

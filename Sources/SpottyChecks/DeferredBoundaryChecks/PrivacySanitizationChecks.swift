@@ -1,3 +1,4 @@
+import Testing
 import SpottyDomain
 import Foundation
 @testable import SpottyCore
@@ -5,9 +6,9 @@ import Foundation
 private let privacySentinel = "SPOTTY_PRIVACY_SENTINEL_api-body_d81f"
 
 @MainActor
-private func omitSentinel(_ check: CheckRunner, _ label: String, _ text: String?) {
-    check.notNil(label, text)
-    check.check("\(label) omits the response body", text?.contains(privacySentinel) != true)
+private func omitSentinel(_ label: String, _ text: String?) {
+    #expect((text) != nil, "\(label)")
+    #expect((text?.contains(privacySentinel) != true) == true, "\(label) omits the response body")
 }
 
 private func httpResponse(url: URL, status: Int) -> HTTPURLResponse {
@@ -32,7 +33,6 @@ private func partnerAPI(status: Int, body: String) -> PartnerAPI {
 
 @MainActor
 private func expectFailure<Failure: Error & Equatable & LocalizedError>(
-    _ check: CheckRunner,
     _ label: String,
     _ expected: Failure,
     description: String,
@@ -40,34 +40,28 @@ private func expectFailure<Failure: Error & Equatable & LocalizedError>(
 ) async {
     do {
         try await perform()
-        check.check("\(label) throws", false)
+        #expect((false) == true, "\(label) throws")
     } catch let error as Failure {
-        check.equal("\(label) keeps typed case", error, expected)
-        check.equal("\(label) uses a stable category", error.errorDescription ?? "", description)
-        omitSentinel(check, "\(label) LocalizedError", error.errorDescription)
+        #expect((error) == (expected), "\(label) keeps typed case")
+        #expect((error.errorDescription ?? "") == (description), "\(label) uses a stable category")
+        omitSentinel("\(label) LocalizedError", error.errorDescription)
     } catch {
-        check.check("\(label) throws \(Failure.self), got \(error)", false)
+        #expect((false) == true, "\(label) throws \(Failure.self), got \(error)")
     }
 }
 
+@Test
 @MainActor
-func runPrivacySanitizationChecks(_ check: CheckRunner) async {
-    await check.suite("API failure privacy") {
+func testPrivacySanitization() async {
+    do {
         let clientToken = ClientTokenError.requestFailed(401)
-        check.equal(
-            "client-token failures keep HTTP status",
-            clientToken,
-            .requestFailed(401)
-        )
-        check.equal(
-            "client-token failures use a stable HTTP category",
-            clientToken.errorDescription ?? "",
-            "Could not obtain a Spotify client token (HTTP 401)"
-        )
-        omitSentinel(check, "client-token LocalizedError", clientToken.errorDescription)
+        #expect((clientToken) == (.requestFailed(401)), "client-token failures keep HTTP status")
+        #expect(
+            (clientToken.errorDescription ?? "") == ("Could not obtain a Spotify client token (HTTP 401)"),
+            "client-token failures use a stable HTTP category")
+        omitSentinel("client-token LocalizedError", clientToken.errorDescription)
 
         await expectFailure(
-            check,
             "Partner HTTP",
             PartnerAPIError.requestFailed(503),
             description: "Spotify rejected the request (HTTP 503)",
@@ -75,7 +69,6 @@ func runPrivacySanitizationChecks(_ check: CheckRunner) async {
         )
 
         await expectFailure(
-            check,
             "Partner GraphQL",
             PartnerAPIError.graphQLErrors("profileAttributes"),
             description: "Spotify returned a GraphQL error for profileAttributes",
@@ -90,7 +83,6 @@ func runPrivacySanitizationChecks(_ check: CheckRunner) async {
         )
 
         await expectFailure(
-            check,
             "retired persisted query",
             PartnerAPIError.persistedQueryNotFound("profileAttributes"),
             description: "Spotify no longer recognises the stored query for profileAttributes",
@@ -105,7 +97,6 @@ func runPrivacySanitizationChecks(_ check: CheckRunner) async {
         )
 
         await expectFailure(
-            check,
             "Partner mutation",
             PartnerAPIError.mutationRejected("addToLibrary"),
             description: "Spotify rejected addToLibrary",
@@ -119,28 +110,20 @@ func runPrivacySanitizationChecks(_ check: CheckRunner) async {
             }
         )
 
-        check.equal(
-            "pagination cap failures keep a stable category",
-            PartnerAPIError.pagination(.pageLimitReached),
-            .pagination(.pageLimitReached)
-        )
-        check.equal(
-            "pagination cap failures omit payloads",
-            PartnerAPIError.pagination(.pageLimitReached).errorDescription ?? "",
-            "Spotify pagination exceeded the request limit"
-        )
+        #expect(
+            (PartnerAPIError.pagination(.pageLimitReached)) == (.pagination(.pageLimitReached)),
+            "pagination cap failures keep a stable category")
+        #expect(
+            (PartnerAPIError.pagination(.pageLimitReached).errorDescription ?? "")
+                == ("Spotify pagination exceeded the request limit"), "pagination cap failures omit payloads")
         omitSentinel(
-            check,
             "pagination cap LocalizedError",
             PartnerAPIError.pagination(.pageLimitReached).errorDescription
         )
-        check.equal(
-            "pagination non-progress failures omit payloads",
-            PartnerAPIError.pagination(.offsetDidNotAdvance).errorDescription ?? "",
-            "Spotify pagination did not advance"
-        )
+        #expect(
+            (PartnerAPIError.pagination(.offsetDidNotAdvance).errorDescription ?? "")
+                == ("Spotify pagination did not advance"), "pagination non-progress failures omit payloads")
         omitSentinel(
-            check,
             "pagination non-progress LocalizedError",
             PartnerAPIError.pagination(.offsetDidNotAdvance).errorDescription
         )
@@ -153,7 +136,6 @@ func runPrivacySanitizationChecks(_ check: CheckRunner) async {
             retryTiming: .immediate
         )
         await expectFailure(
-            check,
             "Connect",
             SpotifyConnectAPIError.requestFailed(502),
             description: "Spotify rejected the command (HTTP 502)",
@@ -169,7 +151,6 @@ func runPrivacySanitizationChecks(_ check: CheckRunner) async {
             retryTiming: .immediate
         )
         await expectFailure(
-            check,
             "queue Web API",
             SpotifyWebPlayerAPIError.requestFailed(429),
             description: "Spotify rejected the queue request (HTTP 429)",
@@ -181,12 +162,12 @@ func runPrivacySanitizationChecks(_ check: CheckRunner) async {
                 transport: rejectedTransport(status: 403, body: Data(privacySentinel.utf8)),
                 retryTiming: .immediate
             ).queue()
-            check.check("forbidden queue failures throw", false)
+            #expect((false) == true, "forbidden queue failures throw")
         } catch let error as SpotifyWebPlayerAPIError {
-            check.equal("401/403 capability still reads status", error.statusCode ?? -1, 403)
-            omitSentinel(check, "forbidden queue LocalizedError", error.errorDescription)
+            #expect((error.statusCode ?? -1) == (403), "401/403 capability still reads status")
+            omitSentinel("forbidden queue LocalizedError", error.errorDescription)
         } catch {
-            check.check("forbidden queue failures throw SpotifyWebPlayerAPIError", false)
+            #expect((false) == true, "forbidden queue failures throw SpotifyWebPlayerAPIError")
         }
 
         let attributes = TrackAttributesAPI(
@@ -197,7 +178,6 @@ func runPrivacySanitizationChecks(_ check: CheckRunner) async {
             retryTiming: .immediate
         )
         await expectFailure(
-            check,
             "track-attribute",
             TrackAttributesAPIError.requestFailed(500),
             description: "Spotify rejected the attribute request (HTTP 500)",
@@ -209,11 +189,11 @@ func runPrivacySanitizationChecks(_ check: CheckRunner) async {
         let failedPhase = PlaybackSessionPhase.failed(
             PartnerAPIError.requestFailed(503).errorDescription ?? privacySentinel
         )
-        check.equal("failed session phases log a stable category", sessionPhaseLogLabel(failedPhase), "failed")
-        omitSentinel(check, "session phase public log label", sessionPhaseLogLabel(failedPhase))
+        #expect((sessionPhaseLogLabel(failedPhase)) == ("failed"), "failed session phases log a stable category")
+        omitSentinel("session phase public log label", sessionPhaseLogLabel(failedPhase))
         let publicLog =
             "Session phase changed: \(sessionPhaseLogLabel(.ready)) -> \(sessionPhaseLogLabel(failedPhase)); epoch=8"
-        omitSentinel(check, "public session phase log", publicLog)
-        check.check("session phase logs keep epoch", publicLog.contains("epoch=8"))
+        omitSentinel("public session phase log", publicLog)
+        #expect((publicLog.contains("epoch=8")) == true, "session phase logs keep epoch")
     }
 }

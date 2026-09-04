@@ -1,3 +1,4 @@
+import Testing
 import SpottyDomain
 import Foundation
 @testable import SpottyCore
@@ -295,9 +296,10 @@ private func sendRepeatSnapshot(
     )
 }
 
+@Test
 @MainActor
-func runRepeatTransitionChecks(_ runner: CheckRunner) async {
-    runner.suite("Local repeat transition application") {
+func testRepeatTransition() async {
+    do {
         func record(
             from: RepeatMode,
             to: RepeatMode,
@@ -318,66 +320,54 @@ func runRepeatTransitionChecks(_ runner: CheckRunner) async {
         }
 
         let offToContext = record(from: .off, to: .context)
-        runner.equal(
-            "local off → context sends only context on",
-            offToContext.calls,
-            [RepeatFlagMutation(flag: .context, enabled: true)]
-        )
-        runner.equal("local off → context succeeds", offToContext.result, .ok)
+        #expect(
+            (offToContext.calls) == ([RepeatFlagMutation(flag: .context, enabled: true)]),
+            "local off → context sends only context on")
+        #expect((offToContext.result) == (.ok), "local off → context succeeds")
 
         let contextToTrack = record(from: .context, to: .track)
-        runner.equal(
-            "local context → track sends context off then track on",
-            contextToTrack.calls,
-            [
-                RepeatFlagMutation(flag: .context, enabled: false),
-                RepeatFlagMutation(flag: .track, enabled: true),
-            ]
-        )
-        runner.equal("local context → track succeeds", contextToTrack.result, .ok)
+        #expect(
+            (contextToTrack.calls)
+                == ([
+                    RepeatFlagMutation(flag: .context, enabled: false),
+                    RepeatFlagMutation(flag: .track, enabled: true),
+                ]), "local context → track sends context off then track on")
+        #expect((contextToTrack.result) == (.ok), "local context → track succeeds")
 
         let trackToOff = record(from: .track, to: .off)
-        runner.equal(
-            "local track → off sends only track off",
-            trackToOff.calls,
-            [RepeatFlagMutation(flag: .track, enabled: false)]
-        )
-        runner.equal("local track → off succeeds", trackToOff.result, .ok)
+        #expect(
+            (trackToOff.calls) == ([RepeatFlagMutation(flag: .track, enabled: false)]),
+            "local track → off sends only track off")
+        #expect((trackToOff.result) == (.ok), "local track → off succeeds")
 
         let firstStep = record(from: .off, to: .context, failAtCount: 1)
-        runner.equal(
-            "local first-step failure performs no compensation",
-            firstStep.calls,
-            [RepeatFlagMutation(flag: .context, enabled: true)]
-        )
-        runner.equal("local first-step failure is an error", firstStep.result, .error)
+        #expect(
+            (firstStep.calls) == ([RepeatFlagMutation(flag: .context, enabled: true)]),
+            "local first-step failure performs no compensation")
+        #expect((firstStep.result) == (.error), "local first-step failure is an error")
 
         let secondStep = record(from: .context, to: .track, failAtCount: 2)
-        runner.equal(
-            "local second-step failure attempts compensation",
-            secondStep.calls,
-            [
-                RepeatFlagMutation(flag: .context, enabled: false),
-                RepeatFlagMutation(flag: .track, enabled: true),
-                RepeatFlagMutation(flag: .context, enabled: true),
-            ]
-        )
-        runner.equal("local second-step failure remains an error", secondStep.result, .error)
+        #expect(
+            (secondStep.calls)
+                == ([
+                    RepeatFlagMutation(flag: .context, enabled: false),
+                    RepeatFlagMutation(flag: .track, enabled: true),
+                    RepeatFlagMutation(flag: .context, enabled: true),
+                ]), "local second-step failure attempts compensation")
+        #expect((secondStep.result) == (.error), "local second-step failure remains an error")
 
         let compensationFailure = record(from: .context, to: .track, failAtCount: 2, compensationFails: true)
-        runner.equal(
-            "local compensation failure still records the rollback attempt",
-            compensationFailure.calls,
-            [
-                RepeatFlagMutation(flag: .context, enabled: false),
-                RepeatFlagMutation(flag: .track, enabled: true),
-                RepeatFlagMutation(flag: .context, enabled: true),
-            ]
-        )
-        runner.equal("local compensation failure does not claim success", compensationFailure.result, .error)
+        #expect(
+            (compensationFailure.calls)
+                == ([
+                    RepeatFlagMutation(flag: .context, enabled: false),
+                    RepeatFlagMutation(flag: .track, enabled: true),
+                    RepeatFlagMutation(flag: .context, enabled: true),
+                ]), "local compensation failure still records the rollback attempt")
+        #expect((compensationFailure.result) == (.error), "local compensation failure does not claim success")
     }
 
-    await runner.suite("Remote repeat success sends only changed flags") {
+    do {
         struct Case: Sendable {
             let from: RepeatMode
             let expected: [RepeatSend]
@@ -412,20 +402,18 @@ func runRepeatTransitionChecks(_ runner: CheckRunner) async {
             player.setRepeatMode(item.from)
             player.cycleRepeat()
             let finished = await waitUntil { player.state.pendingCommands[.options] == nil }
-            runner.check("\(item.label) finishes", finished)
-            runner.equal("\(item.label) sends", await remote.sends, item.expected)
-            runner.equal("\(item.label) keeps the optimistic mode", player.repeatMode, item.from.next)
-            runner.nil_("\(item.label) has no command notice", player.transientCommandError)
-            runner.equal(
-                "\(item.label) command count matches changed flags",
-                await remote.sends.count,
-                item.expected.count
+            #expect((finished) == true, "\(item.label) finishes")
+            #expect((await remote.sends) == (item.expected), "\(item.label) sends")
+            #expect((player.repeatMode) == (item.from.next), "\(item.label) keeps the optimistic mode")
+            #expect((player.transientCommandError) == nil, "\(item.label) has no command notice")
+            #expect(
+                (await remote.sends.count) == (item.expected.count), "\(item.label) command count matches changed flags"
             )
             await player.shutdownForTermination()
         }
     }
 
-    await runner.suite("Remote first-step failure performs no compensation") {
+    do {
         let remote = ScriptedRepeatRemote(failAtCounts: [1])
         let player = playbackStore(
             repeatEnvironment(local: RepeatLocalEngine(), remote: remote)
@@ -433,20 +421,18 @@ func runRepeatTransitionChecks(_ runner: CheckRunner) async {
         seedReadyRemote(player)
         player.cycleRepeat()
         let finished = await waitUntil { player.state.pendingCommands[.options] == nil }
-        runner.check("first-step failure finishes", finished)
-        runner.equal(
-            "first-step failure sends only the required mutation",
-            await remote.sends,
-            [RepeatSend(endpoint: .repeatContext, enabled: true)]
-        )
-        runner.equal("first-step failure rolls back the optimistic mode", player.repeatMode, RepeatMode.off)
-        runner.equal(
-            "first-step failure reports Could not update repeat", player.transientCommandError,
-            "Could not update repeat")
+        #expect((finished) == true, "first-step failure finishes")
+        #expect(
+            (await remote.sends) == ([RepeatSend(endpoint: .repeatContext, enabled: true)]),
+            "first-step failure sends only the required mutation")
+        #expect((player.repeatMode) == (RepeatMode.off), "first-step failure rolls back the optimistic mode")
+        #expect(
+            (player.transientCommandError) == ("Could not update repeat"),
+            "first-step failure reports Could not update repeat")
         await player.shutdownForTermination()
     }
 
-    await runner.suite("Remote second-step failure compensates and reports failure") {
+    do {
         let remote = ScriptedRepeatRemote(failAtCounts: [2])
         let player = playbackStore(
             repeatEnvironment(local: RepeatLocalEngine(), remote: remote)
@@ -455,25 +441,23 @@ func runRepeatTransitionChecks(_ runner: CheckRunner) async {
         player.setRepeatMode(.context)
         player.cycleRepeat()
         let finished = await waitUntil { player.state.pendingCommands[.options] == nil }
-        runner.check("second-step failure finishes", finished)
-        runner.equal(
-            "second-step failure records best-effort compensation",
-            await remote.sends,
-            [
-                RepeatSend(endpoint: .repeatContext, enabled: false),
-                RepeatSend(endpoint: .repeatTrack, enabled: true),
-                RepeatSend(endpoint: .repeatContext, enabled: true),
-            ]
-        )
-        runner.equal(
-            "second-step failure rolls back to the captured previous mode", player.repeatMode, RepeatMode.context)
-        runner.equal(
-            "second-step failure reports Could not update repeat", player.transientCommandError,
-            "Could not update repeat")
+        #expect((finished) == true, "second-step failure finishes")
+        #expect(
+            (await remote.sends)
+                == ([
+                    RepeatSend(endpoint: .repeatContext, enabled: false),
+                    RepeatSend(endpoint: .repeatTrack, enabled: true),
+                    RepeatSend(endpoint: .repeatContext, enabled: true),
+                ]), "second-step failure records best-effort compensation")
+        #expect(
+            (player.repeatMode) == (RepeatMode.context), "second-step failure rolls back to the captured previous mode")
+        #expect(
+            (player.transientCommandError) == ("Could not update repeat"),
+            "second-step failure reports Could not update repeat")
         await player.shutdownForTermination()
     }
 
-    await runner.suite("Remote compensation failure remains a command failure") {
+    do {
         let remote = ScriptedRepeatRemote(failAtCounts: [2, 3])
         let player = playbackStore(
             repeatEnvironment(local: RepeatLocalEngine(), remote: remote)
@@ -482,24 +466,22 @@ func runRepeatTransitionChecks(_ runner: CheckRunner) async {
         player.setRepeatMode(.context)
         player.cycleRepeat()
         let finished = await waitUntil { player.state.pendingCommands[.options] == nil }
-        runner.check("compensation failure finishes", finished)
-        runner.equal(
-            "compensation failure still attempted the rollback send",
-            await remote.sends,
-            [
-                RepeatSend(endpoint: .repeatContext, enabled: false),
-                RepeatSend(endpoint: .repeatTrack, enabled: true),
-                RepeatSend(endpoint: .repeatContext, enabled: true),
-            ]
-        )
-        runner.equal("compensation failure does not claim success", player.repeatMode, RepeatMode.context)
-        runner.equal(
-            "compensation failure reports Could not update repeat", player.transientCommandError,
-            "Could not update repeat")
+        #expect((finished) == true, "compensation failure finishes")
+        #expect(
+            (await remote.sends)
+                == ([
+                    RepeatSend(endpoint: .repeatContext, enabled: false),
+                    RepeatSend(endpoint: .repeatTrack, enabled: true),
+                    RepeatSend(endpoint: .repeatContext, enabled: true),
+                ]), "compensation failure still attempted the rollback send")
+        #expect((player.repeatMode) == (RepeatMode.context), "compensation failure does not claim success")
+        #expect(
+            (player.transientCommandError) == ("Could not update repeat"),
+            "compensation failure reports Could not update repeat")
         await player.shutdownForTermination()
     }
 
-    await runner.suite("Local store second-step failure attempts rollback") {
+    do {
         let local = RepeatLocalEngine(failAtCount: 2)
         let player = playbackStore(
             repeatEnvironment(local: local, remote: ScriptedRepeatRemote())
@@ -508,24 +490,22 @@ func runRepeatTransitionChecks(_ runner: CheckRunner) async {
         player.setRepeatMode(.context)
         player.cycleRepeat()
         let finished = await waitUntil { player.state.pendingCommands[.options] == nil }
-        runner.check("local second-step failure finishes", finished)
-        runner.equal(
-            "local engine records compensation in documented order",
-            local.mutations,
-            [
-                RepeatFlagMutation(flag: .context, enabled: false),
-                RepeatFlagMutation(flag: .track, enabled: true),
-                RepeatFlagMutation(flag: .context, enabled: true),
-            ]
-        )
-        runner.equal("local second-step failure rolls back the optimistic mode", player.repeatMode, RepeatMode.context)
-        runner.equal(
-            "local second-step failure reports Could not update repeat", player.transientCommandError,
-            "Could not update repeat")
+        #expect((finished) == true, "local second-step failure finishes")
+        #expect(
+            (local.mutations)
+                == ([
+                    RepeatFlagMutation(flag: .context, enabled: false),
+                    RepeatFlagMutation(flag: .track, enabled: true),
+                    RepeatFlagMutation(flag: .context, enabled: true),
+                ]), "local engine records compensation in documented order")
+        #expect((player.repeatMode) == (RepeatMode.context), "local second-step failure rolls back the optimistic mode")
+        #expect(
+            (player.transientCommandError) == ("Could not update repeat"),
+            "local second-step failure reports Could not update repeat")
         await player.shutdownForTermination()
     }
 
-    await runner.suite("Authoritative engine repeat snapshot is not clobbered") {
+    do {
         let remote = ScriptedRepeatRemote(failAtCounts: [1], holdAfterCount: 1)
         let player = playbackStore(
             repeatEnvironment(local: RepeatLocalEngine(), remote: remote)
@@ -533,44 +513,40 @@ func runRepeatTransitionChecks(_ runner: CheckRunner) async {
         seedReadyRemote(player)
         player.cycleRepeat()
         let held = await waitUntil { await remote.sends.count == 1 }
-        runner.check("repeat send is held before failure", held)
-        runner.equal("optimistic repeat is context before the snapshot", player.repeatMode, RepeatMode.context)
+        #expect((held) == true, "repeat send is held before failure")
+        #expect((player.repeatMode) == (RepeatMode.context), "optimistic repeat is context before the snapshot")
         sendRepeatSnapshot(player, mode: .context, revision: 3)
-        runner.equal("engine snapshot keeps context repeat", player.repeatMode, RepeatMode.context)
+        #expect((player.repeatMode) == (RepeatMode.context), "engine snapshot keeps context repeat")
         await remote.releaseHold()
         let finished = await waitUntil { player.state.pendingCommands[.options] == nil }
-        runner.check("stale failure completion arrives", finished)
-        runner.equal(
-            "a later failure does not clobber the engine repeat snapshot", player.repeatMode, RepeatMode.context)
-        runner.nil_("confirmed repeat then failure has no command notice", player.transientCommandError)
+        #expect((finished) == true, "stale failure completion arrives")
+        #expect(
+            (player.repeatMode) == (RepeatMode.context), "a later failure does not clobber the engine repeat snapshot")
+        #expect((player.transientCommandError) == nil, "confirmed repeat then failure has no command notice")
         await player.shutdownForTermination()
     }
 
-    await runner.suite("Raw both-true flags plan both-off; ordinary track is one send") {
+    do {
         let bothTrueRemote = ScriptedRepeatRemote()
         let bothTruePlayer = playbackStore(
             repeatEnvironment(local: RepeatLocalEngine(), remote: bothTrueRemote)
         )
         seedReadyRemote(bothTruePlayer)
         bothTruePlayer.setRepeat(mode: .track, flags: RepeatFlags(context: true, track: true))
-        runner.equal("both-true still displays as track", bothTruePlayer.repeatMode, RepeatMode.track)
-        runner.equal(
-            "both-true raw flags are retained on options",
-            bothTruePlayer.state.options.repeatFlags,
-            RepeatFlags(context: true, track: true)
-        )
+        #expect((bothTruePlayer.repeatMode) == (RepeatMode.track), "both-true still displays as track")
+        #expect(
+            (bothTruePlayer.state.options.repeatFlags) == (RepeatFlags(context: true, track: true)),
+            "both-true raw flags are retained on options")
         bothTruePlayer.cycleRepeat()
         let bothFinished = await waitUntil { bothTruePlayer.state.pendingCommands[.options] == nil }
-        runner.check("both-true track → off finishes", bothFinished)
-        runner.equal(
-            "both-true track → off clears both flags",
-            await bothTrueRemote.sends,
-            [
-                RepeatSend(endpoint: .repeatContext, enabled: false),
-                RepeatSend(endpoint: .repeatTrack, enabled: false),
-            ]
-        )
-        runner.equal("both-true track → off shows off", bothTruePlayer.repeatMode, RepeatMode.off)
+        #expect((bothFinished) == true, "both-true track → off finishes")
+        #expect(
+            (await bothTrueRemote.sends)
+                == ([
+                    RepeatSend(endpoint: .repeatContext, enabled: false),
+                    RepeatSend(endpoint: .repeatTrack, enabled: false),
+                ]), "both-true track → off clears both flags")
+        #expect((bothTruePlayer.repeatMode) == (RepeatMode.off), "both-true track → off shows off")
         await bothTruePlayer.shutdownForTermination()
 
         let ordinaryRemote = ScriptedRepeatRemote()
@@ -581,16 +557,14 @@ func runRepeatTransitionChecks(_ runner: CheckRunner) async {
         ordinaryPlayer.setRepeatMode(.track)
         ordinaryPlayer.cycleRepeat()
         let ordinaryFinished = await waitUntil { ordinaryPlayer.state.pendingCommands[.options] == nil }
-        runner.check("ordinary track → off finishes", ordinaryFinished)
-        runner.equal(
-            "ordinary track → off still sends only track off",
-            await ordinaryRemote.sends,
-            [RepeatSend(endpoint: .repeatTrack, enabled: false)]
-        )
+        #expect((ordinaryFinished) == true, "ordinary track → off finishes")
+        #expect(
+            (await ordinaryRemote.sends) == ([RepeatSend(endpoint: .repeatTrack, enabled: false)]),
+            "ordinary track → off still sends only track off")
         await ordinaryPlayer.shutdownForTermination()
     }
 
-    await runner.suite("Context → track intermediate off restores previous context") {
+    do {
         let remote = ScriptedRepeatRemote(failAtCounts: [2], holdAfterCount: 2)
         let player = playbackStore(
             repeatEnvironment(local: RepeatLocalEngine(), remote: remote)
@@ -599,40 +573,37 @@ func runRepeatTransitionChecks(_ runner: CheckRunner) async {
         player.setRepeatMode(.context)
         player.cycleRepeat()
         let held = await waitUntil { await remote.sends.count == 2 }
-        runner.check("second mutation is held after context-off", held)
+        #expect((held) == true, "second mutation is held after context-off")
         sendRepeatSnapshot(
             player,
             mode: .off,
             flags: RepeatFlags(context: false, track: false),
             revision: 4
         )
-        runner.equal("intermediate engine sample shows off", player.repeatMode, RepeatMode.off)
+        #expect((player.repeatMode) == (RepeatMode.off), "intermediate engine sample shows off")
         await remote.releaseHold()
         let finished = await waitUntil { player.state.pendingCommands[.options] == nil }
-        runner.check("compensated second-step failure finishes", finished)
-        runner.equal(
-            "compensation still ran after the intermediate off snapshot",
-            await remote.sends,
-            [
-                RepeatSend(endpoint: .repeatContext, enabled: false),
-                RepeatSend(endpoint: .repeatTrack, enabled: true),
-                RepeatSend(endpoint: .repeatContext, enabled: true),
-            ]
-        )
-        runner.equal(
-            "intermediate off plus successful compensation restores context UI", player.repeatMode, RepeatMode.context)
-        runner.equal(
-            "restored context flags match the captured previous pair",
-            player.state.options.repeatFlags,
-            RepeatMode.context.flags
-        )
-        runner.equal(
-            "the failed command still reports Could not update repeat", player.transientCommandError,
-            "Could not update repeat")
+        #expect((finished) == true, "compensated second-step failure finishes")
+        #expect(
+            (await remote.sends)
+                == ([
+                    RepeatSend(endpoint: .repeatContext, enabled: false),
+                    RepeatSend(endpoint: .repeatTrack, enabled: true),
+                    RepeatSend(endpoint: .repeatContext, enabled: true),
+                ]), "compensation still ran after the intermediate off snapshot")
+        #expect(
+            (player.repeatMode) == (RepeatMode.context),
+            "intermediate off plus successful compensation restores context UI")
+        #expect(
+            (player.state.options.repeatFlags) == (RepeatMode.context.flags),
+            "restored context flags match the captured previous pair")
+        #expect(
+            (player.transientCommandError) == ("Could not update repeat"),
+            "the failed command still reports Could not update repeat")
         await player.shutdownForTermination()
     }
 
-    await runner.suite("Both-true intermediate snapshot restores previous raw flags") {
+    do {
         let remote = ScriptedRepeatRemote(failAtCounts: [2], holdAfterCount: 1)
         let player = playbackStore(
             repeatEnvironment(local: RepeatLocalEngine(), remote: remote)
@@ -643,47 +614,37 @@ func runRepeatTransitionChecks(_ runner: CheckRunner) async {
         player.setRepeat(mode: .track, flags: priorBothTrue)
         player.cycleRepeat()
         let held = await waitUntil { await remote.sends.count == 1 }
-        runner.check("first both-off mutation is held after context-off", held)
+        #expect((held) == true, "first both-off mutation is held after context-off")
         sendRepeatSnapshot(player, mode: .track, flags: intermediateFlags, revision: 7)
-        runner.equal("intermediate both-true step still displays as track", player.repeatMode, RepeatMode.track)
-        runner.equal(
-            "intermediate raw flags are context off, track on",
-            player.state.options.repeatFlags,
-            intermediateFlags
-        )
+        #expect((player.repeatMode) == (RepeatMode.track), "intermediate both-true step still displays as track")
+        #expect(
+            (player.state.options.repeatFlags) == (intermediateFlags),
+            "intermediate raw flags are context off, track on")
         await remote.releaseHold()
         let finished = await waitUntil { player.state.pendingCommands[.options] == nil }
-        runner.check("compensated both-true second-step failure finishes", finished)
-        runner.equal(
-            "compensation restores context after the intermediate track snapshot",
-            await remote.sends,
-            [
-                RepeatSend(endpoint: .repeatContext, enabled: false),
-                RepeatSend(endpoint: .repeatTrack, enabled: false),
-                RepeatSend(endpoint: .repeatContext, enabled: true),
-            ]
-        )
-        runner.equal("store restored previous track after compensation", player.repeatMode, RepeatMode.track)
-        runner.equal(
-            "store restored captured both-true raw flags",
-            player.state.options.repeatFlags,
-            priorBothTrue
-        )
-        runner.equal(
-            "a later track → off from restored flags plans both mutations",
-            RepeatTransitionPlan.planning(from: player.state.options.repeatFlags, to: RepeatMode.off.flags).mutations,
-            [
-                RepeatFlagMutation(flag: .context, enabled: false),
-                RepeatFlagMutation(flag: .track, enabled: false),
-            ]
-        )
-        runner.equal(
-            "the failed command still reports Could not update repeat", player.transientCommandError,
-            "Could not update repeat")
+        #expect((finished) == true, "compensated both-true second-step failure finishes")
+        #expect(
+            (await remote.sends)
+                == ([
+                    RepeatSend(endpoint: .repeatContext, enabled: false),
+                    RepeatSend(endpoint: .repeatTrack, enabled: false),
+                    RepeatSend(endpoint: .repeatContext, enabled: true),
+                ]), "compensation restores context after the intermediate track snapshot")
+        #expect((player.repeatMode) == (RepeatMode.track), "store restored previous track after compensation")
+        #expect((player.state.options.repeatFlags) == (priorBothTrue), "store restored captured both-true raw flags")
+        #expect(
+            (RepeatTransitionPlan.planning(from: player.state.options.repeatFlags, to: RepeatMode.off.flags).mutations)
+                == ([
+                    RepeatFlagMutation(flag: .context, enabled: false),
+                    RepeatFlagMutation(flag: .track, enabled: false),
+                ]), "a later track → off from restored flags plans both mutations")
+        #expect(
+            (player.transientCommandError) == ("Could not update repeat"),
+            "the failed command still reports Could not update repeat")
         await player.shutdownForTermination()
     }
 
-    await runner.suite("Target and unrelated snapshots survive repeat failure") {
+    do {
         let targetRemote = ScriptedRepeatRemote(failAtCounts: [2], holdAfterCount: 2)
         let targetPlayer = playbackStore(
             repeatEnvironment(local: RepeatLocalEngine(), remote: targetRemote)
@@ -692,13 +653,14 @@ func runRepeatTransitionChecks(_ runner: CheckRunner) async {
         targetPlayer.setRepeatMode(.context)
         targetPlayer.cycleRepeat()
         let targetHeld = await waitUntil { await targetRemote.sends.count == 2 }
-        runner.check("target snapshot is injected before second-step failure", targetHeld)
+        #expect((targetHeld) == true, "target snapshot is injected before second-step failure")
         sendRepeatSnapshot(targetPlayer, mode: .track, revision: 5)
         await targetRemote.releaseHold()
         let targetFinished = await waitUntil { targetPlayer.state.pendingCommands[.options] == nil }
-        runner.check("target snapshot failure finishes", targetFinished)
-        runner.equal("a later target track snapshot remains track", targetPlayer.repeatMode, RepeatMode.track)
-        runner.nil_("confirmed target repeat then failure has no command notice", targetPlayer.transientCommandError)
+        #expect((targetFinished) == true, "target snapshot failure finishes")
+        #expect((targetPlayer.repeatMode) == (RepeatMode.track), "a later target track snapshot remains track")
+        #expect(
+            (targetPlayer.transientCommandError) == nil, "confirmed target repeat then failure has no command notice")
         await targetPlayer.shutdownForTermination()
 
         let unrelatedRemote = ScriptedRepeatRemote(failAtCounts: [1], holdAfterCount: 1)
@@ -708,18 +670,18 @@ func runRepeatTransitionChecks(_ runner: CheckRunner) async {
         seedReadyRemote(unrelatedPlayer)
         unrelatedPlayer.cycleRepeat()
         let unrelatedHeld = await waitUntil { await unrelatedRemote.sends.count == 1 }
-        runner.check("unrelated snapshot is injected before first-step failure", unrelatedHeld)
+        #expect((unrelatedHeld) == true, "unrelated snapshot is injected before first-step failure")
         sendRepeatSnapshot(unrelatedPlayer, mode: .track, revision: 6)
         await unrelatedRemote.releaseHold()
         let unrelatedFinished = await waitUntil { unrelatedPlayer.state.pendingCommands[.options] == nil }
-        runner.check("unrelated snapshot failure finishes", unrelatedFinished)
-        runner.equal(
-            "unrelated newer authoritative track remains preserved", unrelatedPlayer.repeatMode, RepeatMode.track)
-        runner.nil_("superseded repeat then failure stays inert", unrelatedPlayer.transientCommandError)
+        #expect((unrelatedFinished) == true, "unrelated snapshot failure finishes")
+        #expect(
+            (unrelatedPlayer.repeatMode) == (RepeatMode.track), "unrelated newer authoritative track remains preserved")
+        #expect((unrelatedPlayer.transientCommandError) == nil, "superseded repeat then failure stays inert")
         await unrelatedPlayer.shutdownForTermination()
     }
 
-    await runner.suite("Repeat cancellation and teardown stay inert") {
+    do {
         let sleeping = ScriptedRepeatRemote(sleepUntilCancelled: true)
         let cancelStore = playbackStore(
             repeatEnvironment(local: RepeatLocalEngine(), remote: sleeping)
@@ -727,15 +689,17 @@ func runRepeatTransitionChecks(_ runner: CheckRunner) async {
         seedReadyRemote(cancelStore)
         cancelStore.cycleRepeat()
         let sendStarted = await waitUntil { await sleeping.sends.count == 1 }
-        runner.check("cancelled repeat send started", sendStarted)
-        runner.check("remote repeat is pending before cancellation", cancelStore.state.pendingCommands[.options] != nil)
+        #expect((sendStarted) == true, "cancelled repeat send started")
+        #expect(
+            (cancelStore.state.pendingCommands[.options] != nil) == true, "remote repeat is pending before cancellation"
+        )
         if let commandID = cancelStore.state.pendingCommands[.options]?.id {
             cancelStore.effects.cancel(.command(commandID))
         }
         let cancellationSettled = await waitUntil { cancelStore.state.pendingCommands[.options] == nil }
-        runner.check("cancelled repeat settles", cancellationSettled)
-        runner.equal("cancelled repeat restores the captured mode", cancelStore.repeatMode, RepeatMode.off)
-        runner.nil_("cancelled repeat has no notice", cancelStore.transientCommandError)
+        #expect((cancellationSettled) == true, "cancelled repeat settles")
+        #expect((cancelStore.repeatMode) == (RepeatMode.off), "cancelled repeat restores the captured mode")
+        #expect((cancelStore.transientCommandError) == nil, "cancelled repeat has no notice")
         await cancelStore.shutdownForTermination()
 
         let teardownRemote = ScriptedRepeatRemote(sleepUntilCancelled: true)
@@ -745,34 +709,32 @@ func runRepeatTransitionChecks(_ runner: CheckRunner) async {
         seedReadyRemote(teardownStore)
         teardownStore.cycleRepeat()
         let teardownSendStarted = await waitUntil { await teardownRemote.sends.count == 1 }
-        runner.check("teardown repeat send started", teardownSendStarted)
-        runner.check("repeat is pending before teardown", teardownStore.state.pendingCommands[.options] != nil)
+        #expect((teardownSendStarted) == true, "teardown repeat send started")
+        #expect((teardownStore.state.pendingCommands[.options] != nil) == true, "repeat is pending before teardown")
         await teardownStore.shutdownForTermination()
         let teardownSettled = await waitUntil { await teardownRemote.completedSends == 1 }
-        runner.check("teardown repeat transport exits", teardownSettled)
-        runner.nil_("teardown leaves no pending options command", teardownStore.state.pendingCommands[.options])
-        runner.nil_("teardown repeat has no command notice", teardownStore.transientCommandError)
+        #expect((teardownSettled) == true, "teardown repeat transport exits")
+        #expect((teardownStore.state.pendingCommands[.options]) == nil, "teardown leaves no pending options command")
+        #expect((teardownStore.transientCommandError) == nil, "teardown repeat has no command notice")
     }
 
-    await runner.suite("Local store first-step failure and success") {
+    do {
         let failing = RepeatLocalEngine(failAtCount: 1)
         let failed = playbackStore(
             repeatEnvironment(local: failing, remote: ScriptedRepeatRemote())
         )
         seedReadyLocal(failed)
         failed.cycleRepeat()
-        runner.equal("local off → context presents context before completion", failed.repeatMode, RepeatMode.context)
+        #expect((failed.repeatMode) == (RepeatMode.context), "local off → context presents context before completion")
         let failedFinished = await waitUntil { failed.state.pendingCommands[.options] == nil }
-        runner.check("local first-step failure finishes", failedFinished)
-        runner.equal(
-            "local first-step failure performs no compensation",
-            failing.mutations,
-            [RepeatFlagMutation(flag: .context, enabled: true)]
-        )
-        runner.equal("local first-step failure rolls back the optimistic mode", failed.repeatMode, RepeatMode.off)
-        runner.equal(
-            "local first-step failure reports Could not update repeat", failed.transientCommandError,
-            "Could not update repeat")
+        #expect((failedFinished) == true, "local first-step failure finishes")
+        #expect(
+            (failing.mutations) == ([RepeatFlagMutation(flag: .context, enabled: true)]),
+            "local first-step failure performs no compensation")
+        #expect((failed.repeatMode) == (RepeatMode.off), "local first-step failure rolls back the optimistic mode")
+        #expect(
+            (failed.transientCommandError) == ("Could not update repeat"),
+            "local first-step failure reports Could not update repeat")
         await failed.shutdownForTermination()
 
         let succeeding = RepeatLocalEngine()
@@ -782,18 +744,16 @@ func runRepeatTransitionChecks(_ runner: CheckRunner) async {
         seedReadyLocal(accepted)
         accepted.cycleRepeat()
         let acceptedFinished = await waitUntil { accepted.state.pendingCommands[.options] == nil }
-        runner.check("local off → context success finishes", acceptedFinished)
-        runner.equal(
-            "local off → context success sends only context on",
-            succeeding.mutations,
-            [RepeatFlagMutation(flag: .context, enabled: true)]
-        )
-        runner.equal("local off → context success keeps context", accepted.repeatMode, RepeatMode.context)
-        runner.nil_("local off → context success has no command notice", accepted.transientCommandError)
+        #expect((acceptedFinished) == true, "local off → context success finishes")
+        #expect(
+            (succeeding.mutations) == ([RepeatFlagMutation(flag: .context, enabled: true)]),
+            "local off → context success sends only context on")
+        #expect((accepted.repeatMode) == (RepeatMode.context), "local off → context success keeps context")
+        #expect((accepted.transientCommandError) == nil, "local off → context success has no command notice")
         await accepted.shutdownForTermination()
     }
 
-    await runner.suite("Lagging, non-authoritative, stale, and duplicate repeat stay correct") {
+    do {
         let laggingRemote = ScriptedRepeatRemote(failAtCounts: [1], holdAfterCount: 1)
         let lagging = playbackStore(
             repeatEnvironment(local: RepeatLocalEngine(), remote: laggingRemote)
@@ -801,17 +761,17 @@ func runRepeatTransitionChecks(_ runner: CheckRunner) async {
         seedReadyRemote(lagging)
         lagging.cycleRepeat()
         let lagHeld = await waitUntil { await laggingRemote.sends.count == 1 }
-        runner.check("lagging repeat send is held", lagHeld)
+        #expect((lagHeld) == true, "lagging repeat send is held")
         sendRepeatSnapshot(lagging, mode: .off, revision: 2)
-        runner.equal("a lagging off snapshot keeps optimistic context", lagging.repeatMode, RepeatMode.context)
-        runner.notNil("a lagging off snapshot keeps rollback ownership", lagging.state.pendingCommands[.options])
+        #expect((lagging.repeatMode) == (RepeatMode.context), "a lagging off snapshot keeps optimistic context")
+        #expect((lagging.state.pendingCommands[.options]) != nil, "a lagging off snapshot keeps rollback ownership")
         await laggingRemote.releaseHold()
         let lagFinished = await waitUntil { lagging.state.pendingCommands[.options] == nil }
-        runner.check("lagging prior then rejection finishes", lagFinished)
-        runner.equal("lagging prior then rejection restores off", lagging.repeatMode, RepeatMode.off)
-        runner.equal(
-            "lagging prior then rejection reports Could not update repeat", lagging.transientCommandError,
-            "Could not update repeat")
+        #expect((lagFinished) == true, "lagging prior then rejection finishes")
+        #expect((lagging.repeatMode) == (RepeatMode.off), "lagging prior then rejection restores off")
+        #expect(
+            (lagging.transientCommandError) == ("Could not update repeat"),
+            "lagging prior then rejection reports Could not update repeat")
         await lagging.shutdownForTermination()
 
         let userRemote = ScriptedRepeatRemote(failAtCounts: [1], holdAfterCount: 1)
@@ -821,24 +781,26 @@ func runRepeatTransitionChecks(_ runner: CheckRunner) async {
         seedReadyRemote(userStore)
         userStore.cycleRepeat()
         let userHeld = await waitUntil { await userRemote.sends.count == 1 }
-        runner.check("user options repeat send is held", userHeld)
+        #expect((userHeld) == true, "user options repeat send is held")
         _ = userStore.send(
             .options(PlaybackOptions(shuffle: true, repeatMode: .context, repeatFlags: RepeatMode.context.flags)),
             source: .user
         )
-        runner.equal("a matching user options event keeps optimistic context", userStore.repeatMode, RepeatMode.context)
-        runner.equal("a matching user options event still adopts shuffle", userStore.state.options.shuffle, true)
-        runner.notNil(
-            "a matching user options event keeps the pending repeat command", userStore.state.pendingCommands[.options])
-        runner.check(
-            "a matching user options event does not record confirmation",
-            userStore.state.transportCommandResolutions.isEmpty
-        )
+        #expect(
+            (userStore.repeatMode) == (RepeatMode.context), "a matching user options event keeps optimistic context")
+        #expect((userStore.state.options.shuffle) == (true), "a matching user options event still adopts shuffle")
+        #expect(
+            (userStore.state.pendingCommands[.options]) != nil,
+            "a matching user options event keeps the pending repeat command")
+        #expect(
+            (userStore.state.transportCommandResolutions.isEmpty) == true,
+            "a matching user options event does not record confirmation")
         await userRemote.releaseHold()
         let userFinished = await waitUntil { userStore.state.pendingCommands[.options] == nil }
-        runner.check("user options then rejection finishes", userFinished)
-        runner.equal(
-            "rejection after only a matching user options event restores off", userStore.repeatMode, RepeatMode.off)
+        #expect((userFinished) == true, "user options then rejection finishes")
+        #expect(
+            (userStore.repeatMode) == (RepeatMode.off),
+            "rejection after only a matching user options event restores off")
         await userStore.shutdownForTermination()
 
         let staleRemote = ScriptedRepeatRemote(sleepUntilCancelled: true)
@@ -848,7 +810,7 @@ func runRepeatTransitionChecks(_ runner: CheckRunner) async {
         seedReadyRemote(staleStore)
         staleStore.cycleRepeat()
         let stalePending = await waitUntil { staleStore.state.pendingCommands[.options] != nil }
-        runner.check("repeat is pending before an engine-epoch bump", stalePending)
+        #expect((stalePending) == true, "repeat is pending before an engine-epoch bump")
         let optimisticRepeat = staleStore.repeatMode
         _ = staleStore.send(
             .engineConnection(EngineConnectionSnapshot(session: .recovering, owner: .none, localDeviceID: nil)),
@@ -856,11 +818,11 @@ func runRepeatTransitionChecks(_ runner: CheckRunner) async {
             revision: 1,
             engineEpoch: staleStore.engineGeneration + 1
         )
-        runner.nil_("an engine-epoch bump drops the pending repeat", staleStore.state.pendingCommands[.options])
-        runner.equal("an engine-epoch bump does not roll back context", staleStore.repeatMode, optimisticRepeat)
-        runner.check(
-            "an engine-epoch bump clears repeat confirmation state",
-            staleStore.state.transportCommandResolutions.isEmpty)
+        #expect((staleStore.state.pendingCommands[.options]) == nil, "an engine-epoch bump drops the pending repeat")
+        #expect((staleStore.repeatMode) == (optimisticRepeat), "an engine-epoch bump does not roll back context")
+        #expect(
+            (staleStore.state.transportCommandResolutions.isEmpty) == true,
+            "an engine-epoch bump clears repeat confirmation state")
         await staleStore.shutdownForTermination()
 
         let accountRemote = ScriptedRepeatRemote(sleepUntilCancelled: true)
@@ -870,12 +832,12 @@ func runRepeatTransitionChecks(_ runner: CheckRunner) async {
         seedReadyRemote(accountStore)
         accountStore.cycleRepeat()
         let accountPending = await waitUntil { accountStore.state.pendingCommands[.options] != nil }
-        runner.check("repeat is pending before an account-epoch bump", accountPending)
+        #expect((accountPending) == true, "repeat is pending before an account-epoch bump")
         accountStore.accountStore.advanceEpoch()
         _ = accountStore.send(.reset(session: .signedOut), source: .account, accountEpoch: accountStore.accountEpoch)
-        runner.nil_("an account-epoch bump drops pending repeat", accountStore.state.pendingCommands[.options])
-        runner.equal("an account-epoch bump signs out", accountStore.state.session, PlaybackSessionPhase.signedOut)
-        runner.equal("an account-epoch bump does not keep signed-in repeat", accountStore.repeatMode, RepeatMode.off)
+        #expect((accountStore.state.pendingCommands[.options]) == nil, "an account-epoch bump drops pending repeat")
+        #expect((accountStore.state.session) == (PlaybackSessionPhase.signedOut), "an account-epoch bump signs out")
+        #expect((accountStore.repeatMode) == (RepeatMode.off), "an account-epoch bump does not keep signed-in repeat")
         await accountStore.shutdownForTermination()
 
         let joining = playbackStore(
@@ -888,9 +850,10 @@ func runRepeatTransitionChecks(_ runner: CheckRunner) async {
         )
         let joiningBefore = joining.state
         joining.cycleRepeat()
-        runner.equal(
-            "route refusal leaves repeat unchanged", joining.state.options.repeatMode, joiningBefore.options.repeatMode)
-        runner.check("route refusal does not start a pending repeat", joining.state.pendingCommands.isEmpty)
+        #expect(
+            (joining.state.options.repeatMode) == (joiningBefore.options.repeatMode),
+            "route refusal leaves repeat unchanged")
+        #expect((joining.state.pendingCommands.isEmpty) == true, "route refusal does not start a pending repeat")
         await joining.shutdownForTermination()
 
         let duplicateRemote = ScriptedRepeatRemote(sleepUntilCancelled: true)
@@ -900,28 +863,32 @@ func runRepeatTransitionChecks(_ runner: CheckRunner) async {
         seedReadyRemote(duplicateStore)
         duplicateStore.cycleRepeat()
         let repeatPending = await waitUntil { duplicateStore.state.pendingCommands[.options] != nil }
-        runner.check("the first repeat is pending before a duplicate", repeatPending)
+        #expect((repeatPending) == true, "the first repeat is pending before a duplicate")
         let afterFirstRepeat = duplicateStore.state
         duplicateStore.cycleRepeat()
-        runner.equal(
-            "a duplicate repeat does not change options", duplicateStore.state.options, afterFirstRepeat.options)
-        runner.equal(
-            "a duplicate repeat keeps the original command", duplicateStore.state.pendingCommands[.options]?.id,
-            afterFirstRepeat.pendingCommands[.options]?.id)
+        #expect(
+            (duplicateStore.state.options) == (afterFirstRepeat.options), "a duplicate repeat does not change options")
+        #expect(
+            (duplicateStore.state.pendingCommands[.options]?.id) == (afterFirstRepeat.pendingCommands[.options]?.id),
+            "a duplicate repeat keeps the original command")
         if let commandID = duplicateStore.state.pendingCommands[.options]?.id {
             duplicateStore.effects.cancel(.command(commandID))
         }
         await duplicateStore.shutdownForTermination()
     }
 
-    runner.suite("cycleRepeat no longer owns repeat presentation") {
-        runner.noThrow("PlaybackStore transport source is readable") {
-            let transport = try spottySourceFile("Spotty/Spotify/PlaybackStore+Transport.swift")
-            runner.check(
-                "cycleRepeat no longer assigns presentation outside the reducer",
-                !containsToken(transport, "setRepeat(")
-                    && !containsToken(transport, "reconcileRepeatCommandFailure")
-            )
+    do {
+        do {
+            do {
+                let transport = try spottySourceFile("Spotty/Spotify/PlaybackStore+Transport.swift")
+                #expect(
+                    (!containsToken(transport, "setRepeat(")
+                        && !containsToken(transport, "reconcileRepeatCommandFailure")) == true,
+                    "cycleRepeat no longer assigns presentation outside the reducer")
+
+            } catch {
+                Issue.record("\("PlaybackStore transport source is readable"): unexpected error \(error)")
+            }
         }
     }
 }

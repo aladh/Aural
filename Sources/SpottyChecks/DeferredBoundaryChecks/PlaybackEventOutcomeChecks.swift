@@ -1,3 +1,4 @@
+import Testing
 import SpottyDomain
 import Foundation
 @testable import SpottyCore
@@ -386,54 +387,56 @@ private func startTrackResolution(_ player: PlaybackStore, uri: String) {
 @MainActor
 private func awaitCapturedEffect(
     _ settlement: PlaybackEffectSettlement?,
-    _ runner: CheckRunner,
     registered: String
 ) async {
-    runner.notNil(registered, settlement)
+    #expect((settlement) != nil, "\(registered)")
     await settlement?.wait()
 }
 
+@Test
 @MainActor
-func runPlaybackEventOutcomeChecks(_ runner: CheckRunner) async {
-    await runner.suite("Track metadata outcomes re-enter through PlaybackEvent") {
+func testPlaybackEventOutcome() async {
+    do {
         let successRemote = GatedMetadataRemote()
         let success = playbackStore(outcomeEnvironment(remote: successRemote))
         startTrackResolution(success, uri: "spotify:track:success")
-        runner.check(
-            "metadata lookup starts", await waitUntil { await successRemote.requestedURI == "spotify:track:success" })
+        #expect(
+            (await waitUntil { await successRemote.requestedURI == "spotify:track:success" }) == true,
+            "metadata lookup starts")
         success.recordPlayed("spotify:track:success")
         await successRemote.complete()
-        runner.check(
-            "accepted metadata updates the current track",
-            await waitUntil { success.state.currentTrack?.title == "Resolved" }
-        )
-        runner.equal("accepted metadata uses connect provenance", success.state.currentTrack?.metadataSource, .connect)
-        runner.equal(
-            "history enrichment waits for reducer acceptance", success.history.entries.first?.title, "Resolved")
+        #expect(
+            (await waitUntil { success.state.currentTrack?.title == "Resolved" }) == true,
+            "accepted metadata updates the current track")
+        #expect((success.state.currentTrack?.metadataSource) == (.connect), "accepted metadata uses connect provenance")
+        #expect(
+            (success.history.entries.first?.title) == ("Resolved"), "history enrichment waits for reducer acceptance")
         await success.shutdownForTermination()
 
         let staleEngineRemote = GatedMetadataRemote()
         let staleEngine = playbackStore(outcomeEnvironment(remote: staleEngineRemote))
         startTrackResolution(staleEngine, uri: "spotify:track:stale-engine")
-        runner.check(
-            "stale-engine metadata lookup starts", await waitUntil { await staleEngineRemote.requestedURI != nil })
+        #expect(
+            (await waitUntil { await staleEngineRemote.requestedURI != nil }) == true,
+            "stale-engine metadata lookup starts")
         let staleEngineMetadata = staleEngine.effects.settlement(of: .trackMetadata)
         bumpEngine(staleEngine)
         await staleEngineRemote.complete(title: "Late engine")
         await awaitCapturedEffect(
             staleEngineMetadata,
-            runner,
             registered: "stale-engine metadata effect is registered before invalidation"
         )
-        runner.nil_("stale-engine metadata does not mutate the current title", staleEngine.state.currentTrack?.title)
-        runner.check("stale-engine metadata does not create history", staleEngine.history.entries.isEmpty)
+        #expect(
+            (staleEngine.state.currentTrack?.title) == nil, "stale-engine metadata does not mutate the current title")
+        #expect((staleEngine.history.entries.isEmpty) == true, "stale-engine metadata does not create history")
         await staleEngine.shutdownForTermination()
 
         let staleAccountRemote = GatedMetadataRemote()
         let staleAccount = playbackStore(outcomeEnvironment(remote: staleAccountRemote))
         startTrackResolution(staleAccount, uri: "spotify:track:stale-account")
-        runner.check(
-            "stale-account metadata lookup starts", await waitUntil { await staleAccountRemote.requestedURI != nil })
+        #expect(
+            (await waitUntil { await staleAccountRemote.requestedURI != nil }) == true,
+            "stale-account metadata lookup starts")
         staleAccount.recordPlayed("spotify:track:stale-account")
         let staleAccountMetadata = staleAccount.effects.settlement(of: .trackMetadata)
         staleAccount.accountStore.advanceEpoch()
@@ -445,41 +448,38 @@ func runPlaybackEventOutcomeChecks(_ runner: CheckRunner) async {
         await staleAccountRemote.complete(title: "Late account")
         await awaitCapturedEffect(
             staleAccountMetadata,
-            runner,
             registered: "stale-account metadata effect is registered before invalidation"
         )
-        runner.nil_("stale-account metadata cannot revive a reset track", staleAccount.state.currentTrack)
-        runner.equal(
-            "stale-account metadata does not enrich history after reset",
-            staleAccount.history.entries.first?.title,
-            "Unknown track"
-        )
+        #expect((staleAccount.state.currentTrack) == nil, "stale-account metadata cannot revive a reset track")
+        #expect(
+            (staleAccount.history.entries.first?.title) == ("Unknown track"),
+            "stale-account metadata does not enrich history after reset")
         await staleAccount.shutdownForTermination()
 
         let cancelRemote = GatedMetadataRemote()
         let cancelled = playbackStore(outcomeEnvironment(remote: cancelRemote))
         startTrackResolution(cancelled, uri: "spotify:track:cancelled")
-        runner.check("cancelled metadata lookup starts", await waitUntil { await cancelRemote.requestedURI != nil })
+        #expect(
+            (await waitUntil { await cancelRemote.requestedURI != nil }) == true, "cancelled metadata lookup starts")
         cancelled.recordPlayed("spotify:track:cancelled")
         let cancelledMetadata = cancelled.effects.settlement(of: .trackMetadata)
         cancelled.effects.cancel(.trackMetadata)
         await cancelRemote.complete(title: "Cancelled")
         await awaitCapturedEffect(
             cancelledMetadata,
-            runner,
             registered: "cancelled metadata effect is registered before cancellation"
         )
-        runner.nil_("cancelled metadata is inert", cancelled.state.currentTrack?.title)
-        runner.equal(
-            "cancelled metadata does not enrich history", cancelled.history.entries.first?.title, "Unknown track")
+        #expect((cancelled.state.currentTrack?.title) == nil, "cancelled metadata is inert")
+        #expect(
+            (cancelled.history.entries.first?.title) == ("Unknown track"), "cancelled metadata does not enrich history")
         await cancelled.shutdownForTermination()
 
         let rejectedRemote = GatedMetadataRemote()
         let rejected = playbackStore(outcomeEnvironment(remote: rejectedRemote))
         startTrackResolution(rejected, uri: "spotify:track:original")
-        runner.check(
-            "reducer-rejection metadata lookup starts",
-            await waitUntil { await rejectedRemote.requestedURI == "spotify:track:original" })
+        #expect(
+            (await waitUntil { await rejectedRemote.requestedURI == "spotify:track:original" }) == true,
+            "reducer-rejection metadata lookup starts")
         rejected.recordPlayed("spotify:track:original")
         _ = rejected.send(
             .presentation(
@@ -494,30 +494,28 @@ func runPlaybackEventOutcomeChecks(_ runner: CheckRunner) async {
         await rejectedRemote.complete(title: "From original")
         await awaitCapturedEffect(
             rejectedMetadata,
-            runner,
             registered: "reducer-rejection metadata effect is registered before completion"
         )
-        runner.equal(
-            "metadata for a previous track is rejected", rejected.state.currentTrack?.uri, "spotify:track:other")
-        runner.equal(
-            "rejected metadata does not enrich the prior history row", rejected.history.entries.first?.title,
-            "Unknown track")
+        #expect(
+            (rejected.state.currentTrack?.uri) == ("spotify:track:other"), "metadata for a previous track is rejected")
+        #expect(
+            (rejected.history.entries.first?.title) == ("Unknown track"),
+            "rejected metadata does not enrich the prior history row")
         await rejected.shutdownForTermination()
     }
 
-    await runner.suite("Position refresh outcomes re-enter through timing") {
+    do {
         let successEngine = GatedPositionEngine()
         let success = playbackStore(
             outcomeEnvironment(local: successEngine, remote: ImmediateMetadataRemote())
         )
         seedReadyLocalPlayback(success, uri: "spotify:track:playing")
         success.refreshPosition()
-        runner.check("position refresh starts", await waitUntil { successEngine.hasStarted })
+        #expect((await waitUntil { successEngine.hasStarted }) == true, "position refresh starts")
         successEngine.release()
-        runner.check(
-            "accepted timing replaces the anchored position",
-            await waitUntil { success.state.timing.position == 42 }
-        )
+        #expect(
+            (await waitUntil { success.state.timing.position == 42 }) == true,
+            "accepted timing replaces the anchored position")
         await success.shutdownForTermination()
 
         let staleAccountEngine = GatedPositionEngine()
@@ -526,7 +524,7 @@ func runPlaybackEventOutcomeChecks(_ runner: CheckRunner) async {
         )
         seedReadyLocalPlayback(staleAccount, uri: "spotify:track:playing")
         staleAccount.refreshPosition()
-        runner.check("stale-account position refresh starts", await waitUntil { staleAccountEngine.hasStarted })
+        #expect((await waitUntil { staleAccountEngine.hasStarted }) == true, "stale-account position refresh starts")
         let staleAccountPosition = staleAccount.effects.settlement(of: .positionRefresh)
         staleAccount.accountStore.advanceEpoch()
         _ = staleAccount.send(
@@ -537,11 +535,11 @@ func runPlaybackEventOutcomeChecks(_ runner: CheckRunner) async {
         staleAccountEngine.release()
         await awaitCapturedEffect(
             staleAccountPosition,
-            runner,
             registered: "stale-account position refresh is registered before invalidation"
         )
-        runner.equal(
-            "stale-account position refresh cannot stamp signed-out timing", staleAccount.state.timing.position, 0)
+        #expect(
+            (staleAccount.state.timing.position) == (0), "stale-account position refresh cannot stamp signed-out timing"
+        )
         await staleAccount.shutdownForTermination()
 
         let staleEngineEngine = GatedPositionEngine()
@@ -550,16 +548,15 @@ func runPlaybackEventOutcomeChecks(_ runner: CheckRunner) async {
         )
         seedReadyLocalPlayback(staleEngine, uri: "spotify:track:playing")
         staleEngine.refreshPosition()
-        runner.check("stale-engine position refresh starts", await waitUntil { staleEngineEngine.hasStarted })
+        #expect((await waitUntil { staleEngineEngine.hasStarted }) == true, "stale-engine position refresh starts")
         let staleEnginePosition = staleEngine.effects.settlement(of: .positionRefresh)
         bumpEngine(staleEngine)
         staleEngineEngine.release()
         await awaitCapturedEffect(
             staleEnginePosition,
-            runner,
             registered: "stale-engine position refresh is registered before invalidation"
         )
-        runner.equal("stale-engine position refresh is inert", staleEngine.state.timing.position, 5)
+        #expect((staleEngine.state.timing.position) == (5), "stale-engine position refresh is inert")
         await staleEngine.shutdownForTermination()
 
         let cancelEngine = GatedPositionEngine()
@@ -568,20 +565,19 @@ func runPlaybackEventOutcomeChecks(_ runner: CheckRunner) async {
         )
         seedReadyLocalPlayback(cancelled, uri: "spotify:track:playing")
         cancelled.refreshPosition()
-        runner.check("cancelled position refresh starts", await waitUntil { cancelEngine.hasStarted })
+        #expect((await waitUntil { cancelEngine.hasStarted }) == true, "cancelled position refresh starts")
         let cancelledPosition = cancelled.effects.settlement(of: .positionRefresh)
         cancelled.effects.cancel(.positionRefresh)
         cancelEngine.release()
         await awaitCapturedEffect(
             cancelledPosition,
-            runner,
             registered: "cancelled position refresh is registered before cancellation"
         )
-        runner.equal("cancelled position refresh is inert", cancelled.state.timing.position, 5)
+        #expect((cancelled.state.timing.position) == (5), "cancelled position refresh is inert")
         await cancelled.shutdownForTermination()
     }
 
-    await runner.suite("Queue adoption is stamped and gates catalog metadata") {
+    do {
         let player = playbackStore(outcomeEnvironment(remote: ImmediateMetadataRemote()))
         _ = player.send(.session(.ready), source: .account)
         player.catalogSession.update(accountEpoch: player.accountEpoch, isAvailable: true)
@@ -591,23 +587,23 @@ func runPlaybackEventOutcomeChecks(_ runner: CheckRunner) async {
             fixtureQueueSnapshot(accountEpoch: player.accountEpoch, revision: 1, uri: firstURI, title: "First"),
             engineEpoch: player.engineGeneration
         )
-        runner.equal("accepted queue replaces ordering", player.state.queue.entries.first?.uri, firstURI)
-        runner.equal(
-            "accepted queue retains catalog metadata", player.catalog.metadata.knownTrack(for: firstURI)?.title, "First"
-        )
+        #expect((player.state.queue.entries.first?.uri) == (firstURI), "accepted queue replaces ordering")
+        #expect(
+            (player.catalog.metadata.knownTrack(for: firstURI)?.title) == ("First"),
+            "accepted queue retains catalog metadata")
 
         let duplicateURI = "spotify:track:duplicate"
         player.apply(
             fixtureQueueSnapshot(accountEpoch: player.accountEpoch, revision: 1, uri: duplicateURI, title: "Duplicate"),
             engineEpoch: player.engineGeneration
         )
-        runner.equal("a duplicate queue revision is rejected", player.state.queue.entries.first?.uri, firstURI)
-        runner.nil_(
-            "rejected queue state does not replace catalog metadata",
-            player.catalog.metadata.knownTrack(for: duplicateURI))
-        runner.equal(
-            "rejected queue keeps the accepted catalog row", player.catalog.metadata.knownTrack(for: firstURI)?.title,
-            "First")
+        #expect((player.state.queue.entries.first?.uri) == (firstURI), "a duplicate queue revision is rejected")
+        #expect(
+            (player.catalog.metadata.knownTrack(for: duplicateURI)) == nil,
+            "rejected queue state does not replace catalog metadata")
+        #expect(
+            (player.catalog.metadata.knownTrack(for: firstURI)?.title) == ("First"),
+            "rejected queue keeps the accepted catalog row")
 
         let capturedEngine = player.engineGeneration
         bumpEngine(player)
@@ -617,10 +613,10 @@ func runPlaybackEventOutcomeChecks(_ runner: CheckRunner) async {
                 accountEpoch: player.accountEpoch, revision: 2, uri: staleEngineURI, title: "Late engine"),
             engineEpoch: capturedEngine
         )
-        runner.equal("stale-engine queue adoption is inert", player.state.queue.entries.first?.uri, firstURI)
-        runner.nil_(
-            "stale-engine queue does not retain catalog metadata",
-            player.catalog.metadata.knownTrack(for: staleEngineURI))
+        #expect((player.state.queue.entries.first?.uri) == (firstURI), "stale-engine queue adoption is inert")
+        #expect(
+            (player.catalog.metadata.knownTrack(for: staleEngineURI)) == nil,
+            "stale-engine queue does not retain catalog metadata")
 
         player.accountStore.advanceEpoch()
         _ = player.send(
@@ -633,10 +629,10 @@ func runPlaybackEventOutcomeChecks(_ runner: CheckRunner) async {
             fixtureQueueSnapshot(accountEpoch: 1, revision: 3, uri: staleAccountURI, title: "Late account"),
             engineEpoch: player.engineGeneration
         )
-        runner.check("stale-account queue adoption is inert", player.state.queue.entries.isEmpty)
-        runner.nil_(
-            "stale-account queue does not retain catalog metadata",
-            player.catalog.metadata.knownTrack(for: staleAccountURI))
+        #expect((player.state.queue.entries.isEmpty) == true, "stale-account queue adoption is inert")
+        #expect(
+            (player.catalog.metadata.knownTrack(for: staleAccountURI)) == nil,
+            "stale-account queue does not retain catalog metadata")
         await player.shutdownForTermination()
 
         let webQueue = SuspendedWebQueue()
@@ -647,24 +643,22 @@ func runPlaybackEventOutcomeChecks(_ runner: CheckRunner) async {
         _ = cancelled.send(.session(.ready), source: .account)
         cancelled.catalogSession.update(accountEpoch: cancelled.accountEpoch, isAvailable: true)
         cancelled.refreshQueue()
-        runner.check("queue refresh starts", await waitUntil { await webQueue.requestCount == 1 })
+        #expect((await waitUntil { await webQueue.requestCount == 1 }) == true, "queue refresh starts")
         let cancelledQueueRefresh = cancelled.effects.settlement(of: .queueRefresh)
         cancelled.cancelQueueRefresh()
         await webQueue.complete(with: [fixtureTrack("spotify:track:cancelled-queue", title: "Cancelled")])
         await awaitCapturedEffect(
             cancelledQueueRefresh,
-            runner,
             registered: "cancelled queue refresh is registered before cancellation"
         )
-        runner.check("cancelled queue refresh does not adopt ordering", cancelled.state.queue.entries.isEmpty)
-        runner.nil_(
-            "cancelled queue refresh does not retain catalog metadata",
-            cancelled.catalog.metadata.knownTrack(for: "spotify:track:cancelled-queue")
-        )
+        #expect((cancelled.state.queue.entries.isEmpty) == true, "cancelled queue refresh does not adopt ordering")
+        #expect(
+            (cancelled.catalog.metadata.knownTrack(for: "spotify:track:cancelled-queue")) == nil,
+            "cancelled queue refresh does not retain catalog metadata")
         await cancelled.shutdownForTermination()
     }
 
-    await runner.suite("Queue snapshot track identity uses captured lifetime") {
+    do {
         let namedEngine = GatedQueueSnapshotEngine()
         let namedRemote = GatedMetadataRemote()
         let named = playbackStore(
@@ -674,22 +668,21 @@ func runPlaybackEventOutcomeChecks(_ runner: CheckRunner) async {
         seedReadyLocalPlayback(named, uri: uri)
         named.recordPlayed(uri)
         named.refreshQueueSnapshot()
-        runner.check("named queue snapshot fetch starts", await waitUntil { namedEngine.hasStarted })
+        #expect((await waitUntil { namedEngine.hasStarted }) == true, "named queue snapshot fetch starts")
         let namedSnapshot = named.effects.settlement(of: .queueSnapshot)
         let staleNamedGeneration = named.engineGeneration
         bumpEngine(named)
         namedEngine.release(queueSnapshot(uri: uri, sessionGeneration: staleNamedGeneration))
         await awaitCapturedEffect(
             namedSnapshot,
-            runner,
             registered: "stale named snapshot effect is registered before invalidation"
         )
-        runner.equal("stale named snapshot cannot replace now-playing title", named.state.currentTrack?.title, "Now")
-        runner.equal(
-            "stale named snapshot cannot replace now-playing artist", named.state.currentTrack?.artist, "Artist")
-        runner.equal(
-            "stale named snapshot does not enrich history", named.history.entries.first?.title, "Unknown track")
-        runner.nil_("stale named snapshot does not start metadata resolution", await namedRemote.requestedURI)
+        #expect((named.state.currentTrack?.title) == ("Now"), "stale named snapshot cannot replace now-playing title")
+        #expect(
+            (named.state.currentTrack?.artist) == ("Artist"), "stale named snapshot cannot replace now-playing artist")
+        #expect(
+            (named.history.entries.first?.title) == ("Unknown track"), "stale named snapshot does not enrich history")
+        #expect((await namedRemote.requestedURI) == nil, "stale named snapshot does not start metadata resolution")
         await named.shutdownForTermination()
 
         let missingEngine = GatedQueueSnapshotEngine()
@@ -700,24 +693,22 @@ func runPlaybackEventOutcomeChecks(_ runner: CheckRunner) async {
         seedReadyLocalPlayback(missing, uri: uri, title: nil, metadataSource: .none)
         missing.recordPlayed(uri)
         missing.refreshQueueSnapshot()
-        runner.check("nameless queue snapshot fetch starts", await waitUntil { missingEngine.hasStarted })
+        #expect((await waitUntil { missingEngine.hasStarted }) == true, "nameless queue snapshot fetch starts")
         let missingSnapshot = missing.effects.settlement(of: .queueSnapshot)
         let staleMissingGeneration = missing.engineGeneration
         bumpEngine(missing)
         missingEngine.release(queueSnapshot(uri: uri, sessionGeneration: staleMissingGeneration))
         await awaitCapturedEffect(
             missingSnapshot,
-            runner,
             registered: "stale nameless snapshot effect is registered before invalidation"
         )
-        runner.nil_("stale nameless snapshot cannot install a title", missing.state.currentTrack?.title)
-        runner.equal("stale nameless snapshot keeps the current URI", missing.state.currentTrack?.uri, uri)
-        runner.equal(
-            "stale nameless snapshot does not enrich history",
-            missing.history.entries.first?.title,
-            "Unknown track"
-        )
-        runner.nil_("stale nameless snapshot does not launch a metadata resolver", await missingRemote.requestedURI)
+        #expect((missing.state.currentTrack?.title) == nil, "stale nameless snapshot cannot install a title")
+        #expect((missing.state.currentTrack?.uri) == (uri), "stale nameless snapshot keeps the current URI")
+        #expect(
+            (missing.history.entries.first?.title) == ("Unknown track"),
+            "stale nameless snapshot does not enrich history")
+        #expect(
+            (await missingRemote.requestedURI) == nil, "stale nameless snapshot does not launch a metadata resolver")
         await missing.shutdownForTermination()
 
         let watermarkEngine = GatedQueueSnapshotEngine()
@@ -727,7 +718,7 @@ func runPlaybackEventOutcomeChecks(_ runner: CheckRunner) async {
         seedReadyLocalPlayback(watermarkStore, uri: uri)
         let before = watermarkStore.connectQueueCallback
         watermarkStore.refreshQueueSnapshot()
-        runner.check("watermark snapshot fetch starts", await waitUntil { watermarkEngine.hasStarted })
+        #expect((await waitUntil { watermarkEngine.hasStarted }) == true, "watermark snapshot fetch starts")
         let watermarkSnapshot = watermarkStore.effects.settlement(of: .queueSnapshot)
         let staleWatermarkGeneration = watermarkStore.engineGeneration
         bumpEngine(watermarkStore)
@@ -736,26 +727,19 @@ func runPlaybackEventOutcomeChecks(_ runner: CheckRunner) async {
         )
         await awaitCapturedEffect(
             watermarkSnapshot,
-            runner,
             registered: "stale watermark snapshot effect is registered before invalidation"
         )
-        runner.equal(
-            "a stale snapshot does not advance the callback generation",
-            watermarkStore.connectQueueCallback.generation,
-            before.generation
-        )
-        runner.equal(
-            "a stale snapshot does not advance the callback revision",
-            watermarkStore.connectQueueCallback.revision,
-            before.revision
-        )
-        runner.check(
-            "a later live callback can still start a fresh revision namespace",
-            watermarkStore.acceptsConnectQueueCallback(
+        #expect(
+            (watermarkStore.connectQueueCallback.generation) == (before.generation),
+            "a stale snapshot does not advance the callback generation")
+        #expect(
+            (watermarkStore.connectQueueCallback.revision) == (before.revision),
+            "a stale snapshot does not advance the callback revision")
+        #expect(
+            (watermarkStore.acceptsConnectQueueCallback(
                 generation: watermarkStore.engineGeneration,
                 revision: 1
-            )
-        )
+            )) == true, "a later live callback can still start a fresh revision namespace")
         await watermarkStore.shutdownForTermination()
 
         let payloadEngine = GatedQueueSnapshotEngine()
@@ -767,7 +751,7 @@ func runPlaybackEventOutcomeChecks(_ runner: CheckRunner) async {
         let mirroredGeneration = payloadStore.engineGeneration
         let payloadGeneration = mirroredGeneration + 1
         payloadStore.refreshQueueSnapshot()
-        runner.check("payload-generation snapshot fetch starts", await waitUntil { payloadEngine.hasStarted })
+        #expect((await waitUntil { payloadEngine.hasStarted }) == true, "payload-generation snapshot fetch starts")
         payloadEngine.release(
             queueSnapshot(
                 uri: uri,
@@ -775,29 +759,19 @@ func runPlaybackEventOutcomeChecks(_ runner: CheckRunner) async {
                 sessionGeneration: payloadGeneration
             )
         )
-        runner.check(
-            "decoded payload generation stamps reducer state before playback catches up",
-            await waitUntil { payloadStore.state.engineEpoch == payloadGeneration }
-        )
-        runner.equal(
-            "decoded payload generation stamps presentation",
-            payloadStore.engineGeneration,
-            payloadGeneration
-        )
-        runner.equal(
-            "decoded payload generation keeps now-playing title",
-            payloadStore.state.currentTrack?.title,
-            "Now"
-        )
-        runner.check(
-            "decoded payload generation stamps the mutation snapshot",
-            await waitUntil { payloadStore.queueMutation?.engineEpoch == payloadGeneration }
-        )
-        runner.equal(
-            "decoded payload generation does not stamp the pre-await mirror",
-            payloadStore.queueMutation?.engineEpoch == mirroredGeneration,
-            false
-        )
+        #expect(
+            (await waitUntil { payloadStore.state.engineEpoch == payloadGeneration }) == true,
+            "decoded payload generation stamps reducer state before playback catches up")
+        #expect(
+            (payloadStore.engineGeneration) == (payloadGeneration), "decoded payload generation stamps presentation")
+        #expect(
+            (payloadStore.state.currentTrack?.title) == ("Now"), "decoded payload generation keeps now-playing title")
+        #expect(
+            (await waitUntil { payloadStore.queueMutation?.engineEpoch == payloadGeneration }) == true,
+            "decoded payload generation stamps the mutation snapshot")
+        #expect(
+            (payloadStore.queueMutation?.engineEpoch == mirroredGeneration) == (false),
+            "decoded payload generation does not stamp the pre-await mirror")
         await payloadStore.shutdownForTermination()
 
         let bumpedEngine = GatedQueueSnapshotEngine()
@@ -808,10 +782,11 @@ func runPlaybackEventOutcomeChecks(_ runner: CheckRunner) async {
         seedReadyLocalPlayback(bumpedStore, uri: uri)
         let beforeBump = bumpedStore.engineGeneration
         bumpedStore.refreshQueueSnapshot()
-        runner.check("bumped-engine snapshot fetch starts", await waitUntil { bumpedEngine.hasStarted })
+        #expect((await waitUntil { bumpedEngine.hasStarted }) == true, "bumped-engine snapshot fetch starts")
         bumpEngine(bumpedStore)
         let liveGeneration = bumpedStore.engineGeneration
-        runner.check("playback adopted a newer engine epoch during the snapshot await", liveGeneration > beforeBump)
+        #expect(
+            (liveGeneration > beforeBump) == true, "playback adopted a newer engine epoch during the snapshot await")
         bumpedEngine.release(
             queueSnapshot(
                 uri: uri,
@@ -819,16 +794,15 @@ func runPlaybackEventOutcomeChecks(_ runner: CheckRunner) async {
                 sessionGeneration: liveGeneration
             )
         )
-        runner.check(
-            "a snapshot decoded after a live engine bump still stamps the payload generation",
-            await waitUntil { bumpedStore.state.engineEpoch == liveGeneration }
-        )
-        runner.equal(
-            "a live-generation snapshot keeps reducer epoch aligned", bumpedStore.state.engineEpoch, liveGeneration)
-        runner.check(
-            "a live-generation snapshot stamps mutation with the payload, not the pre-await mirror",
-            await waitUntil { bumpedStore.queueMutation?.engineEpoch == liveGeneration }
-        )
+        #expect(
+            (await waitUntil { bumpedStore.state.engineEpoch == liveGeneration }) == true,
+            "a snapshot decoded after a live engine bump still stamps the payload generation")
+        #expect(
+            (bumpedStore.state.engineEpoch) == (liveGeneration),
+            "a live-generation snapshot keeps reducer epoch aligned")
+        #expect(
+            (await waitUntil { bumpedStore.queueMutation?.engineEpoch == liveGeneration }) == true,
+            "a live-generation snapshot stamps mutation with the payload, not the pre-await mirror")
         await bumpedStore.shutdownForTermination()
 
         let stalePayloadEngine = GatedQueueSnapshotEngine()
@@ -838,7 +812,7 @@ func runPlaybackEventOutcomeChecks(_ runner: CheckRunner) async {
         seedReadyLocalPlayback(stalePayload, uri: uri)
         let staleBefore = stalePayload.engineGeneration
         stalePayload.refreshQueueSnapshot()
-        runner.check("stale-payload snapshot fetch starts", await waitUntil { stalePayloadEngine.hasStarted })
+        #expect((await waitUntil { stalePayloadEngine.hasStarted }) == true, "stale-payload snapshot fetch starts")
         let stalePayloadSnapshot = stalePayload.effects.settlement(of: .queueSnapshot)
         bumpEngine(stalePayload)
         stalePayloadEngine.release(
@@ -850,17 +824,16 @@ func runPlaybackEventOutcomeChecks(_ runner: CheckRunner) async {
         )
         await awaitCapturedEffect(
             stalePayloadSnapshot,
-            runner,
             registered: "stale payload snapshot effect is registered before invalidation"
         )
-        runner.equal(
-            "a stale payload generation cannot replace now-playing title", stalePayload.state.currentTrack?.title, "Now"
-        )
-        runner.nil_("a stale payload generation does not install mutation", stalePayload.queueMutation)
+        #expect(
+            (stalePayload.state.currentTrack?.title) == ("Now"),
+            "a stale payload generation cannot replace now-playing title")
+        #expect((stalePayload.queueMutation) == nil, "a stale payload generation does not install mutation")
         await stalePayload.shutdownForTermination()
     }
 
-    await runner.suite("Device owner resolution stamps last-remote context") {
+    do {
         let mac = ConnectDevice(id: "mac", name: "Mac", type: "computer", isActive: false)
         let phone = ConnectDevice(id: "phone", name: "Phone", type: "smartphone", isActive: false)
         let activePhone = ConnectDevice(id: "phone", name: "Phone", type: "smartphone", isActive: true)
@@ -891,9 +864,10 @@ func runPlaybackEventOutcomeChecks(_ runner: CheckRunner) async {
         seedIdentity(launch)
         launch.lastRemoteDeviceID = "phone"
         launch.receive([mac, phone], revision: 1, engineEpoch: launch.engineGeneration)
-        runner.equal("cluster devices-first with no track is none", launch.state.owner, .none)
-        runner.equal(
-            "the store stamps last-remote context onto the snapshot", launch.state.devices.lastRemoteDeviceID, "phone")
+        #expect((launch.state.owner) == (.none), "cluster devices-first with no track is none")
+        #expect(
+            (launch.state.devices.lastRemoteDeviceID) == ("phone"),
+            "the store stamps last-remote context onto the snapshot")
         _ = launch.send(
             .currentTrack(
                 CurrentTrack(
@@ -907,16 +881,10 @@ func runPlaybackEventOutcomeChecks(_ runner: CheckRunner) async {
             revision: 1,
             engineEpoch: launch.engineGeneration
         )
-        runner.equal(
-            "a later URI adopts the stamped last-remote candidate",
-            launch.state.owner,
-            .uncertain(expectedPhone)
-        )
-        runner.equal(
-            "devices-then-track stays remote-routable",
-            launch.commandRoute,
-            .remote(from: "mac", to: "phone")
-        )
+        #expect(
+            (launch.state.owner) == (.uncertain(expectedPhone)), "a later URI adopts the stamped last-remote candidate")
+        #expect(
+            (launch.commandRoute) == (.remote(from: "mac", to: "phone")), "devices-then-track stays remote-routable")
         await launch.shutdownForTermination()
 
         let remotePreferences = RecordingOwnerPreferences()
@@ -925,20 +893,20 @@ func runPlaybackEventOutcomeChecks(_ runner: CheckRunner) async {
         )
         seedIdentity(remoteActive)
         remoteActive.receive([mac, activePhone], revision: 1, engineEpoch: remoteActive.engineGeneration)
-        runner.equal(
-            "an active remote snapshot is remote ownership",
-            remoteActive.state.owner,
-            .remote(PlaybackDevice(id: "phone", name: "Phone", type: "smartphone", isActive: true))
-        )
-        runner.equal(
-            "the store records last-remote after an accepted active remote", remoteActive.lastRemoteDeviceID, "phone")
+        #expect(
+            (remoteActive.state.owner)
+                == (.remote(PlaybackDevice(id: "phone", name: "Phone", type: "smartphone", isActive: true))),
+            "an active remote snapshot is remote ownership")
+        #expect(
+            (remoteActive.lastRemoteDeviceID) == ("phone"),
+            "the store records last-remote after an accepted active remote")
         let preferenceWritten: Bool
         if remoteActive.lastRemoteDeviceID == "phone" {
             preferenceWritten = await waitUntil { await remotePreferences.lastRemoteDeviceID() == "phone" }
         } else {
             preferenceWritten = false
         }
-        runner.check("an accepted active remote writes the last-remote preference", preferenceWritten)
+        #expect((preferenceWritten) == true, "an accepted active remote writes the last-remote preference")
         await remoteActive.shutdownForTermination()
 
         let stale = playbackStore(outcomeEnvironment(remote: ImmediateMetadataRemote()))
@@ -947,9 +915,9 @@ func runPlaybackEventOutcomeChecks(_ runner: CheckRunner) async {
         stale.receive([mac, phone], revision: 4, engineEpoch: stale.engineGeneration)
         let afterDevices = stale.state
         stale.receive([mac, activePhone], revision: 3, engineEpoch: stale.engineGeneration)
-        runner.equal("a stale device revision does not replace owner", stale.state, afterDevices)
+        #expect((stale.state) == (afterDevices), "a stale device revision does not replace owner")
         stale.receive([mac, activePhone], revision: 5, engineEpoch: 0)
-        runner.equal("a stale engine epoch does not replace owner", stale.state, afterDevices)
+        #expect((stale.state) == (afterDevices), "a stale engine epoch does not replace owner")
         let rejected = stale.send(
             .devices(
                 PlaybackDeviceSnapshot(
@@ -966,8 +934,8 @@ func runPlaybackEventOutcomeChecks(_ runner: CheckRunner) async {
             engineEpoch: stale.engineGeneration,
             accountEpoch: 0
         )
-        runner.check("a stale account epoch is rejected", !rejected)
-        runner.equal("a stale account epoch does not replace owner", stale.state, afterDevices)
+        #expect((!rejected) == true, "a stale account epoch is rejected")
+        #expect((stale.state) == (afterDevices), "a stale account epoch does not replace owner")
         await stale.shutdownForTermination()
 
         let teardown = playbackStore(outcomeEnvironment(remote: ImmediateMetadataRemote()))
@@ -976,24 +944,24 @@ func runPlaybackEventOutcomeChecks(_ runner: CheckRunner) async {
         let beforeTeardown = teardown.state
         teardown.isTearingDown = true
         teardown.receive([mac, activePhone], revision: 1, engineEpoch: teardown.engineGeneration)
-        runner.equal("teardown device intake is inert", teardown.state, beforeTeardown)
-        runner.nil_("teardown does not record last-remote from a discarded snapshot", teardown.lastRemoteDeviceID)
+        #expect((teardown.state) == (beforeTeardown), "teardown device intake is inert")
+        #expect((teardown.lastRemoteDeviceID) == nil, "teardown does not record last-remote from a discarded snapshot")
         await teardown.shutdownForTermination()
     }
 
-    await runner.suite("Orchestration clock stamps send, timing, and history") {
+    do {
         let clockNow = Date(timeIntervalSince1970: 1_800_000_000)
         let receipt = Date(timeIntervalSince1970: 1_800_000_050)
         let player = playbackStore(outcomeEnvironment(remote: ImmediateMetadataRemote()))
         seedReadyLocalPlayback(player, uri: "spotify:track:clocked")
 
         _ = player.setTiming(position: 12)
-        runner.equal("setTiming without an anchor uses the injected clock", player.state.timing.anchoredAt, clockNow)
-        runner.equal("setTiming preserves the commanded position", player.state.timing.position, 12)
+        #expect((player.state.timing.anchoredAt) == (clockNow), "setTiming without an anchor uses the injected clock")
+        #expect((player.state.timing.position) == (12), "setTiming preserves the commanded position")
 
         _ = player.setTiming(position: 40, anchoredAt: receipt)
-        runner.equal(
-            "an explicit timing anchor is not replaced by clock.now()", player.state.timing.anchoredAt, receipt)
+        #expect(
+            (player.state.timing.anchoredAt) == (receipt), "an explicit timing anchor is not replaced by clock.now()")
 
         player.hasReceivedPlaybackSnapshot = true
         player.receive(
@@ -1014,28 +982,23 @@ func runPlaybackEventOutcomeChecks(_ runner: CheckRunner) async {
             revision: 2,
             receivedAt: receipt
         )
-        runner.equal(
-            "engine intake anchors from receipt time, not the later orchestration clock",
-            player.state.timing.anchoredAt,
-            receipt
-        )
-        runner.equal(
-            "engine playback records the backend revision, not receipt time",
-            player.state.sourceRevisions[.enginePlayback], 2)
-        runner.equal(
-            "playing snapshots still interpolate from receipt time",
-            player.displayedPosition(at: receipt.addingTimeInterval(0.25)),
-            40.25
-        )
+        #expect(
+            (player.state.timing.anchoredAt) == (receipt),
+            "engine intake anchors from receipt time, not the later orchestration clock")
+        #expect(
+            (player.state.sourceRevisions[.enginePlayback]) == (2),
+            "engine playback records the backend revision, not receipt time")
+        #expect(
+            (player.displayedPosition(at: receipt.addingTimeInterval(0.25))) == (40.25),
+            "playing snapshots still interpolate from receipt time")
 
         player.recordPlayed("spotify:track:clocked")
-        runner.equal(
-            "played history uses the injected orchestration clock", player.history.entries.first?.playedAt, clockNow)
-        runner.equal(
-            "shuffle history uses the same orchestration clock instant",
-            player.playbackHistory()["spotify:track:clocked"],
-            clockNow.timeIntervalSince1970
-        )
+        #expect(
+            (player.history.entries.first?.playedAt) == (clockNow),
+            "played history uses the injected orchestration clock")
+        #expect(
+            (player.playbackHistory()["spotify:track:clocked"]) == (clockNow.timeIntervalSince1970),
+            "shuffle history uses the same orchestration clock instant")
         await player.shutdownForTermination()
     }
 }

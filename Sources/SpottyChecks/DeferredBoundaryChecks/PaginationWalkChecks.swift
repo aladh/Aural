@@ -1,22 +1,23 @@
+import Testing
 import SpottyDomain
 import Foundation
 @testable import SpottyCore
 
+@Test
 @MainActor
-func runPaginationWalkChecks(_ check: CheckRunner) async {
-    await check.suite("PartnerAPI paged walks") {
+func testPaginationWalk() async {
+    do {
         let playlistTransport = ScriptedOffsetTransport { operation, offset in
             guard operation == "fetchPlaylist" else { return (500, Data()) }
             return (200, playlistPage(offset: offset, totalCount: 2))
         }
         let playlist = try? await partnerAPI(transport: playlistTransport.send).playlist(id: "pl")
-        check.equal(
-            "playlist concatenates pages in order",
-            playlist?.content?.items?.compactMap(\.uid),
-            ["uid-0", "uid-1"]
-        )
-        check.equal("playlist freezes totalCount from the first page", playlist?.content?.totalCount, 2)
-        check.equal("playlist walks exactly the named pages", playlistTransport.offsets(for: "fetchPlaylist"), [0, 1])
+        #expect(
+            (playlist?.content?.items?.compactMap(\.uid)) == (["uid-0", "uid-1"]),
+            "playlist concatenates pages in order")
+        #expect((playlist?.content?.totalCount) == (2), "playlist freezes totalCount from the first page")
+        #expect(
+            (playlistTransport.offsets(for: "fetchPlaylist")) == ([0, 1]), "playlist walks exactly the named pages")
 
         let tracksTransport = ScriptedOffsetTransport { operation, offset in
             guard operation == "fetchLibraryTracks" else { return (500, Data()) }
@@ -26,24 +27,20 @@ func runPaginationWalkChecks(_ check: CheckRunner) async {
             return (200, libraryTracksPage(offset: offset, totalCount: nil, itemCount: 0))
         }
         let tracks = try? await partnerAPI(transport: tracksTransport.send).libraryTracks()
-        check.equal(
-            "libraryTracks omitted totalCount ends on an empty page",
-            tracks?.compactMap(\.track?.uri),
-            ["spotify:track:t0"]
-        )
-        check.equal(
-            "libraryTracks requests the empty terminator",
-            tracksTransport.offsets(for: "fetchLibraryTracks"),
-            [0, 1]
-        )
+        #expect(
+            (tracks?.compactMap(\.track?.uri)) == (["spotify:track:t0"]),
+            "libraryTracks omitted totalCount ends on an empty page")
+        #expect(
+            (tracksTransport.offsets(for: "fetchLibraryTracks")) == ([0, 1]),
+            "libraryTracks requests the empty terminator")
 
         let playlistsTransport = ScriptedOffsetTransport { operation, offset in
             guard operation == "libraryV3" else { return (500, Data()) }
             return (200, libraryEntitiesPage(itemCount: offset == 0 ? 0 : 1, totalCount: 0))
         }
         let playlists = try? await partnerAPI(transport: playlistsTransport.send).libraryPlaylists()
-        check.equal("empty first library page yields no playlists", playlists?.count, 0)
-        check.equal("empty first library page does not continue", playlistsTransport.offsets(for: "libraryV3"), [0])
+        #expect((playlists?.count) == (0), "empty first library page yields no playlists")
+        #expect((playlistsTransport.offsets(for: "libraryV3")) == ([0]), "empty first library page does not continue")
 
         let failed = ScriptedOffsetTransport { operation, offset in
             guard operation == "fetchLibraryTracks" else { return (500, Data()) }
@@ -53,15 +50,14 @@ func runPaginationWalkChecks(_ check: CheckRunner) async {
             return (503, Data(#"{"error":"SPOTTY_PRIVACY_SENTINEL_api-body_d81f"}"#.utf8))
         }
         await expectThrown(
-            check,
             "a mid-walk HTTP error stays typed",
             PartnerAPIError.requestFailed(503)
         ) {
             _ = try await partnerAPI(transport: failed.send).libraryTracks()
         }
-        check.equal(
-            "a mid-walk HTTP error retries that page then stays typed", failed.offsets(for: "fetchLibraryTracks"),
-            [0, 1, 1, 1])
+        #expect(
+            (failed.offsets(for: "fetchLibraryTracks")) == ([0, 1, 1, 1]),
+            "a mid-walk HTTP error retries that page then stays typed")
     }
 }
 
@@ -78,18 +74,17 @@ private func partnerAPI(transport: @escaping SpotifyCredentials.Transport) -> Pa
 
 @MainActor
 private func expectThrown<Failure: Error & Equatable>(
-    _ check: CheckRunner,
     _ label: String,
     _ expected: Failure,
     perform: () async throws -> Void
 ) async {
     do {
         try await perform()
-        check.check("\(label) throws", false)
+        #expect((false) == true, "\(label) throws")
     } catch let error as Failure {
-        check.equal(label, error, expected)
+        #expect((error) == (expected), "\(label)")
     } catch {
-        check.check("\(label) throws \(Failure.self), got \(error)", false)
+        #expect((false) == true, "\(label) throws \(Failure.self), got \(error)")
     }
 }
 

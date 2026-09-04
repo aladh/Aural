@@ -1,30 +1,27 @@
+import Testing
 import Foundation
 @testable import SpottyCore
 
+@Test
 @MainActor
-func runPCMWriteSpaceChecks(_ check: CheckRunner) {
-    check.suite("PCM writer space wake") {
+func testPCMWriteSpace() {
+    do {
         let stale = PCMWriteSpace()
         stale.signalIfArmed()
         stale.arm()
-        check.check(
-            "a control signal with no armed writer is not consumed by a later wait",
-            !stale.wait(timeoutMilliseconds: 0)
-        )
+        #expect(
+            (!stale.wait(timeoutMilliseconds: 0)) == true,
+            "a control signal with no armed writer is not consumed by a later wait")
 
         let idle = PCMWriteSpace()
         idle.arm()
-        check.check(
-            "a wait with no signal times out without spinning",
-            !idle.wait(timeoutMilliseconds: 0)
-        )
+        #expect((!idle.wait(timeoutMilliseconds: 0)) == true, "a wait with no signal times out without spinning")
 
         let bypass = PCMWriteSpace()
         bypass.arm()
         bypass.signalIfArmed()
-        check.check(
-            "stop or flush in the unlock-to-wait window wakes the writer",
-            bypass.wait(timeoutMilliseconds: 0)
+        #expect(
+            (bypass.wait(timeoutMilliseconds: 0)) == true, "stop or flush in the unlock-to-wait window wakes the writer"
         )
 
         let space = PCMWriteSpace()
@@ -42,16 +39,14 @@ func runPCMWriteSpaceChecks(_ check: CheckRunner) {
             )
             finished.signal()
         }
-        check.check(
-            "the writer handshake arrives before the park",
-            parked.wait(timeout: .now() + .seconds(5)) == .success
-        )
+        #expect(
+            (parked.wait(timeout: .now() + .seconds(5)) == .success) == true,
+            "the writer handshake arrives before the park")
         space.signalIfArmed()
-        check.check(
-            "stop or flush wakes a genuinely parked writer",
-            finished.wait(timeout: .now() + .seconds(5)) == .success
-        )
-        check.check("the parked writer observes the control signal", woke.load())
+        #expect(
+            (finished.wait(timeout: .now() + .seconds(5)) == .success) == true,
+            "stop or flush wakes a genuinely parked writer")
+        #expect((woke.load()) == true, "the parked writer observes the control signal")
     }
 }
 

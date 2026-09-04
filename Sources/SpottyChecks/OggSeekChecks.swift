@@ -1,3 +1,4 @@
+import Testing
 //
 //  OggSeekChecks.swift
 //  Spotty
@@ -116,15 +117,14 @@ private func buildSyntheticStream(
     return (data, streamStart, headerPages, audioPages)
 }
 
-func runOggSeekChecks(_ check: CheckRunner) async {
-    await check.suite("Ogg granule bisection") {
-        check.equal("granule at 0ms", OggSeeker.granule(forMilliseconds: 0), 0)
-        check.equal("granule at 1000ms and 44.1kHz", OggSeeker.granule(forMilliseconds: 1_000), 44_100)
-        check.equal(
-            "milliseconds is the inverse of granule",
-            OggSeeker.milliseconds(forGranule: OggSeeker.granule(forMilliseconds: 5_000)),
-            5_000
-        )
+@Test
+func testOggSeek() async {
+    do {
+        #expect((OggSeeker.granule(forMilliseconds: 0)) == (0), "granule at 0ms")
+        #expect((OggSeeker.granule(forMilliseconds: 1_000)) == (44_100), "granule at 1000ms and 44.1kHz")
+        #expect(
+            (OggSeeker.milliseconds(forGranule: OggSeeker.granule(forMilliseconds: 5_000))) == (5_000),
+            "milliseconds is the inverse of granule")
 
         let fixture = buildSyntheticStream()
         // A small probe relative to the fixture's ~35 KB size, so bisection narrows through
@@ -137,7 +137,6 @@ func runOggSeekChecks(_ check: CheckRunner) async {
         let midAudioPage = fixture.audioPages[100]
         let midAudioGranule = midAudioPage.granule!
         await expectSeek(
-            check,
             "exact target on a page boundary returns that page",
             target: midAudioGranule,
             fixture: fixture,
@@ -148,12 +147,10 @@ func runOggSeekChecks(_ check: CheckRunner) async {
 
         // A target strictly between two pages returns the earlier page.
         let nextAudioGranule = fixture.audioPages[101].granule!
-        check.check(
-            "fixture has room between page 100 and 101 for a between-pages target",
-            nextAudioGranule - midAudioGranule > 1
-        )
+        #expect(
+            (nextAudioGranule - midAudioGranule > 1) == true,
+            "fixture has room between page 100 and 101 for a between-pages target")
         await expectSeek(
-            check,
             "target between pages returns the earlier page",
             target: midAudioGranule + 1,
             fixture: fixture,
@@ -165,9 +162,8 @@ func runOggSeekChecks(_ check: CheckRunner) async {
         // Target 0 returns the first audio page: it ties with the header pages at granule 0, and
         // is the later of the two in stream order.
         let firstAudioPage = fixture.audioPages[0]
-        check.equal("first audio page granule is 0", firstAudioPage.granule, 0)
+        #expect((firstAudioPage.granule) == (0), "first audio page granule is 0")
         await expectSeek(
-            check,
             "target 0 returns the first audio page",
             target: 0,
             fixture: fixture,
@@ -180,7 +176,6 @@ func runOggSeekChecks(_ check: CheckRunner) async {
         let lastAudioPage = fixture.audioPages[fixture.audioPages.count - 1]
         let lastAudioGranule = lastAudioPage.granule!
         await expectSeek(
-            check,
             "target past the end clamps to the last page",
             target: lastAudioGranule + 1_000_000,
             fixture: fixture,
@@ -200,15 +195,13 @@ func runOggSeekChecks(_ check: CheckRunner) async {
         guard let lastKnownBeforeRunGranule = lastKnownBeforeRun.granule,
             let firstKnownAfterRunGranule = unknownRunFixture.audioPages[155].granule
         else {
-            check.check("pages 149 and 155 of the unknown-run fixture have known granules", false)
+            #expect((false) == true, "pages 149 and 155 of the unknown-run fixture have known granules")
             return
         }
-        check.check(
-            "fixture has room after the unknown run for a target that lands before it",
-            firstKnownAfterRunGranule - lastKnownBeforeRunGranule > 1
-        )
+        #expect(
+            (firstKnownAfterRunGranule - lastKnownBeforeRunGranule > 1) == true,
+            "fixture has room after the unknown run for a target that lands before it")
         await expectSeek(
-            check,
             "a target just past an unknown-granule run resolves to the preceding known page",
             target: lastKnownBeforeRunGranule + 1,
             fixture: unknownRunFixture,
@@ -223,7 +216,6 @@ func runOggSeekChecks(_ check: CheckRunner) async {
             _ = try await OggSeeker.byteOffset(forGranule: 0, in: noCapture, streamStart: 0, probe: probe)
         }
         await expectThrows(
-            check,
             "a stream with no capture pattern throws noPagesFound",
             OggSeekError.noPagesFound,
             perform: performNoCaptureSeek
@@ -240,7 +232,6 @@ func runOggSeekChecks(_ check: CheckRunner) async {
             )
         }
         await expectThrows(
-            check,
             "a reader that throws surfaces readerFailed",
             OggSeekError.readerFailed,
             perform: performThrowingReaderSeek
@@ -249,7 +240,6 @@ func runOggSeekChecks(_ check: CheckRunner) async {
 }
 
 private func expectSeek(
-    _ check: CheckRunner,
     _ label: String,
     target: UInt64,
     fixture: (data: Data, streamStart: Int, headerPages: [FixturePage], audioPages: [FixturePage]),
@@ -265,30 +255,28 @@ private func expectSeek(
             streamStart: fixture.streamStart,
             probe: probe
         )
-        check.equal("\(label): page offset", result.pageOffset, expectedOffset)
-        check.equal("\(label): granule position", result.granulePosition, expectedGranule)
+        #expect((result.pageOffset) == (expectedOffset), "\(label): page offset")
+        #expect((result.granulePosition) == (expectedGranule), "\(label): granule position")
         let totalPages = fixture.headerPages.count + fixture.audioPages.count
-        check.check(
-            "\(label): read count (\(reader.readCount)) stays well below the page count (\(totalPages))",
-            reader.readCount <= 40
-        )
+        #expect(
+            (reader.readCount <= 40) == true,
+            "\(label): read count (\(reader.readCount)) stays well below the page count (\(totalPages))")
     } catch {
-        check.check("\(label) succeeds, got \(error)", false)
+        #expect((false) == true, "\(label) succeeds, got \(error)")
     }
 }
 
 private func expectThrows(
-    _ check: CheckRunner,
     _ label: String,
     _ expected: OggSeekError,
     perform: () async throws -> Void
 ) async {
     do {
         try await perform()
-        check.check("\(label)", false)
+        #expect((false) == true, "\(label)")
     } catch let error as OggSeekError {
-        check.equal(label, error, expected)
+        #expect((error) == (expected), "\(label)")
     } catch {
-        check.check("\(label): expected OggSeekError, got \(error)", false)
+        #expect((false) == true, "\(label): expected OggSeekError, got \(error)")
     }
 }

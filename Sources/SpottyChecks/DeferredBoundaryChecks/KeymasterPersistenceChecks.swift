@@ -1,9 +1,11 @@
+import Testing
 import Foundation
 @testable import SpottyCore
 
+@Test
 @MainActor
-func runKeymasterPersistenceChecks(_ check: CheckRunner) {
-    check.suite("Previous installation defaults migrate once") {
+func testKeymasterPersistence() {
+    do {
         let currentSuite = "dev.spotty.tests.current.\(UUID().uuidString)"
         let previousSuite = "dev.spotty.tests.previous.\(UUID().uuidString)"
         let current = UserDefaults(suiteName: currentSuite)!
@@ -22,13 +24,13 @@ func runKeymasterPersistenceChecks(_ check: CheckRunner) {
             previous: previous
         )
 
-        check.equal("missing current value is copied", current.string(forKey: "copied"), "migrated")
-        check.equal("current value wins", current.string(forKey: "preserved"), "current")
-        check.nil_("copied previous value is removed", previous.object(forKey: "copied"))
-        check.nil_("superseded previous value is removed", previous.object(forKey: "preserved"))
+        #expect((current.string(forKey: "copied")) == ("migrated"), "missing current value is copied")
+        #expect((current.string(forKey: "preserved")) == ("current"), "current value wins")
+        #expect((previous.object(forKey: "copied")) == nil, "copied previous value is removed")
+        #expect((previous.object(forKey: "preserved")) == nil, "superseded previous value is removed")
     }
 
-    check.suite("Current Keychain grant retires the previous service") {
+    do {
         let current = persistenceGrant(access: "current", refresh: "current-refresh")
         let previous = persistenceGrant(access: "previous", refresh: "previous-refresh")
         let currentData = try! JSONEncoder().encode(current)
@@ -48,13 +50,13 @@ func runKeymasterPersistenceChecks(_ check: CheckRunner) {
             retirePrevious: { retirementCount += 1 }
         )
 
-        check.equal("current grant wins", loaded?.refreshToken, "current-refresh")
-        check.equal("previous grant is not loaded", previousLoadCount, 0)
-        check.equal("current grant is not rewritten", currentSaveCount, 0)
-        check.equal("previous service is retired", retirementCount, 1)
+        #expect((loaded?.refreshToken) == ("current-refresh"), "current grant wins")
+        #expect((previousLoadCount) == (0), "previous grant is not loaded")
+        #expect((currentSaveCount) == (0), "current grant is not rewritten")
+        #expect((retirementCount) == (1), "previous service is retired")
     }
 
-    check.suite("Previous Keychain retirement is durable and fail closed") {
+    do {
         let previous = persistenceGrant(access: "previous", refresh: "previous-refresh")
         let previousData = try! JSONEncoder().encode(previous)
         var previousLoadCount = 0
@@ -70,8 +72,8 @@ func runKeymasterPersistenceChecks(_ check: CheckRunner) {
             previousIsRetired: { true },
             retirePrevious: { retirementCount += 1 }
         )
-        check.nil_("retired previous grant cannot return", retiredLoad)
-        check.equal("retired previous service is not read", previousLoadCount, 0)
+        #expect((retiredLoad) == nil, "retired previous grant cannot return")
+        #expect((previousLoadCount) == (0), "retired previous service is not read")
 
         let corruptLoad = KeychainManager.loadKeymasterTokensForMigration(
             loadCurrent: { nil },
@@ -80,8 +82,8 @@ func runKeymasterPersistenceChecks(_ check: CheckRunner) {
             previousIsRetired: { false },
             retirePrevious: { retirementCount += 1 }
         )
-        check.nil_("corrupt previous grant fails closed", corruptLoad)
-        check.equal("corrupt previous service is retired", retirementCount, 1)
+        #expect((corruptLoad) == nil, "corrupt previous grant fails closed")
+        #expect((retirementCount) == (1), "corrupt previous service is retired")
 
         let failedSaveLoad = KeychainManager.loadKeymasterTokensForMigration(
             loadCurrent: { nil },
@@ -90,185 +92,180 @@ func runKeymasterPersistenceChecks(_ check: CheckRunner) {
             previousIsRetired: { false },
             retirePrevious: { retirementCount += 1 }
         )
-        check.equal(
-            "failed migration still returns the current-session grant",
-            failedSaveLoad?.refreshToken,
-            "previous-refresh"
-        )
-        check.equal("failed migration preserves the retry path", retirementCount, 1)
+        #expect(
+            (failedSaveLoad?.refreshToken) == ("previous-refresh"),
+            "failed migration still returns the current-session grant")
+        #expect((retirementCount) == (1), "failed migration preserves the retry path")
     }
 
-    check.suite("Corrupt stored-grant decoding stays sanitized") {
+    do {
         let sentinel = "SPOTTY_PRIVACY_SENTINEL_stored-grant_9b2e"
         let payload = Data(
             "{\"access_token\":\"\(sentinel)\",\"refresh_token\":\"\(sentinel)\",\"username\":\"\(sentinel)\"}"
                 .utf8
         )
-        check.nil_(
-            "corrupt secure blobs fail closed",
-            KeymasterStoredGrantCodec.decode(payload, source: .secure)
-        )
-        check.nil_(
-            "corrupt legacy blobs fail closed",
-            KeymasterStoredGrantCodec.decode(payload, source: .legacy)
-        )
+        #expect((KeymasterStoredGrantCodec.decode(payload, source: .secure)) == nil, "corrupt secure blobs fail closed")
+        #expect((KeymasterStoredGrantCodec.decode(payload, source: .legacy)) == nil, "corrupt legacy blobs fail closed")
 
         let secure = KeymasterGrantPersistenceDiagnostics.unreadableGrant(source: .secure)
         let legacy = KeymasterGrantPersistenceDiagnostics.unreadableGrant(source: .legacy)
-        check.equal("secure decode names the category and reason", secure, "Stored grant is unreadable source=secure")
-        check.equal("legacy decode names the category and reason", legacy, "Stored grant is unreadable source=legacy")
-        check.check("secure diagnostic omits the payload sentinel", !secure.contains(sentinel))
-        check.check("legacy diagnostic omits the payload sentinel", !legacy.contains(sentinel))
-        check.check(
-            "migration-failure diagnostic is a fixed category and reason",
-            KeymasterGrantPersistenceDiagnostics.legacyMigrationSaveFailed
-                == "Legacy grant migration failed reason=secure-save"
-        )
-        check.check(
-            "migration-failure diagnostic omits the payload sentinel",
-            !KeymasterGrantPersistenceDiagnostics.legacyMigrationSaveFailed.contains(sentinel)
-        )
-        check.equal(
-            "superseded-repair diagnostic names the category and reason",
-            KeymasterGrantPersistenceDiagnostics.supersededPersistRepairFailed,
-            "Superseded grant repair failed reason=secure-save"
-        )
-        check.check(
-            "superseded-repair diagnostic omits the payload sentinel",
-            !KeymasterGrantPersistenceDiagnostics.supersededPersistRepairFailed.contains(sentinel)
-        )
+        #expect((secure) == ("Stored grant is unreadable source=secure"), "secure decode names the category and reason")
+        #expect((legacy) == ("Stored grant is unreadable source=legacy"), "legacy decode names the category and reason")
+        #expect((!secure.contains(sentinel)) == true, "secure diagnostic omits the payload sentinel")
+        #expect((!legacy.contains(sentinel)) == true, "legacy diagnostic omits the payload sentinel")
+        #expect(
+            (KeymasterGrantPersistenceDiagnostics.legacyMigrationSaveFailed
+                == "Legacy grant migration failed reason=secure-save") == true,
+            "migration-failure diagnostic is a fixed category and reason")
+        #expect(
+            (!KeymasterGrantPersistenceDiagnostics.legacyMigrationSaveFailed.contains(sentinel)) == true,
+            "migration-failure diagnostic omits the payload sentinel")
+        #expect(
+            (KeymasterGrantPersistenceDiagnostics.supersededPersistRepairFailed)
+                == ("Superseded grant repair failed reason=secure-save"),
+            "superseded-repair diagnostic names the category and reason")
+        #expect(
+            (!KeymasterGrantPersistenceDiagnostics.supersededPersistRepairFailed.contains(sentinel)) == true,
+            "superseded-repair diagnostic omits the payload sentinel")
     }
 
-    check.suite("Legacy grant migrates one way into the secure store") {
+    do {
         let tokens = persistenceGrant(access: "at", refresh: "rt")
         let secure = RecordingTokenStore()
         let legacy = RecordingLegacyStore(tokens: tokens)
         let store = KeymasterMigratingStore(secureStore: secure, legacyStore: legacy)
         let snapshot = store.loadGrant()
 
-        check.equal("legacy success returns the grant", snapshot.tokens?.refreshToken, "rt")
-        check.check("legacy success asks the session to persist", snapshot.needsSecurePersist)
-        check.nil_("load does not write leftover onto the secure store", secure.stored)
-        check.equal("load does not save leftover itself", secure.saveCount, 0)
-        check.nil_("legacy success deletes the plaintext copy", legacy.tokens)
+        #expect((snapshot.tokens?.refreshToken) == ("rt"), "legacy success returns the grant")
+        #expect((snapshot.needsSecurePersist) == true, "legacy success asks the session to persist")
+        #expect((secure.stored) == nil, "load does not write leftover onto the secure store")
+        #expect((secure.saveCount) == (0), "load does not save leftover itself")
+        #expect((legacy.tokens) == nil, "legacy success deletes the plaintext copy")
     }
 
-    check.suite("Migration save failure still erases plaintext") {
+    do {
         let tokens = persistenceGrant(access: "at", refresh: "rt")
         let secure = FailingTokenStore()
         let legacy = RecordingLegacyStore(tokens: tokens)
         let store = KeymasterMigratingStore(secureStore: secure, legacyStore: legacy)
         let snapshot = store.loadGrant()
 
-        check.equal(
-            "a failed migration still returns the current-session grant",
-            snapshot.tokens?.refreshToken,
-            "rt"
-        )
-        check.check("a leftover grant still needs a later secure persist", snapshot.needsSecurePersist)
-        check.nil_("a failed migration does not retain plaintext", legacy.tokens)
-        check.nil_("load does not invent a secure copy", secure.stored)
+        #expect((snapshot.tokens?.refreshToken) == ("rt"), "a failed migration still returns the current-session grant")
+        #expect((snapshot.needsSecurePersist) == true, "a leftover grant still needs a later secure persist")
+        #expect((legacy.tokens) == nil, "a failed migration does not retain plaintext")
+        #expect((secure.stored) == nil, "load does not invent a secure copy")
     }
 
-    check.suite("Unreadable leftover plaintext is still erased") {
+    do {
         let secure = RecordingTokenStore()
         let legacy = UnreadableLegacyStore()
         let store = KeymasterMigratingStore(secureStore: secure, legacyStore: legacy)
 
-        check.nil_("corrupt leftover plaintext fails closed", store.load())
-        check.check("corrupt leftover plaintext is still deleted", !legacy.retained)
-        check.nil_("corrupt leftover plaintext is not copied securely", secure.stored)
+        #expect((store.load()) == nil, "corrupt leftover plaintext fails closed")
+        #expect((!legacy.retained) == true, "corrupt leftover plaintext is still deleted")
+        #expect((secure.stored) == nil, "corrupt leftover plaintext is not copied securely")
     }
 
-    check.suite("Adopt, refresh, and clear persist only to the secure store") {
+    do {
         let secure = RecordingTokenStore()
         let legacy = RecordingLegacyStore(tokens: persistenceGrant(access: "old", refresh: "old-rt"))
         let store = KeymasterMigratingStore(secureStore: secure, legacyStore: legacy)
         let adopted = persistenceGrant(access: "adopted", refresh: "adopted-rt")
 
-        check.noThrow("adopt saves securely") {
-            try store.save(adopted)
+        do {
+            do {
+                try store.save(adopted)
+
+            } catch {
+                Issue.record("\("adopt saves securely"): unexpected error \(error)")
+            }
         }
-        check.equal("adopt writes the secure grant", secure.stored?.refreshToken, "adopted-rt")
-        check.nil_("adopt clears leftover plaintext", legacy.tokens)
+        #expect((secure.stored?.refreshToken) == ("adopted-rt"), "adopt writes the secure grant")
+        #expect((legacy.tokens) == nil, "adopt clears leftover plaintext")
 
         let rotated = persistenceGrant(access: "rotated", refresh: "rotated-rt")
-        check.noThrow("refresh saves securely") {
-            try store.save(rotated)
+        do {
+            do {
+                try store.save(rotated)
+
+            } catch {
+                Issue.record("\("refresh saves securely"): unexpected error \(error)")
+            }
         }
-        check.equal("refresh replaces the secure grant", secure.stored?.refreshToken, "rotated-rt")
-        check.nil_("refresh does not restore plaintext", legacy.tokens)
+        #expect((secure.stored?.refreshToken) == ("rotated-rt"), "refresh replaces the secure grant")
+        #expect((legacy.tokens) == nil, "refresh does not restore plaintext")
 
         store.clear()
-        check.nil_("clear removes the secure grant", secure.stored)
-        check.nil_("clear removes the leftover plaintext", legacy.tokens)
+        #expect((secure.stored) == nil, "clear removes the secure grant")
+        #expect((legacy.tokens) == nil, "clear removes the leftover plaintext")
     }
 }
 
+@Test
 @MainActor
-func runKeymasterPersistenceSourceContractChecks(_ check: CheckRunner) {
-    check.suite("Keymaster persistence source contract") {
-        check.noThrow("token persistence sources are readable") {
-            let session = try spottyPersistenceSourceFile("Spotty/Spotify/KeymasterSession.swift")
-            let store = try spottyPersistenceSourceFile("Spotty/Spotify/KeymasterTokenStore.swift")
-            let keychain = try spottyPersistenceSourceFile("Spotty/Spotify/KeychainManager.swift")
+func testKeymasterPersistenceSourceContract() {
+    do {
+        do {
+            do {
+                let session = try spottyPersistenceSourceFile("Spotty/Spotify/KeymasterSession.swift")
+                let store = try spottyPersistenceSourceFile("Spotty/Spotify/KeymasterTokenStore.swift")
+                let keychain = try spottyPersistenceSourceFile("Spotty/Spotify/KeychainManager.swift")
 
-            check.check(
-                "every compilation uses the migrating secure store",
-                containsPersistenceToken(
-                    session, "private typealias DefaultKeymasterTokenStore = KeymasterMigratingStore")
-                    && !containsPersistenceToken(session, "SPOTTY_DISTRIBUTION")
-                    && !containsPersistenceToken(session, "KeymasterDefaultsStore")
-                    && !containsPersistenceToken(session, "KeymasterLegacyDefaultsStore")
-            )
-            check.check(
-                "production code has no UserDefaults save path for the grant",
-                !containsPersistenceToken(store, "UserDefaults.standard.set")
-                    && !containsPersistenceToken(store, "legacyStore.save")
-                    && containsPersistenceToken(store, "UserDefaults.standard.data(forKey: Self.storageKey)")
-                    && containsPersistenceToken(
-                        store, "UserDefaults.standard.removeObject(forKey: Self.storageKey)")
-            )
-            check.check(
-                "legacy plaintext is deleted without a load-time secure write",
-                containsPersistenceToken(store, "legacyStore.clear()")
-                    && containsPersistenceToken(store, "needsSecurePersist: true")
-                    && containsPersistenceToken(session, "persistLeftoverGrantIfCurrent")
-                    && containsPersistenceToken(session, "store.loadGrant()")
-            )
-            check.check(
-                "corrupt stored grants decode through the sanitized codec",
-                containsPersistenceToken(store, "KeymasterStoredGrantCodec.decode(data, source: .legacy)")
-                    && containsPersistenceToken(keychain, "KeymasterStoredGrantCodec.decode(data, source: .secure)")
-                    && containsPersistenceToken(store, "Stored grant is unreadable source=")
-                    && !containsPersistenceToken(store, "error.localizedDescription")
-                    && !containsPersistenceToken(keychain, "try? JSONDecoder().decode(KeymasterTokens.self")
-            )
-            check.check(
-                "file-based keychain and team-signed development requirements stay explicit",
-                !containsPersistenceToken(keychain, "kSecUseDataProtectionKeychain as String")
-                    && !containsPersistenceToken(keychain, "[kSecUseDataProtectionKeychain")
-                    && !containsPersistenceToken(keychain, "kSecAttrAccessGroup")
-                    && !containsPersistenceToken(keychain, "Shared keychain access group")
-                    && containsPersistenceToken(keychain, "Self-signed development signatures are build-only")
-                    && containsPersistenceToken(keychain, "requires an Apple-issued team signature")
-            )
-            check.check(
-                "previous-service retirement is durable rather than delete-only",
-                containsPersistenceToken(
-                    keychain,
-                    "UserDefaults.standard.set(true, forKey: previousServiceRetiredKey)"
-                )
-                    && containsPersistenceToken(keychain, "guard !previousIsRetired()")
-                    && containsPersistenceToken(keychain, "retirePreviousKeymasterService()")
-            )
+                #expect(
+                    (containsPersistenceToken(
+                        session, "private typealias DefaultKeymasterTokenStore = KeymasterMigratingStore")
+                        && !containsPersistenceToken(session, "SPOTTY_DISTRIBUTION")
+                        && !containsPersistenceToken(session, "KeymasterDefaultsStore")
+                        && !containsPersistenceToken(session, "KeymasterLegacyDefaultsStore")) == true,
+                    "every compilation uses the migrating secure store")
+                #expect(
+                    (!containsPersistenceToken(store, "UserDefaults.standard.set")
+                        && !containsPersistenceToken(store, "legacyStore.save")
+                        && containsPersistenceToken(store, "UserDefaults.standard.data(forKey: Self.storageKey)")
+                        && containsPersistenceToken(
+                            store, "UserDefaults.standard.removeObject(forKey: Self.storageKey)"))
+                        == true, "production code has no UserDefaults save path for the grant")
+                #expect(
+                    (containsPersistenceToken(store, "legacyStore.clear()")
+                        && containsPersistenceToken(store, "needsSecurePersist: true")
+                        && containsPersistenceToken(session, "persistLeftoverGrantIfCurrent")
+                        && containsPersistenceToken(session, "store.loadGrant()")) == true,
+                    "legacy plaintext is deleted without a load-time secure write")
+                #expect(
+                    (containsPersistenceToken(store, "KeymasterStoredGrantCodec.decode(data, source: .legacy)")
+                        && containsPersistenceToken(keychain, "KeymasterStoredGrantCodec.decode(data, source: .secure)")
+                        && containsPersistenceToken(store, "Stored grant is unreadable source=")
+                        && !containsPersistenceToken(store, "error.localizedDescription")
+                        && !containsPersistenceToken(keychain, "try? JSONDecoder().decode(KeymasterTokens.self"))
+                        == true, "corrupt stored grants decode through the sanitized codec")
+                #expect(
+                    (!containsPersistenceToken(keychain, "kSecUseDataProtectionKeychain as String")
+                        && !containsPersistenceToken(keychain, "[kSecUseDataProtectionKeychain")
+                        && !containsPersistenceToken(keychain, "kSecAttrAccessGroup")
+                        && !containsPersistenceToken(keychain, "Shared keychain access group")
+                        && containsPersistenceToken(keychain, "Self-signed development signatures are build-only")
+                        && containsPersistenceToken(keychain, "requires an Apple-issued team signature")) == true,
+                    "file-based keychain and team-signed development requirements stay explicit")
+                #expect(
+                    (containsPersistenceToken(
+                        keychain,
+                        "UserDefaults.standard.set(true, forKey: previousServiceRetiredKey)"
+                    )
+                        && containsPersistenceToken(keychain, "guard !previousIsRetired()")
+                        && containsPersistenceToken(keychain, "retirePreviousKeymasterService()")) == true,
+                    "previous-service retirement is durable rather than delete-only")
+
+            } catch {
+                Issue.record("\("token persistence sources are readable"): unexpected error \(error)")
+            }
         }
     }
 }
 
+@Test
 @MainActor
-func runKeymasterSessionPersistenceChecks(_ check: CheckRunner) async {
-    await check.suite("Session adopt and refresh save through the migrating store") {
+func testKeymasterSessionPersistence() async {
+    do {
         let secure = RecordingTokenStore()
         let leftover = persistenceGrant(access: "legacy-at", refresh: "legacy-rt")
         let legacy = RecordingLegacyStore(tokens: leftover)
@@ -282,12 +279,12 @@ func runKeymasterSessionPersistenceChecks(_ check: CheckRunner) async {
         let adopted = persistenceGrant(access: "adopted-at", refresh: "adopted-rt")
         do {
             try await session.adopt(adopted)
-            check.check("adopt writes the grant", true)
+            #expect((true) == true, "adopt writes the grant")
         } catch {
-            check.check("adopt writes the grant", false)
+            #expect((false) == true, "adopt writes the grant")
         }
-        check.equal("adopt persists to the secure store", secure.stored?.refreshToken, "adopted-rt")
-        check.nil_("adopt clears leftover plaintext", legacy.tokens)
+        #expect((secure.stored?.refreshToken) == ("adopted-rt"), "adopt persists to the secure store")
+        #expect((legacy.tokens) == nil, "adopt clears leftover plaintext")
 
         let expired = persistenceGrant(
             access: "adopted-at",
@@ -297,22 +294,20 @@ func runKeymasterSessionPersistenceChecks(_ check: CheckRunner) async {
         do {
             try await session.adopt(expired)
         } catch {
-            check.check("re-adopt of an expired grant succeeds", false)
+            #expect((false) == true, "re-adopt of an expired grant succeeds")
         }
-        check.equal(
-            "refresh persists the rotated grant securely",
-            try? await session.accessToken(now: Date(timeIntervalSince1970: 1_000)),
-            "rotated-at"
-        )
-        check.equal("refresh replaces the secure grant", secure.stored?.refreshToken, "rotated-adopted-rt")
-        check.nil_("refresh does not restore plaintext", legacy.tokens)
+        #expect(
+            (try? await session.accessToken(now: Date(timeIntervalSince1970: 1_000))) == ("rotated-at"),
+            "refresh persists the rotated grant securely")
+        #expect((secure.stored?.refreshToken) == ("rotated-adopted-rt"), "refresh replaces the secure grant")
+        #expect((legacy.tokens) == nil, "refresh does not restore plaintext")
 
         await session.clear()
-        check.nil_("clear removes the secure grant", secure.stored)
-        check.nil_("clear removes leftover plaintext", legacy.tokens)
+        #expect((secure.stored) == nil, "clear removes the secure grant")
+        #expect((legacy.tokens) == nil, "clear removes leftover plaintext")
     }
 
-    await check.suite("Session leftover load persists only after the generation still owns the slot") {
+    do {
         let leftover = persistenceGrant(access: "legacy-at", refresh: "legacy-rt")
         let secure = RecordingTokenStore()
         let legacy = RecordingLegacyStore(tokens: leftover)
@@ -321,13 +316,13 @@ func runKeymasterSessionPersistenceChecks(_ check: CheckRunner) async {
             refresher: { _ in throw KeymasterAuthError.tokenExchangeFailed(500) },
             cookieCleanup: {}
         )
-        check.check("leftover plaintext becomes a current grant", await session.hasGrant)
-        check.equal("the session commits leftover plaintext securely", secure.stored?.refreshToken, "legacy-rt")
-        check.nil_("leftover plaintext is deleted after the committed load", legacy.tokens)
-        check.equal("the leftover bearer is live", try? await session.accessToken(), "legacy-at")
+        #expect((await session.hasGrant) == true, "leftover plaintext becomes a current grant")
+        #expect((secure.stored?.refreshToken) == ("legacy-rt"), "the session commits leftover plaintext securely")
+        #expect((legacy.tokens) == nil, "leftover plaintext is deleted after the committed load")
+        #expect((try? await session.accessToken()) == ("legacy-at"), "the leftover bearer is live")
     }
 
-    await check.suite("Failed leftover persist keeps the current-session grant") {
+    do {
         let leftover = persistenceGrant(access: "legacy-at", refresh: "legacy-rt")
         let secure = FailingTokenStore()
         let legacy = RecordingLegacyStore(tokens: leftover)
@@ -336,13 +331,13 @@ func runKeymasterSessionPersistenceChecks(_ check: CheckRunner) async {
             refresher: { _ in throw KeymasterAuthError.tokenExchangeFailed(500) },
             cookieCleanup: {}
         )
-        check.check("a leftover grant still loads for this process", await session.hasGrant)
-        check.nil_("failed persist does not retain plaintext", legacy.tokens)
-        check.nil_("failed persist does not invent a secure copy", secure.stored)
-        check.equal("the leftover bearer stays in the current session", try? await session.accessToken(), "legacy-at")
+        #expect((await session.hasGrant) == true, "a leftover grant still loads for this process")
+        #expect((legacy.tokens) == nil, "failed persist does not retain plaintext")
+        #expect((secure.stored) == nil, "failed persist does not invent a secure copy")
+        #expect((try? await session.accessToken()) == ("legacy-at"), "the leftover bearer stays in the current session")
     }
 
-    await check.suite("Adopt during leftover load wins over the stale read") {
+    do {
         let leftover = persistenceGrant(access: "legacy-at", refresh: "legacy-rt")
         let secure = GatedLoadTokenStore(initial: nil)
         let legacy = RecordingLegacyStore(tokens: leftover)
@@ -356,15 +351,15 @@ func runKeymasterSessionPersistenceChecks(_ check: CheckRunner) async {
         do {
             try await session.adopt(persistenceGrant(access: "adopted-access", refresh: "adopted-refresh"))
         } catch {
-            check.check("adopt during leftover load succeeds", false)
+            #expect((false) == true, "adopt during leftover load succeeds")
         }
         secure.releaseLoad()
-        check.equal("adopt during leftover load is the live bearer", try? await first.value, "adopted-access")
-        check.equal("the leftover snapshot is not persisted", secure.stored?.accessToken, "adopted-access")
-        check.nil_("leftover plaintext is still deleted", legacy.tokens)
+        #expect((try? await first.value) == ("adopted-access"), "adopt during leftover load is the live bearer")
+        #expect((secure.stored?.accessToken) == ("adopted-access"), "the leftover snapshot is not persisted")
+        #expect((legacy.tokens) == nil, "leftover plaintext is still deleted")
     }
 
-    await check.suite("Logout during leftover load wins over the stale read") {
+    do {
         let leftover = persistenceGrant(access: "legacy-at", refresh: "legacy-rt")
         let secure = GatedLoadTokenStore(initial: nil)
         let legacy = RecordingLegacyStore(tokens: leftover)
@@ -377,12 +372,12 @@ func runKeymasterSessionPersistenceChecks(_ check: CheckRunner) async {
         await secure.waitUntilLoadEntered()
         await session.clear()
         secure.releaseLoad()
-        check.check("logout during leftover load leaves no grant", await first.value == false)
-        check.nil_("logout does not let leftover plaintext persist", secure.stored)
-        check.nil_("logout still deletes leftover plaintext", legacy.tokens)
+        #expect((await first.value == false) == true, "logout during leftover load leaves no grant")
+        #expect((secure.stored) == nil, "logout does not let leftover plaintext persist")
+        #expect((legacy.tokens) == nil, "logout still deletes leftover plaintext")
     }
 
-    await check.suite("Adopt during leftover persist repairs a stale secure write") {
+    do {
         let leftover = persistenceGrant(access: "legacy-at", refresh: "legacy-rt")
         let secure = GatedFirstSaveTokenStore()
         let legacy = RecordingLegacyStore(tokens: leftover)
@@ -396,13 +391,13 @@ func runKeymasterSessionPersistenceChecks(_ check: CheckRunner) async {
         do {
             try await session.adopt(persistenceGrant(access: "adopted-access", refresh: "adopted-refresh"))
         } catch {
-            check.check("adopt during leftover persist succeeds", false)
+            #expect((false) == true, "adopt during leftover persist succeeds")
         }
         secure.releaseFirstSave()
-        check.check("adopt during leftover persist keeps a grant", await first.value)
-        check.equal("the adopted grant is the live bearer", try? await session.accessToken(), "adopted-access")
-        check.equal("a stale leftover write does not remain on disk", secure.stored?.accessToken, "adopted-access")
-        check.nil_("leftover plaintext is still deleted", legacy.tokens)
+        #expect((await first.value) == true, "adopt during leftover persist keeps a grant")
+        #expect((try? await session.accessToken()) == ("adopted-access"), "the adopted grant is the live bearer")
+        #expect((secure.stored?.accessToken) == ("adopted-access"), "a stale leftover write does not remain on disk")
+        #expect((legacy.tokens) == nil, "leftover plaintext is still deleted")
     }
 }
 

@@ -167,7 +167,7 @@ account mutations are therefore **opt-in**, not part of routine acceptance testi
 
 Without explicit playback permission, it is safe to:
 
-- run `./Scripts/check.sh` and the synthetic check executables;
+- run `./Scripts/check.sh` and the non-shipping Swift test targets;
 - launch, sign in, browse Home/Search/library/detail pages, sort tables, inspect devices and queue,
   and close/reopen the window;
 - observe remote playback state without pressing Play/Pause, Previous, Next, Shuffle, Repeat,

@@ -1,3 +1,4 @@
+import Testing
 import SpottyDomain
 import Foundation
 @testable import SpottyCore
@@ -6,15 +7,16 @@ import Foundation
 /// the pause/stop gate, driven entirely through fakes. No Vorbis fixture is committed on `main`
 /// yet (see `OggVorbisDecoderChecks` and #209 -- it needs an encoder on a machine that has one),
 /// so the one real-decode check is guarded and skips when the fixture is absent.
+@Test
 @MainActor
-func runVorbisDecodePipelineChecks(_ check: CheckRunner) async {
-    await check.suite("Vorbis decode pipeline") {
-        await runGarbageSourceFailsCheck(check)
-        await runThrowingSourceFailsCheck(check)
-        runStopBeforeStartIsNoOpCheck(check)
-        await runPauseGateStopTerminatesCheck(check)
-        await runNoEventsAfterStoppedCheck(check)
-        await runFixtureDecodeThroughFakeSinkCheck(check)
+func testVorbisDecodePipeline() async {
+    do {
+        await runGarbageSourceFailsCheck()
+        await runThrowingSourceFailsCheck()
+        runStopBeforeStartIsNoOpCheck()
+        await runPauseGateStopTerminatesCheck()
+        await runNoEventsAfterStoppedCheck()
+        await runFixtureDecodeThroughFakeSinkCheck()
     }
 }
 
@@ -22,7 +24,7 @@ func runVorbisDecodePipelineChecks(_ check: CheckRunner) async {
 /// the pipeline must grow the header prefix to its cap, give up, and emit `.failed` -- never hang
 /// or crash trying to decode a frame with no open decoder.
 @MainActor
-private func runGarbageSourceFailsCheck(_ check: CheckRunner) async {
+private func runGarbageSourceFailsCheck() async {
     // One byte past the pipeline's 1 MiB header-prefix cap, so every growth step gets a full-length
     // read (never a short one) and the cap is what ends the search, not source exhaustion.
     let garbage = lcgBytes(count: 1_048_576 + 4_096, seed: 0x1234_5678_9abc_def0)
@@ -33,22 +35,20 @@ private func runGarbageSourceFailsCheck(_ check: CheckRunner) async {
 
     pipeline.start(source: source, sink: sink, startOffset: 0, startPositionMs: 0) { collector.record($0) }
 
-    check.check(
-        "garbage bytes emit .failed and the decode thread exits on its own",
-        await collector.waitForCount(1) && collector.all.first.map(isFailed) == true
-    )
+    #expect(
+        (await collector.waitForCount(1) && collector.all.first.map(isFailed) == true) == true,
+        "garbage bytes emit .failed and the decode thread exits on its own")
 
     pipeline.stop()
-    check.check(
-        "stop() after the thread already exited still returns and emits .stopped",
-        await collector.waitForCount(2) && collector.all.last.map(isStopped) == true
-    )
+    #expect(
+        (await collector.waitForCount(2) && collector.all.last.map(isStopped) == true) == true,
+        "stop() after the thread already exited still returns and emits .stopped")
 }
 
 /// A source whose very first read throws must fail the same way a decode error does -- the
 /// pipeline does not distinguish "bad bytes" from "could not get bytes".
 @MainActor
-private func runThrowingSourceFailsCheck(_ check: CheckRunner) async {
+private func runThrowingSourceFailsCheck() async {
     struct FakeReadError: Error {}
 
     let source = FakeByteSource(readError: FakeReadError())
@@ -58,10 +58,9 @@ private func runThrowingSourceFailsCheck(_ check: CheckRunner) async {
 
     pipeline.start(source: source, sink: sink, startOffset: 0, startPositionMs: 0) { collector.record($0) }
 
-    check.check(
-        "a throwing source emits .failed",
-        await collector.waitForCount(1) && collector.all.first.map(isFailed) == true
-    )
+    #expect(
+        (await collector.waitForCount(1) && collector.all.first.map(isFailed) == true) == true,
+        "a throwing source emits .failed")
 
     pipeline.stop()
 }
@@ -69,10 +68,10 @@ private func runThrowingSourceFailsCheck(_ check: CheckRunner) async {
 /// `stop()` before `start()` must not crash, hang, or emit anything -- there is no thread to join
 /// and no `events` callback has ever been recorded.
 @MainActor
-private func runStopBeforeStartIsNoOpCheck(_ check: CheckRunner) {
+private func runStopBeforeStartIsNoOpCheck() {
     let pipeline = VorbisDecodePipeline()
     pipeline.stop()
-    check.check("stop() before start() returns without crashing or hanging", true)
+    #expect((true) == true, "stop() before start() returns without crashing or hanging")
 }
 
 /// A source whose read never returns on its own (until this check releases it) keeps the decode
@@ -80,7 +79,7 @@ private func runStopBeforeStartIsNoOpCheck(_ check: CheckRunner) {
 /// between frames. `stop()` must still return within its bounded join instead of waiting on a
 /// read that cannot be cancelled out from under the thread.
 @MainActor
-private func runPauseGateStopTerminatesCheck(_ check: CheckRunner) async {
+private func runPauseGateStopTerminatesCheck() async {
     let release = DispatchSemaphore(value: 0)
     let source = FakeByteSource(blockingUntil: release)
     let sink = FakeSink()
@@ -100,8 +99,8 @@ private func runPauseGateStopTerminatesCheck(_ check: CheckRunner) async {
     pipeline.stop()
     let elapsedSeconds = Double(DispatchTime.now().uptimeNanoseconds - stopStart.uptimeNanoseconds) / 1e9
 
-    check.check("stop() returns within its bounded join timeout even with a stuck read", elapsedSeconds < 2.5)
-    check.check("stop() still emits .stopped", collector.all.last.map(isStopped) == true)
+    #expect((elapsedSeconds < 2.5) == true, "stop() returns within its bounded join timeout even with a stuck read")
+    #expect((collector.all.last.map(isStopped) == true) == true, "stop() still emits .stopped")
 
     // Release the parked read now that the assertions above are done, so the leaked decode thread
     // (stop()'s join was bounded, not a guarantee) can actually exit instead of staying parked for
@@ -113,7 +112,7 @@ private func runPauseGateStopTerminatesCheck(_ check: CheckRunner) async {
 /// every caller (decode thread or control thread) from that point on. Exercises that guarantee by
 /// driving `pause`/`resume`/`seek`/`stop` again after the pipeline has already stopped.
 @MainActor
-private func runNoEventsAfterStoppedCheck(_ check: CheckRunner) async {
+private func runNoEventsAfterStoppedCheck() async {
     let garbage = lcgBytes(count: 1_048_576 + 4_096, seed: 0xabad_1dea_dead_beef)
     let source = FakeByteSource(bytes: garbage)
     let sink = FakeSink()
@@ -122,16 +121,14 @@ private func runNoEventsAfterStoppedCheck(_ check: CheckRunner) async {
 
     pipeline.start(source: source, sink: sink, startOffset: 0, startPositionMs: 0) { collector.record($0) }
 
-    check.check(
-        "setup: garbage source reaches .failed",
-        await collector.waitForCount(1) && collector.all.first.map(isFailed) == true
-    )
+    #expect(
+        (await collector.waitForCount(1) && collector.all.first.map(isFailed) == true) == true,
+        "setup: garbage source reaches .failed")
 
     pipeline.stop()
-    check.check(
-        "setup: stop() after failure emits .stopped",
-        await collector.waitForCount(2) && collector.all.last.map(isStopped) == true
-    )
+    #expect(
+        (await collector.waitForCount(2) && collector.all.last.map(isStopped) == true) == true,
+        "setup: stop() after failure emits .stopped")
 
     let countAfterStop = collector.all.count
 
@@ -140,10 +137,7 @@ private func runNoEventsAfterStoppedCheck(_ check: CheckRunner) async {
     pipeline.seek(toByteOffset: 0, positionMs: 0)
     pipeline.stop()
 
-    check.check(
-        "no event is ever recorded after .stopped",
-        collector.all.count == countAfterStop
-    )
+    #expect((collector.all.count == countAfterStop) == true, "no event is ever recorded after .stopped")
 }
 
 /// Feeds `Fixtures/tone-44100-stereo.ogg` (see `OggVorbisDecoderChecks`) through the pipeline end
@@ -151,12 +145,12 @@ private func runNoEventsAfterStoppedCheck(_ check: CheckRunner) async {
 /// Skips with a passing check when the fixture is absent (#209 -- it needs an encoder on a
 /// machine that has one), same as `OggVorbisDecoderChecks`.
 @MainActor
-private func runFixtureDecodeThroughFakeSinkCheck(_ check: CheckRunner) async {
+private func runFixtureDecodeThroughFakeSinkCheck() async {
     let data: Data
     do {
         data = try boundaryFixture(named: "tone-44100-stereo", extension: "ogg")
     } catch {
-        check.check("tone-44100-stereo.ogg fixture absent (#209); pipeline decode check skipped", true)
+        #expect((true) == true, "tone-44100-stereo.ogg fixture absent (#209); pipeline decode check skipped")
         return
     }
 
@@ -167,22 +161,19 @@ private func runFixtureDecodeThroughFakeSinkCheck(_ check: CheckRunner) async {
 
     pipeline.start(source: source, sink: sink, startOffset: 0, startPositionMs: 0) { collector.record($0) }
 
-    check.check(
-        "fixture decode reaches .endOfTrack",
-        await waitUntil(timeout: .seconds(10)) { collector.all.contains(where: isEndOfTrack) }
-    )
-    check.check("fixture decode emitted .playing before .endOfTrack", collector.all.contains(where: isPlaying))
+    #expect(
+        (await waitUntil(timeout: .seconds(10)) { collector.all.contains(where: isEndOfTrack) }) == true,
+        "fixture decode reaches .endOfTrack")
+    #expect((collector.all.contains(where: isPlaying)) == true, "fixture decode emitted .playing before .endOfTrack")
 
     let totalFrames = sink.totalFrameCount
-    check.check("fixture decode produced frames", totalFrames > 0)
+    #expect((totalFrames > 0) == true, "fixture decode produced frames")
     if let expectedFrames = lastGranulePosition(in: data) {
-        check.equal(
-            "fixture decoded frame count matches the last page's granule position",
-            Int64(totalFrames),
-            expectedFrames
-        )
+        #expect(
+            (Int64(totalFrames)) == (expectedFrames),
+            "fixture decoded frame count matches the last page's granule position")
     } else {
-        check.check("fixture has a page with a resolved granule position", false)
+        #expect((false) == true, "fixture has a page with a resolved granule position")
     }
 
     pipeline.stop()

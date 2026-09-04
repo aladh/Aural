@@ -1,9 +1,11 @@
+import Testing
 import Foundation
 @testable import SpottyCore
 
+@Test
 @MainActor
-func runAuthCredentialRetryChecks(_ check: CheckRunner) async {
-    await check.suite("Rejected bearer forces refresh while still valid") {
+func testAuthCredentialRetry() async {
+    do {
         let store = MemoryGrantStore()
         let refresher = ParkingRefresher()
         let session = KeymasterSession(
@@ -17,18 +19,18 @@ func runAuthCredentialRetryChecks(_ check: CheckRunner) async {
 
         let pending = Task { try await session.refreshIgnoringExpiry(rejected: "access-a") }
         await refresher.waitUntilParked()
-        check.equal("clock-valid refusal spends the refresh token once", refresher.attemptCount, 1)
-        check.equal("the spent refresh token is the current grant's", refresher.spent, ["refresh-a"])
+        #expect((refresher.attemptCount) == (1), "clock-valid refusal spends the refresh token once")
+        #expect((refresher.spent) == (["refresh-a"]), "the spent refresh token is the current grant's")
         refresher.complete(renewed)
 
         let token = try? await pending.value
-        check.equal("forced refresh returns the replacement bearer", token, "access-b")
-        check.equal("the replacement grant is persisted", store.stored?.refreshToken, "refresh-b")
-        check.equal("a later accessToken does not refresh again", try? await session.accessToken(), "access-b")
-        check.equal("clock-valid access after refresh does not spend again", refresher.attemptCount, 1)
+        #expect((token) == ("access-b"), "forced refresh returns the replacement bearer")
+        #expect((store.stored?.refreshToken) == ("refresh-b"), "the replacement grant is persisted")
+        #expect((try? await session.accessToken()) == ("access-b"), "a later accessToken does not refresh again")
+        #expect((refresher.attemptCount) == (1), "clock-valid access after refresh does not spend again")
     }
 
-    await check.suite("Concurrent same-bearer 401s single-flight") {
+    do {
         let store = MemoryGrantStore()
         let refresher = ParkingRefresher()
         let session = KeymasterSession(
@@ -51,18 +53,18 @@ func runAuthCredentialRetryChecks(_ check: CheckRunner) async {
         }
         await started.wait()
         _ = await session.hasGrant
-        check.equal("the second 401 joins rather than starting a second spend", refresher.attemptCount, 1)
-        check.equal("no overlapping refresh spend while the first is in flight", refresher.overlappingSpends, 0)
+        #expect((refresher.attemptCount) == (1), "the second 401 joins rather than starting a second spend")
+        #expect((refresher.overlappingSpends) == (0), "no overlapping refresh spend while the first is in flight")
 
         refresher.complete(grant(access: "access-b", refresh: "refresh-b"))
-        check.equal("first waiter receives the replacement", try? await first.value, "access-b")
-        check.equal("second waiter receives the same replacement", try? await second.value, "access-b")
-        check.equal("in-flight accessToken joins the same refresh", try? await joinedAccess.value, "access-b")
-        check.equal("rotating refresh token is spent once", refresher.attemptCount, 1)
-        check.equal("rotating refresh token is not double-spent", refresher.spent, ["refresh-a"])
+        #expect((try? await first.value) == ("access-b"), "first waiter receives the replacement")
+        #expect((try? await second.value) == ("access-b"), "second waiter receives the same replacement")
+        #expect((try? await joinedAccess.value) == ("access-b"), "in-flight accessToken joins the same refresh")
+        #expect((refresher.attemptCount) == (1), "rotating refresh token is spent once")
+        #expect((refresher.spent) == (["refresh-a"]), "rotating refresh token is not double-spent")
     }
 
-    await check.suite("Late rejection of a replaced bearer is inert") {
+    do {
         let store = MemoryGrantStore()
         let refresher = ParkingRefresher()
         let session = KeymasterSession(
@@ -77,12 +79,12 @@ func runAuthCredentialRetryChecks(_ check: CheckRunner) async {
         _ = try? await pending.value
 
         let late = try? await session.refreshIgnoringExpiry(rejected: "access-a")
-        check.equal("a late 401 for the old bearer returns the replacement", late, "access-b")
-        check.equal("the replacement refresh token is not spent", refresher.attemptCount, 1)
-        check.equal("the replacement grant remains stored", store.stored?.refreshToken, "refresh-b")
+        #expect((late) == ("access-b"), "a late 401 for the old bearer returns the replacement")
+        #expect((refresher.attemptCount) == (1), "the replacement refresh token is not spent")
+        #expect((store.stored?.refreshToken) == ("refresh-b"), "the replacement grant remains stored")
     }
 
-    await check.suite("invalid_grant clears and announces only the matching generation") {
+    do {
         let store = MemoryGrantStore()
         let refresher = ParkingRefresher()
         let cookies = GrantCookieCounter()
@@ -106,13 +108,13 @@ func runAuthCredentialRetryChecks(_ check: CheckRunner) async {
         } catch KeymasterSessionError.grantRevoked {
             revoked = true
         } catch {
-            check.check("matching invalid_grant surfaces grantRevoked, got \(error)", false)
+            #expect((false) == true, "matching invalid_grant surfaces grantRevoked, got \(error)")
         }
-        check.check("matching invalid_grant surfaces the sign-in-again error", revoked)
-        check.nil_("matching invalid_grant clears the stored grant", store.stored)
-        check.equal("matching invalid_grant runs the terminal cookie cleanup", cookies.count, 1)
+        #expect((revoked) == true, "matching invalid_grant surfaces the sign-in-again error")
+        #expect((store.stored) == nil, "matching invalid_grant clears the stored grant")
+        #expect((cookies.count) == (1), "matching invalid_grant runs the terminal cookie cleanup")
         await announcements.waitForAnnouncement()
-        check.equal("matching invalid_grant announces revocation", announcements.count, 1)
+        #expect((announcements.count) == (1), "matching invalid_grant announces revocation")
         announcements.cancel()
         var noGrantAfterClear = false
         do {
@@ -120,12 +122,12 @@ func runAuthCredentialRetryChecks(_ check: CheckRunner) async {
         } catch KeymasterSessionError.noGrant {
             noGrantAfterClear = true
         } catch {
-            check.check("cleared grant is noGrant, got \(error)", false)
+            #expect((false) == true, "cleared grant is noGrant, got \(error)")
         }
-        check.check("the session has no grant after matching revocation", noGrantAfterClear)
+        #expect((noGrantAfterClear) == true, "the session has no grant after matching revocation")
     }
 
-    await check.suite("Stale invalid_grant does not revoke a replacement grant") {
+    do {
         let store = MemoryGrantStore()
         let refresher = ParkingRefresher()
         let cookies = GrantCookieCounter()
@@ -144,20 +146,16 @@ func runAuthCredentialRetryChecks(_ check: CheckRunner) async {
         try? await session.adopt(grant(access: "access-new", refresh: "refresh-new"))
         refresher.fail(KeymasterAuthError.grantRevoked)
 
-        check.equal(
-            "stale invalid_grant returns the replacement bearer",
-            try? await pending.value,
-            "access-new"
-        )
-        check.equal("the adopted grant remains", store.stored?.refreshToken, "refresh-new")
-        check.equal("stale invalid_grant does not clear cookies", cookies.count, 0)
+        #expect((try? await pending.value) == ("access-new"), "stale invalid_grant returns the replacement bearer")
+        #expect((store.stored?.refreshToken) == ("refresh-new"), "the adopted grant remains")
+        #expect((cookies.count) == (0), "stale invalid_grant does not clear cookies")
         await session.drainActor()
-        check.equal("stale invalid_grant does not announce", announcements.count, 0)
-        check.equal("the replacement bearer is live", try? await session.accessToken(), "access-new")
+        #expect((announcements.count) == (0), "stale invalid_grant does not announce")
+        #expect((try? await session.accessToken()) == ("access-new"), "the replacement bearer is live")
         announcements.cancel()
     }
 
-    await check.suite("Adopt and logout during refresh stay authoritative") {
+    do {
         let store = MemoryGrantStore()
         let refresher = ParkingRefresher()
         let cookies = GrantCookieCounter()
@@ -175,17 +173,13 @@ func runAuthCredentialRetryChecks(_ check: CheckRunner) async {
         try? await session.adopt(grant(access: "access-adopted", refresh: "refresh-adopted"))
         refresher.complete(grant(access: "access-stale", refresh: "refresh-stale"))
 
-        check.equal(
-            "a refresh that loses to adopt returns the adopted bearer",
-            try? await superseded.value,
-            "access-adopted"
-        )
-        check.equal(
-            "a parallel accessToken during adopt returns the adopted bearer",
-            try? await joinedAccess.value,
-            "access-adopted"
-        )
-        check.equal("adopted tokens survive the stale success", store.stored?.accessToken, "access-adopted")
+        #expect(
+            (try? await superseded.value) == ("access-adopted"),
+            "a refresh that loses to adopt returns the adopted bearer")
+        #expect(
+            (try? await joinedAccess.value) == ("access-adopted"),
+            "a parallel accessToken during adopt returns the adopted bearer")
+        #expect((store.stored?.accessToken) == ("access-adopted"), "adopted tokens survive the stale success")
 
         let loggedOut = Task { try await session.refreshIgnoringExpiry(rejected: "access-adopted") }
         await refresher.waitUntilParked()
@@ -198,14 +192,14 @@ func runAuthCredentialRetryChecks(_ check: CheckRunner) async {
         } catch KeymasterSessionError.noGrant {
             logoutStale = true
         } catch {
-            check.check("logout during refresh is noGrant, got \(error)", false)
+            #expect((false) == true, "logout during refresh is noGrant, got \(error)")
         }
-        check.check("a refresh that loses to logout does not persist", logoutStale)
-        check.nil_("logout leaves no grant for the stale success to restore", store.stored)
-        check.equal("logout still runs cookie cleanup once", cookies.count, 1)
+        #expect((logoutStale) == true, "a refresh that loses to logout does not persist")
+        #expect((store.stored) == nil, "logout leaves no grant for the stale success to restore")
+        #expect((cookies.count) == (1), "logout still runs cookie cleanup once")
     }
 
-    await check.suite("Concurrent initial store load is a single flight") {
+    do {
         let stored = grant(access: "stored-access", refresh: "stored-refresh")
         let store = GatedGrantStore(initial: stored)
         let session = KeymasterSession(
@@ -218,19 +212,19 @@ func runAuthCredentialRetryChecks(_ check: CheckRunner) async {
 
         let first = Task { await session.hasGrant }
         await store.waitUntilLoadEntered()
-        check.equal("the first caller starts one store read", store.loadCount, 1)
+        #expect((store.loadCount) == (1), "the first caller starts one store read")
 
         let second = Task { try await session.accessToken() }
         let third = Task { await session.hasGrant }
         store.releaseLoad()
 
-        check.check("first caller sees the stored grant", await first.value)
-        check.equal("second caller receives the stored bearer", try? await second.value, "stored-access")
-        check.check("third caller sees the stored grant", await third.value)
-        check.equal("concurrent callers share one store read", store.loadCount, 1)
+        #expect((await first.value) == true, "first caller sees the stored grant")
+        #expect((try? await second.value) == ("stored-access"), "second caller receives the stored bearer")
+        #expect((await third.value) == true, "third caller sees the stored grant")
+        #expect((store.loadCount) == (1), "concurrent callers share one store read")
     }
 
-    await check.suite("Adopt during store load wins over the stale read") {
+    do {
         let store = GatedGrantStore(initial: grant(access: "disk-access", refresh: "disk-refresh"))
         let session = KeymasterSession(
             store: store,
@@ -245,11 +239,11 @@ func runAuthCredentialRetryChecks(_ check: CheckRunner) async {
         try? await session.adopt(grant(access: "adopted-access", refresh: "adopted-refresh"))
         store.releaseLoad()
 
-        check.equal("adopt during load is the live bearer", try? await first.value, "adopted-access")
-        check.equal("the stale disk snapshot is not persisted", store.stored?.accessToken, "adopted-access")
+        #expect((try? await first.value) == ("adopted-access"), "adopt during load is the live bearer")
+        #expect((store.stored?.accessToken) == ("adopted-access"), "the stale disk snapshot is not persisted")
     }
 
-    await check.suite("Logout during store load wins over the stale read") {
+    do {
         let store = GatedGrantStore(initial: grant(access: "disk-access", refresh: "disk-refresh"))
         let session = KeymasterSession(
             store: store,
@@ -264,11 +258,11 @@ func runAuthCredentialRetryChecks(_ check: CheckRunner) async {
         await session.clear()
         store.releaseLoad()
 
-        check.check("logout during load leaves no grant", await first.value == false)
-        check.nil_("the stale disk snapshot is not re-applied", store.stored)
+        #expect((await first.value == false) == true, "logout during load leaves no grant")
+        #expect((store.stored) == nil, "the stale disk snapshot is not re-applied")
     }
 
-    await check.suite("Partner 401 invalidates the sent pair once and does not loop") {
+    do {
         let tokens = CredentialSequence(values: ["access-a", "access-b"])
         let clients = CredentialSequence(values: ["client-a", "client-b"])
         let invalidatedAccess = RecordingInvalidator()
@@ -287,21 +281,17 @@ func runAuthCredentialRetryChecks(_ check: CheckRunner) async {
         )
 
         let profile = try? await api.profile()
-        check.equal("retry succeeds after one 401", profile?.name, "Listener")
-        check.equal("the sent bearer is invalidated", await invalidatedAccess.values, ["access-a"])
-        check.equal("the sent client token is invalidated", await invalidatedClient.values, ["client-a"])
-        check.equal("access is fetched for the attempt and the retry", tokens.callCount, 2)
-        check.equal("client token is fetched for the attempt and the retry", clients.callCount, 2)
-        check.equal("the transport is attempted twice", transport.callCount, 2)
-        check.equal(
-            "retry carries the replacement pair",
-            transport.authorizationTokens,
-            ["access-a", "access-b"]
-        )
-        check.equal("retry carries the replacement client token", transport.clientTokens, ["client-a", "client-b"])
+        #expect((profile?.name) == ("Listener"), "retry succeeds after one 401")
+        #expect((await invalidatedAccess.values) == (["access-a"]), "the sent bearer is invalidated")
+        #expect((await invalidatedClient.values) == (["client-a"]), "the sent client token is invalidated")
+        #expect((tokens.callCount) == (2), "access is fetched for the attempt and the retry")
+        #expect((clients.callCount) == (2), "client token is fetched for the attempt and the retry")
+        #expect((transport.callCount) == (2), "the transport is attempted twice")
+        #expect((transport.authorizationTokens) == (["access-a", "access-b"]), "retry carries the replacement pair")
+        #expect((transport.clientTokens) == (["client-a", "client-b"]), "retry carries the replacement client token")
     }
 
-    await check.suite("Partner 401 drops the client token even when bearer refresh throws") {
+    do {
         let tokens = CredentialSequence(values: ["access-a"])
         let clients = CredentialSequence(values: ["client-a"])
         let invalidatedClient = RecordingInvalidator()
@@ -324,16 +314,17 @@ func runAuthCredentialRetryChecks(_ check: CheckRunner) async {
         } catch KeymasterSessionError.grantRevoked {
             revoked = true
         } catch {
-            check.check("bearer revoke stays grantRevoked, got \(error)", false)
+            #expect((false) == true, "bearer revoke stays grantRevoked, got \(error)")
         }
-        check.check("a revoked bearer still surfaces grantRevoked", revoked)
-        check.equal(
-            "the named client token is dropped before the bearer throw", await invalidatedClient.values, ["client-a"])
-        check.equal("a terminal bearer throw does not retry the request", transport.callCount, 1)
-        check.equal("access is fetched only for the first attempt", tokens.callCount, 1)
+        #expect((revoked) == true, "a revoked bearer still surfaces grantRevoked")
+        #expect(
+            (await invalidatedClient.values) == (["client-a"]),
+            "the named client token is dropped before the bearer throw")
+        #expect((transport.callCount) == (1), "a terminal bearer throw does not retry the request")
+        #expect((tokens.callCount) == (1), "access is fetched only for the first attempt")
     }
 
-    await check.suite("A second Partner 401 stops") {
+    do {
         let tokens = CredentialSequence(values: ["access-a", "access-b", "access-c"])
         let clients = CredentialSequence(values: ["client-a", "client-b", "client-c"])
         let invalidatedAccess = RecordingInvalidator()
@@ -358,18 +349,17 @@ func runAuthCredentialRetryChecks(_ check: CheckRunner) async {
         } catch let error as PartnerAPIError {
             if case let .requestFailed(code) = error { status = code }
         } catch {
-            check.check("second 401 stays PartnerAPIError, got \(error)", false)
+            #expect((false) == true, "second 401 stays PartnerAPIError, got \(error)")
         }
-        check.equal("a second 401 is returned rather than retried again", status, 401)
-        check.equal(
-            "both sent bearers are invalidated", await invalidatedAccess.values, ["access-a", "access-b"])
-        check.equal(
-            "both sent client tokens are invalidated", await invalidatedClient.values, ["client-a", "client-b"])
-        check.equal("the transport stops after the retry", transport.callCount, 2)
-        check.equal("a third credential is never fetched", tokens.callCount, 2)
+        #expect((status) == (401), "a second 401 is returned rather than retried again")
+        #expect((await invalidatedAccess.values) == (["access-a", "access-b"]), "both sent bearers are invalidated")
+        #expect(
+            (await invalidatedClient.values) == (["client-a", "client-b"]), "both sent client tokens are invalidated")
+        #expect((transport.callCount) == (2), "the transport stops after the retry")
+        #expect((tokens.callCount) == (2), "a third credential is never fetched")
     }
 
-    await check.suite("Web queue 401 retries the sent bearer once") {
+    do {
         let tokens = CredentialSequence(values: ["queue-a", "queue-b", "queue-c"])
         let invalidated = RecordingInvalidator()
         let transport = ScriptedTransport(responses: [
@@ -384,14 +374,14 @@ func runAuthCredentialRetryChecks(_ check: CheckRunner) async {
         )
 
         let tracks = try? await api.queue()
-        check.equal("queue retry succeeds after one 401", tracks?.map(\.uri), ["spotify:track:track-id"])
-        check.equal("queue 401 invalidates the sent bearer", await invalidated.values, ["queue-a"])
-        check.equal("queue retry uses the replacement bearer", transport.authorizationTokens, ["queue-a", "queue-b"])
-        check.equal("queue never sends a client token", transport.clientTokens, [])
-        check.equal("queue transport is attempted twice", transport.callCount, 2)
+        #expect((tracks?.map(\.uri)) == (["spotify:track:track-id"]), "queue retry succeeds after one 401")
+        #expect((await invalidated.values) == (["queue-a"]), "queue 401 invalidates the sent bearer")
+        #expect((transport.authorizationTokens) == (["queue-a", "queue-b"]), "queue retry uses the replacement bearer")
+        #expect((transport.clientTokens) == ([]), "queue never sends a client token")
+        #expect((transport.callCount) == (2), "queue transport is attempted twice")
     }
 
-    await check.suite("A second Web queue 401 stops") {
+    do {
         let tokens = CredentialSequence(values: ["queue-a", "queue-b", "queue-c"])
         let invalidated = RecordingInvalidator()
         let transport = ScriptedTransport(responses: [
@@ -412,16 +402,16 @@ func runAuthCredentialRetryChecks(_ check: CheckRunner) async {
         } catch let error as SpotifyWebPlayerAPIError {
             if case let .requestFailed(code) = error { status = code }
         } catch {
-            check.check("second queue 401 stays SpotifyWebPlayerAPIError, got \(error)", false)
+            #expect((false) == true, "second queue 401 stays SpotifyWebPlayerAPIError, got \(error)")
         }
-        check.equal("a second queue 401 is returned rather than retried again", status, 401)
-        check.equal("queue invalidates both sent bearers", await invalidated.values, ["queue-a", "queue-b"])
-        check.equal("queue never sends a client token", transport.clientTokens, [])
-        check.equal("queue stops after the retry", transport.callCount, 2)
-        check.equal("queue never fetches a third bearer", tokens.callCount, 2)
+        #expect((status) == (401), "a second queue 401 is returned rather than retried again")
+        #expect((await invalidated.values) == (["queue-a", "queue-b"]), "queue invalidates both sent bearers")
+        #expect((transport.clientTokens) == ([]), "queue never sends a client token")
+        #expect((transport.callCount) == (2), "queue stops after the retry")
+        #expect((tokens.callCount) == (2), "queue never fetches a third bearer")
     }
 
-    await check.suite("Named invalidation does not discard a newer replacement") {
+    do {
         let currentAccess = SharedToken("access-b")
         let currentClient = SharedToken("client-b")
         let invalidatedAccess = RecordingInvalidator()
@@ -458,23 +448,17 @@ func runAuthCredentialRetryChecks(_ check: CheckRunner) async {
         )
 
         let profile = try? await api.profile()
-        check.equal("retry succeeds with the live replacement", profile?.name, "Listener")
-        check.equal("the rejected bearer is still named", await invalidatedAccess.values, ["access-a"])
-        check.equal("the rejected client token is still named", await invalidatedClient.values, ["client-a"])
-        check.equal("the newer bearer survives named invalidation", await currentAccess.value(), "access-b")
-        check.equal("the newer client token survives named invalidation", await currentClient.value(), "client-b")
-        check.equal(
-            "retry carries the live replacement pair",
-            transport.authorizationTokens,
-            ["access-a", "access-b"]
-        )
-        check.equal(
-            "retry carries the live replacement client token",
-            transport.clientTokens,
-            ["client-a", "client-b"]
-        )
-        check.equal("the sequenced rejected pair is fetched once", tokens.callCount, 1)
-        check.equal("the transport is attempted twice", transport.callCount, 2)
+        #expect((profile?.name) == ("Listener"), "retry succeeds with the live replacement")
+        #expect((await invalidatedAccess.values) == (["access-a"]), "the rejected bearer is still named")
+        #expect((await invalidatedClient.values) == (["client-a"]), "the rejected client token is still named")
+        #expect((await currentAccess.value()) == ("access-b"), "the newer bearer survives named invalidation")
+        #expect((await currentClient.value()) == ("client-b"), "the newer client token survives named invalidation")
+        #expect(
+            (transport.authorizationTokens) == (["access-a", "access-b"]), "retry carries the live replacement pair")
+        #expect(
+            (transport.clientTokens) == (["client-a", "client-b"]), "retry carries the live replacement client token")
+        #expect((tokens.callCount) == (1), "the sequenced rejected pair is fetched once")
+        #expect((transport.callCount) == (2), "the transport is attempted twice")
     }
 }
 

@@ -1,3 +1,4 @@
+import Testing
 import SpottyDomain
 import Foundation
 @testable import SpottyCore
@@ -194,43 +195,40 @@ private func containsToken(_ source: String, _ token: String) -> Bool {
     source.contains(token)
 }
 
+@Test
 @MainActor
-func runPlaylistMutationChecks(_ runner: CheckRunner) async {
-    runner.suite("Ownership metadata mapping") {
-        runner.noThrow("library and detail playlist JSON decode") {
-            let owned = try decodePlaylist(ownedLibraryJSON)
-            let mapped = CatalogMapping.item(from: owned)
-            runner.equal("library playlist keeps owner URI", mapped?.ownerURI, "spotify:user:me")
-            runner.equal("library playlist keeps the owner subtitle", mapped?.subtitle, "Me")
+func testPlaylistMutation() async {
+    do {
+        do {
+            do {
+                let owned = try decodePlaylist(ownedLibraryJSON)
+                let mapped = CatalogMapping.item(from: owned)
+                #expect((mapped?.ownerURI) == ("spotify:user:me"), "library playlist keeps owner URI")
+                #expect((mapped?.subtitle) == ("Me"), "library playlist keeps the owner subtitle")
 
-            let foreign = try decodePlaylist(foreignLibraryJSON)
-            runner.equal(
-                "foreign playlist owner is preserved",
-                CatalogMapping.item(from: foreign)?.ownerURI,
-                "spotify:user:them"
-            )
+                let foreign = try decodePlaylist(foreignLibraryJSON)
+                #expect(
+                    (CatalogMapping.item(from: foreign)?.ownerURI) == ("spotify:user:them"),
+                    "foreign playlist owner is preserved")
 
-            let union = try decodePlaylistUnion(ownedContentsJSON)
-            runner.equal(
-                "open playlist owner URI is mapped from ownerV2",
-                CatalogMapping.ownerURI(from: union),
-                "spotify:user:me"
-            )
-            let tracks = union.content?.items?.compactMap(CatalogMapping.playlistTrack(from:)) ?? []
-            runner.equal(
-                "playlist rows use occurrence UIDs as CatalogTrack.id",
-                tracks.map(\.id),
-                ["uid-a", "uid-b"]
-            )
-            runner.equal(
-                "duplicate rows keep the same track URI",
-                tracks.map(\.uri),
-                ["spotify:track:dup", "spotify:track:dup"]
-            )
+                let union = try decodePlaylistUnion(ownedContentsJSON)
+                #expect(
+                    (CatalogMapping.ownerURI(from: union)) == ("spotify:user:me"),
+                    "open playlist owner URI is mapped from ownerV2")
+                let tracks = union.content?.items?.compactMap(CatalogMapping.playlistTrack(from:)) ?? []
+                #expect(
+                    (tracks.map(\.id)) == (["uid-a", "uid-b"]), "playlist rows use occurrence UIDs as CatalogTrack.id")
+                #expect(
+                    (tracks.map(\.uri)) == (["spotify:track:dup", "spotify:track:dup"]),
+                    "duplicate rows keep the same track URI")
+
+            } catch {
+                Issue.record("\("library and detail playlist JSON decode"): unexpected error \(error)")
+            }
         }
     }
 
-    await runner.suite("Editable library targets and batch add") {
+    do {
         let services = ScriptedPlaylistServices()
         do {
             try await services.setLibrary([
@@ -239,7 +237,7 @@ func runPlaylistMutationChecks(_ runner: CheckRunner) async {
             ])
             try await services.setPlaylist(decodePlaylistUnion(ownedContentsJSON))
         } catch {
-            runner.check("owned library fixtures decode", false)
+            #expect((false) == true, "owned library fixtures decode")
             return
         }
         let session = CatalogSessionAvailability(accountEpoch: 1, isAvailable: true)
@@ -248,15 +246,14 @@ func runPlaylistMutationChecks(_ runner: CheckRunner) async {
 
         await catalog.homeLibrary.loadProfile()
         await catalog.homeLibrary.loadPlaylists()
-        runner.equal("profile URI is retained for write advertising", catalog.homeLibrary.profileURI, "spotify:user:me")
-        runner.equal(
-            "only owned library playlists are editable targets",
-            catalog.playlistMutations.editableLibraryPlaylists.map(\.uri),
-            ["spotify:playlist:owned"]
-        )
+        #expect(
+            (catalog.homeLibrary.profileURI) == ("spotify:user:me"), "profile URI is retained for write advertising")
+        #expect(
+            (catalog.playlistMutations.editableLibraryPlaylists.map(\.uri)) == (["spotify:playlist:owned"]),
+            "only owned library playlists are editable targets")
 
         let owned = catalog.homeLibrary.playlists.first { $0.uri == "spotify:playlist:owned" }
-        runner.notNil("owned playlist is in the library", owned)
+        #expect((owned) != nil, "owned playlist is in the library")
         guard let owned else {
             feedback.dismiss()
             return
@@ -273,13 +270,13 @@ func runPlaylistMutationChecks(_ runner: CheckRunner) async {
         )
         _ = await waitUntil { await services.isParked }
         let addCall = await services.addCalls.first
-        runner.equal("add uses the playlist id, not the URI", addCall?.playlistId, "owned")
-        runner.equal("one mutation carries every selected URI", addCall?.uris, [duplicateURI, duplicateURI])
+        #expect((addCall?.playlistId) == ("owned"), "add uses the playlist id, not the URI")
+        #expect((addCall?.uris) == ([duplicateURI, duplicateURI]), "one mutation carries every selected URI")
 
         do {
             try await services.setPlaylist(decodePlaylistUnion(ownedAfterAddJSON))
         } catch {
-            runner.check("post-add playlist fixture decodes", false)
+            #expect((false) == true, "post-add playlist fixture decodes")
         }
         await services.completePark()
         _ = await waitUntil {
@@ -287,26 +284,25 @@ func runPlaylistMutationChecks(_ runner: CheckRunner) async {
                 && feedback.message?.kind == .success
                 && feedback.message?.text == "Added 2 songs to Owned Mix"
         }
-        runner.equal(
-            "successful add refreshes the open playlist",
-            catalog.playlistStore.tracks.map(\.id),
-            ["uid-a", "uid-b", "uid-c"]
-        )
-        runner.equal("successful add reports through the shared presenter", feedback.message?.kind, .success)
-        runner.equal("successful add names the playlist", feedback.message?.text, "Added 2 songs to Owned Mix")
-        runner.equal(
-            "reconcile reloads only the open playlist", await services.playlistLoadCount, playlistLoadsBeforeAdd + 1)
-        runner.equal("library list is not reloaded after add", await services.libraryLoadCount, 1)
+        #expect(
+            (catalog.playlistStore.tracks.map(\.id)) == (["uid-a", "uid-b", "uid-c"]),
+            "successful add refreshes the open playlist")
+        #expect((feedback.message?.kind) == (.success), "successful add reports through the shared presenter")
+        #expect((feedback.message?.text) == ("Added 2 songs to Owned Mix"), "successful add names the playlist")
+        #expect(
+            (await services.playlistLoadCount) == (playlistLoadsBeforeAdd + 1),
+            "reconcile reloads only the open playlist")
+        #expect((await services.libraryLoadCount) == (1), "library list is not reloaded after add")
         feedback.dismiss()
     }
 
-    await runner.suite("Occurrence-safe removal, reconciliation, and read-only refusal") {
+    do {
         let services = ScriptedPlaylistServices()
         do {
             try await services.setLibrary([decodePlaylist(ownedLibraryJSON)])
             try await services.setPlaylist(decodePlaylistUnion(ownedContentsJSON))
         } catch {
-            runner.check("removal fixtures decode", false)
+            #expect((false) == true, "removal fixtures decode")
             return
         }
         let session = CatalogSessionAvailability(accountEpoch: 1, isAvailable: true)
@@ -316,63 +312,62 @@ func runPlaylistMutationChecks(_ runner: CheckRunner) async {
         await catalog.homeLibrary.loadPlaylists()
         let owned = catalog.homeLibrary.playlists[0]
         await catalog.playlistStore.load(owned)
-        runner.equal(
-            "open playlist loads both duplicate occurrences", catalog.playlistStore.tracks.map(\.id),
-            ["uid-a", "uid-b"])
-        runner.check(
-            "owned open playlist is editable after load",
-            catalog.playlistMutations.isOpenPlaylistEditable(owned)
-        )
+        #expect(
+            (catalog.playlistStore.tracks.map(\.id)) == (["uid-a", "uid-b"]),
+            "open playlist loads both duplicate occurrences")
+        #expect(
+            (catalog.playlistMutations.isOpenPlaylistEditable(owned)) == true,
+            "owned open playlist is editable after load")
 
         let foreignPlaylist: CatalogItem?
         do {
             foreignPlaylist = CatalogMapping.item(from: try decodePlaylist(foreignLibraryJSON))
         } catch {
             foreignPlaylist = nil
-            runner.check("foreign playlist fixture decodes", false)
+            #expect((false) == true, "foreign playlist fixture decodes")
         }
         if let foreignPlaylist {
-            runner.check(
-                "a foreign playlist is not an editable library target",
-                !catalog.playlistMutations.isLibraryPlaylistEditable(foreignPlaylist)
-            )
+            #expect(
+                (!catalog.playlistMutations.isLibraryPlaylistEditable(foreignPlaylist)) == true,
+                "a foreign playlist is not an editable library target")
             catalog.playlistMutations.removeOccurrences(selectedIDs: ["uid-a"], from: foreignPlaylist)
         }
-        runner.equal("read-only playlists do not start a removal", await services.removeCalls.count, 0)
+        #expect((await services.removeCalls.count) == (0), "read-only playlists do not start a removal")
 
         catalog.playlistMutations.removeOccurrences(selectedIDs: ["uid-a", "uid-a"], from: owned)
         _ = await waitUntil { await services.isParked }
         let removal = await services.removeCalls.first
-        runner.equal("removal is one batched request", await services.removeCalls.count, 1)
-        runner.equal("removal uses the selected Pathfinder UID", removal?.uids, ["uid-a"])
-        runner.check(
-            "removal does not send the duplicated track URI", removal?.uids.contains("spotify:track:dup") == false)
+        #expect((await services.removeCalls.count) == (1), "removal is one batched request")
+        #expect((removal?.uids) == (["uid-a"]), "removal uses the selected Pathfinder UID")
+        #expect(
+            (removal?.uids.contains("spotify:track:dup") == false) == true,
+            "removal does not send the duplicated track URI")
 
         do {
             try await services.setPlaylist(decodePlaylistUnion(ownedAfterRemovalJSON))
         } catch {
-            runner.check("post-remove playlist fixture decodes", false)
+            #expect((false) == true, "post-remove playlist fixture decodes")
         }
         await services.completePark()
         _ = await waitUntil {
             catalog.playlistStore.tracks.map(\.id) == ["uid-b"]
                 && feedback.message?.text == "Removed from Owned Mix"
         }
-        runner.equal("success refreshes only the open playlist", catalog.playlistStore.tracks.map(\.id), ["uid-b"])
-        runner.equal("selection-stable remaining occurrence is uid-b", catalog.playlistStore.tracks.first?.id, "uid-b")
-        runner.equal(
-            "successful remove reports through the presenter", feedback.message?.text, "Removed from Owned Mix")
-        runner.equal("library is not fully reloaded after remove", await services.libraryLoadCount, 1)
+        #expect((catalog.playlistStore.tracks.map(\.id)) == (["uid-b"]), "success refreshes only the open playlist")
+        #expect((catalog.playlistStore.tracks.first?.id) == ("uid-b"), "selection-stable remaining occurrence is uid-b")
+        #expect(
+            (feedback.message?.text) == ("Removed from Owned Mix"), "successful remove reports through the presenter")
+        #expect((await services.libraryLoadCount) == (1), "library is not fully reloaded after remove")
         feedback.dismiss()
     }
 
-    await runner.suite("Permission rejection, cancellation, and stale session") {
+    do {
         let services = ScriptedPlaylistServices()
         do {
             try await services.setLibrary([decodePlaylist(ownedLibraryJSON)])
             try await services.setPlaylist(decodePlaylistUnion(ownedContentsJSON))
         } catch {
-            runner.check("rejection fixtures decode", false)
+            #expect((false) == true, "rejection fixtures decode")
             return
         }
         let session = CatalogSessionAvailability(accountEpoch: 1, isAvailable: true)
@@ -387,14 +382,13 @@ func runPlaylistMutationChecks(_ runner: CheckRunner) async {
         await services.setAddError(PartnerAPIError.mutationRejected("addToPlaylist"))
         catalog.playlistMutations.addTracks([fixtureTrack(id: "row", uri: "spotify:track:new")], to: owned)
         _ = await waitUntil { feedback.message?.kind == .failure }
-        runner.equal(
-            "typed rejection is a privacy-safe failure",
-            feedback.message?.text,
-            "Spotify couldn’t change that playlist."
-        )
-        runner.equal("rejection leaves the open playlist untouched", catalog.playlistStore.tracks.map(\.id), loadedIDs)
-        runner.check(
-            "rejection text does not include Spotify identifiers", feedback.message?.text.contains("spotify:") == false)
+        #expect(
+            (feedback.message?.text) == ("Spotify couldn’t change that playlist."),
+            "typed rejection is a privacy-safe failure")
+        #expect((catalog.playlistStore.tracks.map(\.id)) == (loadedIDs), "rejection leaves the open playlist untouched")
+        #expect(
+            (feedback.message?.text.contains("spotify:") == false) == true,
+            "rejection text does not include Spotify identifiers")
 
         await services.setAddError(nil)
         catalog.playlistMutations.addTracks([fixtureTrack(id: "row", uri: "spotify:track:new")], to: owned)
@@ -402,37 +396,37 @@ func runPlaylistMutationChecks(_ runner: CheckRunner) async {
         catalog.playlistMutations.reset()
         await services.failPark()
         await yieldPasses()
-        runner.equal(
-            "cancelled mutation does not replace the rejection message with success", feedback.message?.kind, .failure)
-        runner.equal("cancelled mutation leaves tracks unchanged", catalog.playlistStore.tracks.map(\.id), loadedIDs)
+        #expect(
+            (feedback.message?.kind) == (.failure),
+            "cancelled mutation does not replace the rejection message with success")
+        #expect((catalog.playlistStore.tracks.map(\.id)) == (loadedIDs), "cancelled mutation leaves tracks unchanged")
 
         catalog.playlistMutations.addTracks([fixtureTrack(id: "row", uri: "spotify:track:stale")], to: owned)
         _ = await waitUntil { await services.isParked }
         session.update(accountEpoch: 2, isAvailable: true)
         await services.completePark()
         await yieldPasses()
-        runner.equal("stale-account success does not present mutation feedback", feedback.message?.kind, .failure)
-        runner.equal(
-            "stale-account success does not apply playlist rows", catalog.playlistStore.tracks.map(\.id), loadedIDs)
+        #expect((feedback.message?.kind) == (.failure), "stale-account success does not present mutation feedback")
+        #expect(
+            (catalog.playlistStore.tracks.map(\.id)) == (loadedIDs),
+            "stale-account success does not apply playlist rows")
 
         session.update(accountEpoch: 2, isAvailable: false)
         catalog.playlistMutations.addTracks([fixtureTrack(id: "row", uri: "spotify:track:offline")], to: owned)
-        runner.equal(
-            "unavailable session reports a connect failure",
-            feedback.message?.text,
-            "Connect Spotify before changing playlists."
-        )
-        runner.equal("unavailable session does not send another write", await services.addCalls.count, 3)
+        #expect(
+            (feedback.message?.text) == ("Connect Spotify before changing playlists."),
+            "unavailable session reports a connect failure")
+        #expect((await services.addCalls.count) == (3), "unavailable session does not send another write")
         feedback.dismiss()
     }
 
-    await runner.suite("Overlapping mutations reconcile each completed write") {
+    do {
         let services = ScriptedPlaylistServices()
         do {
             try await services.setLibrary([decodePlaylist(ownedLibraryJSON)])
             try await services.setPlaylist(decodePlaylistUnion(ownedContentsJSON))
         } catch {
-            runner.check("overlapping fixtures decode", false)
+            #expect((false) == true, "overlapping fixtures decode")
             return
         }
         let session = CatalogSessionAvailability(accountEpoch: 1, isAvailable: true)
@@ -455,17 +449,15 @@ func runPlaylistMutationChecks(_ runner: CheckRunner) async {
         )
         _ = await waitUntil { await services.hasParkedAdds(2) }
         let sentAdds = await services.addCalls
-        runner.equal("both overlapping writes are sent", sentAdds.count, 2)
-        runner.equal(
-            "first overlapping write keeps its batch",
-            sentAdds.map(\.uris),
-            [["spotify:track:first"], ["spotify:track:second"]]
-        )
+        #expect((sentAdds.count) == (2), "both overlapping writes are sent")
+        #expect(
+            (sentAdds.map(\.uris)) == ([["spotify:track:first"], ["spotify:track:second"]]),
+            "first overlapping write keeps its batch")
 
         do {
             try await services.setPlaylist(decodePlaylistUnion(ownedAfterAddJSON))
         } catch {
-            runner.check("overlapping post-add fixture decodes", false)
+            #expect((false) == true, "overlapping post-add fixture decodes")
         }
         await services.completePark()
         _ = await waitUntil { await services.playlistLoadCount == loadsBefore + 1 }
@@ -475,30 +467,23 @@ func runPlaylistMutationChecks(_ runner: CheckRunner) async {
                 && feedback.message?.kind == .success
                 && catalog.playlistStore.tracks.map(\.id) == ["uid-a", "uid-b", "uid-c"]
         }
-        runner.equal(
-            "each completed overlapping write reloads the open playlist once",
-            await services.playlistLoadCount,
-            loadsBefore + 2
-        )
-        runner.equal(
-            "later overlapping success reports through the presenter",
-            feedback.message?.kind,
-            .success
-        )
-        runner.check(
-            "stale account/session still blocked overlapping apply",
-            catalog.playlistStore.tracks.map(\.id) == ["uid-a", "uid-b", "uid-c"]
-        )
+        #expect(
+            (await services.playlistLoadCount) == (loadsBefore + 2),
+            "each completed overlapping write reloads the open playlist once")
+        #expect((feedback.message?.kind) == (.success), "later overlapping success reports through the presenter")
+        #expect(
+            (catalog.playlistStore.tracks.map(\.id) == ["uid-a", "uid-b", "uid-c"]) == true,
+            "stale account/session still blocked overlapping apply")
         feedback.dismiss()
     }
 
-    await runner.suite("Committed add keeps success when forced reload fails") {
+    do {
         let services = ScriptedPlaylistServices()
         do {
             try await services.setLibrary([decodePlaylist(ownedLibraryJSON)])
             try await services.setPlaylist(decodePlaylistUnion(ownedContentsJSON))
         } catch {
-            runner.check("add-reload fixtures decode", false)
+            #expect((false) == true, "add-reload fixtures decode")
             return
         }
         let session = CatalogSessionAvailability(accountEpoch: 1, isAvailable: true)
@@ -510,7 +495,7 @@ func runPlaylistMutationChecks(_ runner: CheckRunner) async {
         await catalog.playlistStore.load(owned)
         let loadedIDs = catalog.playlistStore.tracks.map(\.id)
         let loadsBefore = await services.playlistLoadCount
-        runner.equal("open playlist has nonempty rows before add", loadedIDs, ["uid-a", "uid-b"])
+        #expect((loadedIDs) == (["uid-a", "uid-b"]), "open playlist has nonempty rows before add")
 
         catalog.playlistMutations.addTracks(
             [fixtureTrack(id: "row", uri: "spotify:track:new")],
@@ -524,56 +509,44 @@ func runPlaylistMutationChecks(_ runner: CheckRunner) async {
                 && feedback.message?.kind == .success
                 && feedback.message?.text == "Added to Owned Mix"
         }
-        runner.equal("committed add still reports mutation success", feedback.message?.kind, .success)
-        runner.equal("committed add still names the playlist", feedback.message?.text, "Added to Owned Mix")
-        runner.equal(
-            "failed reload keeps the previous nonempty rows",
-            catalog.playlistStore.tracks.map(\.id),
-            loadedIDs
-        )
-        runner.notNil("failed reload records a refresh error beside those rows", catalog.playlistStore.error)
-        runner.equal("failed reload does not send another add", await services.addCalls.count, 1)
-        runner.equal("forced reconcile attempted one playlist read", await services.playlistLoadCount, loadsBefore + 1)
+        #expect((feedback.message?.kind) == (.success), "committed add still reports mutation success")
+        #expect((feedback.message?.text) == ("Added to Owned Mix"), "committed add still names the playlist")
+        #expect(
+            (catalog.playlistStore.tracks.map(\.id)) == (loadedIDs), "failed reload keeps the previous nonempty rows")
+        #expect((catalog.playlistStore.error) != nil, "failed reload records a refresh error beside those rows")
+        #expect((await services.addCalls.count) == (1), "failed reload does not send another add")
+        #expect((await services.playlistLoadCount) == (loadsBefore + 1), "forced reconcile attempted one playlist read")
 
         await catalog.playlistStore.load(owned, force: true)
-        runner.notNil("retry failure keeps the stale-refresh error", catalog.playlistStore.error)
-        runner.equal(
-            "retry failure still keeps the previous rows",
-            catalog.playlistStore.tracks.map(\.id),
-            loadedIDs
-        )
-        runner.equal("retry does not repeat the add", await services.addCalls.count, 1)
-        runner.equal(
-            "retry failure loads the open playlist once more",
-            await services.playlistLoadCount,
-            loadsBefore + 2
-        )
+        #expect((catalog.playlistStore.error) != nil, "retry failure keeps the stale-refresh error")
+        #expect((catalog.playlistStore.tracks.map(\.id)) == (loadedIDs), "retry failure still keeps the previous rows")
+        #expect((await services.addCalls.count) == (1), "retry does not repeat the add")
+        #expect(
+            (await services.playlistLoadCount) == (loadsBefore + 2), "retry failure loads the open playlist once more")
 
         await services.setPlaylistError(nil)
         do {
             try await services.setPlaylist(decodePlaylistUnion(ownedAfterAddJSON))
         } catch {
-            runner.check("retry-success playlist fixture decodes", false)
+            #expect((false) == true, "retry-success playlist fixture decodes")
         }
         await catalog.playlistStore.load(owned, force: true)
-        runner.nil_("successful retry clears the stale-refresh error", catalog.playlistStore.error)
-        runner.equal(
-            "successful retry replaces rows with the authoritative playlist",
-            catalog.playlistStore.tracks.map(\.id),
-            ["uid-a", "uid-b", "uid-c"]
-        )
-        runner.equal("successful retry still does not repeat the add", await services.addCalls.count, 1)
-        runner.equal("success toast is unchanged by retry", feedback.message?.kind, .success)
+        #expect((catalog.playlistStore.error) == nil, "successful retry clears the stale-refresh error")
+        #expect(
+            (catalog.playlistStore.tracks.map(\.id)) == (["uid-a", "uid-b", "uid-c"]),
+            "successful retry replaces rows with the authoritative playlist")
+        #expect((await services.addCalls.count) == (1), "successful retry still does not repeat the add")
+        #expect((feedback.message?.kind) == (.success), "success toast is unchanged by retry")
         feedback.dismiss()
     }
 
-    await runner.suite("Committed remove keeps success when forced reload fails") {
+    do {
         let services = ScriptedPlaylistServices()
         do {
             try await services.setLibrary([decodePlaylist(ownedLibraryJSON)])
             try await services.setPlaylist(decodePlaylistUnion(ownedContentsJSON))
         } catch {
-            runner.check("remove-reload fixtures decode", false)
+            #expect((false) == true, "remove-reload fixtures decode")
             return
         }
         let session = CatalogSessionAvailability(accountEpoch: 1, isAvailable: true)
@@ -593,18 +566,16 @@ func runPlaylistMutationChecks(_ runner: CheckRunner) async {
             catalog.playlistStore.error != nil
                 && feedback.message?.text == "Removed from Owned Mix"
         }
-        runner.equal("committed remove still reports mutation success", feedback.message?.kind, .success)
-        runner.equal(
-            "failed remove reload keeps previous nonempty rows",
-            catalog.playlistStore.tracks.map(\.id),
-            loadedIDs
+        #expect((feedback.message?.kind) == (.success), "committed remove still reports mutation success")
+        #expect(
+            (catalog.playlistStore.tracks.map(\.id)) == (loadedIDs), "failed remove reload keeps previous nonempty rows"
         )
-        runner.notNil("failed remove reload records a refresh error", catalog.playlistStore.error)
-        runner.equal("failed remove reload does not send another removal", await services.removeCalls.count, 1)
+        #expect((catalog.playlistStore.error) != nil, "failed remove reload records a refresh error")
+        #expect((await services.removeCalls.count) == (1), "failed remove reload does not send another removal")
         feedback.dismiss()
     }
 
-    await runner.suite("Stale refresh warning survives cancellation and stale identity") {
+    do {
         let services = ScriptedPlaylistServices()
         do {
             try await services.setLibrary([
@@ -613,7 +584,7 @@ func runPlaylistMutationChecks(_ runner: CheckRunner) async {
             ])
             try await services.setPlaylist(decodePlaylistUnion(ownedContentsJSON))
         } catch {
-            runner.check("stale-refresh fixtures decode", false)
+            #expect((false) == true, "stale-refresh fixtures decode")
             return
         }
         let session = CatalogSessionAvailability(accountEpoch: 1, isAvailable: true)
@@ -622,7 +593,7 @@ func runPlaylistMutationChecks(_ runner: CheckRunner) async {
         await catalog.homeLibrary.loadProfile()
         await catalog.homeLibrary.loadPlaylists()
         let owned = catalog.homeLibrary.playlists.first { $0.uri == "spotify:playlist:owned" }
-        runner.notNil("owned playlist is in the library for stale-refresh checks", owned)
+        #expect((owned) != nil, "owned playlist is in the library for stale-refresh checks")
         guard let owned else {
             feedback.dismiss()
             return
@@ -638,23 +609,23 @@ func runPlaylistMutationChecks(_ runner: CheckRunner) async {
         await services.setPlaylistError(PlaylistMutationCheckFailure.unavailable)
         await services.completePark()
         _ = await waitUntil { catalog.playlistStore.error != nil }
-        runner.notNil("reconciliation failure plants the stale-refresh error", catalog.playlistStore.error)
+        #expect((catalog.playlistStore.error) != nil, "reconciliation failure plants the stale-refresh error")
 
         await services.setParkPlaylistLoads(true)
         let cancelledRetry = Task { await catalog.playlistStore.load(owned, force: true) }
         _ = await waitUntil { await services.isPlaylistLoadParked }
-        runner.notNil("force reload start keeps the stale-refresh error", catalog.playlistStore.error)
+        #expect((catalog.playlistStore.error) != nil, "force reload start keeps the stale-refresh error")
         cancelledRetry.cancel()
         await services.failPlaylistPark()
         await cancelledRetry.value
-        runner.notNil("cancelled retry does not clear the stale-refresh error", catalog.playlistStore.error)
-        runner.equal("cancelled retry keeps previous rows", catalog.playlistStore.tracks.map(\.id), loadedIDs)
-        runner.equal("cancelled retry does not repeat the add", await services.addCalls.count, 1)
+        #expect((catalog.playlistStore.error) != nil, "cancelled retry does not clear the stale-refresh error")
+        #expect((catalog.playlistStore.tracks.map(\.id)) == (loadedIDs), "cancelled retry keeps previous rows")
+        #expect((await services.addCalls.count) == (1), "cancelled retry does not repeat the add")
 
         do {
             try await services.setPlaylist(decodePlaylistUnion(ownedAfterAddJSON))
         } catch {
-            runner.check("stale-identity playlist fixture decodes", false)
+            #expect((false) == true, "stale-identity playlist fixture decodes")
         }
         await services.setPlaylistError(nil)
         let staleRetry = Task { await catalog.playlistStore.load(owned, force: true) }
@@ -662,32 +633,31 @@ func runPlaylistMutationChecks(_ runner: CheckRunner) async {
         session.update(accountEpoch: 2, isAvailable: true)
         await services.completePlaylistPark()
         await staleRetry.value
-        runner.notNil("stale-account retry does not clear the stale-refresh error", catalog.playlistStore.error)
-        runner.equal("stale-account retry does not apply newer rows", catalog.playlistStore.tracks.map(\.id), loadedIDs)
-        runner.equal("stale-account retry does not repeat the add", await services.addCalls.count, 1)
+        #expect((catalog.playlistStore.error) != nil, "stale-account retry does not clear the stale-refresh error")
+        #expect(
+            (catalog.playlistStore.tracks.map(\.id)) == (loadedIDs), "stale-account retry does not apply newer rows")
+        #expect((await services.addCalls.count) == (1), "stale-account retry does not repeat the add")
 
         await services.setParkPlaylistLoads(false)
         let foreign = catalog.homeLibrary.playlists.first { $0.uri == "spotify:playlist:foreign" }
-        runner.notNil("foreign playlist is in the library for switch coverage", foreign)
+        #expect((foreign) != nil, "foreign playlist is in the library for switch coverage")
         if let foreign {
             do {
                 try await services.setPlaylist(decodePlaylistUnion(foreignContentsJSON))
             } catch {
-                runner.check("foreign playlist fixture decodes", false)
+                #expect((false) == true, "foreign playlist fixture decodes")
             }
             await catalog.playlistStore.load(foreign)
-            runner.nil_("switching playlists clears the previous stale-refresh error", catalog.playlistStore.error)
-            runner.equal(
-                "switching playlists loads the new playlist rows",
-                catalog.playlistStore.tracks.map(\.id),
-                ["uid-f"]
-            )
+            #expect((catalog.playlistStore.error) == nil, "switching playlists clears the previous stale-refresh error")
+            #expect(
+                (catalog.playlistStore.tracks.map(\.id)) == (["uid-f"]),
+                "switching playlists loads the new playlist rows")
         }
-        runner.equal("playlist switch does not send another add", await services.addCalls.count, 1)
+        #expect((await services.addCalls.count) == (1), "playlist switch does not send another add")
         feedback.dismiss()
     }
 
-    runner.suite("Playlist track collection version") {
+    do {
         let services = ScriptedPlaylistServices()
         let session = CatalogSessionAvailability(accountEpoch: 1, isAvailable: true)
         let feedback = TransientFeedbackPresenter(clock: HoldingClock())
@@ -700,157 +670,143 @@ func runPlaylistMutationChecks(_ runner: CheckRunner) async {
             uri: "spotify:playlist:owned",
             tracks: [first, fixtureTrack(id: "uid-mid", uri: "spotify:track:mid")]
         )
-        runner.equal("replacement keeps the same row count", catalog.playlistStore.tracks.count, 2)
-        runner.check(
-            "same-count middle replacement mints a new version",
-            catalog.playlistStore.trackCollection.version != loadedVersion
-        )
-        runner.equal(
-            "authoritative rows follow the replacement identity",
-            catalog.playlistStore.tracks.map(\.id),
-            ["uid-a", "uid-mid"]
-        )
+        #expect((catalog.playlistStore.tracks.count) == (2), "replacement keeps the same row count")
+        #expect(
+            (catalog.playlistStore.trackCollection.version != loadedVersion) == true,
+            "same-count middle replacement mints a new version")
+        #expect(
+            (catalog.playlistStore.tracks.map(\.id)) == (["uid-a", "uid-mid"]),
+            "authoritative rows follow the replacement identity")
     }
 
-    runner.suite("Playlist mutation UI contract and drag prototype") {
-        runner.noThrow("playlist mutation sources are readable") {
-            let table = try spottySourceFile("Spotty/Views/SharedComponents.swift")
-            let providing = try spottySourceFile("Spotty/Spotify/CatalogProviding.swift")
-            let mutating = try spottySourceFile("Spotty/Spotify/PlaylistMutating.swift")
-            let controller = try spottySourceFile("Spotty/Spotify/PlaylistMutationController.swift")
-            let playlistStore = try spottySourceFile("Spotty/Spotify/PlaylistStore.swift")
-            let searchStore = try spottySourceFile("Spotty/Spotify/SearchStore.swift")
-            let albumStore = try spottySourceFile("Spotty/Spotify/MediaDetailStores.swift")
-            let homeLibrary = try spottySourceFile("Spotty/Spotify/HomeLibraryStore.swift")
-            let collectionType = try spottySourceFile("SpottyDomain/CatalogTrackCollection.swift")
-            let displayCache = try spottySourceFile("SpottyDomain/TrackTableDisplayCache.swift")
-            let playlistDetail = try spottySourceFile("Spotty/Views/PlaylistDetailView.swift")
-            let mediaDetail = try spottySourceFile("Spotty/Views/MediaDetailViews.swift")
-            let libraryViews = try spottySourceFile("Spotty/Views/LibraryViews.swift")
-            let root = try spottySourceFile("Spotty/RootView.swift")
-            let contractURL = URL(fileURLWithPath: #filePath)
-                .deletingLastPathComponent()
-                .deletingLastPathComponent()
-                .deletingLastPathComponent()
-                .deletingLastPathComponent()
-                .appending(path: "docs/product-and-acceptance-contract.md")
-            let contract = try String(contentsOf: contractURL, encoding: .utf8)
+    do {
+        do {
+            do {
+                let table = try spottySourceFile("Spotty/Views/SharedComponents.swift")
+                let providing = try spottySourceFile("Spotty/Spotify/CatalogProviding.swift")
+                let mutating = try spottySourceFile("Spotty/Spotify/PlaylistMutating.swift")
+                let controller = try spottySourceFile("Spotty/Spotify/PlaylistMutationController.swift")
+                let playlistStore = try spottySourceFile("Spotty/Spotify/PlaylistStore.swift")
+                let searchStore = try spottySourceFile("Spotty/Spotify/SearchStore.swift")
+                let albumStore = try spottySourceFile("Spotty/Spotify/MediaDetailStores.swift")
+                let homeLibrary = try spottySourceFile("Spotty/Spotify/HomeLibraryStore.swift")
+                let collectionType = try spottySourceFile("SpottyDomain/CatalogTrackCollection.swift")
+                let displayCache = try spottySourceFile("SpottyDomain/TrackTableDisplayCache.swift")
+                let playlistDetail = try spottySourceFile("Spotty/Views/PlaylistDetailView.swift")
+                let mediaDetail = try spottySourceFile("Spotty/Views/MediaDetailViews.swift")
+                let libraryViews = try spottySourceFile("Spotty/Views/LibraryViews.swift")
+                let root = try spottySourceFile("Spotty/RootView.swift")
+                let contractURL = URL(fileURLWithPath: #filePath)
+                    .deletingLastPathComponent()
+                    .deletingLastPathComponent()
+                    .deletingLastPathComponent()
+                    .deletingLastPathComponent()
+                    .appending(path: "docs/product-and-acceptance-contract.md")
+                let contract = try String(contentsOf: contractURL, encoding: .utf8)
 
-            runner.check(
-                "CatalogProviding stays a read-only catalog surface",
-                !containsToken(providing, "func addToPlaylist")
-                    && !containsToken(providing, "func removeFromPlaylist")
-                    && !containsToken(providing, "func moveInPlaylist")
-                    && containsToken(mutating, "protocol PlaylistMutating")
-            )
-            runner.check(
-                "TrackTable uses multi-selection and a native Add to Playlist menu",
-                containsToken(table, "Set<CatalogTrack.ID>")
-                    && containsToken(table, "Menu(\"Add to Playlist\")")
-                    && containsToken(table, "onDeleteCommand")
-                    && containsToken(table, "Remove from Playlist")
-            )
-            runner.check(
-                "TrackTable projects rows from a collection version instead of comparing tracks",
-                containsToken(table, "TrackTableDisplayCache")
-                    && containsToken(table, "CatalogTrackCollection")
-                    && containsToken(table, "onChange(of: displayInputs")
-                    && containsToken(table, "tracks.version")
-                    && !containsToken(table, "onChange(of: tracks")
-                    && !containsToken(table, "displayedTracks")
-                    && !containsToken(table, "updateDisplayedTracks")
-            )
-            runner.check(
-                "every TrackTable owner passes a CatalogTrackCollection",
-                containsToken(playlistDetail, "tracks: store.trackCollection")
-                    && containsToken(mediaDetail, "tracks: store.trackCollection")
-                    && containsToken(libraryViews, "tracks: store.trackCollection")
-                    && containsToken(root, "tracks: catalog.homeLibrary.likedTrackCollection")
-            )
-            runner.check(
-                "catalog track lists replace through CatalogTrackCollection",
-                containsToken(playlistStore, "trackCollection.replace")
-                    && containsToken(searchStore, "trackCollection.replace")
-                    && containsToken(albumStore, "trackCollection.replace")
-                    && containsToken(homeLibrary, "likedTrackCollection.replace")
-                    && !containsToken(playlistStore, "replaceCatalogTracks")
-                    && !containsToken(searchStore, "replaceCatalogTracks")
-                    && !containsToken(albumStore, "replaceCatalogTracks")
-                    && !containsToken(homeLibrary, "replaceCatalogTracks")
-            )
-            runner.check(
-                "PlaylistStore does not keep a second sorted copy",
-                !containsToken(playlistStore, "sortedTracks")
-                    && !containsToken(playlistStore, "dateSort")
-                    && !containsToken(playlistStore, "resortTracks")
-            )
-            runner.check(
-                "CatalogTrackCollection versions assignments instead of injected identity",
-                containsToken(collectionType, "public init(tracks: [CatalogTrack] = [])")
-                    && containsToken(collectionType, "version = UUID()")
-                    && !containsToken(collectionType, "init(id:")
-                    && !containsToken(collectionType, "revision")
-                    && !containsToken(collectionType, ": Equatable")
-            )
-            runner.check(
-                "TrackTableDisplayCache does not Equatable-compare cached rows",
-                !containsToken(displayCache, ": Equatable")
-            )
-            runner.check(
-                "Remove from Playlist and Delete pass only occurrence UIDs",
-                containsToken(table, "PlaylistMutationSelection.occurrenceIDsForRemoval(from: selectedTracks)")
-                    && !containsToken(table, "removeOccurrences(Array(selectedIDs))")
-            )
-            runner.check(
-                "read-only tables do not register delete unless removal is offered",
-                containsToken(table, "onDeleteCommandIfAvailable(playlistActions?.canRemoveOccurrences == true)")
-            )
-            runner.check(
-                "mutations report through the composed TransientFeedbackPresenter",
-                containsToken(controller, "feedback.success")
-                    && containsToken(controller, "feedback.failure")
-                    && !containsToken(controller, "NotificationCenter")
-                    && !containsToken(controller, "Timer(")
-            )
-            runner.check(
-                "reload failure is not turned into mutation failure or extra feedback",
-                containsToken(controller, "await playlistStore.load(playlist, force: true)")
-                    && !containsToken(controller, "playlistStore.error")
-                    && containsToken(controller, "feedback.success(message)")
-            )
-            runner.check(
-                "force reloads keep a same-playlist error until a current load succeeds",
-                containsToken(playlistStore, "else if !force")
-                    && containsToken(playlistStore, "error = nil")
-                    && containsToken(playlistStore, "cancelled or superseded retry cannot hide stale rows")
-            )
-            runner.check(
-                "nonempty playlist rows show a persistent stale-refresh warning with Retry",
-                containsToken(playlistDetail, "Couldn't refresh this playlist. The songs shown may be out of date.")
-                    && containsToken(playlistDetail, "Button(\"Retry\")")
-                    && containsToken(playlistDetail, "await store.load(item, force: true)")
-                    && containsToken(playlistDetail, "staleRefreshWarning")
-                    && !containsToken(playlistDetail, "addTracks")
-                    && !containsToken(playlistDetail, "removeOccurrences")
-            )
-            runner.check(
-                "the product contract distinguishes mutation success from a stale playlist refresh",
-                containsToken(contract, "Write failure, cancellation, and stale account/session results")
-                    && containsToken(contract, "A committed write stays successful if that refresh fails")
-                    && containsToken(contract, "Retry reloads rows without")
-            )
-            runner.check(
-                "drag-to-playlist is omitted from table and playlist mutation UI",
-                !containsToken(table, ".draggable(")
-                    && !containsToken(table, ".dropDestination(")
-                    && !containsToken(table, "onDrop(")
-                    && !containsToken(controller, ".draggable(")
-            )
-            runner.check(
-                "the product contract records the drag prototype decision",
-                containsToken(contract, "Dragging selected tracks onto playlist rows is omitted")
-                    && containsToken(contract, "SwiftUI Table")
-            )
+                #expect(
+                    (!containsToken(providing, "func addToPlaylist")
+                        && !containsToken(providing, "func removeFromPlaylist")
+                        && !containsToken(providing, "func moveInPlaylist")
+                        && containsToken(mutating, "protocol PlaylistMutating")) == true,
+                    "CatalogProviding stays a read-only catalog surface")
+                #expect(
+                    (containsToken(table, "Set<CatalogTrack.ID>")
+                        && containsToken(table, "Menu(\"Add to Playlist\")")
+                        && containsToken(table, "onDeleteCommand")
+                        && containsToken(table, "Remove from Playlist")) == true,
+                    "TrackTable uses multi-selection and a native Add to Playlist menu")
+                #expect(
+                    (containsToken(table, "TrackTableDisplayCache")
+                        && containsToken(table, "CatalogTrackCollection")
+                        && containsToken(table, "onChange(of: displayInputs")
+                        && containsToken(table, "tracks.version")
+                        && !containsToken(table, "onChange(of: tracks")
+                        && !containsToken(table, "displayedTracks")
+                        && !containsToken(table, "updateDisplayedTracks")) == true,
+                    "TrackTable projects rows from a collection version instead of comparing tracks")
+                #expect(
+                    (containsToken(playlistDetail, "tracks: store.trackCollection")
+                        && containsToken(mediaDetail, "tracks: store.trackCollection")
+                        && containsToken(libraryViews, "tracks: store.trackCollection")
+                        && containsToken(root, "tracks: catalog.homeLibrary.likedTrackCollection")) == true,
+                    "every TrackTable owner passes a CatalogTrackCollection")
+                #expect(
+                    (containsToken(playlistStore, "trackCollection.replace")
+                        && containsToken(searchStore, "trackCollection.replace")
+                        && containsToken(albumStore, "trackCollection.replace")
+                        && containsToken(homeLibrary, "likedTrackCollection.replace")
+                        && !containsToken(playlistStore, "replaceCatalogTracks")
+                        && !containsToken(searchStore, "replaceCatalogTracks")
+                        && !containsToken(albumStore, "replaceCatalogTracks")
+                        && !containsToken(homeLibrary, "replaceCatalogTracks")) == true,
+                    "catalog track lists replace through CatalogTrackCollection")
+                #expect(
+                    (!containsToken(playlistStore, "sortedTracks")
+                        && !containsToken(playlistStore, "dateSort")
+                        && !containsToken(playlistStore, "resortTracks")) == true,
+                    "PlaylistStore does not keep a second sorted copy")
+                #expect(
+                    (containsToken(collectionType, "public init(tracks: [CatalogTrack] = [])")
+                        && containsToken(collectionType, "version = UUID()")
+                        && !containsToken(collectionType, "init(id:")
+                        && !containsToken(collectionType, "revision")
+                        && !containsToken(collectionType, ": Equatable")) == true,
+                    "CatalogTrackCollection versions assignments instead of injected identity")
+                #expect(
+                    (!containsToken(displayCache, ": Equatable")) == true,
+                    "TrackTableDisplayCache does not Equatable-compare cached rows")
+                #expect(
+                    (containsToken(table, "PlaylistMutationSelection.occurrenceIDsForRemoval(from: selectedTracks)")
+                        && !containsToken(table, "removeOccurrences(Array(selectedIDs))")) == true,
+                    "Remove from Playlist and Delete pass only occurrence UIDs")
+                #expect(
+                    (containsToken(table, "onDeleteCommandIfAvailable(playlistActions?.canRemoveOccurrences == true)"))
+                        == true, "read-only tables do not register delete unless removal is offered")
+                #expect(
+                    (containsToken(controller, "feedback.success")
+                        && containsToken(controller, "feedback.failure")
+                        && !containsToken(controller, "NotificationCenter")
+                        && !containsToken(controller, "Timer(")) == true,
+                    "mutations report through the composed TransientFeedbackPresenter")
+                #expect(
+                    (containsToken(controller, "await playlistStore.load(playlist, force: true)")
+                        && !containsToken(controller, "playlistStore.error")
+                        && containsToken(controller, "feedback.success(message)")) == true,
+                    "reload failure is not turned into mutation failure or extra feedback")
+                #expect(
+                    (containsToken(playlistStore, "else if !force")
+                        && containsToken(playlistStore, "error = nil")
+                        && containsToken(playlistStore, "cancelled or superseded retry cannot hide stale rows"))
+                        == true, "force reloads keep a same-playlist error until a current load succeeds")
+                #expect(
+                    (containsToken(
+                        playlistDetail, "Couldn't refresh this playlist. The songs shown may be out of date.")
+                        && containsToken(playlistDetail, "Button(\"Retry\")")
+                        && containsToken(playlistDetail, "await store.load(item, force: true)")
+                        && containsToken(playlistDetail, "staleRefreshWarning")
+                        && !containsToken(playlistDetail, "addTracks")
+                        && !containsToken(playlistDetail, "removeOccurrences")) == true,
+                    "nonempty playlist rows show a persistent stale-refresh warning with Retry")
+                #expect(
+                    (containsToken(contract, "Write failure, cancellation, and stale account/session results")
+                        && containsToken(contract, "A committed write stays successful if that refresh fails")
+                        && containsToken(contract, "Retry reloads rows without")) == true,
+                    "the product contract distinguishes mutation success from a stale playlist refresh")
+                #expect(
+                    (!containsToken(table, ".draggable(")
+                        && !containsToken(table, ".dropDestination(")
+                        && !containsToken(table, "onDrop(")
+                        && !containsToken(controller, ".draggable(")) == true,
+                    "drag-to-playlist is omitted from table and playlist mutation UI")
+                #expect(
+                    (containsToken(contract, "Dragging selected tracks onto playlist rows is omitted")
+                        && containsToken(contract, "SwiftUI Table")) == true,
+                    "the product contract records the drag prototype decision")
+
+            } catch {
+                Issue.record("\("playlist mutation sources are readable"): unexpected error \(error)")
+            }
         }
     }
 }

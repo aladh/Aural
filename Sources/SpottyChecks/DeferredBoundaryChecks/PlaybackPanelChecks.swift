@@ -1,3 +1,4 @@
+import Testing
 //
 //  PlaybackPanelChecks.swift
 //  Spotty
@@ -7,83 +8,66 @@ import Foundation
 @testable import SpottyCore
 import struct SpottyDomain.QueueProtocolTrack
 
+@Test
 @MainActor
-func runPlaybackPanelChecks(_ check: CheckRunner) {
-    check.suite("Smooth playback position") {
+func testPlaybackPanel() {
+    do {
         let anchorDate = Date(timeIntervalSince1970: 1_000)
-        check.equal(
-            "playing advances between backend samples",
-            interpolatedPlaybackPosition(
+        #expect(
+            (interpolatedPlaybackPosition(
                 anchor: 40,
                 anchoredAt: anchorDate,
                 now: anchorDate.addingTimeInterval(0.25),
                 isPlaying: true,
                 duration: 200
-            ),
-            40.25
-        )
-        check.equal(
-            "paused position stays anchored",
-            interpolatedPlaybackPosition(
+            )) == (40.25), "playing advances between backend samples")
+        #expect(
+            (interpolatedPlaybackPosition(
                 anchor: 40,
                 anchoredAt: anchorDate,
                 now: anchorDate.addingTimeInterval(10),
                 isPlaying: false,
                 duration: 200
-            ),
-            40
-        )
-        check.equal(
-            "interpolation stops at track duration",
-            interpolatedPlaybackPosition(
+            )) == (40), "paused position stays anchored")
+        #expect(
+            (interpolatedPlaybackPosition(
                 anchor: 199.8,
                 anchoredAt: anchorDate,
                 now: anchorDate.addingTimeInterval(1),
                 isPlaying: true,
                 duration: 200
-            ),
-            200
-        )
-        check.equal(
-            "clock reversal cannot move the playhead backward",
-            interpolatedPlaybackPosition(
+            )) == (200), "interpolation stops at track duration")
+        #expect(
+            (interpolatedPlaybackPosition(
                 anchor: 40,
                 anchoredAt: anchorDate,
                 now: anchorDate.addingTimeInterval(-1),
                 isPlaying: true,
                 duration: 200
-            ),
-            40
-        )
+            )) == (40), "clock reversal cannot move the playhead backward")
 
         let receivedAt = Date(timeIntervalSince1970: 1_010)
-        check.equal(
-            "playing Connect snapshots compensate for their timestamp",
-            playbackSnapshotPosition(
+        #expect(
+            (playbackSnapshotPosition(
                 positionMilliseconds: 40_000,
                 durationMilliseconds: 200_000,
                 timestampMilliseconds: 1_005_000,
                 isPlaying: true,
                 now: receivedAt
-            ),
-            45
-        )
-        check.equal(
-            "paused Connect snapshots stay at their exact position",
-            playbackSnapshotPosition(
+            )) == (45), "playing Connect snapshots compensate for their timestamp")
+        #expect(
+            (playbackSnapshotPosition(
                 positionMilliseconds: 40_000,
                 durationMilliseconds: 200_000,
                 timestampMilliseconds: 1_005_000,
                 isPlaying: false,
                 now: receivedAt
-            ),
-            40
-        )
+            )) == (40), "paused Connect snapshots stay at their exact position")
     }
 
     // Cold-start resolution: backend queue/state events carry uris without names,
     // so the bar's metadata must come from the loaded catalog.
-    check.suite("Cold-start track resolution") {
+    do {
         let session = CatalogSessionAvailability(accountEpoch: 1, isAvailable: true)
         let metadata = CatalogMetadataRepository(
             attributesProvider: TrackAttributesAPI(),
@@ -112,17 +96,17 @@ func runPlaybackPanelChecks(_ check: CheckRunner) {
             ], from: .playlist)
 
         let liked = metadata.knownTrack(for: "spotify:track:liked")
-        check.equal("liked list resolves", liked?.title, "Liked One")
+        #expect((liked?.title) == ("Liked One"), "liked list resolves")
         let searched = metadata.knownTrack(for: "spotify:track:searched")
-        check.equal(
-            "search results resolve with artwork", searched?.artworkURL?.absoluteString, "https://example/s.jpg")
+        #expect(
+            (searched?.artworkURL?.absoluteString) == ("https://example/s.jpg"), "search results resolve with artwork")
 
         let info = metadata.displayInfo(for: "spotify:track:pl")
-        check.equal("display info resolves the title", info.title, "Playlist One")
+        #expect((info.title) == ("Playlist One"), "display info resolves the title")
 
         let unknown = metadata.displayInfo(for: "spotify:track:deadbeef")
-        check.equal("unknown uris still name something", unknown.title, "Unknown track")
-        check.equal("unknown uris surface their id", unknown.artist, "deadbeef")
+        #expect((unknown.title) == ("Unknown track"), "unknown uris still name something")
+        #expect((unknown.artist) == ("deadbeef"), "unknown uris surface their id")
 
         let homePlaylist = CatalogItem(
             id: "home-playlist",
@@ -133,9 +117,9 @@ func runPlaybackPanelChecks(_ check: CheckRunner) {
             kind: .playlist
         )
         metadata.replaceItems([homePlaylist], from: .home)
-        check.equal(
-            "home item lookup stays lazy and resolves", metadata.knownItem(for: homePlaylist.uri)?.title,
-            "Home Playlist")
+        #expect(
+            (metadata.knownItem(for: homePlaylist.uri)?.title) == ("Home Playlist"),
+            "home item lookup stays lazy and resolves")
 
         let queueWaitingForOrdering = SidePanelQueueRefreshIdentity(
             isConnected: true,
@@ -147,54 +131,40 @@ func runPlaybackPanelChecks(_ check: CheckRunner) {
             currentTrackURI: "spotify:track:current",
             connectOrderingVersion: 1
         )
-        check.check(
-            "launch-time queue ordering restarts metadata hydration",
-            queueWaitingForOrdering != queueWithOrdering
-        )
+        #expect(
+            (queueWaitingForOrdering != queueWithOrdering) == true,
+            "launch-time queue ordering restarts metadata hydration")
         let queueAfterHydration = SidePanelQueueRefreshIdentity(
             isConnected: true,
             currentTrackURI: "spotify:track:current",
             connectOrderingVersion: queueWithOrdering.connectOrderingVersion
         )
-        check.equal(
-            "queue hydration does not schedule a second refresh",
-            queueAfterHydration,
-            queueWithOrdering
-        )
+        #expect((queueAfterHydration) == (queueWithOrdering), "queue hydration does not schedule a second refresh")
     }
 
-    check.suite("Repeat mode") {
+    do {
         let cycle: [RepeatMode] = [.off, .context, .track, .off]
         for (before, after) in zip(cycle, cycle.dropFirst()) {
-            check.equal("cycle \(before) → \(after)", before.next, after)
+            #expect((before.next) == (after), "cycle \(before) → \(after)")
         }
 
-        check.equal(
-            "backend flags for context repeat",
-            RepeatMode.context.flags,
-            RepeatFlags(context: true, track: false)
+        #expect(
+            (RepeatMode.context.flags) == (RepeatFlags(context: true, track: false)), "backend flags for context repeat"
         )
-        check.equal(
-            "backend flags for track repeat",
-            RepeatMode.track.flags,
-            RepeatFlags(context: false, track: true)
-        )
-        check.equal(
-            "backend flags for no repeat",
-            RepeatMode.off.flags,
-            RepeatFlags(context: false, track: false)
-        )
+        #expect(
+            (RepeatMode.track.flags) == (RepeatFlags(context: false, track: true)), "backend flags for track repeat")
+        #expect((RepeatMode.off.flags) == (RepeatFlags(context: false, track: false)), "backend flags for no repeat")
         // The two backend switches compose back into one mode.
-        check.equal("flags rebuild to context", RepeatMode(context: true, track: false), .context)
-        check.equal("track flag wins over context", RepeatMode(context: true, track: true), .track)
-        check.equal("flags rebuild to off", RepeatMode(context: false, track: false), .off)
+        #expect((RepeatMode(context: true, track: false)) == (.context), "flags rebuild to context")
+        #expect((RepeatMode(context: true, track: true)) == (.track), "track flag wins over context")
+        #expect((RepeatMode(context: false, track: false)) == (.off), "flags rebuild to off")
     }
 
-    check.suite("Play history") {
+    do {
         let now = Date(timeIntervalSince1970: 1_000_000)
         let store = PlaybackHistoryStore()
         store.notePlayed(uri: "spotify:track:a", title: "A", artist: "X", artworkURL: nil, playedAt: now)
-        check.equal("history store records the injected playedAt", store.entries.first?.playedAt, now)
+        #expect((store.entries.first?.playedAt) == (now), "history store records the injected playedAt")
         store.notePlayed(
             uri: "spotify:track:a",
             title: "A",
@@ -202,14 +172,14 @@ func runPlaybackPanelChecks(_ check: CheckRunner) {
             artworkURL: nil,
             playedAt: now.addingTimeInterval(60)
         )
-        check.equal("history store replay keeps a single row", store.entries.count, 1)
-        check.equal(
-            "history store replay uses the later injected timestamp", store.entries.first?.playedAt,
-            now.addingTimeInterval(60))
+        #expect((store.entries.count) == (1), "history store replay keeps a single row")
+        #expect(
+            (store.entries.first?.playedAt) == (now.addingTimeInterval(60)),
+            "history store replay uses the later injected timestamp")
 
         var entries = PlaybackHistory.updated(
             [], afterPlaying: "spotify:track:a", title: "A", artist: "X", artworkURLString: nil, playedAt: now)
-        check.equal("newest entry lands first", entries.first?.uri, "spotify:track:a")
+        #expect((entries.first?.uri) == ("spotify:track:a"), "newest entry lands first")
 
         // Replaying the same track moves it rather than duplicating it.
         entries = PlaybackHistory.updated(
@@ -220,8 +190,8 @@ func runPlaybackPanelChecks(_ check: CheckRunner) {
             artworkURLString: nil,
             playedAt: now.addingTimeInterval(60)
         )
-        check.equal("replay does not duplicate", entries.count, 1)
-        check.equal("replay refreshes the timestamp", entries.first?.playedAt, now.addingTimeInterval(60))
+        #expect((entries.count) == (1), "replay does not duplicate")
+        #expect((entries.first?.playedAt) == (now.addingTimeInterval(60)), "replay refreshes the timestamp")
 
         // Metadata arriving late fills the entry in.
         entries = PlaybackHistory.withMetadata(
@@ -231,8 +201,8 @@ func runPlaybackPanelChecks(_ check: CheckRunner) {
             artist: "Real Artist",
             artworkURLString: "https://example/a.jpg"
         )
-        check.equal("late metadata fills the title", entries.first?.title, "Real Title")
-        check.equal("late metadata keeps other fields", entries.first?.playedAt, now.addingTimeInterval(60))
+        #expect((entries.first?.title) == ("Real Title"), "late metadata fills the title")
+        #expect((entries.first?.playedAt) == (now.addingTimeInterval(60)), "late metadata keeps other fields")
 
         // The cap holds.
         entries = (0..<PlaybackHistory.cap + 25).reversed().reduce(entries) { current, index in
@@ -245,7 +215,7 @@ func runPlaybackPanelChecks(_ check: CheckRunner) {
                 playedAt: now.addingTimeInterval(TimeInterval(index))
             )
         }
-        check.equal("history is capped", entries.count, PlaybackHistory.cap)
+        #expect((entries.count) == (PlaybackHistory.cap), "history is capped")
 
         // At exactly the cap one more play evicts precisely the oldest row.
         var capped: [HistoryEntry] = []
@@ -267,9 +237,9 @@ func runPlaybackPanelChecks(_ check: CheckRunner) {
             artworkURLString: nil,
             playedAt: now.addingTimeInterval(999)
         )
-        check.equal("cap boundary stays at the cap", capped.count, PlaybackHistory.cap)
-        check.equal("the new track lands on top", capped.first?.uri, "spotify:track:new")
-        check.equal("exactly the oldest row falls off", capped.last?.uri, "spotify:track:t1")
+        #expect((capped.count) == (PlaybackHistory.cap), "cap boundary stays at the cap")
+        #expect((capped.first?.uri) == ("spotify:track:new"), "the new track lands on top")
+        #expect((capped.last?.uri) == ("spotify:track:t1"), "exactly the oldest row falls off")
 
         // Replaying a buried track lifts it without duplicating or reordering the rest.
         var lifted: [HistoryEntry] = []
@@ -291,9 +261,9 @@ func runPlaybackPanelChecks(_ check: CheckRunner) {
             artworkURLString: nil,
             playedAt: now.addingTimeInterval(30)
         )
-        check.equal("a buried replay moves to the front", lifted.first?.uri, "spotify:track:a")
-        check.equal("the lift does not duplicate", lifted.count, 3)
-        check.equal("the other rows keep their order", lifted.last?.uri, "spotify:track:b")
+        #expect((lifted.first?.uri) == ("spotify:track:a"), "a buried replay moves to the front")
+        #expect((lifted.count) == (3), "the lift does not duplicate")
+        #expect((lifted.last?.uri) == ("spotify:track:b"), "the other rows keep their order")
 
         // Metadata aimed at one uri must leave every other entry untouched.
         let untouched = [
@@ -306,7 +276,7 @@ func runPlaybackPanelChecks(_ check: CheckRunner) {
             artist: "Y",
             artworkURLString: "https://example/x.jpg"
         )
-        check.equal("metadata for an absent uri changes nothing", afterMiss, untouched)
+        #expect((afterMiss) == (untouched), "metadata for an absent uri changes nothing")
 
         // Artwork already known is never downgraded by a later fill-in.
         let owned = [
@@ -322,11 +292,11 @@ func runPlaybackPanelChecks(_ check: CheckRunner) {
             artist: "X",
             artworkURLString: "https://example/new.jpg"
         )
-        check.equal("known artwork survives enrichment", enriched.first?.artworkURLString, "https://example/old.jpg")
-        check.equal("non-empty titles still update", enriched.first?.title, "Better Title")
+        #expect((enriched.first?.artworkURLString) == ("https://example/old.jpg"), "known artwork survives enrichment")
+        #expect((enriched.first?.title) == ("Better Title"), "non-empty titles still update")
     }
 
-    check.suite("Queue and device decoding") {
+    do {
         // DTO-shape smoke: current-track identity is uri/provider/uid, not catalog labels.
         // Upcoming presentation lives in the QueueProtocolProjection domain suite; wire
         // coverage is Rust layout/callback/getter tests (`TST-QUE-001`).
@@ -344,9 +314,9 @@ func runPlaybackPanelChecks(_ check: CheckRunner) {
             disallowSetQueue: false,
             disallowRemovingFromNextTracks: false
         )
-        check.equal("current track keeps identity", decoded.track?.uri, "spotify:track:now")
-        check.equal("current track keeps provider", decoded.track?.provider, "context")
-        check.equal("current track keeps uid", decoded.track?.uid, "occ-now")
+        #expect((decoded.track?.uri) == ("spotify:track:now"), "current track keeps identity")
+        #expect((decoded.track?.provider) == ("context"), "current track keeps provider")
+        #expect((decoded.track?.uid) == ("occ-now"), "current track keeps uid")
 
         let devicesJSON = """
             [{"id":"abc123","name":"Living Room","type":"speaker","is_active":false,
@@ -356,11 +326,11 @@ func runPlaybackPanelChecks(_ check: CheckRunner) {
             """
         do {
             let devices = try JSONDecoder().decode([ConnectDevice].self, from: Data(devicesJSON.utf8))
-            check.equal("device list decodes", devices.count, 2)
-            check.equal("active device is named", devices.first(where: \.isActive)?.name, "Mac")
-            check.equal("type maps to an icon", devices.first?.symbolName, "hifispeaker")
+            #expect((devices.count) == (2), "device list decodes")
+            #expect((devices.first(where: \.isActive)?.name) == ("Mac"), "active device is named")
+            #expect((devices.first?.symbolName) == ("hifispeaker"), "type maps to an icon")
         } catch {
-            check.check("devices decode: \(error)", false)
+            #expect((false) == true, "devices decode: \(error)")
         }
 
         // Spotify spells device types in mixed case; icon lookup must not.
@@ -370,35 +340,33 @@ func runPlaybackPanelChecks(_ check: CheckRunner) {
             """
         do {
             let cased = try JSONDecoder().decode([ConnectDevice].self, from: Data(casedTypesJSON.utf8))
-            check.equal("tv type maps regardless of case", cased.first?.symbolName, "tv")
-            check.equal("phone type maps regardless of case", cased.last?.symbolName, "iphone")
+            #expect((cased.first?.symbolName) == ("tv"), "tv type maps regardless of case")
+            #expect((cased.last?.symbolName) == ("iphone"), "phone type maps regardless of case")
         } catch {
-            check.check("cased device types decode: \(error)", false)
+            #expect((false) == true, "cased device types decode: \(error)")
         }
     }
 
-    check.suite("Queue provider labels") {
+    do {
         // What fed a row, in listener-facing words.
         let queued = QueueEntry(uri: "spotify:track:a", provider: "queue")
         let suggested = QueueEntry(uri: "spotify:track:b", provider: "autoplay")
         let contextual = QueueEntry(uri: "spotify:track:c", provider: "context")
         let documented = QueueEntry(uri: "spotify:track:d", provider: "web-api")
-        check.check(
-            "providers map to listener labels",
-            queued.sourceLabel == "From your queue"
+        #expect(
+            (queued.sourceLabel == "From your queue"
                 && suggested.sourceLabel == "Suggested by Spotify"
                 && contextual.sourceLabel == "From the current context"
-                && documented.sourceLabel == "Up next"
-        )
+                && documented.sourceLabel == "Up next") == true, "providers map to listener labels")
         let repeated = [
             QueueEntry(uri: "spotify:track:a", provider: "queue", occurrence: 0),
             QueueEntry(uri: "spotify:track:a", provider: "queue", occurrence: 1),
         ]
-        check.check("duplicate queue tracks have distinct row identities", repeated[0].id != repeated[1].id)
+        #expect((repeated[0].id != repeated[1].id) == true, "duplicate queue tracks have distinct row identities")
 
     }
 
-    check.suite("Documented queue response") {
+    do {
         let json = """
             {"currently_playing":null,"queue":[
               {"id":"track-id","uri":"spotify:track:track-id","name":"First Track",
@@ -413,41 +381,39 @@ func runPlaybackPanelChecks(_ check: CheckRunner) {
             """
         do {
             let tracks = try SpotifyWebPlayerAPI.decodeQueue(Data(json.utf8))
-            check.equal(
-                "documented queue preserves order", tracks.map(\.uri),
-                [
-                    "spotify:track:track-id", "spotify:episode:episode-id",
-                ])
-            check.equal("queue track decodes its artist", tracks.first?.artist, "First Artist")
-            check.equal("queue track decodes its album", tracks.first?.album, "First Album")
-            check.equal(
-                "queue track chooses the largest artwork",
-                tracks.first?.artworkURL?.absoluteString,
-                "https://example.com/large.jpg"
-            )
-            check.equal("queue episode decodes its publisher", tracks.last?.artist, "A Publisher")
+            #expect(
+                (tracks.map(\.uri))
+                    == ([
+                        "spotify:track:track-id", "spotify:episode:episode-id",
+                    ]), "documented queue preserves order")
+            #expect((tracks.first?.artist) == ("First Artist"), "queue track decodes its artist")
+            #expect((tracks.first?.album) == ("First Album"), "queue track decodes its album")
+            #expect(
+                (tracks.first?.artworkURL?.absoluteString) == ("https://example.com/large.jpg"),
+                "queue track chooses the largest artwork")
+            #expect((tracks.last?.artist) == ("A Publisher"), "queue episode decodes its publisher")
         } catch {
-            check.check("documented queue decodes: \(error)", false)
+            #expect((false) == true, "documented queue decodes: \(error)")
         }
     }
 
-    check.suite("Connect command encoding") {
+    do {
         do {
             let encoded = try JSONEncoder().encode(SpotifyConnectCommand.seek(to: 12_345))
             let object = try JSONSerialization.jsonObject(with: encoded) as? [String: Any]
-            check.equal("seek endpoint is encoded", object?["endpoint"] as? String, "seek_to")
-            check.equal("seek position is encoded", object?["value"] as? Int, 12_345)
+            #expect((object?["endpoint"] as? String) == ("seek_to"), "seek endpoint is encoded")
+            #expect((object?["value"] as? Int) == (12_345), "seek position is encoded")
 
             let shuffle = try JSONEncoder().encode(SpotifyConnectCommand.shuffle(true))
             let shuffleObject = try JSONSerialization.jsonObject(with: shuffle) as? [String: Any]
-            check.equal("shuffle boolean is encoded", shuffleObject?["value"] as? Bool, true)
+            #expect((shuffleObject?["value"] as? Bool) == (true), "shuffle boolean is encoded")
 
             let add = try JSONEncoder().encode(SpotifyConnectCommand.addToQueue("spotify:track:abc"))
             let addObject = try JSONSerialization.jsonObject(with: add) as? [String: Any]
             let track = addObject?["track"] as? [String: Any]
-            check.equal("queue endpoint is encoded", addObject?["endpoint"] as? String, "add_to_queue")
-            check.equal("queued track uri is encoded", track?["uri"] as? String, "spotify:track:abc")
-            check.nil_("add_to_queue does not encode next_tracks", addObject?["next_tracks"])
+            #expect((addObject?["endpoint"] as? String) == ("add_to_queue"), "queue endpoint is encoded")
+            #expect((track?["uri"] as? String) == ("spotify:track:abc"), "queued track uri is encoded")
+            #expect((addObject?["next_tracks"]) == nil, "add_to_queue does not encode next_tracks")
 
             let setQueue = try JSONEncoder().encode(
                 SpotifyConnectCommand.setQueue(
@@ -457,14 +423,12 @@ func runPlaybackPanelChecks(_ check: CheckRunner) {
                 )
             )
             let setObject = try JSONSerialization.jsonObject(with: setQueue) as? [String: Any]
-            check.equal("set_queue endpoint is encoded", setObject?["endpoint"] as? String, "set_queue")
-            check.equal(
-                "set_queue preserves prev_tracks",
-                ((setObject?["prev_tracks"] as? [[String: Any]])?.first?["uri"] as? String),
-                "spotify:track:prev"
-            )
+            #expect((setObject?["endpoint"] as? String) == ("set_queue"), "set_queue endpoint is encoded")
+            #expect(
+                (((setObject?["prev_tracks"] as? [[String: Any]])?.first?["uri"] as? String)) == ("spotify:track:prev"),
+                "set_queue preserves prev_tracks")
         } catch {
-            check.check("Connect commands encode: \(error)", false)
+            #expect((false) == true, "Connect commands encode: \(error)")
         }
     }
 }

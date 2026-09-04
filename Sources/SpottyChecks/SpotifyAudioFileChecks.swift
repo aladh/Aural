@@ -1,3 +1,4 @@
+import Testing
 //
 //  SpotifyAudioFileChecks.swift
 //  Spotty
@@ -6,8 +7,9 @@
 import SpottyDomain
 import Foundation
 
-func runSpotifyAudioFileChecks(_ check: CheckRunner) {
-    check.suite("Spotify audio format bitrates") {
+@Test
+func testSpotifyAudioFile() {
+    do {
         let expected: [SpotifyAudioFormat: Int?] = [
             .oggVorbis96: 96,
             .oggVorbis160: 160,
@@ -22,24 +24,24 @@ func runSpotifyAudioFileChecks(_ check: CheckRunner) {
             .flac: nil,
         ]
         for (format, kbps) in expected {
-            check.equal("\(format) kilobitsPerSecond", format.kilobitsPerSecond, kbps)
-            check.equal("\(format) bytesPerSecond", format.bytesPerSecond, kbps.map { $0 / 8 * 1024 })
+            #expect((format.kilobitsPerSecond) == (kbps), "\(format) kilobitsPerSecond")
+            #expect((format.bytesPerSecond) == (kbps.map { $0 / 8 * 1024 }), "\(format) bytesPerSecond")
         }
 
         for format: SpotifyAudioFormat in [.oggVorbis96, .oggVorbis160, .oggVorbis320] {
-            check.check("\(format) isOggVorbis", format.isOggVorbis)
+            #expect((format.isOggVorbis) == true, "\(format) isOggVorbis")
         }
         for format: SpotifyAudioFormat in [.mp3_256, .mp3_320, .mp3_160, .mp3_96, .mp3_160Enc, .aac24, .aac48, .flac] {
-            check.check("\(format) is not Ogg Vorbis", !format.isOggVorbis)
+            #expect((!format.isOggVorbis) == true, "\(format) is not Ogg Vorbis")
         }
 
-        check.equal("librespot raw value: oggVorbis96", SpotifyAudioFormat.oggVorbis96.rawValue, 0)
-        check.equal("librespot raw value: mp3_256", SpotifyAudioFormat.mp3_256.rawValue, 3)
-        check.equal("librespot raw value: aac48", SpotifyAudioFormat.aac48.rawValue, 9)
-        check.equal("librespot raw value: flac", SpotifyAudioFormat.flac.rawValue, 16)
+        #expect((SpotifyAudioFormat.oggVorbis96.rawValue) == (0), "librespot raw value: oggVorbis96")
+        #expect((SpotifyAudioFormat.mp3_256.rawValue) == (3), "librespot raw value: mp3_256")
+        #expect((SpotifyAudioFormat.aac48.rawValue) == (9), "librespot raw value: aac48")
+        #expect((SpotifyAudioFormat.flac.rawValue) == (16), "librespot raw value: flac")
     }
 
-    check.suite("Spotify audio header parsing") {
+    do {
         let gains: [Float] = [-3.5, 0.891, -2.0, 0.75]
 
         func header(gains: [Float], withOggMagic: Bool, trailingPadding: Int = 0) -> Data {
@@ -55,47 +57,47 @@ func runSpotifyAudioFileChecks(_ check: CheckRunner) {
             return data
         }
 
-        check.equal("header length constant", SpotifyAudioHeader.length, 0xa7)
-        check.equal("normalisation offset constant", SpotifyAudioHeader.normalisationOffset, 144)
+        #expect((SpotifyAudioHeader.length) == (0xa7), "header length constant")
+        #expect((SpotifyAudioHeader.normalisationOffset) == (144), "normalisation offset constant")
 
         let withMagic = header(gains: gains, withOggMagic: true, trailingPadding: 32)
         if let parsed = SpotifyAudioHeader.parse(withMagic) {
-            check.equal("trackGainDB", parsed.trackGainDB, gains[0])
-            check.equal("trackPeak", parsed.trackPeak, gains[1])
-            check.equal("albumGainDB", parsed.albumGainDB, gains[2])
-            check.equal("albumPeak", parsed.albumPeak, gains[3])
+            #expect((parsed.trackGainDB) == (gains[0]), "trackGainDB")
+            #expect((parsed.trackPeak) == (gains[1]), "trackPeak")
+            #expect((parsed.albumGainDB) == (gains[2]), "albumGainDB")
+            #expect((parsed.albumPeak) == (gains[3]), "albumPeak")
         } else {
-            check.check("header with valid magic parses", false)
+            #expect((false) == true, "header with valid magic parses")
         }
-        check.check("hasOggCapture true when magic present", SpotifyAudioHeader.hasOggCapture(withMagic))
+        #expect((SpotifyAudioHeader.hasOggCapture(withMagic)) == true, "hasOggCapture true when magic present")
 
         let headerOnly = header(gains: gains, withOggMagic: false)
-        check.notNil(
-            "header without trailing bytes still parses (magic absent, not checked)",
-            SpotifyAudioHeader.parse(headerOnly)
-        )
-        check.check(
-            "hasOggCapture false when there are no trailing bytes",
-            !SpotifyAudioHeader.hasOggCapture(headerOnly)
-        )
+        #expect(
+            (SpotifyAudioHeader.parse(headerOnly)) != nil,
+            "header without trailing bytes still parses (magic absent, not checked)")
+        #expect(
+            (!SpotifyAudioHeader.hasOggCapture(headerOnly)) == true,
+            "hasOggCapture false when there are no trailing bytes")
 
         let tooShort = withMagic.prefix(SpotifyAudioHeader.length - 1)
-        check.nil_("too-short prefix is nil", SpotifyAudioHeader.parse(Data(tooShort)))
+        #expect((SpotifyAudioHeader.parse(Data(tooShort))) == nil, "too-short prefix is nil")
 
         var wrongMagic = header(gains: gains, withOggMagic: false)
         wrongMagic.append(Data("XXXX".utf8))
-        check.nil_("wrong magic is nil", SpotifyAudioHeader.parse(wrongMagic))
-        check.check("hasOggCapture false for wrong magic", !SpotifyAudioHeader.hasOggCapture(wrongMagic))
+        #expect((SpotifyAudioHeader.parse(wrongMagic)) == nil, "wrong magic is nil")
+        #expect((!SpotifyAudioHeader.hasOggCapture(wrongMagic)) == true, "hasOggCapture false for wrong magic")
 
         // A non-zero startIndex (e.g. a subrange of a larger buffer) must not misalign offsets.
         var padded = Data(repeating: 0xFF, count: 10)
         padded.append(withMagic)
         let offsetSlice = padded[padded.index(padded.startIndex, offsetBy: 10)...]
         if let parsed = SpotifyAudioHeader.parse(offsetSlice) {
-            check.equal("non-zero startIndex trackGainDB", parsed.trackGainDB, gains[0])
+            #expect((parsed.trackGainDB) == (gains[0]), "non-zero startIndex trackGainDB")
         } else {
-            check.check("header parses from a non-zero-startIndex slice", false)
+            #expect((false) == true, "header parses from a non-zero-startIndex slice")
         }
-        check.check("hasOggCapture handles a non-zero-startIndex slice", SpotifyAudioHeader.hasOggCapture(offsetSlice))
+        #expect(
+            (SpotifyAudioHeader.hasOggCapture(offsetSlice)) == true, "hasOggCapture handles a non-zero-startIndex slice"
+        )
     }
 }

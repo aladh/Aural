@@ -9,8 +9,6 @@ let package = Package(
         .executable(name: "Spotty", targets: ["SpottyApp"]),
         .library(name: "SpottyCore", targets: ["SpottyCore"]),
         .library(name: "SpottyDomain", targets: ["SpottyDomain"]),
-        .executable(name: "SpottyChecks", targets: ["SpottyChecks"]),
-        .executable(name: "SpottyBoundaryChecks", targets: ["SpottyBoundaryChecks"]),
     ],
     targets: [
         .systemLibrary(
@@ -60,22 +58,18 @@ let package = Package(
             path: "Sources/SpottyDomain",
             exclude: ["AGENTS.md"]
         ),
-        // Shared check CLI selection only. Not a CheckRunner/waitUntil library.
-        .target(
-            name: "SpottyCheckSelection",
-            path: "Sources/SpottyCheckSelection"
-        ),
-        .executableTarget(
-            name: "SpottyChecks",
-            dependencies: ["SpottyDomain", "SpottyCheckSelection"],
+        .testTarget(
+            name: "SpottyDomainTests",
+            dependencies: ["SpottyDomain"],
+            path: "Sources/SpottyChecks",
             exclude: [
                 "AGENTS.md",
                 "DeferredBoundaryChecks",
             ]
         ),
-        .executableTarget(
-            name: "SpottyBoundaryChecks",
-            dependencies: ["SpottyCore", "SpottyCheckSelection"],
+        .testTarget(
+            name: "SpottyBoundaryTests",
+            dependencies: ["SpottyCore"],
             path: "Sources/SpottyChecks/DeferredBoundaryChecks",
             resources: [.copy("Fixtures")]
         ),
