@@ -70,10 +70,11 @@ material.
 | `Sources/SpottyApp/` | Thin executable launcher. |
 | `Sources/Spotty/` | `SpottyCore`: composition, native UI, feature stores, Spotify/auth adapters, audio renderer, playback adapter. |
 | `Sources/SpottyDomain/` | Portable models, reducer, lifetime rules, parsing, sorting, and policies. |
-| `Sources/SpottyPlaybackCore/` | Checked-in C header and module map for the Rust ABI. |
+| `Sources/SpottyPlaybackCore/` | Checked-in C header and compile-only shim for the Rust ABI. |
 | `Backend/spotty-playback/` | Rust/librespot session, Connect, streaming, decoding, recovery, protocol rows, and C exports. |
 | `Backend/vendor/` | Vendored, patched third-party crates (see each crate's `PATCHES.md`); not routine dependency bumps. |
-| `Sources/SpottyChecks/` | Deterministic domain and boundary evidence; never ships. |
+| `Tests/SpottyDomainTests/` | Deterministic `SpottyDomain` behavior; never ships. |
+| `Tests/SpottyBoundaryTests/` | Deterministic `SpottyCore` boundary evidence; never ships. |
 | `Scripts/` | Verification, packaging, signing, diagnostics, and release helpers. |
 | `script/` | Development build/sign/launch entry point. |
 | `.github/` | CI, pull-request metadata, and release workflows. |

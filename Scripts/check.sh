@@ -62,6 +62,7 @@ fi
 # The archive is a generated, architecture-specific build product. Keep it out of Git and make
 # every verification entry point self-contained by rebuilding when it is absent or stale.
 backend_lib="$project_root/Backend/lib/libspotty_playback.a"
+playback_header="$project_root/Sources/SpottyPlaybackCore/include/spotty_playback.h"
 stale_backend_input=""
 if [[ -f "$backend_lib" ]]; then
     stale_backend_input="$(find "$project_root/Backend/spotty-playback/src" \
@@ -86,7 +87,7 @@ consumed_symbols="$(mktemp /tmp/spotty-consumed-symbols.XXXXXX)"
 header_signatures="$(mktemp /tmp/spotty-header-signatures.XXXXXX)"
 trap 'rm -f "$header_symbols" "$library_symbols" "$consumed_symbols" "$header_signatures"' EXIT
 rg -o --pcre2 'spotty_playback_[a-z0-9_]+(?=\s*\()' \
-    "$project_root/Sources/SpottyPlaybackCore/spotty_playback.h" | sort -u > "$header_symbols"
+    "$playback_header" | sort -u > "$header_symbols"
 (nm -gU "$backend_lib" 2>/dev/null || true) \
     | sed -nE 's/.*_(spotty_playback_[a-z0-9_]+)$/\1/p' \
     | sort -u > "$library_symbols"
@@ -105,7 +106,7 @@ if ! command -v clang >/dev/null 2>&1; then
     exit 1
 fi
 if ! clang -x c -fsyntax-only -Xclang -ast-dump \
-    "$project_root/Sources/SpottyPlaybackCore/spotty_playback.h" 2>/dev/null \
+    "$playback_header" 2>/dev/null \
     | sed -nE "s/.*FunctionDecl .* (spotty_playback_[a-z0-9_]+) '([^']+)'$/\\1|\\2/p" \
     | sed -E 's/ _Nullable| _Nonnull//g; s/ +/ /g' \
     | sort -u > "$header_signatures"; then
@@ -305,6 +306,18 @@ fi
 
 if find "$project_root/Sources/Spotty" -type d -name LogicChecks -print -quit | rg -q .; then
     print -u2 "Logic tests must live in Spotty's non-shipping test targets, not the app target"
+    exit 1
+fi
+
+# SwiftPM tests live under the conventional Tests/ hierarchy. Keep the old source-layout names
+# from quietly returning: a source target would put deterministic checks back on the shipping
+# module's input path and make the domain/boundary split harder to inspect.
+if find "$project_root/Sources" -type d \( -name SpottyChecks -o -name DeferredBoundaryChecks \) -print -quit | rg -q .; then
+    print -u2 "Swift tests must live under Tests/SpottyDomainTests and Tests/SpottyBoundaryTests"
+    exit 1
+fi
+if [[ ! -d "$project_root/Tests/SpottyDomainTests" || ! -d "$project_root/Tests/SpottyBoundaryTests" ]]; then
+    print -u2 "Conventional Swift test directories are missing"
     exit 1
 fi
 
