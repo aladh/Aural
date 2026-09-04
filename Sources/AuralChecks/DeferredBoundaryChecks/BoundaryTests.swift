@@ -61,6 +61,8 @@ enum BoundaryChecksMain {
             RegisteredCheckSuite(name: "visual-style-contract") { runVisualStyleContractChecks($0) },
             RegisteredCheckSuite(name: "visual-contrast") { runVisualContrastChecks($0) },
             RegisteredCheckSuite(name: "wait-until") { await runWaitUntilChecks($0) },
+            RegisteredCheckSuite(name: "aesctr-decryptor") { runAESCTRDecryptorChecks($0) },
+            RegisteredCheckSuite(name: "ranged-audio-fetcher") { await runRangedAudioFetcherChecks($0) },
             RegisteredCheckSuite(name: "ogg-vorbis-decoder") { runOggVorbisDecoderChecks($0) },
             RegisteredCheckSuite(name: "check-suite-selection") { runner in
                 runCheckSuiteSelectionChecks(runner, catalog: BoundaryChecksMain.suiteNames)
