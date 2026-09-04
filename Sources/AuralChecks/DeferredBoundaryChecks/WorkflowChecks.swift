@@ -5,6 +5,16 @@ import Foundation
 private final class RecordingLocalEngine: LocalPlaybackEngine, @unchecked Sendable {
     private let lock = NSLock()
     private var storedOperations: [LocalPlaybackOperation] = []
+    private let gate = NSCondition()
+    private var executesHeld = false
+
+    /// While held, `execute` blocks on the coordinator's thread so later operations queue.
+    func holdExecutes(_ held: Bool) {
+        gate.lock()
+        executesHeld = held
+        gate.broadcast()
+        gate.unlock()
+    }
 
     var operations: [LocalPlaybackOperation] {
         lock.lock()
@@ -269,6 +279,11 @@ private final class WorkflowEngine: LocalPlaybackEngine, @unchecked Sendable {
     func authorizeStreaming(with _: String) -> Int32 { record("authorize"); return 0 }
     func initialize() -> PlaybackEngineResult { record("initialize"); return .ok }
     func execute(_ operation: LocalPlaybackOperation) -> PlaybackEngineResult {
+        gate.lock()
+        while executesHeld {
+            gate.wait()
+        }
+        gate.unlock()
         lock.lock()
         storedOperations.append(operation)
         storage["execute", default: 0] += 1
@@ -1040,6 +1055,83 @@ func runWorkflowChecks(_ runner: CheckRunner) async {
             await waitUntil { player.state.sourceRevisions[.engineConnection] == 5 }
         )
         runner.equal("a ready snapshot never rehydrates even if the flag is set", engine.rehydrations.count, 2)
+
+        await player.shutdownForTermination()
+    }
+
+    await runner.suite("Queued reconnect rehydration is dropped once its window or session is gone") {
+        let engine = WorkflowEngine()
+        let account = WorkflowAccount()
+        let lifecycle = WorkflowLifecycle()
+        let environment = PlaybackEnvironment(
+            remote: RecordingRemoteClient(),
+            local: engine,
+            webQueue: UnavailableWebQueue(),
+            account: account,
+            audioOutput: WorkflowAudio(),
+            preferences: WorkflowPreferences(),
+            lifecycle: lifecycle,
+            clock: WorkflowClock(),
+            catalog: WorkflowCatalog(),
+            playlistMutations: UnavailablePlaylistMutations(),
+            trackAttributes: WorkflowAttributes()
+        )
+        let player = PlaybackStore(
+            environment: environment,
+            feedback: TransientFeedbackPresenter(clock: environment.clock)
+        )
+        await player.restore()
+        runner.check(
+            "restore subscribes to engine events",
+            await waitUntil { engine.count("eventSubscriptions") != 0 }
+        )
+        let coordinator = player.coordinator
+
+        // Same generation: the window closes (ready snapshot) while the coordinator is busy.
+        engine.holdExecutes(true)
+        let busy = Task { await coordinator.performLocal(.pause) }
+        runner.check(
+            "the coordinator is occupied by an earlier local command",
+            await waitUntil { engine.count("execute") == 0 && !busy.isCancelled }
+        )
+        player.receive(
+            workflowConnectionEnvelope(sequence: 1, sessionGeneration: 1, spircReady: false, resumePending: true))
+        runner.check(
+            "the rehydration is claimed for this generation",
+            player.rehydratedSessionGeneration == 1
+        )
+        player.receive(
+            workflowConnectionEnvelope(sequence: 2, sessionGeneration: 1, spircReady: true, resumePending: false))
+        engine.holdExecutes(false)
+        _ = await busy.value
+        await player.effects.settlement(of: .reconnectRehydration)?.wait()
+        runner.equal("a rehydration whose window closed while queued issues no load", engine.rehydrations.count, 0)
+        runner.equal("the earlier command still executed", engine.operations.count, 1)
+
+        // New generation: the engine session changes while the coordinator is busy.
+        engine.holdExecutes(true)
+        let busyAgain = Task { await coordinator.performLocal(.pause) }
+        player.receive(
+            workflowConnectionEnvelope(sequence: 3, sessionGeneration: 2, spircReady: false, resumePending: true))
+        runner.check(
+            "the rehydration is claimed for the second generation",
+            player.rehydratedSessionGeneration == 2
+        )
+        player.receive(
+            workflowConnectionEnvelope(sequence: 4, sessionGeneration: 3, spircReady: false, resumePending: true))
+        engine.holdExecutes(false)
+        _ = await busyAgain.value
+        runner.check(
+            "the newer generation's own rehydration runs",
+            await waitUntil { engine.rehydrations.count == 1 }
+        )
+        await player.effects.settlement(of: .reconnectRehydration)?.wait()
+        runner.equal(
+            "the superseded generation's rehydration never loads",
+            engine.rehydrations.count,
+            1
+        )
+        runner.equal("only the two pauses and one rehydration reached the engine", engine.operations.count, 3)
 
         await player.shutdownForTermination()
     }

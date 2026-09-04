@@ -754,15 +754,18 @@ pub(crate) async fn build_player_async(
             // The load comes from Swift. Publishing `resume_pending` with `spirc_ready`
             // still clear tells `PlaybackStore` to issue its `ResumeLoadPlan` targets now;
             // `session_connected` must already be true for those loads to pass
-            // `require_session_connected`. Swift's session phase stays non-ready until the
-            // commit below, so its Web API bootstrap still waits for the rehydrated state.
+            // `require_session_connected`. Inside this window `load_at_position` returns as
+            // soon as Spirc queued the load, so Swift stops at the first queued target (as
+            // `resume_via_load` did) and the wait below is the only Playing wait. Swift's
+            // session phase stays non-ready until the commit below, so its Web API bootstrap
+            // still waits for the rehydrated state.
             //
             // This used to arm a five-second window waiting for a Paused event, on the
             // assumption that the track would load itself via transfer(None) — nothing in
             // this path ever called transfer(None), so the event never came.
             if resume_after_connect {
                 if has_resume_identity() {
-                    let seq_before = open_rehydration_window();
+                    let seq_before = open_rehydration_window(current_generation);
                     with_connection(|c| {
                         c.session_connected = true;
                         c.resume_pending = true;
@@ -786,7 +789,7 @@ pub(crate) async fn build_player_async(
                             // the reconnect loop treats the error as another attempt.
                             with_connection(|c| c.session_connected = false);
                             return Err(
-                                "Rehydration failed: Spirc command channel closed".to_string(),
+                                "Rehydration failed: Spirc command channel closed".to_string()
                             );
                         }
                         RehydrationOutcome::TimedOut => {

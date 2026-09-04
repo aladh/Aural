@@ -7,20 +7,26 @@ pub(crate) const PLAYING_EVENT_POLL_INTERVAL: Duration = Duration::from_millis(2
 /// `play` only queues a command, so this is the window in which an accepted one produces audio.
 pub(crate) const PLAY_COMMAND_PLAYING_TIMEOUT: Duration = Duration::from_millis(500);
 
-/// How long each seek-capable load waits for a Playing event before Swift may try the next
-/// target. Reconnect rehydration issues the same loads from Swift inside
-/// [`REHYDRATION_WINDOW`].
+/// How long each seek-capable user-resume load waits for a Playing event before Swift may
+/// try the next target. Inside a reconnect's rehydration window a load returns as soon as
+/// it is queued; [`REHYDRATION_WINDOW`] is the only Playing wait there.
 pub(crate) const RESUME_LOAD_PLAYING_TIMEOUT: Duration = Duration::from_secs(2);
 
-/// How long a reconnect keeps readiness unpublished while Swift issues its resume-load
-/// targets. Two targets at [`RESUME_LOAD_PLAYING_TIMEOUT`] each plus dispatch; a timeout
-/// gives up on the wait, not on the session. Observed load-to-playing is around a second.
+/// How long a reconnect keeps readiness unpublished after publishing `resume_pending`: the
+/// single Playing wait for Swift's queued rehydration load, sized as the previous engine-side
+/// three-second wait plus Swift dispatch. A timeout gives up on the wait, not on the
+/// session. Observed load-to-playing is around a second.
 pub(crate) const REHYDRATION_WINDOW: Duration = Duration::from_secs(5);
 
 /// Set by [`load_at_position`] when a load finds the Spirc command channel closed, so the
 /// reconnect that opened the rehydration window can fail the build instead of announcing a
 /// session that can never play. Reset when a window opens.
 pub(crate) static REHYDRATION_NEEDS_REINIT: AtomicBool = AtomicBool::new(false);
+
+/// Session generation that owns the open rehydration window. A load that started under an
+/// older generation can still report its closed Spirc after a newer build has opened its own
+/// window; that stale report must not fail the newer build.
+pub(crate) static REHYDRATION_WINDOW_GENERATION: AtomicU64 = AtomicU64::new(0);
 
 /// One seek-capable load target. Target *order* is the Swift `ResumeLoadPlan` policy for
 /// user resume and reconnect rehydration alike; this crate only turns one target into a
@@ -123,11 +129,31 @@ pub(crate) enum RehydrationOutcome {
     TimedOut,
 }
 
-/// Opens a rehydration window: clears the reinit flag and returns the playing-event
-/// sequence to wait past. Call before publishing `resume_pending` to Swift.
-pub(crate) fn open_rehydration_window() -> u64 {
+/// Opens a rehydration window for `generation`: records the owner, clears the reinit flag,
+/// and returns the playing-event sequence to wait past. Call before publishing
+/// `resume_pending` to Swift.
+pub(crate) fn open_rehydration_window(generation: u64) -> u64 {
+    REHYDRATION_WINDOW_GENERATION.store(generation, Ordering::SeqCst);
     REHYDRATION_NEEDS_REINIT.store(false, Ordering::SeqCst);
     PLAYING_EVENT_SEQ.load(Ordering::SeqCst)
+}
+
+/// Whether a load stamped with `load_generation` belongs to the rehydration window that is
+/// open right now. Both conditions matter: `resume_pending` says a window is open, and the
+/// generation says this load ran against the session that opened it rather than an older
+/// clone of the Spirc handle.
+pub(crate) fn rehydration_window_accepts(load_generation: u64) -> bool {
+    with_connection(|c| c.resume_pending)
+        && REHYDRATION_WINDOW_GENERATION.load(Ordering::SeqCst) == load_generation
+}
+
+/// Records a closed-channel load result for the window it belongs to. A load stamped with a
+/// generation other than the open window's owner is stale and is ignored here (its caller
+/// still sees `ERROR_NEEDS_REINIT`).
+pub(crate) fn note_load_needs_reinit(load_generation: u64) {
+    if REHYDRATION_WINDOW_GENERATION.load(Ordering::SeqCst) == load_generation {
+        REHYDRATION_NEEDS_REINIT.store(true, Ordering::SeqCst);
+    }
 }
 
 /// Waits inside the runtime for a Swift rehydration load to land, fail terminally, or time
@@ -206,8 +232,11 @@ pub(crate) fn issue_load_target(spirc: &Spirc, target: ResumeLoadTarget) -> Opti
 }
 
 /// One seek-capable load for Swift `ResumeLoadPlan` targets, for user resume and for
-/// reconnect rehydration alike. Each target is given the resume-load playing timeout; a
-/// timeout lets Swift try the next fallback.
+/// reconnect rehydration alike. For user resume each target is given the resume-load playing
+/// timeout, and a timeout lets Swift try the next fallback. Inside an open rehydration
+/// window the load returns `0` as soon as Spirc queued it: the reconnect's window is the one
+/// Playing wait, and a queued context load must not be superseded by a single-track fallback
+/// merely because a cold session took longer than the per-target timeout to start.
 ///
 /// `Spirc::load` only hands the command to a channel, so `Ok` means "queued", not
 /// "accepted", and `SpircTask` drops `Load` while its connect state is inactive. Activity is
@@ -227,6 +256,9 @@ pub(crate) fn load_at_position(
     if let Err(e) = require_session_connected() {
         return e;
     }
+    // Stamped before the Spirc handle is taken, so a closed channel found below is attributed
+    // to the generation this load actually ran against.
+    let load_generation = SESSION_GENERATION.load(Ordering::SeqCst);
     let Some(spirc) = current_spirc("Load") else {
         return ERROR_GENERAL;
     };
@@ -245,7 +277,10 @@ pub(crate) fn load_at_position(
     let seq_before = PLAYING_EVENT_SEQ.load(Ordering::SeqCst);
     match issue_load_target(&spirc, target) {
         Some(0) => {
-            if wait_for_playing_event(seq_before, RESUME_LOAD_PLAYING_TIMEOUT) {
+            if rehydration_window_accepts(load_generation) {
+                debug!("Rehydration load queued; the reconnect window waits for Playing");
+                0
+            } else if wait_for_playing_event(seq_before, RESUME_LOAD_PLAYING_TIMEOUT) {
                 0
             } else {
                 ERROR_GENERAL
@@ -254,7 +289,7 @@ pub(crate) fn load_at_position(
         Some(ERROR_NEEDS_REINIT) => {
             // Reported to the caller as usual, and also to a reconnect that may be holding
             // readiness open for this very load: its Spirc is already dead.
-            REHYDRATION_NEEDS_REINIT.store(true, Ordering::SeqCst);
+            note_load_needs_reinit(load_generation);
             ERROR_NEEDS_REINIT
         }
         Some(code) => code,

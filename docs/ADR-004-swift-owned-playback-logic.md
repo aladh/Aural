@@ -135,10 +135,14 @@ publishes one connection snapshot with `session_connected` set, `spirc_ready` st
 and a new `resume_pending` flag, then holds readiness until a Playing event lands, a Swift
 load reports a dead Spirc, or a bounded window elapses. `PlaybackStore` answers by capturing
 the plan from the same sticky engine getters user resume uses and issuing
-`aural_playback_load` per target, once per engine session generation. Session globals stay
-in the engine and are read, not mirrored; the engine keeps only a "is there anything to
-reload" check so an empty plan does not delay readiness. Readiness is still announced after
-rehydration, so Swift's Web API bootstrap continues to wait for the rehydrated state.
+`aural_playback_load` until one target queues, once per engine session generation. Inside
+the window a load returns as soon as Spirc queued it, so the window is the only Playing wait
+and a slow context load is never superseded by the single-track fallback; the coordinator
+re-checks the window and engine generation immediately before executing a queued
+rehydration. Session globals stay in the engine and are read, not mirrored; the engine keeps
+only a "is there anything to reload" check so an empty plan does not delay readiness.
+Readiness is still announced after rehydration, so Swift's Web API bootstrap continues to
+wait for the rehydrated state.
 
 ## Consequences
 

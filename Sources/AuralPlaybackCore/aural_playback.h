@@ -93,6 +93,8 @@ AuralPlaybackResult aural_playback_pause(void);
 AuralPlaybackResult aural_playback_resume(void);
 
 /// Loads a context or single track at `position_ms` and waits briefly for a Playing event.
+/// While a connection snapshot reports `resume_pending`, the call returns 0 as soon as the
+/// load is queued and the engine's rehydration window is the only Playing wait.
 /// Empty `track_hint` is a valid context hint. `uri` must be non-empty.
 /// @param from_context true for a context URI, false for a single track URI.
 AuralPlaybackResult aural_playback_load(

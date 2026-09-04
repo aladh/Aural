@@ -115,6 +115,11 @@ final class PlaybackStore {
     /// engine republishes `resume_pending` on every snapshot inside its window; one load
     /// sequence per rebuilt session is the contract.
     @ObservationIgnored var rehydratedSessionGeneration: UInt64?
+    /// Whether the latest accepted connection snapshot still describes an open engine
+    /// rehydration window (`resumePending` with `spircReady` clear). Read again immediately
+    /// before a queued rehydration executes, so a window that closed while the coordinator
+    /// was busy does not get a late load.
+    @ObservationIgnored var engineRehydrationWindowOpen = false
     /// One immutable stamp for playback-scoped work. This projects the two existing
     /// lifecycle owners without becoming a third writable counter.
     var playbackLifetime: PlaybackLifetime {

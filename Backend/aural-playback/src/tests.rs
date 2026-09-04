@@ -230,7 +230,7 @@ fn rehydration_window_reports_playing_reinit_or_timeout() {
 
     // Opening resets a stale reinit flag and captures the sequence to wait past.
     REHYDRATION_NEEDS_REINIT.store(true, Ordering::SeqCst);
-    let seq = open_rehydration_window();
+    let seq = open_rehydration_window(7);
     assert!(!REHYDRATION_NEEDS_REINIT.load(Ordering::SeqCst));
     assert_eq!(seq, PLAYING_EVENT_SEQ.load(Ordering::SeqCst));
 
@@ -239,7 +239,14 @@ fn rehydration_window_reports_playing_reinit_or_timeout() {
         RehydrationOutcome::TimedOut
     );
 
-    REHYDRATION_NEEDS_REINIT.store(true, Ordering::SeqCst);
+    // A closed-channel report from an older generation's load is stale and ignored.
+    note_load_needs_reinit(6);
+    assert_eq!(
+        RUNTIME.block_on(wait_for_rehydration(seq, Duration::ZERO)),
+        RehydrationOutcome::TimedOut
+    );
+
+    note_load_needs_reinit(7);
     assert_eq!(
         RUNTIME.block_on(wait_for_rehydration(seq, Duration::ZERO)),
         RehydrationOutcome::NeedsReinit
@@ -256,6 +263,27 @@ fn rehydration_window_reports_playing_reinit_or_timeout() {
 #[test]
 fn connection_state_starts_without_an_open_rehydration_window() {
     assert!(!ConnectionState::default().resume_pending);
+}
+
+#[test]
+fn a_load_belongs_to_the_window_only_while_it_is_open_for_its_generation() {
+    let _guard = lock_global_state();
+    let previous = with_connection(|c| std::mem::replace(&mut c.resume_pending, false));
+    let _ = open_rehydration_window(9);
+
+    assert!(
+        !rehydration_window_accepts(9),
+        "no window is open until resume_pending is published"
+    );
+
+    with_connection(|c| c.resume_pending = true);
+    assert!(rehydration_window_accepts(9));
+    assert!(
+        !rehydration_window_accepts(8),
+        "a load stamped with an older generation is not this window's"
+    );
+
+    with_connection(|c| c.resume_pending = previous);
 }
 
 #[test]
