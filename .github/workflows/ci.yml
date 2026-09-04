@@ -24,6 +24,13 @@ jobs:
         with:
           persist-credentials: false
 
+      - name: Install pinned cbindgen
+        run: |
+          set -euo pipefail
+          CARGO_HOME="$RUNNER_TEMP/spotty-cbindgen-cargo" \
+            cargo install cbindgen --locked --version 0.29.4 --root "$RUNNER_TEMP/spotty-cbindgen"
+          echo "$RUNNER_TEMP/spotty-cbindgen/bin" >> "$GITHUB_PATH"
+
       - name: Show Rust toolchain
         run: rustc --version
 

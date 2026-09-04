@@ -91,8 +91,19 @@ pub(crate) fn optional_callback_c_string(value: Option<&str>) -> Option<CString>
         .and_then(c_string_from_text)
 }
 
-/// Connection observation delivered as a C struct. Pointers are valid only for the
-/// callback; Swift must copy before returning. Interior NULs become null fields.
+/// Connection observation delivered as a C struct. `device_id` and `last_error` are valid only
+/// for the callback; Swift must copy them before returning. Null means missing; outbound empty
+/// strings and strings containing an interior NUL are also delivered as null fields. Flags are
+/// 0 or 1.
+///
+/// `credentials_rejected` is a typed, definitive streaming-credential rejection. It takes
+/// precedence over generic reconnect errors; it does not revoke the independent Keymaster
+/// grant.
+///
+/// `resume_pending` is set only inside a reconnect's rehydration window: the session is
+/// connected and activated but `spirc_ready` is deliberately still 0, and Swift should issue
+/// its resume-load targets through `spotty_playback_load` now. Readiness is published once a
+/// Playing event lands, a load reports a dead Spirc, or the window times out.
 #[repr(C)]
 pub struct SpottyConnectionSnapshot {
     pub revision: u64,
@@ -102,10 +113,15 @@ pub struct SpottyConnectionSnapshot {
     pub is_active_device: u8,
     pub resume_pending: u8,
     pub credentials_rejected: u8,
-    pub device_id: *const c_char,
-    pub last_error: *const c_char,
+    pub device_id: SpottyNullableCString,
+    pub last_error: SpottyNullableCString,
 }
 
+/// cbindgen:no-export
+pub(crate) type SpottyNullableCString = *const c_char;
+
+/// Callback function type for connection state change notifications. Receives a typed snapshot;
+/// the snapshot pointer and its string pointers are valid only for the callback invocation.
 pub(crate) type ConnectionSnapshotCallback = extern "C" fn(*const SpottyConnectionSnapshot);
 
 pub(crate) fn send_connection_snapshot(

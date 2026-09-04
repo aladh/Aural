@@ -12,6 +12,9 @@ Development requires:
 - Xcode 26.6 with Swift 6.3.3.
 - [Rustup](https://rustup.rs/); `rust-toolchain.toml` pins the components and ARM64 macOS target.
 - [ripgrep](https://github.com/BurntSushi/ripgrep) for repository verification.
+- cbindgen 0.29.4 for header regeneration and the complete verification gate:
+  `cargo install cbindgen --locked --version 0.29.4`. It is a development tool; ordinary app
+  compilation consumes the checked-in header and does not invoke or download cbindgen.
 - Spotify Premium only for live integration testing authorized under the
   [product contract](product-and-acceptance-contract.md#safe-acceptance-testing).
 
