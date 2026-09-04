@@ -46,15 +46,10 @@ enum VorbisDecodePipelineError: Error, Sendable {
 final class VorbisDecodePipeline: @unchecked Sendable {
     /// Decode-to-renderer pipeline events. Delivered on the decode thread; a caller that touches
     /// UI/main-actor state from `events` must hop back itself.
-    enum Event: Sendable {
-        case playing
-        case paused
-        case position(UInt32)
-        case seeked(UInt32)
-        case endOfTrack
-        case stopped
-        case failed(String)
-    }
+    ///
+    /// The domain's `AudioPipelineEvent`, not a second enum of its own: `AudioPlaybackSession`
+    /// reduces exactly these values, so the two must be one type (#219).
+    typealias Event = AudioPipelineEvent
 
     /// Initial `openHeaders` prefix size; doubled on `.needMoreData` up to `maxHeaderPrefixSize`.
     private static let initialHeaderPrefixSize = 16 * 1_024
@@ -191,7 +186,7 @@ final class VorbisDecodePipeline: @unchecked Sendable {
             nextReadOffset = startOffset + prefix.count
             pending = prefix.dropFirst(consumed)
         } catch {
-            events?(.failed(String(describing: error)))
+            events?(.failed(Self.headerFailure(for: error)))
             return
         }
 
@@ -211,7 +206,7 @@ final class VorbisDecodePipeline: @unchecked Sendable {
                 do {
                     nextReadOffset = try captureOffsetAtOrAfter(seek.byteOffset, source: source)
                 } catch {
-                    events?(.failed(String(describing: error)))
+                    events?(.failed(Self.seekFailure(for: error)))
                     return
                 }
                 pending.removeAll(keepingCapacity: true)
@@ -233,7 +228,7 @@ final class VorbisDecodePipeline: @unchecked Sendable {
                         pending = chunk
                     }
                 } catch {
-                    events?(.failed(String(describing: error)))
+                    events?(.failed(.sourceUnavailable))
                     return
                 }
                 continue
@@ -243,7 +238,7 @@ final class VorbisDecodePipeline: @unchecked Sendable {
             do {
                 result = try pending.withUnsafeBytes { try decoder.decodeFrame($0, into: &frameBuffer) }
             } catch {
-                events?(.failed(String(describing: error)))
+                events?(.failed(.decodeFailed))
                 return
             }
 
@@ -258,7 +253,7 @@ final class VorbisDecodePipeline: @unchecked Sendable {
                         pending.append(chunk)
                     }
                 } catch {
-                    events?(.failed(String(describing: error)))
+                    events?(.failed(.sourceUnavailable))
                     return
                 }
                 continue
@@ -288,6 +283,22 @@ final class VorbisDecodePipeline: @unchecked Sendable {
         waitForSinkToDrain(sink)
         guard !isCancelledNow() else { return }
         events?(.endOfTrack)
+    }
+
+    /// Whether a header-stage or seek-stage throw is about the stream or about the bytes.
+    ///
+    /// The two stages share a `catch` with `blockingRead`, so a source failure and a malformed
+    /// stream arrive the same way; the thrown type is what tells them apart. Mapping rather than
+    /// stringifying keeps a signed CDN URL out of the reported failure -- see
+    /// `AudioPipelineFailure`.
+    private static func headerFailure(for error: Error) -> AudioPipelineFailure {
+        error is VorbisDecodePipelineError || error is OggVorbisDecoderError
+            ? .headerOpenFailed
+            : .sourceUnavailable
+    }
+
+    private static func seekFailure(for error: Error) -> AudioPipelineFailure {
+        error is VorbisDecodePipelineError ? .seekTargetNotFound : .sourceUnavailable
     }
 
     /// Grows the fed prefix (pushdata semantics require re-feeding from the start of the file,

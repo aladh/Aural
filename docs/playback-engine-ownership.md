@@ -31,6 +31,11 @@ in the [enforcement inventory](architecture-enforcement.md).
 | `VorbisDecodePipeline` | Stage 1 of #201, slice 2b (#208): drives `OggVorbisDecoder` from a `DecodeByteSource` to a `PCMSink` on a dedicated thread, pacing on the sink's backpressure and reporting playing/position/seeked/endOfTrack/stopped/failed. Not yet wired into playback — no `DecodeByteSource` adapter over the CDN fetcher/decryptor exists yet, and `RustPlaybackEngine` does not construct or drive this pipeline |
 | `DecodeByteSource` | The pipeline's input seam: an async, random-access byte-range read over one decrypted track. A later slice adapts the CDN fetcher plus AES-CTR decryptor to this; checks use a fake |
 | `PCMSink` | The pipeline's output seam: write/flush/bufferedSeconds. `AudioRenderer` conforms via a small extension; checks use a fake |
+| `SwiftAudioPath` | Stage 1 of #201, slice 3c (#219): drives `AudioPlaybackSession` from the forwarded audio commands and turns its effects into work — audio key, storage-resolve, ranged CDN fetch, AES-CTR decrypt, Ogg seek, `VorbisDecodePipeline` into `AudioRenderer` — feeding pipeline events back through the reducer and sending reports through `aural_playback_report_audio`. One mailbox, one consumer, so commands and pipeline events never reorder |
+| `SpotifyTrackByteSource` / `SpotifyAudioSourceProvider` | The decrypted byte source behind one track (`DecodeByteSource` + read-ahead + whole-file download for the `TimeToPreloadNext` gate), and the audio-key/storage-resolve/fetcher assembly that builds it. The key is cached per file id and never retried in a loop |
+| `StorageResolveClient` | The signed spclient `storage-resolve` request; decoding and CDN-URL expiry policy stay pure in `StorageResolveResponse`/`CDNURLExpiry` |
+| `AudioPipelineEvent` / `AudioPipelineFailure` | The one decode-pipeline event type both `VorbisDecodePipeline` and `AudioPlaybackSession` use. Failures are a closed set, never a stringified error, so a signed CDN URL cannot reach logs, the UI, or Connect |
+| `SwiftAudioPathSwitch` | Debug-only, default-off gate for the whole Swift audio path. Registering the audio-command callback is what selects `ShimPlayer` over librespot's `Player`, so leaving it off keeps `main` on the shipped `proxy_sink` path |
 
 ## Rust crate by module
 
@@ -38,6 +43,8 @@ in the [enforcement inventory](architecture-enforcement.md).
 | --- | --- | --- |
 | `ffi.rs`, `runtime.rs` | Protocol/runtime adapter | Panic barrier, C string delivery, nested-runtime refusal |
 | `proxy_sink.rs` | Protocol/runtime adapter | PCM to Swift audio callback; not UI state |
+| `audio_shim.rs` | Mixed | `ShimPlayer` implements the vendored `SpircPlayer` trait: play-request ids, file resolution (format preference, alternatives, explicit filter) and the `PlayerEvent` stream stay librespot-shaped; what to play and when is forwarded to Swift |
+| `audio_command_sink.rs` | Protocol/runtime adapter | The `AuralAudioCommand` snapshot out and `aural_playback_report_audio` in. Registering the callback before init is the switch that selects `ShimPlayer` |
 | `session_lifecycle.rs` | Mixed | AP connect and credential cache are librespot. Path policy and logout cache wipe are Spotty-owned but must run next to the cache. Streaming grant completion stays here because only librespot performs AP login. |
 | `lifecycle_serialization.rs` | Spotty-owned coordination that must stay with Rust globals | One async lifecycle mutex, reconnect unit outcomes, generation revalidation |
 | `connect.rs` | Mixed | Dealer subscribe, hidden-member bootstrap PUT, and protobuf parse are protocol. Device-list and connection-snapshot presentation are Swift-owned. `cluster_offer_decision`, bootstrap-vs-push linearization, and `is_active_in_cluster` (this engine's Connect role) stay until cluster observations can cross the boundary without a second protobuf stack. |

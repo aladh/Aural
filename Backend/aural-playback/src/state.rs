@@ -1,8 +1,40 @@
 use crate::*;
 use std::collections::HashMap;
 
-// Player state
-pub(crate) static PLAYER: Lazy<Mutex<Option<Arc<Player>>>> = Lazy::new(|| Mutex::new(None));
+// Player state.
+//
+// `Arc<dyn SpircPlayer>` rather than `Arc<Player>`: Stage 1 of #201 lets the process run either
+// librespot's own `Player` (PCM through `proxy_sink.rs`) or the Swift-owned `ShimPlayer`, chosen
+// once per build in `create_new_player`. Everything that reaches for the player through this
+// global only ever calls trait methods.
+pub(crate) static PLAYER: Lazy<Mutex<Option<Arc<dyn SpircPlayer>>>> =
+    Lazy::new(|| Mutex::new(None));
+
+/// The `ShimPlayer` behind [`PLAYER`], when the Swift audio path is the one in use.
+///
+/// Kept separately because `aural_playback_report_audio` needs `ShimPlayer::report`, which is not
+/// part of `SpircPlayer` (Spirc never reports playback inward — Swift does). `None` whenever
+/// librespot's own `Player` is running, which is what makes a report arriving on the old path a
+/// rejected no-op rather than a panic.
+pub(crate) static SHIM_PLAYER: Lazy<Mutex<Option<Arc<ShimPlayer>>>> =
+    Lazy::new(|| Mutex::new(None));
+
+/// The current `ShimPlayer` as a clone, or `None`.
+///
+/// Handed out as a clone, never behind the guard: `report` broadcasts player events, and no
+/// engine lock may be held across work that can re-enter. Same rule as [`current_spirc`].
+pub(crate) fn current_shim_player() -> Option<Arc<ShimPlayer>> {
+    SHIM_PLAYER
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .clone()
+}
+
+/// The player as a clone, or `None`. Never call a player method through the guard: with the
+/// Swift audio path in use those methods enter Swift, which may call straight back into Rust.
+pub(crate) fn current_player() -> Option<Arc<dyn SpircPlayer>> {
+    PLAYER.lock().unwrap_or_else(|e| e.into_inner()).clone()
+}
 pub(crate) static SESSION: Lazy<Mutex<Option<Session>>> = Lazy::new(|| Mutex::new(None));
 pub(crate) static MIXER: Lazy<Mutex<Option<Arc<SoftMixer>>>> = Lazy::new(|| Mutex::new(None));
 pub(crate) static SPIRC: Lazy<Mutex<Option<Arc<Spirc>>>> = Lazy::new(|| Mutex::new(None));
@@ -54,6 +86,10 @@ pub(crate) struct ControlCallbacks {
     pub(crate) playback_state: Mutex<Option<PlaybackSnapshotCallback>>,
     pub(crate) devices: Mutex<Option<DevicesSnapshotCallback>>,
     pub(crate) connection_state: Mutex<Option<ConnectionSnapshotCallback>>,
+    /// Swift's audio-command sink for the Stage 1 audio path (#208). Registering it before
+    /// `aural_playback_init_player` is also the switch that selects `ShimPlayer` over librespot's
+    /// `Player`; see `create_new_player`.
+    pub(crate) audio_command: Mutex<Option<AudioCommandCallback>>,
 }
 
 pub(crate) static CONTROL_CALLBACKS: Lazy<ControlCallbacks> = Lazy::new(ControlCallbacks::default);

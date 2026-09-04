@@ -5,6 +5,7 @@
 //! Connect, queue, transport, and player-event-pump responsibilities without changing that
 //! runtime contract.
 
+mod audio_command_sink;
 mod audio_key;
 mod audio_shim;
 mod connect;
@@ -20,6 +21,8 @@ mod spirc_command_error;
 mod state;
 mod transport;
 
+pub(crate) use audio_command_sink::*;
+pub(crate) use audio_shim::*;
 pub(crate) use connect::*;
 pub(crate) use ffi::*;
 pub(crate) use lifecycle_serialization::*;
@@ -59,6 +62,8 @@ pub(crate) use std::time::{Duration, SystemTime, UNIX_EPOCH};
 pub(crate) use tokio::runtime::Runtime;
 pub(crate) use tokio::sync::mpsc;
 
+#[cfg(test)]
+mod audio_command_sink_tests;
 #[cfg(test)]
 mod audio_shim_tests;
 #[cfg(test)]

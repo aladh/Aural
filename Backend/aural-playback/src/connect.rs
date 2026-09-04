@@ -441,7 +441,7 @@ pub(crate) fn create_connect_config() -> ConnectConfig {
 pub(crate) async fn create_and_store_spirc(
     session: &Session,
     credentials: &librespot_core::authentication::Credentials,
-    player: Arc<Player>,
+    player: Arc<dyn SpircPlayer>,
     mixer: Arc<SoftMixer>,
 ) -> Result<Arc<Spirc>, String> {
     let connect_config = create_connect_config();
@@ -450,7 +450,7 @@ pub(crate) async fn create_and_store_spirc(
         connect_config,
         session.clone(),
         credentials.clone(),
-        player as Arc<dyn SpircPlayer>,
+        player,
         mixer as Arc<dyn Mixer>,
     )
     .await

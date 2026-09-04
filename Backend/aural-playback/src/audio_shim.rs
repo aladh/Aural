@@ -7,17 +7,17 @@
 //! to Swift; this module only decides *what* to play and *when*, and forwards that decision as
 //! a plain `AudioCommand` through an injected [`AudioCommandSink`].
 //!
-//! This module is intentionally unwired: nothing in the crate constructs a `ShimPlayer` yet, and
-//! it does not implement the vendored `SpircPlayer` trait — a later PR does that and wires this
-//! module into `state.rs`. No FFI, header, or Swift change belongs in this slice.
+//! `ShimPlayer` implements the vendored `SpircPlayer` trait (see
+//! `Backend/vendor/librespot-connect/src/player_bridge.rs`), so `session_lifecycle.rs` can hand
+//! `Spirc::new` either this or librespot's own `Player` — see `create_new_player`, which picks
+//! by whether Swift registered an audio-command callback before init.
 //!
-//! `#![allow(dead_code)]`: every item below is exercised only by `audio_shim_tests`, not by any
-//! other crate module — this crate builds `staticlib`-only, so a plain `pub` here does not by
-//! itself exempt an item from the dead-code lint the way it would for an `rlib`. The FFI PR that
-//! wires this module in removes this allow.
-#![allow(dead_code)]
+//! `audio_command_sink.rs` implements [`AudioCommandSink`] over the C boundary; this module
+//! stays FFI-free so its whole surface is unit-testable with a plain fake sink.
 
+use librespot_connect::SpircPlayer;
 use librespot_core::{Error as LibrespotError, FileId, Session, SpotifyUri};
+use librespot_playback::player::QueueTrack;
 use librespot_metadata::audio::{AudioFileFormat, AudioFiles, AudioItem};
 use librespot_metadata::track::Tracks;
 use librespot_playback::player::{PlayerEvent, PlayerEventChannel};
@@ -625,7 +625,10 @@ impl ShimPlayer {
     /// `AudioReportKind::Duration` has no matching `PlayerEvent` at this librespot rev — only
     /// `TrackChanged { audio_item }` carries duration, and reconstructing a full `AudioItem`
     /// here is not worth it for one field. It only updates the internal duration.
-    pub fn report(&self, report: AudioReport) {
+    ///
+    /// Returns whether the report was applied, so `aural_playback_report_audio` can tell Swift
+    /// that a report it sent was rejected as stale rather than silently swallowing it.
+    pub fn report(&self, report: AudioReport) -> bool {
         let mut current = self.current.lock().unwrap_or_else(|e| e.into_inner());
         if report.session_generation != self.session_generation
             || report.play_request_id != current.play_request_id
@@ -641,7 +644,7 @@ impl ShimPlayer {
                 self.session_generation,
                 current.play_request_id,
             );
-            return;
+            return false;
         }
 
         let play_request_id = current.play_request_id;
@@ -725,7 +728,99 @@ impl ShimPlayer {
         if let Some(event) = event {
             self.broadcast(event);
         }
+        true
     }
 }
 
-// TODO(#208): impl SpircPlayer once state.rs is ready to hold a ShimPlayer
+/// Presents `ShimPlayer` to `Spirc` exactly as librespot's own `Player` is presented.
+///
+/// Every method forwards to the inherent method of the same purpose. `emit_set_queue_event` is
+/// the one operation with no inherent counterpart: it is pure broadcast, with no shim state to
+/// touch, so it is written out here.
+impl SpircPlayer for ShimPlayer {
+    fn load(&self, track_id: SpotifyUri, start_playing: bool, position_ms: u32) {
+        ShimPlayer::load(self, track_id, start_playing, position_ms);
+    }
+
+    fn preload(&self, track_id: SpotifyUri) {
+        ShimPlayer::preload(self, track_id);
+    }
+
+    fn play(&self) {
+        ShimPlayer::play(self);
+    }
+
+    fn pause(&self) {
+        ShimPlayer::pause(self);
+    }
+
+    fn stop(&self) {
+        ShimPlayer::stop(self);
+    }
+
+    fn seek(&self, position_ms: u32) {
+        ShimPlayer::seek(self, position_ms);
+    }
+
+    fn get_player_event_channel(&self) -> PlayerEventChannel {
+        ShimPlayer::get_player_event_channel(self)
+    }
+
+    fn emit_volume_changed_event(&self, volume: u16) {
+        self.emit_volume_changed(volume);
+    }
+
+    fn emit_filter_explicit_content_changed_event(&self, filter: bool) {
+        self.emit_filter_explicit_content_changed(filter);
+    }
+
+    fn emit_session_connected_event(&self, connection_id: String, user_name: String) {
+        self.emit_session_connected(connection_id, user_name);
+    }
+
+    fn emit_session_disconnected_event(&self, connection_id: String, user_name: String) {
+        self.emit_session_disconnected(connection_id, user_name);
+    }
+
+    fn emit_session_client_changed_event(
+        &self,
+        client_id: String,
+        client_name: String,
+        client_brand_name: String,
+        client_model_name: String,
+    ) {
+        self.emit_session_client_changed(
+            client_id,
+            client_name,
+            client_brand_name,
+            client_model_name,
+        );
+    }
+
+    fn emit_shuffle_changed_event(&self, shuffle: bool) {
+        self.emit_shuffle_changed(shuffle);
+    }
+
+    fn emit_repeat_changed_event(&self, context: bool, track: bool) {
+        self.emit_repeat_changed(context, track);
+    }
+
+    fn emit_auto_play_changed_event(&self, auto_play: bool) {
+        self.emit_auto_play_changed(auto_play);
+    }
+
+    fn emit_set_queue_event(
+        &self,
+        context_uri: String,
+        current_track: Option<QueueTrack>,
+        next_tracks: Vec<QueueTrack>,
+        prev_tracks: Vec<QueueTrack>,
+    ) {
+        self.broadcast(PlayerEvent::SetQueue {
+            context_uri,
+            current_track,
+            next_tracks,
+            prev_tracks,
+        });
+    }
+}

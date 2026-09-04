@@ -347,6 +347,8 @@ pub(crate) fn cleanup_player_globals() {
     // Clear player (see do_reconnect_cleanup for why Swift is told first)
     proxy_sink::ProxySink::notify_player_gone();
     *PLAYER.lock().unwrap_or_else(|e| e.into_inner()) = None;
+    // Dropped with the player it aliases; see do_reconnect_cleanup.
+    *SHIM_PLAYER.lock().unwrap_or_else(|e| e.into_inner()) = None;
 
     // Clear mixer
     *MIXER.lock().unwrap_or_else(|e| e.into_inner()) = None;
@@ -656,9 +658,10 @@ pub extern "C" fn aural_playback_transfer_playback(to_device_id: *const c_char) 
 
         match result {
             Ok(_) => {
-                // Pause local playback after successful transfer
-                let player_guard = PLAYER.lock().unwrap_or_else(|e| e.into_inner());
-                if let Some(player) = player_guard.as_ref() {
+                // Pause local playback after successful transfer. Cloned out of its global
+                // first: with the Swift audio path in use `pause()` forwards into Swift, which
+                // may call straight back into this crate, and no lock may be held across that.
+                if let Some(player) = current_player() {
                     player.pause();
                 }
                 IS_PLAYING.store(false, Ordering::SeqCst);

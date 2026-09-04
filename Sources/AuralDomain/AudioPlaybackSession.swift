@@ -176,20 +176,12 @@ public struct AudioPlaybackSession: Sendable, Equatable {
     }
 
     /// Decode-pipeline facts the audio path reports inward, distinct from the outward
-    /// `AudioReport` the session emits toward Rust. Position throttling (reporting at most
-    /// every 200 ms) is the caller's job; every `.position` that reaches
-    /// `apply(pipelineEvent:)` produces a report. The failure reason is not modelled here:
-    /// it is not part of the outward `.unavailable` report, so the caller logs it directly.
-    public enum PipelineEvent: Equatable, Sendable {
-        case playing
-        case paused
-        case position(UInt32)
-        case seeked(UInt32)
-        case endOfTrack
-        case failed
-        case stopped
-        case durationKnown(UInt32)
-    }
+    /// `AudioReport` the session emits toward Rust.
+    ///
+    /// One type, owned by this module and shared with `VorbisDecodePipeline` — see
+    /// `AudioPipelineEvent`. The alias keeps the nested spelling the checks and the reducer's
+    /// own documentation already use.
+    public typealias PipelineEvent = AudioPipelineEvent
 
     /// One pipeline event, scoped to the load it claims to be about. `apply(pipelineEvent:)`
     /// checks `sessionGeneration`/`playRequestID` against `current` before applying `event`.

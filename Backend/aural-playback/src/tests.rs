@@ -661,6 +661,29 @@ fn exported_c_function_signatures_are_stable() {
     let _: extern "C" fn(extern "C" fn(*const f32, usize)) =
         aural_playback_register_audio_data_callback;
     let _: extern "C" fn(extern "C" fn(u8)) = aural_playback_register_audio_control_callback;
+    let _: extern "C" fn(AudioCommandCallback) = aural_playback_register_audio_command_callback;
+    let _: extern "C" fn(u64, u64, u8, u32, u32) -> i32 = aural_playback_report_audio;
+}
+
+/// `AuralAudioCommand` must match the header's struct byte for byte: the whole Stage 1 audio
+/// path reads its fields straight out of this snapshot on the Swift side.
+#[test]
+fn audio_command_repr_c_layout_matches_header() {
+    assert_eq!(std::mem::size_of::<AuralAudioCommand>(), 72);
+    assert_eq!(std::mem::align_of::<AuralAudioCommand>(), 8);
+    assert_eq!(
+        std::mem::offset_of!(AuralAudioCommand, session_generation),
+        0
+    );
+    assert_eq!(std::mem::offset_of!(AuralAudioCommand, play_request_id), 8);
+    assert_eq!(std::mem::offset_of!(AuralAudioCommand, track_uri), 16);
+    assert_eq!(std::mem::offset_of!(AuralAudioCommand, position_ms), 24);
+    assert_eq!(std::mem::offset_of!(AuralAudioCommand, duration_ms), 28);
+    assert_eq!(std::mem::offset_of!(AuralAudioCommand, track_gid), 32);
+    assert_eq!(std::mem::offset_of!(AuralAudioCommand, file_id), 48);
+    assert_eq!(std::mem::offset_of!(AuralAudioCommand, kind), 68);
+    assert_eq!(std::mem::offset_of!(AuralAudioCommand, audio_format), 69);
+    assert_eq!(std::mem::offset_of!(AuralAudioCommand, start_playing), 70);
 }
 
 #[test]

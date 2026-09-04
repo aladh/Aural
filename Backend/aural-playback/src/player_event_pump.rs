@@ -43,7 +43,7 @@ pub(crate) fn resume_position_to_save_on_deactivation(live_position_ms: u32) -> 
 /// change underneath it. A Player clone is held until the task exits so the event channel
 /// does not close while the pump is still running.
 pub(crate) fn start_player_event_pump(
-    player: Arc<Player>,
+    player: Arc<dyn SpircPlayer>,
     generation: u64,
 ) -> mpsc::UnboundedSender<()> {
     // Opt in to SetQueue events along with the rest of the player stream.

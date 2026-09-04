@@ -316,6 +316,90 @@ void aural_playback_register_audio_data_callback(AudioDataCallback callback);
 /// Registers a callback for audio playback control events (start/stop/clear).
 void aural_playback_register_audio_control_callback(AudioControlCallback callback);
 
+// ============================================================================
+// Swift-owned audio path (Stage 1 of #201, #208)
+// ============================================================================
+//
+// Debug-only and default off. When Swift registers an audio-command callback *before*
+// aural_playback_init_player, the engine builds a ShimPlayer instead of librespot's own
+// Player: Spirc's Load/Play/Pause/Seek/Stop/Preload are forwarded to Swift as
+// AuralAudioCommand snapshots, and Swift reports playback back through
+// aural_playback_report_audio. With no callback registered the engine keeps decoding
+// in-process and delivering PCM through AudioDataCallback above, unchanged.
+
+/// What an AuralAudioCommand asks the Swift audio path to do. Values match librespot's
+/// Spirc-facing player operations and Swift's own AudioCommand.Kind raw values.
+typedef enum __attribute__((enum_extensibility(open))) AuralAudioCommandKind : uint8_t {
+    AuralAudioCommandKindLoad = 0,
+    AuralAudioCommandKindPlay = 1,
+    AuralAudioCommandKindPause = 2,
+    AuralAudioCommandKindSeek = 3,
+    AuralAudioCommandKindStop = 4,
+    AuralAudioCommandKindPreload = 5,
+} AuralAudioCommandKind;
+
+/// What a report carries back about a load's progress. Values match Swift's AudioReportKind.
+typedef enum __attribute__((enum_extensibility(open))) AuralAudioReportKind : uint8_t {
+    AuralAudioReportKindPlaying = 0,
+    AuralAudioReportKindPaused = 1,
+    AuralAudioReportKindPosition = 2,
+    AuralAudioReportKindSeeked = 3,
+    AuralAudioReportKindPositionCorrection = 4,
+    AuralAudioReportKindEndOfTrack = 5,
+    AuralAudioReportKindUnavailable = 6,
+    AuralAudioReportKindStopped = 7,
+    AuralAudioReportKindTimeToPreloadNext = 8,
+    AuralAudioReportKindDuration = 9,
+} AuralAudioReportKind;
+
+/// One forwarded Spirc command. `track_uri` is valid only for the callback; Swift must copy it
+/// before returning, and NULL means missing. `track_gid` (16 bytes), `file_id` (20 bytes),
+/// `audio_format`, `duration_ms` and `start_playing` carry meaningful values only for Load and
+/// Preload; the transport kinds leave them zeroed, except `position_ms`, which Seek uses.
+///
+/// `session_generation` names the engine session this command belongs to, and
+/// `play_request_id` the one load attempt. Both must be stamped back onto every report for
+/// that load, so the engine can reject a report from a session or a load it has abandoned.
+typedef struct AuralAudioCommand {
+    uint64_t session_generation;
+    uint64_t play_request_id;
+    const char* _Nullable track_uri;
+    uint32_t position_ms;
+    uint32_t duration_ms;
+    uint8_t track_gid[16];
+    uint8_t file_id[20];
+    AuralAudioCommandKind kind;
+    uint8_t audio_format;
+    uint8_t start_playing;
+} AuralAudioCommand;
+
+/// Callback function type for forwarded Spirc audio commands.
+/// Called from the engine's Tokio runtime, never the main thread; must be thread-safe.
+/// May call back into aural_playback_report_audio synchronously.
+typedef void (*AudioCommandCallback)(const AuralAudioCommand* command);
+
+/// Registers the Swift audio path's command sink, and by doing so selects it.
+///
+/// Registering before aural_playback_init_player makes the session build a ShimPlayer; leaving
+/// it unregistered keeps the in-process librespot Player and its PCM callbacks. Registering
+/// after a session is up affects only the next rebuild.
+void aural_playback_register_audio_command_callback(AudioCommandCallback callback);
+
+/// Reports one playback fact from the Swift audio path back to Spirc.
+///
+/// `position_ms` is meaningful for Playing/Paused/Position/Seeked/PositionCorrection and
+/// TimeToPreloadNext; `duration_ms` only for Duration. Returns AuralPlaybackResultOk when the
+/// report was applied and AuralPlaybackResultError when it was rejected: no ShimPlayer is
+/// running, `kind` is not a known AuralAudioReportKind, or the report names a session
+/// generation or play request the engine has already abandoned.
+AuralPlaybackResult aural_playback_report_audio(
+    uint64_t session_generation,
+    uint64_t play_request_id,
+    AuralAudioReportKind kind,
+    uint32_t position_ms,
+    uint32_t duration_ms
+);
+
 /// Skips to the next track in the queue.
 AuralPlaybackResult aural_playback_next(void);
 
