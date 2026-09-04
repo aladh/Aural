@@ -99,8 +99,8 @@ private func checkPreloadReuse(_ check: CheckRunner) {
     )
     check.notNil("the preloaded track is held", session.preloaded)
     let emitsBeginPreload = preload.contains { effect in
-      if case .beginPreload = effect { return true }
-      return false
+        if case .beginPreload = effect { return true }
+        return false
     }
     check.check("beginPreload is emitted", emitsBeginPreload)
 
