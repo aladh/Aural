@@ -8,10 +8,10 @@
 //  fetcher/decryptor slice adapts, so this file never touches the network or a decryptor.
 //
 //  The byte offset just past the three Vorbis header packets — the earliest sane restart point —
-//  is not this file's concern: it falls out of OggVorbisDecoder.openHeaders's consumed byte
-//  count once that decode step runs, so callers pass it in as `streamStart` rather than this
-//  file re-deriving it from granule positions (which, per the doc comment below, can't
-//  distinguish a header page from a legitimate first audio page whose packet doesn't complete).
+//  is not this file's concern: the decode owner knows how many bytes its header parse consumed,
+//  so callers pass that in as `streamStart` rather than this file re-deriving it from granule
+//  positions (which, per the doc comment below, can't distinguish a header page from a
+//  legitimate first audio page whose packet doesn't complete).
 //
 
 import Foundation

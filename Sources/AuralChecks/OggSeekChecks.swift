@@ -66,7 +66,7 @@ private func buildSyntheticStream(
     headerPageCount: Int = 3,
     audioPageCount: Int = 200,
     granuleStep: UInt64 = 1024,
-    unknownGranuleAudioIndices: Set<Int> = [150, 151, 152, 153, 154]
+    unknownGranuleAudioIndices: Set<Int> = []
 ) -> (data: Data, streamStart: Int, headerPages: [FixturePage], audioPages: [FixturePage]) {
     func littleEndianBytes(_ value: UInt32) -> Data {
         withUnsafeBytes(of: value.littleEndian) { Data($0) }
@@ -195,9 +195,14 @@ func runOggSeekChecks(_ check: CheckRunner) async {
         // page before it can compare against `target`, never mistake an unknown page's byte
         // range for informative, and never nudge its search bounds by a single byte into a
         // page's payload.
-        let lastKnownBeforeRun = fixture.audioPages[149]
-        let lastKnownBeforeRunGranule = lastKnownBeforeRun.granule!
-        let firstKnownAfterRunGranule = fixture.audioPages[155].granule!
+        let unknownRunFixture = buildSyntheticStream(unknownGranuleAudioIndices: [150, 151, 152, 153, 154])
+        let lastKnownBeforeRun = unknownRunFixture.audioPages[149]
+        guard let lastKnownBeforeRunGranule = lastKnownBeforeRun.granule,
+            let firstKnownAfterRunGranule = unknownRunFixture.audioPages[155].granule
+        else {
+            check.check("pages 149 and 155 of the unknown-run fixture have known granules", false)
+            return
+        }
         check.check(
             "fixture has room after the unknown run for a target that lands before it",
             firstKnownAfterRunGranule - lastKnownBeforeRunGranule > 1
@@ -206,7 +211,7 @@ func runOggSeekChecks(_ check: CheckRunner) async {
             check,
             "a target just past an unknown-granule run resolves to the preceding known page",
             target: lastKnownBeforeRunGranule + 1,
-            fixture: fixture,
+            fixture: unknownRunFixture,
             probe: probe,
             expectedOffset: lastKnownBeforeRun.offset,
             expectedGranule: lastKnownBeforeRunGranule
