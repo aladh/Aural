@@ -337,57 +337,71 @@ pub(crate) fn queue_replacement_disallowed(player_state: &PlayerState) -> (bool,
     )
 }
 
+/// One Connect metadata pair. Pointers are valid only for the callback or until
+/// `spotty_playback_free_queue_snapshot`. Null means missing; outbound empty strings and
+/// strings containing an interior NUL are also delivered as null fields.
 #[repr(C)]
 #[derive(Clone, Copy)]
 pub struct SpottyStringPair {
-    pub key: *const c_char,
-    pub value: *const c_char,
+    pub key: SpottyNullableCString,
+    pub value: SpottyNullableCString,
 }
 
+/// One restriction key with its reason list. Pointers are valid only for the callback or until
+/// `spotty_playback_free_queue_snapshot`. A null key or reason means that value is missing.
 #[repr(C)]
 #[derive(Clone, Copy)]
 pub struct SpottyRestriction {
-    pub key: *const c_char,
-    pub reasons: *const *const c_char,
+    pub key: SpottyNullableCString,
+    pub reasons: SpottyNullableCStringArray,
     pub reason_count: usize,
 }
 
+/// Unfiltered Connect queue row. String and nested pointers are valid only for the callback
+/// or until `spotty_playback_free_queue_snapshot`. Null means missing; outbound empty strings
+/// and strings containing an interior NUL are also delivered as null fields.
 #[repr(C)]
 #[derive(Clone, Copy)]
 pub struct SpottyProtocolQueueTrack {
-    pub uri: *const c_char,
-    pub uid: *const c_char,
-    pub provider: *const c_char,
-    pub metadata: *const SpottyStringPair,
+    pub uri: SpottyNullableCString,
+    pub uid: SpottyNullableCString,
+    pub provider: SpottyNullableCString,
+    pub metadata: SpottyNullableStringPairPointer,
     pub metadata_count: usize,
-    pub removed: *const *const c_char,
+    pub removed: SpottyNullableCStringArray,
     pub removed_count: usize,
-    pub blocked: *const *const c_char,
+    pub blocked: SpottyNullableCStringArray,
     pub blocked_count: usize,
-    pub restrictions: *const SpottyRestriction,
+    pub restrictions: SpottyNullableRestrictionPointer,
     pub restriction_count: usize,
-    pub album_uri: *const c_char,
-    pub disallow_reasons: *const *const c_char,
+    pub album_uri: SpottyNullableCString,
+    pub disallow_reasons: SpottyNullableCStringArray,
     pub disallow_reason_count: usize,
-    pub artist_uri: *const c_char,
+    pub artist_uri: SpottyNullableCString,
 }
 
+/// Queue observation. Pointers are valid only for the callback or until
+/// `spotty_playback_free_queue_snapshot`. Null `next_tracks`/`prev_tracks` with count 0 is an
+/// empty list. A missing current track is three null track fields. Outbound empty strings and
+/// strings containing an interior NUL are delivered as null fields.
 #[repr(C)]
 pub struct SpottyQueueSnapshot {
     pub revision: u64,
     pub session_generation: u64,
-    pub track_uri: *const c_char,
-    pub track_provider: *const c_char,
-    pub track_uid: *const c_char,
-    pub next_tracks: *const SpottyProtocolQueueTrack,
+    pub track_uri: SpottyNullableCString,
+    pub track_provider: SpottyNullableCString,
+    pub track_uid: SpottyNullableCString,
+    pub next_tracks: SpottyNullableQueueTrackPointer,
     pub next_count: usize,
-    pub prev_tracks: *const SpottyProtocolQueueTrack,
+    pub prev_tracks: SpottyNullableQueueTrackPointer,
     pub prev_count: usize,
-    pub queue_revision: *const c_char,
+    pub queue_revision: SpottyNullableCString,
     pub disallow_set_queue: u8,
     pub disallow_removing_from_next_tracks: u8,
 }
 
+/// Callback function type for queue updates. Receives a typed snapshot; strings and nested
+/// pointers are valid only for the callback invocation.
 pub(crate) type QueueSnapshotCallback = extern "C" fn(*const SpottyQueueSnapshot);
 
 struct CStringList {
@@ -723,16 +737,17 @@ pub(crate) fn process_and_send_queue(player_state: PlayerState) {
 ///
 /// Pointers remain valid until `spotty_playback_free_queue_snapshot`.
 #[no_mangle]
-pub extern "C" fn spotty_playback_get_queue_snapshot() -> *mut SpottyQueueSnapshot {
+pub extern "C" fn spotty_playback_get_queue_snapshot() -> SpottyNullableQueueSnapshot {
     ffi_owned_ptr("spotty_playback_get_queue_snapshot", || {
         let snapshot = LAST_QUEUE.lock().unwrap_or_else(|e| e.into_inner()).clone();
         snapshot.map_or(std::ptr::null_mut(), |state| alloc_queue_snapshot(&state))
     })
 }
 
-/// Frees a queue snapshot allocated by `spotty_playback_get_queue_snapshot`.
+/// Frees a queue snapshot allocated by `spotty_playback_get_queue_snapshot`. Tolerates a null
+/// pointer.
 #[no_mangle]
-pub extern "C" fn spotty_playback_free_queue_snapshot(snapshot: *mut SpottyQueueSnapshot) {
+pub extern "C" fn spotty_playback_free_queue_snapshot(snapshot: SpottyNullableQueueSnapshot) {
     ffi_void("spotty_playback_free_queue_snapshot", || {
         free_queue_snapshot(snapshot);
     })

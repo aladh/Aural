@@ -39,12 +39,13 @@ pub(crate) fn require_session_connected() -> Result<(), i32> {
 }
 
 /// Plays multiple tracks in sequence.
-/// Returns 0 on success, -1 on error.
 ///
 /// # Parameters
-/// - track_uris_json: JSON array of track URIs as a C string (e.g., "[\"spotify:track:xxx\", \"spotify:track:yyy\"]")
+/// - `track_uris_json`: JSON array of track URIs as a C string.
 #[no_mangle]
-pub extern "C" fn spotty_playback_play_tracks(track_uris_json: *const c_char) -> i32 {
+pub extern "C" fn spotty_playback_play_tracks(
+    track_uris_json: *const c_char,
+) -> SpottyPlaybackResult {
     ffi_command("spotty_playback_play_tracks", || {
         debug!("spotty_playback_play_tracks called");
         if let Err(e) = require_session_connected() {
@@ -100,11 +101,15 @@ pub extern "C" fn spotty_playback_play_tracks(track_uris_json: *const c_char) ->
 
 /// Plays content by its Spotify URI or URL.
 /// Supports albums, playlists, and artists (context URIs).
-/// @param uri_or_url Spotify URI or URL (e.g., "spotify:album:xxx")
-/// @param track_index Track index to start at (-1 = from beginning, 0+ = specific track)
-/// Returns 0 on success, -1 on error.
+///
+/// # Parameters
+/// - `uri_or_url`: Spotify URI or URL (for example, "spotify:album:xxx").
+/// - `track_index`: Track index to start at (-1 = from beginning, 0+ = specific track).
 #[no_mangle]
-pub extern "C" fn spotty_playback_play_uri(uri_or_url: *const c_char, track_index: i32) -> i32 {
+pub extern "C" fn spotty_playback_play_uri(
+    uri_or_url: *const c_char,
+    track_index: i32,
+) -> SpottyPlaybackResult {
     ffi_command("spotty_playback_play_uri", || {
         let Some(input_str) = (unsafe { c_string_arg(uri_or_url) }) else {
             debug!("Play error: uri_or_url is null or not valid UTF-8");
@@ -179,30 +184,43 @@ pub extern "C" fn spotty_playback_play_uri(uri_or_url: *const c_char, track_inde
     })
 }
 
-/// Pauses playback.
-/// Returns 0 on success, -1 on error, -2 if channel closed (needs reinit).
+/// Pauses playback. A successful pause publishes the accepted local paused snapshot so Swift
+/// can stop display interpolation before the next player event.
 #[no_mangle]
-pub extern "C" fn spotty_playback_pause() -> i32 {
+pub extern "C" fn spotty_playback_pause() -> SpottyPlaybackResult {
     ffi_command("spotty_playback_pause", pause_playback)
 }
 
-/// Resumes playback.
-/// Returns 0 on success, -1 on error, -2 if channel closed (needs reinit).
+/// Resumes playback by activating the local device and issuing `play()`. If no Playing event
+/// arrives, Swift issues seek-capable load fallbacks through [`spotty_playback_load`]. Reconnect
+/// rehydration issues the same Swift targets while the connection snapshot reports
+/// `resume_pending`.
 #[no_mangle]
-pub extern "C" fn spotty_playback_resume() -> i32 {
+pub extern "C" fn spotty_playback_resume() -> SpottyPlaybackResult {
     ffi_command("spotty_playback_resume", resume_playback)
 }
 
-/// Loads a context or track at a seek position. Used by Swift resume-load fallbacks and, with
-/// a nonzero `rehydrating_generation`, by reconnect rehydration for that engine session.
+/// Loads a context or single track at `position_ms`.
+///
+/// `rehydrating_generation == 0` is a user-resume load: it waits briefly for a Playing event.
+/// A nonzero value names the engine session generation being rehydrated after a reconnect: the
+/// engine runs the load only if that generation is current and its `resume_pending` window is
+/// still open, and returns 0 as soon as the load is queued (the window is the only Playing wait).
+/// Otherwise it returns an ordinary failure without touching the session. Empty `track_hint` is
+/// a valid context hint; `uri` must be non-empty.
+///
+/// # Parameters
+/// - `uri`: Context or track URI.
+/// - `track_hint`: Optional current-track hint for a context load.
+/// - `from_context`: True for a context URI, false for a single track URI.
 #[no_mangle]
 pub extern "C" fn spotty_playback_load(
     uri: *const c_char,
-    track_hint: *const c_char,
+    track_hint: SpottyNullableCString,
     position_ms: u32,
     from_context: bool,
     rehydrating_generation: u64,
-) -> i32 {
+) -> SpottyPlaybackResult {
     ffi_command("spotty_playback_load", || {
         let Some(uri) = (unsafe { c_string_arg(uri) }) else {
             return ERROR_GENERAL;
@@ -222,7 +240,7 @@ pub extern "C" fn spotty_playback_load(
 /// Call this when the app is quitting to properly disconnect from Spotify Connect.
 /// Returns 0 on success, -1 on error.
 #[no_mangle]
-pub extern "C" fn spotty_playback_shutdown() -> i32 {
+pub extern "C" fn spotty_playback_shutdown() -> SpottyPlaybackResult {
     ffi_command("spotty_playback_shutdown", || {
         debug!("spotty_playback_shutdown called");
         // Prevent reconnection attempts during intentional shutdown
@@ -254,7 +272,7 @@ pub extern "C" fn spotty_playback_shutdown() -> i32 {
 /// Unlike shutdown(), this does NOT set SHUTTING_DOWN, so auto-reconnect still works.
 /// Returns 0 on success, -1 on error.
 #[no_mangle]
-pub extern "C" fn spotty_playback_disconnect() -> i32 {
+pub extern "C" fn spotty_playback_disconnect() -> SpottyPlaybackResult {
     ffi_command("spotty_playback_disconnect", || {
         debug!("spotty_playback_disconnect called - disconnecting for sleep");
         // Set sleeping flag to prevent auto-reconnect when cluster listener ends
@@ -407,11 +425,14 @@ pub(crate) fn current_position_ms() -> u32 {
     POSITION_MS.load(Ordering::SeqCst)
 }
 
+/// Returns the last position the Player reported, in milliseconds, or 0 if it has not reported
+/// one. Deliberately not interpolated: Swift owns display interpolation.
 #[no_mangle]
 pub extern "C" fn spotty_playback_get_position_ms() -> u32 {
     ffi_query_u32("spotty_playback_get_position_ms", current_position_ms)
 }
 
+/// Returns the position saved at deactivation for a resume load, or 0 to use the live playhead.
 #[no_mangle]
 pub extern "C" fn spotty_playback_get_resume_position_ms() -> u32 {
     ffi_query_u32("spotty_playback_get_resume_position_ms", || {
@@ -419,15 +440,21 @@ pub extern "C" fn spotty_playback_get_resume_position_ms() -> u32 {
     })
 }
 
+/// Returns the sticky resume-load context URI (`CURRENT_CONTEXT_URI`), or null if none.
+/// The caller owns the returned string and frees it with `spotty_playback_free_string`.
+/// An empty string is a present empty value.
 #[no_mangle]
-pub extern "C" fn spotty_playback_get_resume_context_uri() -> *mut c_char {
+pub extern "C" fn spotty_playback_get_resume_context_uri() -> SpottyNullableMutCString {
     ffi_owned_string("spotty_playback_get_resume_context_uri", || {
         owned_optional_string(&CURRENT_CONTEXT_URI)
     })
 }
 
+/// Returns the sticky resume-load track URI (`CURRENT_TRACK_URI`), or null if none.
+/// The caller owns the returned string and frees it with `spotty_playback_free_string`.
+/// An empty string is a valid context hint.
 #[no_mangle]
-pub extern "C" fn spotty_playback_get_resume_track_uri() -> *mut c_char {
+pub extern "C" fn spotty_playback_get_resume_track_uri() -> SpottyNullableMutCString {
     ffi_owned_string("spotty_playback_get_resume_track_uri", || {
         owned_optional_string(&CURRENT_TRACK_URI)
     })
@@ -443,7 +470,7 @@ fn owned_optional_string(slot: &Lazy<Mutex<Option<String>>>) -> *mut c_char {
 /// Skips to the next track in the queue.
 /// Returns 0 on success, -1 on error, -2 if channel closed (needs reinit).
 #[no_mangle]
-pub extern "C" fn spotty_playback_next() -> i32 {
+pub extern "C" fn spotty_playback_next() -> SpottyPlaybackResult {
     ffi_command("spotty_playback_next", || {
         debug!("spotty_playback_next called");
         if let Err(e) = require_session_connected() {
@@ -456,7 +483,7 @@ pub extern "C" fn spotty_playback_next() -> i32 {
 /// Skips to the previous track in the queue.
 /// Returns 0 on success, -1 on error, -2 if channel closed (needs reinit).
 #[no_mangle]
-pub extern "C" fn spotty_playback_previous() -> i32 {
+pub extern "C" fn spotty_playback_previous() -> SpottyPlaybackResult {
     ffi_command("spotty_playback_previous", || {
         debug!("spotty_playback_previous called");
         if let Err(e) = require_session_connected() {
@@ -469,7 +496,7 @@ pub extern "C" fn spotty_playback_previous() -> i32 {
 /// Seeks to the given position in milliseconds.
 /// Returns 0 on success, -1 on error, -2 if channel closed (needs reinit).
 #[no_mangle]
-pub extern "C" fn spotty_playback_seek(position_ms: u32) -> i32 {
+pub extern "C" fn spotty_playback_seek(position_ms: u32) -> SpottyPlaybackResult {
     ffi_command("spotty_playback_seek", || {
         debug!("spotty_playback_seek called: {}ms", position_ms);
         if let Err(e) = require_session_connected() {
@@ -479,10 +506,9 @@ pub extern "C" fn spotty_playback_seek(position_ms: u32) -> i32 {
     })
 }
 
-/// Sets shuffle mode on the current playback context.
-/// Returns 0 on success, -1 on error, -2 if channel closed (needs reinit).
+/// Sets shuffle mode for the current playback context.
 #[no_mangle]
-pub extern "C" fn spotty_playback_set_shuffle(enabled: bool) -> i32 {
+pub extern "C" fn spotty_playback_set_shuffle(enabled: bool) -> SpottyPlaybackResult {
     ffi_command("spotty_playback_set_shuffle", || {
         debug!("spotty_playback_set_shuffle called: {}", enabled);
         if let Err(e) = require_session_connected() {
@@ -492,10 +518,9 @@ pub extern "C" fn spotty_playback_set_shuffle(enabled: bool) -> i32 {
     })
 }
 
-/// Sets repeat-context on the current playback context (repeat the queue).
-/// Returns 0 on success, -1 on error, -2 if channel closed (needs reinit).
+/// Repeats the current playback context (repeat the whole queue).
 #[no_mangle]
-pub extern "C" fn spotty_playback_set_repeat_context(enabled: bool) -> i32 {
+pub extern "C" fn spotty_playback_set_repeat_context(enabled: bool) -> SpottyPlaybackResult {
     ffi_command("spotty_playback_set_repeat_context", || {
         debug!("spotty_playback_set_repeat_context called: {}", enabled);
         if let Err(e) = require_session_connected() {
@@ -505,10 +530,9 @@ pub extern "C" fn spotty_playback_set_repeat_context(enabled: bool) -> i32 {
     })
 }
 
-/// Sets repeat-track (repeat one) on the current playback context.
-/// Returns 0 on success, -1 on error, -2 if channel closed (needs reinit).
+/// Repeats the current track (repeat one).
 #[no_mangle]
-pub extern "C" fn spotty_playback_set_repeat_track(enabled: bool) -> i32 {
+pub extern "C" fn spotty_playback_set_repeat_track(enabled: bool) -> SpottyPlaybackResult {
     ffi_command("spotty_playback_set_repeat_track", || {
         debug!("spotty_playback_set_repeat_track called: {}", enabled);
         if let Err(e) = require_session_connected() {
@@ -564,8 +588,9 @@ pub extern "C" fn spotty_playback_set_initial_volume(volume: u16) {
     })
 }
 
-/// Sets the user-facing device name advertised to Spotify Connect.
-/// Must be called before player initialization to affect the next Spirc instance.
+/// Sets the user-facing device name advertised to Spotify Connect. Must be called before
+/// `spotty_playback_init_player` to affect the next Spirc instance. The string is copied during
+/// this call.
 #[no_mangle]
 pub extern "C" fn spotty_playback_set_device_name(device_name: *const c_char) {
     ffi_void("spotty_playback_set_device_name", || {
@@ -586,7 +611,7 @@ pub extern "C" fn spotty_playback_set_device_name(device_name: *const c_char) {
 /// Uses the native Spotify Connect protocol via Spirc.
 /// Returns 0 on success, -1 on error.
 #[no_mangle]
-pub extern "C" fn spotty_playback_transfer_to_local() -> i32 {
+pub extern "C" fn spotty_playback_transfer_to_local() -> SpottyPlaybackResult {
     ffi_command("spotty_playback_transfer_to_local", || {
         debug!("spotty_playback_transfer_to_local called");
         if let Err(e) = require_session_connected() {
@@ -597,14 +622,15 @@ pub extern "C" fn spotty_playback_transfer_to_local() -> i32 {
     })
 }
 
-/// Transfers playback from this local player to another device.
-/// Uses the native Spotify Connect protocol via SpClient.
-/// Returns 0 on success, -1 on error.
+/// Transfers playback from this local player to another device using the native Spotify Connect
+/// protocol via SpClient.
 ///
 /// # Parameters
-/// - to_device_id: The target device ID to transfer playback to
+/// - `to_device_id`: The target device ID to transfer playback to.
 #[no_mangle]
-pub extern "C" fn spotty_playback_transfer_playback(to_device_id: *const c_char) -> i32 {
+pub extern "C" fn spotty_playback_transfer_playback(
+    to_device_id: *const c_char,
+) -> SpottyPlaybackResult {
     ffi_command("spotty_playback_transfer_playback", || {
         let Some(to_device_str) = (unsafe { c_string_arg(to_device_id) }) else {
             debug!("Transfer playback error: to_device_id is null or not valid UTF-8");
@@ -680,10 +706,16 @@ pub extern "C" fn spotty_playback_transfer_playback(to_device_id: *const c_char)
     })
 }
 
-/// Adds an item to the queue.
-/// Returns 0 on success, -1 on error.
+/// Adds a URI to the Connect queue.
+///
+/// The command forwards the string to Spirc as a single Spotify URI. Track URIs are the path
+/// Spotty uses; this export does not resolve episodes, shows, or context URIs into a list of
+/// tracks.
+///
+/// # Parameters
+/// - `uri`: Spotify URI (for example, "spotify:track:xxx").
 #[no_mangle]
-pub extern "C" fn spotty_playback_add_to_queue(uri: *const c_char) -> i32 {
+pub extern "C" fn spotty_playback_add_to_queue(uri: *const c_char) -> SpottyPlaybackResult {
     ffi_command("spotty_playback_add_to_queue", || {
         let Some(uri_str) = (unsafe { c_string_arg(uri) }) else {
             debug!("Add to queue error: uri is null or not valid UTF-8");

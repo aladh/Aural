@@ -117,12 +117,44 @@ pub struct SpottyConnectionSnapshot {
     pub last_error: SpottyNullableCString,
 }
 
-/// cbindgen:no-export
 pub(crate) type SpottyNullableCString = *const c_char;
+
+pub(crate) type SpottyNullableMutCString = *mut c_char;
+
+pub(crate) type SpottyNullableCStringArray = *const *const c_char;
+
+pub(crate) type SpottyNullableFloatSamples = *const f32;
+
+pub(crate) type SpottyNullableStringPairPointer = *const SpottyStringPair;
+
+pub(crate) type SpottyNullableRestrictionPointer = *const SpottyRestriction;
+
+pub(crate) type SpottyNullableQueueTrackPointer = *const SpottyProtocolQueueTrack;
+
+pub(crate) type SpottyNullableDevicePointer = *const SpottyProtocolDevice;
+
+pub(crate) type SpottyNullableQueueSnapshot = *mut SpottyQueueSnapshot;
+
+pub(crate) type SpottyPlaybackResult = i32;
+
+pub(crate) type SpottyPlaybackAudioControlEvent = u8;
 
 /// Callback function type for connection state change notifications. Receives a typed snapshot;
 /// the snapshot pointer and its string pointers are valid only for the callback invocation.
 pub(crate) type ConnectionSnapshotCallback = extern "C" fn(*const SpottyConnectionSnapshot);
+
+/// Callback function type for receiving raw PCM audio data. Audio format is 44.1 kHz, stereo,
+/// Float32, interleaved; the samples pointer is valid only for the callback invocation.
+/// Called from a background decoder thread, so the callback must be thread-safe.
+///
+/// # Parameters
+/// - `samples`: Nullable pointer to interleaved f32 samples.
+/// - `sample_count`: Number of f32 values (frames * 2 for stereo).
+pub(crate) type AudioDataCallback = extern "C" fn(SpottyNullableFloatSamples, usize);
+
+/// Callback function type for audio control events (start/stop/clear). Called from a background
+/// decoder thread, so the callback must be thread-safe.
+pub(crate) type AudioControlCallback = extern "C" fn(SpottyPlaybackAudioControlEvent);
 
 pub(crate) fn send_connection_snapshot(
     callback: ConnectionSnapshotCallback,
@@ -167,6 +199,12 @@ pub(crate) struct PlaybackObservation {
     pub timestamp_ms: i64,
 }
 
+/// Playback observation. `track_uri` and `context_uri` are valid only for the callback;
+/// Swift must copy them before returning. Null means missing; outbound empty strings and
+/// strings containing an interior NUL are also delivered as null fields. Flags are 0 or 1.
+///
+/// `is_active_device` is the protocol active-member fact captured with this observation;
+/// it is independent of the arrival order of the connection callback.
 #[repr(C)]
 pub struct SpottyPlaybackSnapshot {
     pub revision: u64,
@@ -180,10 +218,12 @@ pub struct SpottyPlaybackSnapshot {
     pub repeat_track: u8,
     pub repeat_context: u8,
     pub is_active_device: u8,
-    pub track_uri: *const c_char,
-    pub context_uri: *const c_char,
+    pub track_uri: SpottyNullableCString,
+    pub context_uri: SpottyNullableCString,
 }
 
+/// Callback function type for playback state updates. Receives a typed snapshot; string
+/// pointers are valid only for the callback invocation.
 pub(crate) type PlaybackSnapshotCallback = extern "C" fn(*const SpottyPlaybackSnapshot);
 
 pub(crate) fn send_playback_snapshot(
@@ -217,23 +257,30 @@ pub(crate) fn send_playback_snapshot(
     callback(&snapshot);
 }
 
+/// One Connect cluster member. String pointers are valid only for the callback. Null means
+/// missing; outbound empty strings and strings containing an interior NUL are also delivered
+/// as null fields.
 #[repr(C)]
 #[derive(Clone, Copy)]
 pub struct SpottyProtocolDevice {
-    pub id: *const c_char,
-    pub name: *const c_char,
-    pub device_type: *const c_char,
+    pub id: SpottyNullableCString,
+    pub name: SpottyNullableCString,
+    pub device_type: SpottyNullableCString,
 }
 
+/// Device-list observation. `active_device_id` and `devices` are valid only for the callback.
+/// Swift must copy them before returning. A null `devices` pointer with count 0 is an empty list.
 #[repr(C)]
 pub struct SpottyDevicesSnapshot {
     pub revision: u64,
     pub session_generation: u64,
-    pub active_device_id: *const c_char,
-    pub devices: *const SpottyProtocolDevice,
+    pub active_device_id: SpottyNullableCString,
+    pub devices: SpottyNullableDevicePointer,
     pub device_count: usize,
 }
 
+/// Callback function type for Connect device-list updates. String pointers and the device
+/// array are valid only for the callback invocation.
 pub(crate) type DevicesSnapshotCallback = extern "C" fn(*const SpottyDevicesSnapshot);
 
 pub(crate) fn send_devices_snapshot(
@@ -395,9 +442,10 @@ fn ffi_catch<T>(export: &'static str, fallback: T, work: impl FnOnce() -> T) -> 
     }
 }
 
-/// Frees a C string allocated by this library.
+/// Frees a C string allocated by this library. Tolerates a null pointer, including the result
+/// of an export that returned null on error.
 #[no_mangle]
-pub extern "C" fn spotty_playback_free_string(s: *mut c_char) {
+pub extern "C" fn spotty_playback_free_string(s: SpottyNullableMutCString) {
     ffi_void("spotty_playback_free_string", || {
         if !s.is_null() {
             unsafe {
@@ -462,22 +510,19 @@ pub extern "C" fn spotty_playback_register_connection_state_callback(
 }
 
 /// Registers a callback to receive raw PCM audio data (f32, 44100Hz, stereo interleaved).
-/// Called from librespot's player thread for each decoded audio chunk.
-/// The callback receives a pointer to f32 samples and the number of f32 values.
+/// Called from librespot's player thread for each decoded audio chunk. The samples pointer is
+/// valid only for the callback invocation, and the callback must be thread-safe.
 #[no_mangle]
-pub extern "C" fn spotty_playback_register_audio_data_callback(
-    callback: extern "C" fn(*const f32, usize),
-) {
+pub extern "C" fn spotty_playback_register_audio_data_callback(callback: AudioDataCallback) {
     ffi_void("spotty_playback_register_audio_data_callback", || {
         proxy_sink::register_audio_data_callback(callback);
     })
 }
 
-/// Registers a callback for audio control events (start/stop/clear).
-/// Called from librespot's player thread.
-/// Events: 0 = stop, 1 = start/resume, 2 = clear/flush
+/// Registers a callback for audio control events (start/stop/clear). Called from librespot's
+/// player thread. Events are 0 = stop, 1 = start/resume, and 2 = clear/flush.
 #[no_mangle]
-pub extern "C" fn spotty_playback_register_audio_control_callback(callback: extern "C" fn(u8)) {
+pub extern "C" fn spotty_playback_register_audio_control_callback(callback: AudioControlCallback) {
     ffi_void("spotty_playback_register_audio_control_callback", || {
         proxy_sink::register_audio_control_callback(callback);
     })

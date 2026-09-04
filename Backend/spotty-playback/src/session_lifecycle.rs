@@ -13,8 +13,10 @@ pub(crate) fn run_is_superseded(started_generation: u64, current_generation: u64
     started_generation != current_generation
 }
 
-/// Removes the cached streaming credentials. Called on logout, after the session teardown,
-/// so that the next launch cannot connect the account that just logged out.
+/// Removes the cached streaming credentials.
+///
+/// Call on logout, after the session teardown, so that the next launch cannot connect the
+/// account that just logged out. Removing credentials that are not there is not an error.
 #[no_mangle]
 pub extern "C" fn spotty_playback_clear_streaming_credentials() {
     ffi_void("spotty_playback_clear_streaming_credentials", || {
@@ -23,19 +25,16 @@ pub extern "C" fn spotty_playback_clear_streaming_credentials() {
 }
 
 /// Completes the one-time streaming authorization with a token Swift has already minted:
-/// connects once, and lets librespot persist the AP credentials every later init uses.
+/// connects once and persists the credentials every later init connects from.
 ///
 /// Returns 0 on success, -1 on failure, -2 if the run was superseded.
 ///
-/// Swift owns the OAuth flow itself — see `KeymasterAuth` and
-/// `plans/single-grant-partner-api.md`. The token has to exist there anyway, because the same
-/// one authorizes pathfinder and spclient, and a token minted here would have been dropped on
-/// the floor after this call. What stays here is what only librespot can do: the AP connect
-/// and the credential cache.
+/// Swift owns the OAuth flow itself through `KeymasterAuth`; this call performs the librespot AP
+/// connect and persists the streaming credentials for later initialization. The same grant also
+/// authorizes pathfinder and spclient, so the token is minted by Swift before this call.
 ///
-/// The token must be minted with Spotify's own desktop client id. One minted with the user's
-/// dashboard client id authenticates with the AP but is rejected by login5, which is what took
-/// playback down entirely; see `plans/streaming-auth-needs-a-first-party-client-id.md`.
+/// The token must be minted with Spotify's first-party desktop client ID; a token minted with a
+/// user dashboard client ID is rejected by login5.
 #[no_mangle]
 pub extern "C" fn spotty_playback_authorize_streaming(access_token: *const c_char) -> i32 {
     ffi_command("spotty_playback_authorize_streaming", || {
@@ -384,11 +383,12 @@ pub(crate) fn spawn_reconnection_loop_for_generation(
 }
 
 /// Forces a reconnection to Spotify servers.
+///
 /// Use this after system wake to ensure a fresh connection.
 /// Returns:
-/// - 0: Reconnection triggered
-/// - 1: Reconnection already in progress
-/// - 2: No session initialized (nothing to reconnect)
+/// - 0: Reconnection triggered.
+/// - 1: Reconnection already in progress.
+/// - 2: No session initialized (nothing to reconnect).
 #[no_mangle]
 pub extern "C" fn spotty_playback_force_reconnect() -> i32 {
     ffi_command("spotty_playback_force_reconnect", || {
@@ -451,11 +451,17 @@ pub(crate) async fn do_reconnect_cleanup() {
     debug!("do_reconnect_cleanup complete");
 }
 
-/// Initializes the player with the given access token.
+/// Initializes the player.
 /// Must be called before play/pause operations.
-/// Returns 0 on success, -1 on error.
+///
+/// # Parameters
+/// - `access_token`: A token minted with librespot's client id, or null to connect from the
+///   credentials cached by [`spotty_playback_authorize_streaming`]. Null is the normal case:
+///   only the first init after a grant carries a token.
 #[no_mangle]
-pub extern "C" fn spotty_playback_init_player(access_token: *const c_char) -> i32 {
+pub extern "C" fn spotty_playback_init_player(
+    access_token: SpottyNullableCString,
+) -> SpottyPlaybackResult {
     ffi_command("spotty_playback_init_player", || {
         // Initialize env_logger to capture librespot's log output (only once)
         static LOGGER_INIT: std::sync::Once = std::sync::Once::new();

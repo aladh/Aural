@@ -5,6 +5,7 @@ project_root="${0:A:h:h}"
 build_configuration="${SPOTTY_BUILD_CONFIGURATION:-debug}"
 check_scope="${SPOTTY_CHECK_SCOPE:-full}"
 source "$project_root/Scripts/swiftpm-env.sh"
+source "$project_root/Scripts/abi-signature-fixture.sh"
 
 case "$build_configuration" in
     debug|release) ;;
@@ -26,6 +27,7 @@ esac
 if [[ "$check_scope" != rust ]]; then
     "$project_root/Scripts/format-swift-self-test.sh"
     "$project_root/Scripts/format-swift.sh" --check
+    "$project_root/Scripts/check-c-header-imports.sh"
 fi
 
 # The Rust suite owns lifecycle, generation, queue conversion, typed C snapshots,
@@ -89,14 +91,22 @@ fi
 # compiler-builtins objects, but it still emits the defined Spotty symbols; the
 # exact set comparison below is the contract check.
 header_symbols="$(mktemp /tmp/spotty-header-symbols.XXXXXX)"
+header_symbol_declarations="$(mktemp /tmp/spotty-header-symbol-declarations.XXXXXX)"
 library_symbols="$(mktemp /tmp/spotty-library-symbols.XXXXXX)"
 consumed_symbols="$(mktemp /tmp/spotty-consumed-symbols.XXXXXX)"
-header_signatures="$(mktemp /tmp/spotty-header-signatures.XXXXXX)"
+fixture_symbols="$(mktemp /tmp/spotty-fixture-symbols.XXXXXX)"
+abi_check_source="$(mktemp /tmp/spotty-abi-check-source.XXXXXX)"
 header_ast="$(mktemp /tmp/spotty-header-ast.XXXXXX)"
-trap 'rm -f "$header_symbols" "$library_symbols" "$consumed_symbols" "$header_signatures" "$header_ast"' EXIT
+trap 'rm -f "$header_symbols" "$header_symbol_declarations" "$library_symbols" "$consumed_symbols" "$fixture_symbols" "$abi_check_source" "$header_ast"' EXIT
+
+abi_signature_fixture="$project_root/Backend/spotty-playback/abi-signatures.txt"
+if ! spotty_abi_fixture_symbols "$abi_signature_fixture" > "$fixture_symbols"; then
+    exit 1
+fi
 
 # Parse the umbrella header once. Clang follows its quoted includes, so declarations in the
-# checked-in cbindgen fragment remain part of the symbol, signature, and dead-export contracts.
+# checked-in cbindgen fragment remains part of the symbol and dead-export contracts. Full
+# declarations are type-checked below by Clang against the unchanged Rust ABI fixture.
 if ! command -v clang >/dev/null 2>&1; then
     print -u2 "Clang is required to inspect the checked-in Spotty C ABI signatures"
     exit 1
@@ -107,7 +117,14 @@ if ! clang -x c -fsyntax-only -Xclang -ast-dump \
     exit 1
 fi
 sed -nE "s/.*FunctionDecl .* (spotty_playback_[a-z0-9_]+) '([^']+)'$/\\1/p" \
-    "$header_ast" | sort -u > "$header_symbols"
+    "$header_ast" > "$header_symbol_declarations"
+sort -u "$header_symbol_declarations" > "$header_symbols"
+header_declaration_count="$(wc -l < "$header_symbol_declarations" | tr -d '[:space:]')"
+header_symbol_count="$(wc -l < "$header_symbols" | tr -d '[:space:]')"
+if (( header_declaration_count != header_symbol_count )); then
+    print -u2 "The C ABI header declares a Spotty export more than once"
+    exit 1
+fi
 (nm -gU "$backend_lib" 2>/dev/null || true) \
     | sed -nE 's/.*_(spotty_playback_[a-z0-9_]+)$/\1/p' \
     | sort -u > "$library_symbols"
@@ -116,17 +133,43 @@ if ! diff -u "$header_symbols" "$library_symbols"; then
     exit 1
 fi
 
-# Match the C declarations' full function types against the Rust compile-time ABI fixture.
-# Clang's AST is the parser here: unlike a regex over declaration text, it handles comments,
-# attributes, typedefs, and multiline declarations before emitting one stable type spelling.
-# Nullability annotations are source-level ownership metadata and do not affect the ABI type.
-abi_signature_fixture="$project_root/Backend/spotty-playback/abi-signatures.txt"
-sed -nE "s/.*FunctionDecl .* (spotty_playback_[a-z0-9_]+) '([^']+)'$/\\1|\\2/p" \
-    "$header_ast" \
-    | sed -E 's/ _Nullable| _Nonnull//g; s/ +/ /g' \
-    | sort -u > "$header_signatures"
-if ! diff -u "$abi_signature_fixture" "$header_signatures"; then
-    print -u2 "The C header and Rust Spotty ABI signature fixture differ"
+# The checked-in fixture names must match the parsed header exactly. Keep this as a separate set
+# proof so a compiler assertion generator cannot silently omit a fixture row.
+if ! diff -u "$fixture_symbols" "$header_symbols"; then
+    print -u2 "The C header exports differ from the C ABI signature fixture names"
+    exit 1
+fi
+
+# Match each C declaration's canonical function type against the unchanged Rust ABI fixture.
+# Clang follows the umbrella header's includes and __builtin_types_compatible_p compares canonical
+# types, so typedef aliases and nullability annotations do not create false textual mismatches.
+if ! awk -F'|' -v header="$playback_header" '
+    BEGIN { printf "#include \"%s\"\n", header }
+    /^[[:space:]]*$/ || /^[[:space:]]*#/ { next }
+    {
+        signature=$2
+        separator=index(signature, " (")
+        return_type=substr(signature, 1, separator - 1)
+        arguments=substr(signature, separator + 2, length(signature) - separator - 2)
+        printf "_Static_assert(__builtin_types_compatible_p(__typeof__(&%s), %s (*)(%s)), \"%s ABI\");\n", $1, return_type, arguments, $1
+    }
+' "$abi_signature_fixture" > "$abi_check_source"; then
+    print -u2 "Could not generate C ABI compiler assertions from the fixture"
+    exit 1
+fi
+fixture_symbol_count="$(wc -l < "$fixture_symbols" | tr -d '[:space:]')"
+abi_assertion_count="$(sed -n '/^_Static_assert(/p' "$abi_check_source" | wc -l | tr -d '[:space:]')"
+if (( abi_assertion_count != fixture_symbol_count )); then
+    print -u2 "The C ABI compiler assertion count does not match the fixture rows"
+    exit 1
+fi
+if ! clang -I "$project_root/Sources/SpottyPlaybackCore/include" \
+    -x c \
+    -std=c11 \
+    -fsyntax-only \
+    -Werror \
+    "$abi_check_source"; then
+    print -u2 "Clang rejected one or more C ABI signatures from $abi_signature_fixture"
     exit 1
 fi
 
