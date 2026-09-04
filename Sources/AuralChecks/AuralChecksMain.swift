@@ -38,6 +38,7 @@ enum AuralChecksMain {
                 runPlaybackSnapshotProjectionChecks($0)
             },
             RegisteredCheckSuite(name: "resume-load-plan") { runResumeLoadPlanChecks($0) },
+            RegisteredCheckSuite(name: "ogg-page") { runOggPageChecks($0) },
             RegisteredCheckSuite(name: "check-suite-selection") { runner in
                 runCheckSuiteSelectionChecks(runner, catalog: AuralChecksMain.suiteNames)
             },
