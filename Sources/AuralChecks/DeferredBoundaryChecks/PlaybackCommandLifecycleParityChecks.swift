@@ -39,6 +39,7 @@ private final class LifecycleLocalEngine: LocalPlaybackEngine, @unchecked Sendab
     private var result: PlaybackEngineResult
     private var storedEnteredCount = 0
     private var storedExecuteCount = 0
+    private var storedForceReconnectCount = 0
 
     init(result: PlaybackEngineResult, gated: Bool) {
         self.result = result
@@ -55,6 +56,12 @@ private final class LifecycleLocalEngine: LocalPlaybackEngine, @unchecked Sendab
         condition.lock()
         defer { condition.unlock() }
         return storedExecuteCount
+    }
+
+    var forceReconnectCount: Int {
+        condition.lock()
+        defer { condition.unlock() }
+        return storedForceReconnectCount
     }
 
     func events() -> AsyncStream<RustPlaybackEventEnvelope> {
@@ -82,7 +89,12 @@ private final class LifecycleLocalEngine: LocalPlaybackEngine, @unchecked Sendab
     func cleanup() {}
     func clearStreamingCredentials() {}
     func disconnect() -> PlaybackEngineResult { .ok }
-    func forceReconnect() -> Int32 { 0 }
+    func forceReconnect() -> Int32 {
+        condition.lock()
+        storedForceReconnectCount += 1
+        condition.unlock()
+        return 0
+    }
 
     func finish(with result: PlaybackEngineResult) {
         condition.lock()
@@ -534,12 +546,13 @@ func runPlaybackCommandLifecycleParityChecks(_ runner: CheckRunner) async {
 
                 if route == .local {
                     let reconnectAccount = IdleAccount()
+                    let reconnectEngine = LifecycleLocalEngine(
+                        result: PlaybackEngineResult(rawValue: -2),
+                        gated: false
+                    )
                     let reconnect = lifecycleStore(
                         lifecycleEnvironment(
-                            local: LifecycleLocalEngine(
-                                result: PlaybackEngineResult(rawValue: -2),
-                                gated: false
-                            ),
+                            local: reconnectEngine,
                             remote: LifecycleRemoteClient(.succeed),
                             account: reconnectAccount
                         )
@@ -553,9 +566,13 @@ func runPlaybackCommandLifecycleParityChecks(_ runner: CheckRunner) async {
                     runner.equal(
                         "\(label) reconnect-required uses the action notice", reconnect.transientCommandError,
                         kind.action)
-                    let reconnectStarted = await waitUntil { reconnectAccount.authorizeCount == 1 }
-                    runner.check("\(label) reconnect-required starts connect", reconnectStarted)
-                    runner.equal("\(label) reconnect-required connect count", reconnectAccount.authorizeCount, 1)
+                    let reconnectStarted = await waitUntil { reconnectEngine.forceReconnectCount == 1 }
+                    runner.check("\(label) reconnect-required rebuilds the ready engine", reconnectStarted)
+                    runner.equal(
+                        "\(label) reconnect-required force-reconnect count", reconnectEngine.forceReconnectCount, 1)
+                    runner.equal(
+                        "\(label) reconnect-required does not reauthorize a ready session",
+                        reconnectAccount.authorizeCount, 0)
                     await reconnect.shutdownForTermination()
                 }
 
