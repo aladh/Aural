@@ -38,29 +38,40 @@ in the [enforcement inventory](architecture-enforcement.md).
 | `player_event_pump.rs` | Adapter | Local `PlayerEvent` → position and protocol playing/paused bits when this device is active |
 | `spirc_command_error.rs` | Adapter | Map librespot errors onto FFI codes Swift already understands |
 
-## JSON / FFI surface
+### Planned owner per #201 stage
 
-Control observations for connection, playback, devices, and queue are typed C snapshots
-with `revision` and `session_generation`. Connection observations use
-`AuralConnectionSnapshot` with session flags, `device_id`, and `last_error`. Playback
-observations use `AuralPlaybackSnapshot` with protocol playing/paused flags, URIs, timing,
-and options. Device-list observations use `AuralDevicesSnapshot` with protocol members plus
-`active_device_id`. Queue observations use `AuralQueueSnapshot` with unfiltered protocol
-rows, slim current-track identity, `queue_revision`, and replacement-disallow flags.
-Queue snapshots no longer carry presentation `next_tracks` / `prev_tracks` or catalog
-labels. Device snapshots no longer carry `is_active` or unused Web API volume/restriction
-fields; they send protocol members plus `active_device_id`. Playback snapshots send protocol
-playing/paused flags, track URI, context URI, timing, and options; Swift projects transport.
-Local player-event snapshots send an empty `context_uri`. Hardcoded `device_name` is gone, and
-write-only `reconnect_attempt`, `connected_since_ms`, and `session_connection_id` were removed
-from `ConnectionState`. Later slices should prefer typed payloads or rawer protocol rows over
-new Spotty-only fields.
+- Stage 1 (audio path): audio-key request, CDN fetch, decrypt, and Vorbis decode move to Swift
+  and feed `AudioRenderer`; `proxy_sink.rs` and the PCM callback retire. The #159 spike decides
+  go/no-go.
+- Stage 2 (session): AP resolve, handshake, login, and credential cache move to Swift;
+  `session_lifecycle.rs` and `lifecycle_serialization.rs` shrink to what Spirc still needs.
+- Stage 3 (Spirc): dealer, cluster, transfer, and `set_queue` move to Swift once recorded fixtures
+  exist; the remaining modules, the C ABI, and `Backend/` retire.
 
-`aural_playback_get_queue_snapshot` still returns the last cluster queue so
-Swift can recover after a provisional empty `SetQueue`. Caching that snapshot in Rust is
-adapter convenience, not a second app-facing store.
+Each stage lands as its own issue and re-measures the baseline below.
 
-## Later slices (not this change)
+## FFI surface
+
+Control observations for connection, playback, devices, and queue are typed C snapshots with
+`revision` and `session_generation`:
+
+- `AuralConnectionSnapshot`: `session_connected`, `spirc_ready`, `is_active_device`,
+  `resume_pending`, `device_id`, `last_error`.
+- `AuralPlaybackSnapshot`: protocol playing/paused flags, track URI, context URI (empty on local
+  player-event snapshots), timing, and shuffle/repeat options.
+- `AuralDevicesSnapshot`: protocol members (`id`, `name`, type name) plus `active_device_id`.
+- `AuralQueueSnapshot`: unfiltered protocol rows, slim current-track identity, `queue_revision`,
+  and replacement-disallow flags.
+
+Swift projects transport, session phase, device activity, and upcoming rows from these; Rust sends
+no presentation copy. New fields should be typed payloads or rawer protocol rows, not Spotty-only
+presentation.
+
+`aural_playback_get_queue_snapshot` returns the last cluster queue (freed with
+`aural_playback_free_queue_snapshot`) so Swift can recover after a provisional empty `SetQueue`.
+Caching that snapshot in Rust is adapter convenience, not a second app-facing store.
+
+## Later slices
 
 - Moving the sticky resume-load globals (`CURRENT_CONTEXT_URI`, `CURRENT_TRACK_URI`,
   `RESUME_POSITION_MS`) to Swift, which would retire the three resume getters and the
@@ -68,3 +79,23 @@ adapter convenience, not a second app-facing store.
 
 Do not move PCM, Spirc, session connect, or dealer cluster fetch into Swift in order to
 satisfy this inventory.
+
+## Measured baseline (2026-08-23)
+
+Aural 0.4.0 (4), optimized signed Release bundle, macOS 27.0 (26A5416b), Apple M1 Max, 32 GB.
+Five `ps` samples at one-second intervals after the state stabilized; memory is RSS; foreground
+and background are window open and closed in the same process.
+
+| State | Window | Mean CPU | Mean RSS |
+| --- | --- | ---: | ---: |
+| Paused | Foreground | 0.0% | 256.20 MiB |
+| Paused | Background | 0.0% | 254.83 MiB |
+| Playing | Foreground | 28.58% | 262.65 MiB |
+| Playing | Background | 20.80% | 262.39 MiB |
+
+Renderer backpressure: of 1,971 one-millisecond playing observations, 1,935 were in the renderer's
+deliberate producer sleep, with no allocator hotspot. A Core Media sample-buffer pool is not
+warranted; the cursor-based renderer is the lower-risk design.
+
+The browse path behind these numbers included surfaces that have since been removed, so a rerun
+must record its own commit and surfaces. #201 requires re-measurement at each stage boundary.

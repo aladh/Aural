@@ -1,74 +1,50 @@
-# ADR 001: Keep librespot as a contained playback leaf
+# ADR 001: Playback engine boundary
 
-Status: accepted on 2026-08-18
+Status: accepted on 2026-08-18. Under staged review per #201.
 
 Like all of Spotty, this decision concerns an unofficial, independent, educational client with no
 affiliation with Spotify AB, built on reverse-engineered Spotify interfaces; using it may violate
 Spotify's Terms of Use.
 
-## Goal
+## Context
 
-Keep Spotty native, responsive, Premium-only, and easy to reason about while providing local
-playback that does not depend on the Spotify desktop app.
+Spotty needs local Spotify Premium playback and Spotify Connect without the Spotify desktop app, a
+WebView, or a Chromium shell. When the engine was chosen there was no maintained Swift library for
+the private session, Connect, media delivery, decryption, codec, and reconnection work. librespot
+supplied all of it, so it was embedded as a statically linked Rust leaf that hands decoded PCM to
+the native AVFoundation renderer.
 
-## Options considered
-
-### Pure Swift playback engine
-
-There is no maintained Swift library that implements local Spotify audio playback and Spotify
-Connect. Building one would mean owning the private session, Connect, queue, media delivery,
-decryption, codec, and reconnection behavior currently supplied by librespot. That increases both
-code volume and protocol-maintenance risk without improving the product.
-
-### Spotify iOS SDK
-
-[Spotify's iOS SDK](https://developer.spotify.com/documentation/ios) is an App Remote SDK for iOS.
-It requires the Spotify app to perform playback and does not provide a macOS local playback engine.
-It therefore does not meet Spotty's requirements.
-
-### Swift Web API packages
-
-[SpotifyAPI](https://github.com/Peter-Schorn/SpotifyAPI) is a capable Swift wrapper around the
-Spotify Web API. Its player methods control an existing Spotify Connect device; the package does
-not decode or render audio locally. Spotty already has a smaller API layer tailored to its UI, so
-adding it would duplicate working code without replacing the playback engine.
-
-### Web Playback SDK in WKWebView
-
-Spotify's [Web Playback SDK](https://developer.spotify.com/documentation/web-playback-sdk) supports
-local playback in desktop browsers. A macOS app can host it in a hidden `WKWebView`; the open-source
-[Spotiglass](https://github.com/isaaclins/spotiglass) project demonstrates that architecture.
-
-This removes Rust but introduces a JavaScript bridge, WebKit playback lifecycle, an additional
-developer-app client ID and setup flow, REST device transfer, and WebKit helper processes. It is a
-reasonable fallback if Spotify stops supporting the librespot protocol, but it is not a simpler or
-more native implementation for Spotty today. It also needs dedicated background-window, resource,
-AirPlay, and reconnection benchmarks before it could replace a working engine.
-
-### Embedded librespot
-
-[librespot](https://github.com/librespot-org/librespot) is maintained, Premium-only, supports local
-audio playback, and acts as a Spotify Connect receiver. Spotty statically links the required Rust
-components and sends decoded PCM to its native AVFoundation renderer.
+Two constraints from the original research still hold. Spotify's developer policy and terms
+restrict reverse engineering and permit streaming only for Premium subscribers, so the private
+protocol is a policy and enforcement risk in any implementation language. Spotifly's experience
+showed that the durable shape is one lifecycle owner and one revisioned snapshot stream, not a
+clone of any particular implementation.
 
 ## Decision
 
-Keep the embedded Rust/librespot core, but treat it as a replaceable leaf:
+- librespot is a contained leaf. Swift reaches it only through `Sources/AuralPlaybackCore`,
+  `PlaybackCore.swift`, and `RustPlaybackEngine`.
+- Swift owns application logic: state, queue policy, presentation, resume policy, catalog, OAuth,
+  persistence, and error policy. `AudioRenderer` stays native AVFoundation.
+- The leaf is being replaced in stages per #201: audio path, then session, then Spirc, each behind
+  a go/no-go gate. The leaf rule applies to whatever remains at each stage.
 
-- `PlaybackCore.swift` is the only Swift file allowed to import the C module or call its symbols.
-- `PlaybackStore` owns the atomic reducer-backed playback presentation, while injected adapters
-  keep Rust, Spotify APIs, authorization, preferences, and lifecycle events at the boundary.
-- `AudioRenderer` remains native AVFoundation code.
-- Catalog, OAuth, persistence, UI, shuffle policy, queue presentation (delimiter hiding and
-  playable-track filtering via `QueueProtocolProjection`), device-list presentation
-  (`ConnectDeviceProjection`), connection-snapshot presentation (`ConnectionSnapshotProjection`),
-  playback-snapshot presentation (`PlaybackSnapshotProjection`), resume-load target order
-  for user resume and reconnect rehydration (`ResumeLoadPlan` via `aural_playback_load`),
-  and error policy remain Swift. The engine only holds readiness open behind
-  `resume_pending` while Swift's reconnect loads run.
-- The earlier unused playback-abstraction target remains removed. The current `AuralCore` target
-  is the testable Swift application implementation, not another playback abstraction; the C leaf
-  is still reached only through `PlaybackCore.swift` and `RustPlaybackEngine`.
+The live boundary is [playback engine ownership](playback-engine-ownership.md).
 
-Revisit this decision if Spotify ships a supported macOS playback SDK or if a measured WKWebView
-experiment improves reliability and total resource use without adding user setup.
+## Options rejected
+
+- Pure Swift engine now: verification cost and protocol churn outweigh the gain; the #201 gates
+  revisit this per stage.
+- Spotify iOS SDK: an App Remote SDK that needs the Spotify app and offers no macOS engine.
+- Web Playback SDK in `WKWebView`: removes Rust but adds a JavaScript bridge, WebKit helper
+  processes, a second client ID and setup flow, and REST device transfer.
+
+## Consequences
+
+- One adapter file and one C header are the whole review surface for foreign-boundary changes.
+- librespot updates are protocol migrations, not routine dependency bumps.
+- Each #201 stage must keep the boundary narrow while responsibility moves across it.
+
+## Revisit trigger
+
+The #159 spike result decides Stage 1 of #201.
