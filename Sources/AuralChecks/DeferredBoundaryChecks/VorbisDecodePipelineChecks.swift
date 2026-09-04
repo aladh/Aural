@@ -4,23 +4,25 @@ import Foundation
 
 /// Plumbing checks for `VorbisDecodePipeline`: the decode thread's lifecycle, failure paths, and
 /// the pause/stop gate, driven entirely through fakes. No Vorbis fixture is committed on `main`
-/// yet (see `OggVorbisDecoderChecks`), so the one real-decode check is guarded and skips when the
-/// fixture is absent rather than failing the gate.
+/// yet (see `OggVorbisDecoderChecks` and #209 -- it needs an encoder on a machine that has one),
+/// so the one real-decode check is guarded and skips when the fixture is absent.
 @MainActor
-func runVorbisDecodePipelineChecks(_ check: CheckRunner) {
-    check.suite("Vorbis decode pipeline") {
-        runGarbageSourceFailsCheck(check)
-        runThrowingSourceFailsCheck(check)
+func runVorbisDecodePipelineChecks(_ check: CheckRunner) async {
+    await check.suite("Vorbis decode pipeline") {
+        await runGarbageSourceFailsCheck(check)
+        await runThrowingSourceFailsCheck(check)
         runStopBeforeStartIsNoOpCheck(check)
-        runPauseGateStopTerminatesCheck(check)
-        runFixtureDecodeThroughFakeSinkCheck(check)
+        await runPauseGateStopTerminatesCheck(check)
+        await runNoEventsAfterStoppedCheck(check)
+        await runFixtureDecodeThroughFakeSinkCheck(check)
     }
 }
 
 /// A prefix of garbage never opens (see `OggVorbisDecoderChecks`'s own garbage-bytes check), so
 /// the pipeline must grow the header prefix to its cap, give up, and emit `.failed` -- never hang
 /// or crash trying to decode a frame with no open decoder.
-private func runGarbageSourceFailsCheck(_ check: CheckRunner) {
+@MainActor
+private func runGarbageSourceFailsCheck(_ check: CheckRunner) async {
     // One byte past the pipeline's 1 MiB header-prefix cap, so every growth step gets a full-length
     // read (never a short one) and the cap is what ends the search, not source exhaustion.
     let garbage = lcgBytes(count: 1_048_576 + 4_096, seed: 0x1234_5678_9abc_def0)
@@ -33,19 +35,20 @@ private func runGarbageSourceFailsCheck(_ check: CheckRunner) {
 
     check.check(
         "garbage bytes emit .failed and the decode thread exits on its own",
-        collector.waitForCount(1, timeoutMilliseconds: 5_000) && collector.all.first.map(isFailed) == true
+        await collector.waitForCount(1) && collector.all.first.map(isFailed) == true
     )
 
     pipeline.stop()
     check.check(
         "stop() after the thread already exited still returns and emits .stopped",
-        collector.waitForCount(2, timeoutMilliseconds: 2_000) && collector.all.last.map(isStopped) == true
+        await collector.waitForCount(2) && collector.all.last.map(isStopped) == true
     )
 }
 
 /// A source whose very first read throws must fail the same way a decode error does -- the
 /// pipeline does not distinguish "bad bytes" from "could not get bytes".
-private func runThrowingSourceFailsCheck(_ check: CheckRunner) {
+@MainActor
+private func runThrowingSourceFailsCheck(_ check: CheckRunner) async {
     struct FakeReadError: Error {}
 
     let source = FakeByteSource(readError: FakeReadError())
@@ -57,7 +60,7 @@ private func runThrowingSourceFailsCheck(_ check: CheckRunner) {
 
     check.check(
         "a throwing source emits .failed",
-        collector.waitForCount(1, timeoutMilliseconds: 5_000) && collector.all.first.map(isFailed) == true
+        await collector.waitForCount(1) && collector.all.first.map(isFailed) == true
     )
 
     pipeline.stop()
@@ -65,6 +68,7 @@ private func runThrowingSourceFailsCheck(_ check: CheckRunner) {
 
 /// `stop()` before `start()` must not crash, hang, or emit anything -- there is no thread to join
 /// and no `events` callback has ever been recorded.
+@MainActor
 private func runStopBeforeStartIsNoOpCheck(_ check: CheckRunner) {
     let pipeline = VorbisDecodePipeline()
     pipeline.stop()
@@ -72,10 +76,11 @@ private func runStopBeforeStartIsNoOpCheck(_ check: CheckRunner) {
 }
 
 /// A source whose read never returns on its own (until this check releases it) keeps the decode
-/// thread parked inside `blockingRead`, before it ever reaches the pause/cancel gate between
-/// frames. `stop()` must still return within its bounded join instead of waiting on a read that
-/// cannot be cancelled out from under the thread.
-private func runPauseGateStopTerminatesCheck(_ check: CheckRunner) {
+/// thread parked inside `DecodeByteSource.read`, before it ever reaches the pause/cancel gate
+/// between frames. `stop()` must still return within its bounded join instead of waiting on a
+/// read that cannot be cancelled out from under the thread.
+@MainActor
+private func runPauseGateStopTerminatesCheck(_ check: CheckRunner) async {
     let release = DispatchSemaphore(value: 0)
     let source = FakeByteSource(blockingUntil: release)
     let sink = FakeSink()
@@ -86,9 +91,9 @@ private func runPauseGateStopTerminatesCheck(_ check: CheckRunner) {
 
     // Give the decode thread a real chance to have entered the blocking read before pausing it.
     // This check exercises an actual OS thread parked on a real semaphore, which has no
-    // deterministic handshake to wait on instead -- unlike the domain-level checks elsewhere in
-    // this suite.
-    Thread.sleep(forTimeInterval: 0.1)
+    // observable condition to poll with `waitUntil` -- unlike the domain-level checks elsewhere
+    // in this suite, so a short fixed async sleep is what is available here.
+    try? await Task.sleep(for: .milliseconds(100))
     pipeline.pause()
 
     let stopStart = DispatchTime.now()
@@ -104,15 +109,54 @@ private func runPauseGateStopTerminatesCheck(_ check: CheckRunner) {
     release.signal()
 }
 
+/// Once `.stopped` has gone out, nothing else may follow it -- `DecodeGate.emit` is a no-op for
+/// every caller (decode thread or control thread) from that point on. Exercises that guarantee by
+/// driving `pause`/`resume`/`seek`/`stop` again after the pipeline has already stopped.
+@MainActor
+private func runNoEventsAfterStoppedCheck(_ check: CheckRunner) async {
+    let garbage = lcgBytes(count: 1_048_576 + 4_096, seed: 0xabad_1dea_dead_beef)
+    let source = FakeByteSource(bytes: garbage)
+    let sink = FakeSink()
+    let collector = EventCollector()
+    let pipeline = VorbisDecodePipeline()
+
+    pipeline.start(source: source, sink: sink, startOffset: 0, startPositionMs: 0) { collector.record($0) }
+
+    check.check(
+        "setup: garbage source reaches .failed",
+        await collector.waitForCount(1) && collector.all.first.map(isFailed) == true
+    )
+
+    pipeline.stop()
+    check.check(
+        "setup: stop() after failure emits .stopped",
+        await collector.waitForCount(2) && collector.all.last.map(isStopped) == true
+    )
+
+    let countAfterStop = collector.all.count
+
+    pipeline.pause()
+    pipeline.resume()
+    pipeline.seek(toByteOffset: 0, positionMs: 0)
+    pipeline.stop()
+
+    check.check(
+        "no event is ever recorded after .stopped",
+        collector.all.count == countAfterStop
+    )
+}
+
 /// Feeds `Fixtures/tone-44100-stereo.ogg` (see `OggVorbisDecoderChecks`) through the pipeline end
 /// to end with a `FakeByteSource`/`FakeSink` pair standing in for the CDN fetch and the renderer.
-/// Skips with a passing check when the fixture is absent, same as `OggVorbisDecoderChecks`.
-private func runFixtureDecodeThroughFakeSinkCheck(_ check: CheckRunner) {
+/// Skips with a passing check when the fixture is absent (#209 -- it needs an encoder on a
+/// machine that has one), same as `OggVorbisDecoderChecks`.
+@MainActor
+private func runFixtureDecodeThroughFakeSinkCheck(_ check: CheckRunner) async {
     let data: Data
     do {
         data = try boundaryFixture(named: "tone-44100-stereo", extension: "ogg")
     } catch {
-        check.check("tone-44100-stereo.ogg fixture absent; pipeline decode check skipped", true)
+        check.check("tone-44100-stereo.ogg fixture absent (#209); pipeline decode check skipped", true)
         return
     }
 
@@ -125,7 +169,7 @@ private func runFixtureDecodeThroughFakeSinkCheck(_ check: CheckRunner) {
 
     check.check(
         "fixture decode reaches .endOfTrack",
-        collector.waitForEvent(timeoutMilliseconds: 10_000, matching: isEndOfTrack)
+        await waitUntil(timeout: .seconds(10)) { collector.all.contains(where: isEndOfTrack) }
     )
     check.check("fixture decode emitted .playing before .endOfTrack", collector.all.contains(where: isPlaying))
 
@@ -169,7 +213,9 @@ private func isEndOfTrack(_ event: VorbisDecodePipeline.Event) -> Bool {
 // MARK: - Fakes
 
 /// Fake `DecodeByteSource`: serves a fixed byte array, always throws, or blocks every read on a
-/// semaphore until the check releases it. Only one behavior is configured per instance.
+/// semaphore until the check releases it. Only one behavior is configured per instance. `read` is
+/// synchronous, matching the real protocol, so blocking on the semaphore here is just an ordinary
+/// (if deliberately slow) function call -- no async bridging involved.
 private final class FakeByteSource: DecodeByteSource, @unchecked Sendable {
     private let bytes: [UInt8]?
     private let readError: Error?
@@ -193,11 +239,9 @@ private final class FakeByteSource: DecodeByteSource, @unchecked Sendable {
         self.blockingSemaphore = semaphore
     }
 
-    var length: Int? {
-        get async { bytes?.count }
-    }
+    var length: Int? { bytes?.count }
 
-    func read(offset: Int, length: Int) async throws -> Data {
+    func read(offset: Int, length: Int) throws -> Data {
         if let blockingSemaphore {
             blockingSemaphore.wait()
             return Data()
@@ -213,14 +257,16 @@ private final class FakeByteSource: DecodeByteSource, @unchecked Sendable {
 
 /// Fake `PCMSink`: records every write and reports zero buffered seconds, so `endOfTrack` fires
 /// as soon as decoding is done rather than waiting out a drain that never applies to a fake.
+/// Never cancels -- these checks care about the decode/threading plumbing, not backpressure.
 private final class FakeSink: PCMSink, @unchecked Sendable {
     private let lock = NSLock()
     private var frameCount = 0
 
-    func write(_ samples: UnsafePointer<Float>, count: Int) {
+    func write(_ samples: UnsafePointer<Float>, frames: Int, until cancelled: () -> Bool) -> PCMWriteOutcome {
         lock.lock()
-        frameCount += count / 2  // interleaved stereo
+        frameCount += frames
         lock.unlock()
+        return .queued
     }
 
     func flush() {
@@ -238,17 +284,16 @@ private final class FakeSink: PCMSink, @unchecked Sendable {
     }
 }
 
-/// Thread-safe collector for events delivered from the pipeline's dedicated decode thread.
+/// Thread-safe collector for events delivered from the pipeline's dedicated decode thread (and,
+/// for `.paused`/`.playing`/`.stopped`, from whatever thread called `pause`/`resume`/`stop`).
 private final class EventCollector: @unchecked Sendable {
     private let lock = NSLock()
     private var events: [VorbisDecodePipeline.Event] = []
-    private let signal = DispatchSemaphore(value: 0)
 
     func record(_ event: VorbisDecodePipeline.Event) {
         lock.lock()
         events.append(event)
         lock.unlock()
-        signal.signal()
     }
 
     var all: [VorbisDecodePipeline.Event] {
@@ -257,62 +302,9 @@ private final class EventCollector: @unchecked Sendable {
         return events
     }
 
-    /// Blocks (bounded by `timeoutMilliseconds`) until at least `count` events have been recorded.
-    func waitForCount(_ count: Int, timeoutMilliseconds: Int) -> Bool {
-        let deadline = DispatchTime.now() + .milliseconds(timeoutMilliseconds)
-        while currentCount < count {
-            if signal.wait(timeout: deadline) == .timedOut {
-                return currentCount >= count
-            }
-        }
-        return true
+    /// Polls (via the shared `waitUntil`) until at least `count` events have been recorded.
+    @MainActor
+    func waitForCount(_ count: Int, timeout: Duration = .seconds(5)) async -> Bool {
+        await waitUntil(timeout: timeout) { self.all.count >= count }
     }
-
-    /// Blocks (bounded by `timeoutMilliseconds`) until some recorded event matches `predicate`.
-    func waitForEvent(
-        timeoutMilliseconds: Int,
-        matching predicate: (VorbisDecodePipeline.Event) -> Bool
-    ) -> Bool {
-        let deadline = DispatchTime.now() + .milliseconds(timeoutMilliseconds)
-        while !all.contains(where: predicate) {
-            if signal.wait(timeout: deadline) == .timedOut {
-                return all.contains(where: predicate)
-            }
-        }
-        return true
-    }
-
-    private var currentCount: Int {
-        lock.lock()
-        defer { lock.unlock() }
-        return events.count
-    }
-}
-
-/// LCG-generated bytes so the garbage-input check is deterministic across runs -- mirrors
-/// `OggVorbisDecoderChecks`'s own helper of the same shape.
-private func lcgBytes(count: Int, seed: UInt64) -> [UInt8] {
-    var state = seed
-    var bytes = [UInt8]()
-    bytes.reserveCapacity(count)
-    for _ in 0..<count {
-        state = state &* 6_364_136_223_846_793_005 &+ 1_442_695_040_888_963_407
-        bytes.append(UInt8(truncatingIfNeeded: state >> 56))
-    }
-    return bytes
-}
-
-/// Walks Ogg pages via `OggPageHeader` to find the granule position of the last page that
-/// finishes a packet -- mirrors `OggVorbisDecoderChecks`'s own helper of the same shape.
-private func lastGranulePosition(in data: Data) -> Int64? {
-    var offset = 0
-    var last: Int64?
-    while let captureOffset = OggPageHeader.nextCaptureOffset(in: data, from: offset) {
-        guard let header = OggPageHeader.parse(data, at: captureOffset), header.totalLength > 0 else { break }
-        if header.granulePosition != -1 {
-            last = header.granulePosition
-        }
-        offset = captureOffset + header.totalLength
-    }
-    return last
 }

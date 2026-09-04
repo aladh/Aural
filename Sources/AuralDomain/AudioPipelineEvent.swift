@@ -14,21 +14,22 @@
 
 import Foundation
 
-/// Why a decode pipeline gave up on a track.
+/// Privacy-safe classification of what failed.
 ///
-/// A closed set of stable cases rather than a stringified `Error`. The audio path's byte source
-/// resolves signed CDN URLs whose query strings carry credentials (`__token__`, `verify`), and a
-/// `String(describing:)` of whatever it threw would carry them into logs, the UI, and — through
-/// an `Unavailable` report — Spotify Connect. Nothing here can.
-public enum AudioPipelineFailure: String, Sendable, Equatable {
-    /// The Vorbis headers never opened: not an Ogg stream, or truncated before the setup packet.
-    case headerOpenFailed
-    /// A seek's byte target has no page boundary within the search window.
-    case seekTargetNotFound
-    /// The Vorbis decoder rejected the stream mid-track.
-    case decodeFailed
-    /// The byte source failed or ran out: fetch error, decrypt error, or expired CDN URL.
-    case sourceUnavailable
+/// Never carries the underlying error's description: a CDN-backed byte source throws errors
+/// whose messages embed signed URLs (`__token__`, `verify` query parameters), which must not
+/// reach logs, the UI, or — through an `Unavailable` report — Spotify Connect.
+public enum AudioPipelineFailure: Sendable, Equatable {
+    /// The byte source's `read` threw: fetch error, decrypt error, or an expired CDN URL.
+    case sourceRead
+    /// The Vorbis headers never opened.
+    case headers
+    /// The stream opened but is not 44.1 kHz stereo.
+    case unsupportedFormat
+    /// The decoder threw once the stream was already open.
+    case decode
+    /// A seek's target byte offset had no real Ogg page within the search cap.
+    case seek
 }
 
 /// One fact the decode pipeline reports inward about the track it is playing.

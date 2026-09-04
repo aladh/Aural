@@ -92,5 +92,51 @@ func runOggPageChecks(_ check: CheckRunner) {
             "nextCaptureOffset over data with no capture pattern finds nothing",
             OggPageHeader.nextCaptureOffset(in: Data("no capture pattern here".utf8), from: 0)
         )
+
+        // nextValidPage: a false-positive "OggS" match whose own declared segment table (255
+        // lacing bytes) does not fit before the buffer ends -- `parse` correctly rejects it --
+        // immediately followed by a real, minimal page. A plain substring search (the old
+        // `captureOffsetAtOrAfter` this replaced) would have returned the false match's offset
+        // without ever checking it actually parses; `nextValidPage` must instead skip past it.
+        var falseMatch = Data("OggS".utf8)
+        falseMatch.append(0)  // version
+        falseMatch.append(0)  // flags
+        falseMatch.append(contentsOf: [UInt8](repeating: 0, count: 8))  // granule position: 0
+        falseMatch.append(littleEndianBytes(1))  // serial
+        falseMatch.append(littleEndianBytes(1))  // sequence
+        falseMatch.append(littleEndianBytes(0))  // checksum
+        falseMatch.append(255)  // segment count: claims 255 lacing bytes follow
+
+        var minimalRealPage = Data("OggS".utf8)
+        minimalRealPage.append(0)  // version
+        minimalRealPage.append(0)  // flags
+        minimalRealPage.append(contentsOf: [UInt8](repeating: 0, count: 8))  // granule position: 0
+        minimalRealPage.append(littleEndianBytes(42))  // serial
+        minimalRealPage.append(littleEndianBytes(1))  // sequence
+        minimalRealPage.append(littleEndianBytes(0))  // checksum
+        minimalRealPage.append(1)  // segment count
+        minimalRealPage.append(0)  // one zero-length lacing value
+
+        var falsePositiveThenRealPage = falseMatch
+        let realMinimalPageOffset = falsePositiveThenRealPage.count
+        falsePositiveThenRealPage.append(minimalRealPage)
+
+        check.nil_(
+            "the false match alone (255-byte segment table claimed, nothing follows) never parses",
+            OggPageHeader.parse(falsePositiveThenRealPage.prefix(realMinimalPageOffset), at: 0)
+        )
+
+        let resynced = OggPageHeader.nextValidPage(in: falsePositiveThenRealPage, from: 0)
+        check.equal(
+            "nextValidPage skips the false match to the real page after it",
+            resynced?.offset,
+            realMinimalPageOffset
+        )
+        check.equal("nextValidPage returns the real page's header", resynced?.header.serialNumber, 42)
+
+        check.nil_(
+            "nextValidPage finds nothing when the only capture pattern in range never parses",
+            OggPageHeader.nextValidPage(in: falsePositiveThenRealPage.prefix(realMinimalPageOffset), from: 0)
+        )
     }
 }

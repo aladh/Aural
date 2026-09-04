@@ -32,6 +32,10 @@ nonisolated enum AudioRendererError: LocalizedError, Sendable {
 /// The write path may park briefly when the ring is full, but it cannot wait for space
 /// that only `stop` / `flush` / route recreation can create. Those controls also run on
 /// the player thread, so a full buffer uses one 500 ms backpressure wait and then drops.
+///
+/// `write(_:frames:until:)` is the `PCMSink` conformance used by `VorbisDecodePipeline`'s decode
+/// thread instead: same ring and throttle, but it waits until queued or cancelled rather than
+/// dropping, since that caller has its own stop path and does not need a fixed budget.
 final nonisolated class AudioRenderer: @unchecked Sendable {
     // MARK: - Constants
 
@@ -79,6 +83,12 @@ final nonisolated class AudioRenderer: @unchecked Sendable {
     /// Maximum seconds the writer can be ahead of real-time before sleeping.
     /// This replaces the backpressure that CoreAudio callbacks provided in the old rodio/cpal path.
     private static let maxBufferAheadSeconds: Double = 2.0
+
+    /// Poll granularity for `write(_:frames:until:)`'s cancellable waits (both the backpressure
+    /// wait and the pacing sleep), so `cancelled()` is rechecked promptly instead of on a fixed
+    /// budget like `writeAudioData`'s.
+    private static let cancellablePollMilliseconds = 100
+    private static let cancellablePollSeconds: Double = 0.1
 
     // MARK: - State
 
@@ -221,16 +231,7 @@ final nonisolated class AudioRenderer: @unchecked Sendable {
                 _ = writerSpace.wait(timeoutMilliseconds: PCMWriteBackpressure.waitTimeoutMilliseconds)
                 continue
             case let .write(toWrite):
-                let firstChunk = min(toWrite, Self.ringBufferCapacity - cursor.writeIndex)
-                ringBuffer.advanced(by: cursor.writeIndex)
-                    .update(from: samples.advanced(by: offset), count: firstChunk)
-
-                if firstChunk < toWrite {
-                    let secondChunk = toWrite - firstChunk
-                    ringBuffer.update(from: samples.advanced(by: offset + firstChunk), count: secondChunk)
-                }
-
-                cursor.advanceWrite(by: toWrite)
+                copyIntoRing(samples, offset: offset, count: toWrite)
                 totalSamplesWritten += Int64(toWrite)
                 let samplesWritten = totalSamplesWritten
                 let startTime = writeStartTime
@@ -260,6 +261,89 @@ final nonisolated class AudioRenderer: @unchecked Sendable {
                 offset += toWrite
             }
         }
+    }
+
+    /// Copies `count` samples from `samples[offset...]` into the ring at the current write
+    /// cursor, wrapping as needed, and advances the cursor. Must be called with `bufferLock` held;
+    /// shared by `writeAudioData` and `write(_:frames:until:)` so the two producers never diverge
+    /// on how a chunk actually lands in the ring.
+    private func copyIntoRing(_ samples: UnsafePointer<Float>, offset: Int, count: Int) {
+        let firstChunk = min(count, Self.ringBufferCapacity - cursor.writeIndex)
+        ringBuffer.advanced(by: cursor.writeIndex)
+            .update(from: samples.advanced(by: offset), count: firstChunk)
+
+        if firstChunk < count {
+            let secondChunk = count - firstChunk
+            ringBuffer.update(from: samples.advanced(by: offset + firstChunk), count: secondChunk)
+        }
+
+        cursor.advanceWrite(by: count)
+    }
+
+    /// Writes `frames` interleaved stereo frames for `VorbisDecodePipeline`, blocking on
+    /// backpressure in bounded waits until everything is queued or `cancelled()` reports true.
+    ///
+    /// Unlike `writeAudioData` (which drops the remainder after one 500 ms wait, because the Rust
+    /// proxy path cannot park librespot's player thread indefinitely), this loops for as long as
+    /// the caller is willing to be cancelled instead of on a fixed budget -- the decode thread has
+    /// its own pause/stop gate and does not need a drop path. It applies the same real-time
+    /// pacing throttle as `writeAudioData`, in short slices so cancellation stays responsive.
+    func write(_ samples: UnsafePointer<Float>, frames: Int, until cancelled: () -> Bool) -> PCMWriteOutcome {
+        var remaining = frames * Int(Self.channelCount)
+        var offset = 0
+
+        while remaining > 0 {
+            if cancelled() { return .cancelled }
+
+            bufferLock.lock()
+            guard outputControl.isRendering else {
+                bufferLock.unlock()
+                return .cancelled
+            }
+            let free = freeSpace
+            guard free > 0 else {
+                let needsRestart = !isRequestingData
+                writerSpace.arm()
+                bufferLock.unlock()
+                if needsRestart {
+                    renderQueue.async { [weak self] in
+                        self?.startRequestingData()
+                    }
+                }
+                _ = writerSpace.wait(timeoutMilliseconds: Self.cancellablePollMilliseconds)
+                continue
+            }
+
+            let toWrite = min(free, remaining)
+            copyIntoRing(samples, offset: offset, count: toWrite)
+            totalSamplesWritten += Int64(toWrite)
+            let samplesWritten = totalSamplesWritten
+            let startTime = writeStartTime
+            let needsRestart = !isRequestingData
+            bufferLock.unlock()
+
+            if needsRestart {
+                renderQueue.async { [weak self] in
+                    self?.startRequestingData()
+                }
+            }
+
+            remaining -= toWrite
+            offset += toWrite
+
+            // Same time-based throttle as writeAudioData (see its own comment), but slept in
+            // bounded slices so a cancellation request does not have to wait out the whole thing.
+            let audioDuration = Double(samplesWritten) / (Self.sampleRate * Double(Self.channelCount))
+            while true {
+                let ahead = audioDuration - (ProcessInfo.processInfo.systemUptime - startTime)
+                guard ahead > Self.maxBufferAheadSeconds else { break }
+                if cancelled() { return .cancelled }
+                let sleepDuration = min(ahead - Self.maxBufferAheadSeconds, Self.cancellablePollSeconds)
+                bufferLock.withLock { throttleSeconds += sleepDuration }
+                Thread.sleep(forTimeInterval: sleepDuration)
+            }
+        }
+        return .queued
     }
 
     // MARK: - Pull Side (called on renderQueue by AVSampleBufferAudioRenderer)

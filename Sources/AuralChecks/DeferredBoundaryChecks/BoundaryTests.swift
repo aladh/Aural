@@ -64,7 +64,7 @@ enum BoundaryChecksMain {
             RegisteredCheckSuite(name: "aesctr-decryptor") { runAESCTRDecryptorChecks($0) },
             RegisteredCheckSuite(name: "ranged-audio-fetcher") { await runRangedAudioFetcherChecks($0) },
             RegisteredCheckSuite(name: "ogg-vorbis-decoder") { runOggVorbisDecoderChecks($0) },
-            RegisteredCheckSuite(name: "vorbis-decode-pipeline") { runVorbisDecodePipelineChecks($0) },
+            RegisteredCheckSuite(name: "vorbis-decode-pipeline") { await runVorbisDecodePipelineChecks($0) },
             RegisteredCheckSuite(name: "check-suite-selection") { runner in
                 runCheckSuiteSelectionChecks(runner, catalog: BoundaryChecksMain.suiteNames)
             },

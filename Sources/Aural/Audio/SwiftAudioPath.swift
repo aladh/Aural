@@ -449,8 +449,8 @@ actor SwiftAudioPath {
     /// foreign error's description, which for the CDN path would carry a signed URL.
     private static func failure(for error: Error) -> AudioPipelineFailure {
         switch error {
-        case is OggSeekError: .seekTargetNotFound
-        default: .sourceUnavailable
+        case is OggSeekError: .seek
+        default: .sourceRead
         }
     }
 }

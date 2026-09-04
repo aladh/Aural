@@ -301,7 +301,7 @@ private func checkFailedReportsUnavailable(_ check: CheckRunner) {
     _ = session.apply(command(playRequestID: 100, kind: .load, fileID: fileA, startPlaying: true))
     _ = session.apply(pipelineEvent: delivery(.playing, playRequestID: 100))
 
-    let effects = session.apply(pipelineEvent: delivery(.failed(.decodeFailed), playRequestID: 100))
+    let effects = session.apply(pipelineEvent: delivery(.failed(.decode), playRequestID: 100))
 
     check.equal(
         "failed reports unavailable",
