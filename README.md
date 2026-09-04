@@ -4,71 +4,50 @@
 
 # Spotty
 
+A native macOS music client for Spotify Premium, built for personal experimentation on Apple
+Silicon Macs running macOS 15 or newer.
+
 > [!CAUTION]
-> **Experimental, unofficial software:** Spotty is an early-stage, independent personal project
-> built on unsupported, reverse-engineered Spotify interfaces. It is not affiliated with, endorsed
-> by, sponsored by, or otherwise connected to Spotify AB. It may break without notice, lose
-> functionality, or expose rough edges. Do not rely on it as your only Spotify client, and use it
-> only with an account you control. Its use of private interfaces and Spotify's desktop-client
-> authorization flow may violate Spotify's terms.
+> **Experimental, unofficial software.** Spotty is an independent personal project built on
+> unsupported, reverse-engineered Spotify interfaces. It is not affiliated with, endorsed by,
+> sponsored by, or otherwise connected to Spotify AB. It may break without notice or lose
+> functionality. Do not rely on it as your only Spotify client, and use it only with an account
+> you control. Its use of private interfaces and Spotify's desktop-client authorization flow may
+> violate Spotify's terms.
 
-Spotty is a native macOS music client for Spotify Premium. It is meant to feel like a focused Mac
-app: SwiftUI and AppKit for the interface, AVFoundation for audio output, and a contained,
-pinned Rust/librespot backend as the sole engine for the private Spotify session, Connect,
-streaming, decryption, and decoding. Decoded PCM crosses the narrow adapter into AVFoundation.
-There is no WebView or Chromium runtime.
+Spotty uses SwiftUI and AppKit for its interface, AVFoundation for audio output, and a pinned
+Rust/librespot backend for Spotify sessions, Connect, and audio streaming and decoding. There is
+no WebView or Chromium runtime.
 
-Spotty's visual direction uses a Spotify-familiar hierarchy in a fixed dark appearance—a near-black
-canvas, library-forward sidebar, artwork-led media headers, dense track tables, right-side queue
-rail, and full-width bottom player shelf—implemented with native macOS surfaces. Familiarity is a
-design reference, not a pixel copy or an indication of affiliation with Spotify.
-
-> **Naming note:** Spotty is the product and technical identity throughout the repository, app
-> bundle, executable, Swift and Rust modules, C ABI, local storage, diagnostics, build tooling, and
-> release artifacts. The name does not imply affiliation with Spotify.
-
-The MIT license covers this repository's code; it does not grant rights to Spotify's service,
-content, trademarks, or private interfaces. Spotty is intended for personal, non-commercial
-experimentation. Spotify's current policy restricts commercial streaming applications and permits
-music streaming only for Premium subscribers; review the current
-[Developer Policy](https://developer.spotify.com/policy) before distributing anything.
+The interface has a fixed dark appearance, a library sidebar, artwork-led media pages, dense
+track tables, a queue rail, and a bottom player. Spotify's layout is a design reference, not an
+indication of affiliation.
 
 ## Capabilities
 
-- Native macOS navigation, tables, menus, inspector, keyboard commands, and accessibility. Native
-  selection and focus use the system accent; media actions and current-playback state use Spotty's
-  fixed green. There is no Settings scene or custom accent-color preference.
-- Local 320 kbps playback with pause/resume, seek, previous/next, gapless transitions, repeat, and
-  a persistent fewer-repeats shuffle mode.
-- Spotify Connect device discovery, remote playback mirroring, device transfer, and queue display.
-  Add to Queue uses selected tracks in visible order. Selectable upcoming rows can be removed with
-  Delete/Backspace or Remove from Queue when another device owns playback and the current player
-  permits queue edits, preserving duplicates; Spotify Connect confirms a successful removal before
-  the displayed queue changes.
-- Home, Search, profile, Liked Songs, playlists, albums, and artists from the signed-in account.
-- Sortable track metadata: playlist detail exposes Date Added, while shared catalog tables expose
-  Popularity, BPM, and Camelot Key where applicable.
-- Add selected tracks to an owned library playlist, and remove selected occurrences from an open
-  owned playlist, with shared transient success and failure feedback.
-- Bounded artwork caching and local operational Unified Logging.
-
-## Requirements
-
-To run Spotty:
-
-- An Apple Silicon Mac running macOS 15 or newer.
-- A Spotify Premium account.
-
-To build it from this repository:
-
-- Install the prerequisites in the [development setup guide](docs/development-setup.md#fresh-clone).
-
-The repository is source-only. Its architecture-specific Rust archive and app bundle are generated
-locally and ignored by Git.
+- **Playback:** local 320 kbps audio, pause/resume, seeking, previous/next, gapless transitions,
+  repeat, and persistent shuffle with fewer repeats.
+- **Spotify Connect:** device discovery, remote playback mirroring, device transfer, and queue
+  display. Add selected tracks to the queue in visible order. Remove upcoming queue entries when
+  another device owns playback and permits edits; removals preserve duplicates and appear only
+  after Spotify confirms them.
+- **Browsing:** Home, Search, profile, Liked Songs, playlists, albums, and artists from the
+  signed-in account.
+- **Track details:** sortable metadata, including Date Added in playlists and Popularity, BPM,
+  and Camelot Key in shared catalog tables where applicable.
+- **Playlist editing:** add selected tracks to an owned library playlist or remove selected
+  occurrences from an open owned playlist, with success and failure feedback.
+- **macOS integration:** native navigation, tables, menus, inspector, keyboard commands, and
+  accessibility. Selection and focus follow the system accent; playback actions use Spotty green.
 
 ## Getting started
 
-Clone the repository and launch a local development build:
+You need a Spotify Premium account to use Spotty. Building from source is the intended way to run
+it; follow the [development setup guide](docs/development-setup.md#fresh-clone) for build-machine
+requirements, toolchains, and signing setup. Authenticated development launches require an
+Apple Development signing identity with a stable Team ID. A free Xcode Personal Team is sufficient.
+
+Once the prerequisites are installed, clone the repository and launch a development build:
 
 ```bash
 git clone https://github.com/aladh/Spotty.git
@@ -76,46 +55,44 @@ cd Spotty
 ./script/build_and_run.sh
 ```
 
-The first build downloads locked dependencies and takes longer than subsequent builds. See the
-[build-and-run details](CONTRIBUTING.md#build-and-run) before launching; on first launch, choose
-Connect and complete Spotify authorization in the browser.
+The first build downloads locked dependencies and takes longer than subsequent builds. The launch
+script replaces any running development copy; see the
+[build-and-run details](CONTRIBUTING.md#build-and-run). On first launch, choose **Connect** and
+complete Spotify authorization in the browser.
 
-Version tags also publish experimental GitHub prereleases. Until Developer ID and notarization
-credentials are configured, those artifacts use a hardened-runtime, ad-hoc signature and are not
-automatically trusted by macOS. Building from source remains the intended way to run Spotty.
-
-For fresh-machine prerequisites, generated local state, and recovery, see
-[Development setup](docs/development-setup.md). Build modes, checks, packaging, signing, and
-release mechanics are in [CONTRIBUTING.md](CONTRIBUTING.md).
-
-## Limitations
-
-Live local and remote playback, Spotify Home, profile, saved tracks, demand-loaded library
-collections, search, and media detail pages are wired. Owned-playlist add and occurrence removal
-are available. Upcoming queue rows cannot be removed when Spotty owns playback.
-Playlist creation, rename, reordering, cover editing, collaborative-permission
-management, liked-library editing, and incremental on-screen pagination remain future work.
-
-Spotty currently targets Apple Silicon Macs on macOS 15 or newer. Compatibility with Spotify is
-best-effort: because it depends on undocumented protocols, no stability commitment can be made for
-Spotify-side changes.
+The Rust archive and app bundle are generated locally and ignored by Git. Version tags also
+publish experimental GitHub prereleases. Until Developer ID and notarization credentials are
+configured, those artifacts use a hardened-runtime, ad-hoc signature and are not automatically
+trusted by macOS.
 
 ## Privacy and security
 
-Spotty has no analytics, advertising, crash-reporting SDK, or Spotty-operated server. Account data is
-requested directly from Spotify and rendered locally. OAuth credentials are stored in Keychain.
-Authenticated development launches require an Apple-issued signing identity with a stable Team ID;
-self-signed packages are build-only because their per-build CDHash does not provide durable
-Keychain authorization.
+Spotty has no analytics, advertising, crash-reporting SDK, or Spotty-operated server. It requests
+account data directly from Spotify and renders it locally. OAuth credentials are stored in macOS
+Keychain. Artwork caching is bounded, and operational logs use Apple Unified Logging locally.
 
 Read [PRIVACY.md](PRIVACY.md) before signing in. Report security issues through the private process
 in [SECURITY.md](SECURITY.md), not a public issue.
 
+## Development
+
+- [Development setup](docs/development-setup.md): prerequisites, signing, generated local state,
+  and recovery.
+- [Agent operations](CONTRIBUTING.md): build modes, verification, packaging, and releases.
+- [Product and acceptance contract](docs/product-and-acceptance-contract.md): UX behavior and safe
+  live-account testing.
+- [Architecture decisions](docs/architecture-decisions.md): module boundaries and playback ownership.
+
 ## License
 
-The playback bridge, authentication flow, renderer, and Connect command shapes are adapted from
-MIT-licensed Spotifly commits `35991ac25a04aa14f8839d88f46129da6c6b59c0` and
-`bcb522675e9657599faa007c531c2159e506246f`. The Rust backend links librespot commit
-`9c7d75615fc093bdcbdb29adbce3fed38c531852` plus the locked crates in `Cargo.lock`.
+Spotty is intended for personal, non-commercial experimentation. The MIT license covers this
+repository's code; it does not grant rights to Spotify's service, content, trademarks, or private
+interfaces. Review Spotify's [Developer Policy](https://developer.spotify.com/policy) before
+considering distribution.
 
-See [LICENSE](LICENSE), [NOTICE](NOTICE), and [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
+Portions of the playback bridge, authentication flow, renderer, and Connect command shapes are
+adapted from MIT-licensed Spotifly. The Rust backend links a pinned librespot revision and the
+locked crates in `Cargo.lock`. Attribution, revisions, and dependency notices are recorded in
+[NOTICE](NOTICE) and [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
+
+See [LICENSE](LICENSE) for the full license.
