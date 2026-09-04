@@ -720,11 +720,13 @@ struct WorkflowTests {
             let entries = (0..<12).map {
                 QueueEntry(uri: "spotify:track:\($0)", provider: "queue", occurrence: $0)
             }
+            let cachedTracks = [workflowTrack("spotify:track:0"), workflowTrack("spotify:track:1")]
+            let expectedRequestedURIs = Set(entries.map(\.uri)).subtracting(cachedTracks.map(\.uri))
             var updates: [ProvenanceQueueSnapshot] = []
             let refresh = Task {
                 await service.refresh(
                     fallbackEntries: entries,
-                    cachedTracks: [workflowTrack("spotify:track:0"), workflowTrack("spotify:track:1")],
+                    cachedTracks: cachedTracks,
                     currentTrackURI: "spotify:track:current",
                     accountEpoch: 3,
                     onUpdate: { updates.append($0) }
@@ -746,7 +748,7 @@ struct WorkflowTests {
                 "a completed lookup publishes an incremental update")
 
             var completed: Set<String> = Set(initiallyRequested.prefix(1))
-            while completed.count < entries.count {
+            while completed.count < expectedRequestedURIs.count {
                 for uri in await remote.requestedURIs where completed.insert(uri).inserted {
                     await remote.complete(uri)
                 }
