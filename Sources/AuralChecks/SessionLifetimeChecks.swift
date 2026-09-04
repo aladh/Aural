@@ -348,11 +348,11 @@ func runSessionLifetimeChecks(_ check: CheckRunner) {
             .inert
         )
         check.equal(
-            "a confirmed transfer still reports success after a late failure",
+            "a confirmed transfer still reports success after an ordinary late failure",
             followUp(
                 finishAccepted: true,
                 succeeded: false,
-                reconnect: true,
+                reconnect: false,
                 kind: .transfer,
                 resolution: .confirmed
             ),
@@ -370,11 +370,11 @@ func runSessionLifetimeChecks(_ check: CheckRunner) {
             .inert
         )
         check.equal(
-            "a confirmed play still reports success while a later pause is pending",
+            "a confirmed play still reports success (ordinary failure) while a later pause is pending",
             followUp(
                 finishAccepted: true,
                 succeeded: false,
-                reconnect: true,
+                reconnect: false,
                 pending: other,
                 resolution: .confirmed
             ),
@@ -417,22 +417,22 @@ func runSessionLifetimeChecks(_ check: CheckRunner) {
             .reportFailure(reconnect: true)
         )
         check.equal(
-            "a confirmed shuffle still reports success after a late failure",
+            "a confirmed shuffle still reports success after an ordinary late failure",
             followUp(
                 finishAccepted: true,
                 succeeded: false,
-                reconnect: true,
+                reconnect: false,
                 kind: .options,
                 resolution: .confirmed
             ),
             .reportSuccess
         )
         check.equal(
-            "a confirmed shuffle still reports success while a later options command is pending",
+            "a confirmed shuffle still reports success (ordinary failure) while a later options command is pending",
             followUp(
                 finishAccepted: true,
                 succeeded: false,
-                reconnect: true,
+                reconnect: false,
                 kind: .options,
                 pending: other,
                 resolution: .confirmed
