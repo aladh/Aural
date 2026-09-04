@@ -73,7 +73,7 @@ private func runLoadDrivesSourceAndOutputCheck(_ check: CheckRunner) async {
     path.deliver(audioCommand(generation: 1, playRequestID: 100, kind: .stop))
     let stoppedOutput = await waitUntil(timeout: .seconds(5)) { output.stopCount >= 1 }
     check.check("stop tears the output down", stoppedOutput)
-    let stopped = await waitUntil { await path.phase == .stopped }
+    let stopped = await waitUntil(timeout: .seconds(5)) { await path.phase == .stopped }
     check.check("phase is .stopped after stop", stopped)
 
     release.signal()

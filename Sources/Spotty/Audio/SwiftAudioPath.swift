@@ -390,11 +390,13 @@ actor SwiftAudioPath {
         preloadReportTask?.cancel()
         preloadReportTask = nil
         pendingSeekMs = nil
+        // Stop the renderer before joining the decode thread so a parked `read` cannot keep
+        // audible output up for the join bound, and so teardown observers are not blocked on it.
+        output.stop()
         pipeline?.stop()
         pipeline = nil
         source = nil
         currentTrackGID = []
-        output.stop()
     }
 
     /// Sends one report to Rust, except `.timeToPreloadNext`, which waits until this track's
