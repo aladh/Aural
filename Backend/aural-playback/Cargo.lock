@@ -1252,7 +1252,6 @@ dependencies = [
 [[package]]
 name = "librespot-connect"
 version = "0.8.0"
-source = "git+https://github.com/librespot-org/librespot?rev=9c7d75615fc093bdcbdb29adbce3fed38c531852#9c7d75615fc093bdcbdb29adbce3fed38c531852"
 dependencies = [
  "futures-util",
  "librespot-core",

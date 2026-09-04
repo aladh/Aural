@@ -34,6 +34,9 @@ across the Swift/Rust boundary.
   lifetime aligned.
 - Treat librespot changes as protocol migrations. Preserve the ownership classification instead of
   opportunistically expanding the Rust leaf.
+- `librespot-connect` is vendored under `Backend/vendor/librespot-connect` with a small patch (see
+  its `PATCHES.md`) so `Spirc::new` takes `Arc<dyn SpircPlayer>` instead of the concrete `Player`;
+  keep the patch minimal and re-diff it against upstream when the pinned rev moves.
 
 ## Code review rules
 

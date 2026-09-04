@@ -21,6 +21,7 @@ in the [enforcement inventory](architecture-enforcement.md).
 | `PlaybackSnapshotProjection` | Engine playback transport, empty-URI identity, timestamp correction |
 | `ResumeLoadPlan` | Resume-load target order from sticky resume-load URIs, for user resume and reconnect rehydration. `PlaybackStore` captures those URIs through the engine getters; `RustPlaybackEngine` iterates targets through `aural_playback_load`. The engine signals a reconnect window with `resume_pending` and holds readiness until a Swift load lands, a load reports `ERROR_NEEDS_REINIT` (dead Spirc, which ends the wait for that window and triggers a rebuild), or the window times out |
 | Catalog, OAuth, shuffle policy, HTTP retry | Unchanged; never belonged in Rust |
+| `OggVorbisDecoder` / `OggPageHeader` | Stage 1 of #201: a Swift wrapper over vendored stb_vorbis's pushdata API, plus a pure Ogg page scanner for later seeking. Not yet wired into playback — the audio-key/CDN/decrypt path and `AudioRenderer` still get PCM from `proxy_sink.rs` |
 
 ## Rust crate by module
 
@@ -37,7 +38,9 @@ in the [enforcement inventory](architecture-enforcement.md).
 | `player_control.rs` | Adapter | Spirc play/pause/seek/shuffle/repeat/transfer/queue-add, plus FFI getters for sticky resume URIs |
 | `player_event_pump.rs` | Adapter | Local `PlayerEvent` → position and protocol playing/paused bits when this device is active |
 | `spirc_command_error.rs` | Adapter | Map librespot errors onto FFI codes Swift already understands |
-| `audio_shim.rs` | Rust-owned Stage 1 shim core, not yet wired | `ShimPlayer` stands in for `librespot_playback::player::Player`: play-request identity, file-format selection, and translating Swift's audio reports back into `PlayerEvent`s. No FFI, header, or Swift change lands with it; a later PR adds the `SpircPlayer` trait and C ABI that wire it into `state.rs`. |
+| `Backend/vendor/librespot-connect` | Vendored third-party, patched | librespot's `connect` crate pinned to the same rev as the git dependencies, patched so `Spirc::new` takes `Arc<dyn SpircPlayer>` instead of the concrete `Arc<Player>`. See its `PATCHES.md` for the exact diff. This is the seam Stage 1 needs to drive playback through a Swift-owned player without forking `Spirc`/`SpircTask`. |
+| `audio_key.rs` | Adapter | Stage 1 (#208) AP audio-key request over FFI. No caller yet; the consumer must cache successes per file id and coalesce concurrent misses |
+| `audio_shim.rs` | Rust-owned Stage 1 shim core, not yet wired | `ShimPlayer` stands in for `librespot_playback::player::Player`: play-request identity, file-format selection, and translating Swift's audio reports back into `PlayerEvent`s. No FFI, header, or Swift change lands with it; a later PR implements the vendored `SpircPlayer` trait for it and wires it into `state.rs`. |
 
 ### Planned owner per #201 stage
 
@@ -76,6 +79,10 @@ It returns null when no cluster snapshot has been received yet; null means "not 
 which Swift must keep distinct from an empty queue.
 Caching that snapshot in Rust is adapter convenience, not a second app-facing store.
 
+`aural_playback_audio_key` fetches one file's AES decryption key over the existing AP session;
+it is Stage 1 scaffolding for #201/#208 and nothing calls it yet. Spotify throttles key requests,
+so the eventual consumer must cache successes per file id and coalesce concurrent misses.
+
 ## Remaining Spotty-owned logic in Rust
 
 - Moving the sticky resume-load globals (`CURRENT_CONTEXT_URI`, `CURRENT_TRACK_URI`,
@@ -93,6 +100,9 @@ Caching that snapshot in Rust is adapter convenience, not a second app-facing st
   loop-local.
 - Do not widen `aural_playback_resume`; resume targets are Swift-owned loads.
 - Do not forward raw cluster protobuf to Swift ahead of a stage that owns the models.
+- `Vendor/stb_vorbis` is the only vendored C in this repo (the `CVorbis` SwiftPM target). It is
+  pinned to an exact upstream commit in `Vendor/stb_vorbis/UPSTREAM.md`; refresh the pin there
+  rather than editing `stb_vorbis.c` in place.
 
 ## Measured baseline (2026-08-23)
 
@@ -113,3 +123,15 @@ warranted; the cursor-based renderer is the lower-risk design.
 
 The browse path behind these numbers included surfaces that have since been removed, so a rerun
 must record its own commit and surfaces. #201 requires re-measurement at each stage boundary.
+
+### Binary size
+
+Every CI run's "Release distribution compile" job publishes a size table (app binary,
+`libaural_playback.a`, binary segment totals, archive exported symbol count) to the job
+summary via `Scripts/report-size.sh`, and uploads the same data as the `size-report` artifact
+(`size-report.json`, 30-day retention).
+
+To compare two runs: `gh run view <run-id>` for the job summary, or
+`gh run download <run-id> -n size-report` to fetch the JSON for a scripted diff.
+
+Pre-Stage-1 reference: fill in run id at switchover.

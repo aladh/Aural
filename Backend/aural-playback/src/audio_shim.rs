@@ -8,8 +8,8 @@
 //! a plain `AudioCommand` through an injected [`AudioCommandSink`].
 //!
 //! This module is intentionally unwired: nothing in the crate constructs a `ShimPlayer` yet, and
-//! it does not implement the `SpircPlayer` trait a later PR adds once librespot-connect is
-//! vendored with that seam. No FFI, header, or Swift change belongs in this slice.
+//! it does not implement the vendored `SpircPlayer` trait — a later PR does that and wires this
+//! module into `state.rs`. No FFI, header, or Swift change belongs in this slice.
 //!
 //! `#![allow(dead_code)]`: every item below is exercised only by `audio_shim_tests`, not by any
 //! other crate module — this crate builds `staticlib`-only, so a plain `pub` here does not by
@@ -19,6 +19,7 @@
 
 use librespot_core::{Error as LibrespotError, FileId, Session, SpotifyUri};
 use librespot_metadata::audio::{AudioFileFormat, AudioFiles, AudioItem};
+use librespot_metadata::track::Tracks;
 use librespot_playback::player::{PlayerEvent, PlayerEventChannel};
 use log::debug;
 use std::future::Future;
@@ -59,8 +60,11 @@ pub enum AudioCommandKind {
 
 /// Delivers `AudioCommand`s to the Swift audio path.
 ///
-/// The eventual FFI PR implements this for a type that forwards to a registered C callback.
-/// Kept as a plain trait (not a callback pointer) so this module stays testable without FFI.
+/// The eventual FFI PR implements this for a type that forwards to a registered C callback,
+/// which Swift may invoke synchronously and which may itself call back into
+/// [`ShimPlayer::report`] before `send` returns. No `ShimPlayer` method may hold one of its own
+/// locks across a call to `send`. Kept as a plain trait (not a callback pointer) so this module
+/// stays testable without FFI.
 pub trait AudioCommandSink: Send + Sync {
     fn send(&self, command: AudioCommand);
 }
@@ -122,6 +126,36 @@ impl AudioItemResolver for SessionAudioItemResolver {
     }
 }
 
+/// Mirrors librespot's `PlayerTrackLoader::find_available_alternative` (pinned rev
+/// `9c7d75615fc093bdcbdb29adbce3fed38c531852`, `playback/src/player.rs:941-963`): an item whose
+/// availability check failed has no playable alternative; an item that already has files is used
+/// directly; an item with no files but `alternatives` tries each alternative in turn (via
+/// `resolver`, so this stays testable) and takes the first whose own availability check passes.
+///
+/// Upstream resolves every alternative concurrently and takes whichever finishes first; this
+/// resolves them in order instead, which is simpler and deterministic and only changes which
+/// alternative wins a race that upstream itself does not guarantee the order of.
+pub(crate) async fn find_available_alternative(
+    resolver: &Arc<dyn AudioItemResolver>,
+    item: AudioItem,
+) -> Option<AudioItem> {
+    if item.availability.is_err() {
+        return None;
+    }
+    if !item.files.is_empty() {
+        return Some(item);
+    }
+    let Tracks(alternatives) = item.alternatives?;
+    for alt_id in alternatives {
+        if let Ok(alt_item) = resolver.resolve(alt_id).await {
+            if alt_item.availability.is_ok() {
+                return Some(alt_item);
+            }
+        }
+    }
+    None
+}
+
 /// Preference order for the one format family Stage 1 decodes: Vorbis, highest bitrate first.
 pub const VORBIS_FORMAT_PREFERENCE: [AudioFileFormat; 3] = [
     AudioFileFormat::OGG_VORBIS_320,
@@ -143,6 +177,17 @@ pub fn select_audio_file(
         .find_map(|format| files.get(format).map(|file_id| (*format, *file_id)))
 }
 
+/// Mirrors librespot's `PlayerState`, simplified to what `ShimPlayer` needs to decide whether the
+/// currently loaded track counts as "loaded" for a failed preload's `Unavailable` report and for
+/// the explicit-content skip in [`ShimPlayer::emit_filter_explicit_content_changed`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum TrackPhase {
+    Loading,
+    Playing,
+    Paused,
+    Stopped,
+}
+
 /// What track and position `ShimPlayer` believes is current, for stamping reports and
 /// translating them back into `PlayerEvent`s.
 struct CurrentTrack {
@@ -150,6 +195,13 @@ struct CurrentTrack {
     track_id: SpotifyUri,
     position_ms: u32,
     duration_ms: u32,
+    /// From the resolved [`AudioItem`]; unknown (`false`) until `load`'s resolution lands.
+    is_explicit: bool,
+    phase: TrackPhase,
+    /// Identity of the most recent `preload` request, so a superseded one can be dropped after
+    /// its resolution completes. Does not track a `PlayerPreload::Ready` slot the way upstream
+    /// `Player` does — Stage 1 does not yet reuse a preloaded file on the following `load`.
+    preload_id: u64,
 }
 
 /// Stand-in for `librespot_playback::player::Player`, backed by the Swift audio path instead of
@@ -164,7 +216,11 @@ pub struct ShimPlayer {
     resolver: Arc<dyn AudioItemResolver>,
     session_generation: u64,
     next_play_request_id: AtomicU64,
-    current: Mutex<CurrentTrack>,
+    next_preload_id: AtomicU64,
+    /// Shared with the detached resolution task spawned by `load`/`preload`, so it can re-check
+    /// (after its `await`) whether it is still the current request, and — for `load` — record
+    /// the resolved `is_explicit` once it lands.
+    current: Arc<Mutex<CurrentTrack>>,
     /// Shared with the detached resolution task spawned by `load`/`preload`, so a failed
     /// resolution can broadcast `Unavailable` without holding a `&ShimPlayer` past the point
     /// `load`/`preload` already returned.
@@ -185,6 +241,49 @@ fn broadcast_event(senders: &Mutex<Vec<mpsc::UnboundedSender<PlayerEvent>>>, eve
         .retain(|sender| sender.send(event.clone()).is_ok());
 }
 
+/// Broadcasts the `Unavailable` a failed `load`/`preload` resolution reports.
+///
+/// A `Load` failure is stamped with the load's own `request_id`/`track_id`, matching upstream
+/// `Player` (`handle_command_load`'s loader-poll arm). A `Preload` failure instead reports the
+/// *currently loaded* track — and only while one is actually playing or paused — matching
+/// upstream's preload-poll arm, which has no play-request id of its own to report against.
+fn broadcast_unavailable(
+    event_senders: &Mutex<Vec<mpsc::UnboundedSender<PlayerEvent>>>,
+    current: &Mutex<CurrentTrack>,
+    kind: AudioCommandKind,
+    request_id: u64,
+    track_id: &SpotifyUri,
+) {
+    match kind {
+        AudioCommandKind::Load => {
+            broadcast_event(
+                event_senders,
+                PlayerEvent::Unavailable {
+                    play_request_id: request_id,
+                    track_id: track_id.clone(),
+                },
+            );
+        }
+        AudioCommandKind::Preload => {
+            let reported = {
+                let guard = current.lock().unwrap_or_else(|e| e.into_inner());
+                matches!(guard.phase, TrackPhase::Playing | TrackPhase::Paused)
+                    .then(|| (guard.play_request_id, guard.track_id.clone()))
+            };
+            if let Some((play_request_id, track_id)) = reported {
+                broadcast_event(
+                    event_senders,
+                    PlayerEvent::Unavailable {
+                        play_request_id,
+                        track_id,
+                    },
+                );
+            }
+        }
+        _ => {}
+    }
+}
+
 impl ShimPlayer {
     pub fn new(
         command_sink: Arc<dyn AudioCommandSink>,
@@ -196,7 +295,8 @@ impl ShimPlayer {
             resolver,
             session_generation,
             next_play_request_id: AtomicU64::new(1),
-            current: Mutex::new(CurrentTrack {
+            next_preload_id: AtomicU64::new(1),
+            current: Arc::new(Mutex::new(CurrentTrack {
                 play_request_id: 0,
                 track_id: SpotifyUri::Unknown {
                     kind: "unknown".into(),
@@ -204,7 +304,10 @@ impl ShimPlayer {
                 },
                 position_ms: 0,
                 duration_ms: 0,
-            }),
+                is_explicit: false,
+                phase: TrackPhase::Stopped,
+                preload_id: 0,
+            })),
             event_senders: Arc::new(Mutex::new(Vec::new())),
             #[cfg(test)]
             stale_report_count: AtomicU64::new(0),
@@ -244,6 +347,8 @@ impl ShimPlayer {
             current.track_id = track_id.clone();
             current.position_ms = position_ms;
             current.duration_ms = 0;
+            current.is_explicit = false;
+            current.phase = TrackPhase::Loading;
         }
 
         self.broadcast(PlayerEvent::PlayRequestIdChanged { play_request_id });
@@ -253,42 +358,56 @@ impl ShimPlayer {
             position_ms,
         });
 
-        self.spawn_load(track_id, play_request_id, start_playing, position_ms);
+        self.spawn_resolution(
+            track_id,
+            play_request_id,
+            AudioCommandKind::Load,
+            start_playing,
+            position_ms,
+        );
         play_request_id
     }
 
     /// Same file resolution as [`Self::load`], without the `PlayRequestIdChanged`/`Loading`
     /// announcement — mirrors `Player::preload`, which is silent to Spirc until the track is
-    /// actually loaded.
+    /// actually loaded. A second `preload` call supersedes the first; the superseded one is
+    /// dropped once its resolution completes (see [`Self::spawn_resolution`]).
     pub fn preload(&self, track_id: SpotifyUri) {
-        let play_request_id = self
-            .current
-            .lock()
-            .unwrap_or_else(|e| e.into_inner())
-            .play_request_id;
-        self.spawn_preload(track_id, play_request_id);
+        let preload_id = self.next_preload_id.fetch_add(1, Ordering::SeqCst);
+        {
+            let mut current = self.current.lock().unwrap_or_else(|e| e.into_inner());
+            current.preload_id = preload_id;
+        }
+        self.spawn_resolution(track_id, preload_id, AudioCommandKind::Preload, false, 0);
     }
 
-    fn spawn_load(
+    /// Resolves `track_id` on [`crate::RUNTIME`] and sends the matching `Load`/`Preload`
+    /// command, or reports `Unavailable`, once resolution finishes. `request_id` is the
+    /// `play_request_id` for `Load` or the `preload_id` for `Preload`; see
+    /// [`Self::resolve_and_send`] for how it is used to detect supersession.
+    fn spawn_resolution(
         &self,
         track_id: SpotifyUri,
-        play_request_id: u64,
+        request_id: u64,
+        kind: AudioCommandKind,
         start_playing: bool,
         position_ms: u32,
     ) {
         let resolver = Arc::clone(&self.resolver);
         let command_sink = Arc::clone(&self.command_sink);
         let event_senders = Arc::clone(&self.event_senders);
+        let current = Arc::clone(&self.current);
         let session_generation = self.session_generation;
         crate::RUNTIME.spawn(async move {
             Self::resolve_and_send(
                 resolver,
                 command_sink,
                 event_senders,
+                current,
                 session_generation,
                 track_id,
-                play_request_id,
-                AudioCommandKind::Load,
+                request_id,
+                kind,
                 start_playing,
                 position_ms,
             )
@@ -296,78 +415,88 @@ impl ShimPlayer {
         });
     }
 
-    fn spawn_preload(&self, track_id: SpotifyUri, play_request_id: u64) {
-        let resolver = Arc::clone(&self.resolver);
-        let command_sink = Arc::clone(&self.command_sink);
-        let event_senders = Arc::clone(&self.event_senders);
-        let session_generation = self.session_generation;
-        crate::RUNTIME.spawn(async move {
-            Self::resolve_and_send(
-                resolver,
-                command_sink,
-                event_senders,
-                session_generation,
-                track_id,
-                play_request_id,
-                AudioCommandKind::Preload,
-                false,
-                0,
-            )
-            .await;
-        });
-    }
-
-    /// Resolves `track_id` and sends the matching `Load`/`Preload` command, or broadcasts
-    /// `PlayerEvent::Unavailable` on failure (resolution error, or no Vorbis alternative). A
-    /// free function of owned `Arc`s (not a `&self` method) so it can run detached on
+    /// Resolves `track_id` (following alternatives per [`find_available_alternative`]) and sends
+    /// the matching `Load`/`Preload` command, or reports `Unavailable` (resolution failure, no
+    /// available alternative, or no Vorbis file on whichever item was found).
+    ///
+    /// Re-checks `current` once, right after the `await`, before doing anything observable: a
+    /// second `load`/`preload` may have started and finished while this one was resolving, and a
+    /// superseded request must not send a command or report for a track that is no longer
+    /// current. A free function of owned `Arc`s (not a `&self` method) so it can run detached on
     /// [`crate::RUNTIME`] after `load`/`preload` have already returned.
     #[allow(clippy::too_many_arguments)]
     async fn resolve_and_send(
         resolver: Arc<dyn AudioItemResolver>,
         command_sink: Arc<dyn AudioCommandSink>,
         event_senders: Arc<Mutex<Vec<mpsc::UnboundedSender<PlayerEvent>>>>,
+        current: Arc<Mutex<CurrentTrack>>,
         session_generation: u64,
         track_id: SpotifyUri,
-        play_request_id: u64,
+        request_id: u64,
         kind: AudioCommandKind,
         start_playing: bool,
         position_ms: u32,
     ) {
-        let unavailable = || {
-            broadcast_event(
-                &event_senders,
-                PlayerEvent::Unavailable {
-                    play_request_id,
-                    track_id: track_id.clone(),
-                },
-            );
-        };
-
-        let item = match resolver.resolve(track_id.clone()).await {
-            Ok(item) => item,
+        let resolved = match resolver.resolve(track_id.clone()).await {
+            Ok(item) => find_available_alternative(&resolver, item).await,
             Err(err) => {
                 debug!("Audio item resolution failed for {:?}: {}", track_id, err);
-                unavailable();
-                return;
+                None
             }
+        };
+
+        // This is the only re-entry point into `current` after the `await` above, and it holds
+        // the lock only long enough to read/write plain fields — never across `send` or a
+        // broadcast.
+        let still_current = {
+            let mut guard = current.lock().unwrap_or_else(|e| e.into_inner());
+            match kind {
+                AudioCommandKind::Load => {
+                    let is_current = guard.play_request_id == request_id;
+                    if is_current {
+                        if let Some(item) = &resolved {
+                            guard.is_explicit = item.is_explicit;
+                        }
+                    }
+                    is_current
+                }
+                AudioCommandKind::Preload => guard.preload_id == request_id,
+                _ => true,
+            }
+        };
+        if !still_current {
+            debug!(
+                "Dropping {:?} resolution for a superseded request (id={})",
+                kind, request_id
+            );
+            return;
+        }
+
+        let Some(item) = resolved else {
+            broadcast_unavailable(&event_senders, &current, kind, request_id, &track_id);
+            return;
         };
 
         let Some((audio_format, file_id)) =
             select_audio_file(&item.files, &VORBIS_FORMAT_PREFERENCE)
         else {
             debug!("No Vorbis file available for {:?}", track_id);
-            unavailable();
+            broadcast_unavailable(&event_senders, &current, kind, request_id, &track_id);
             return;
         };
 
-        let track_gid = match &track_id {
+        // The chosen item may be an alternative with its own identity distinct from the
+        // requested `track_id` — Swift needs the alternative's own gid to fetch it. Events
+        // (`Unavailable` above, and `Loading`/`Playing`/… elsewhere) stay stamped with the
+        // originally requested `track_id`, matching upstream `Player::start_playback`.
+        let track_gid = match &item.track_id {
             SpotifyUri::Track { id } | SpotifyUri::Episode { id } => id.to_raw(),
             _ => [0; 16],
         };
 
         command_sink.send(AudioCommand {
             session_generation,
-            play_request_id,
+            play_request_id: request_id,
             kind,
             track_uri: item.uri,
             track_gid,
@@ -380,10 +509,17 @@ impl ShimPlayer {
     }
 
     fn command(&self, kind: AudioCommandKind, position_ms: u32) {
-        let current = self.current.lock().unwrap_or_else(|e| e.into_inner());
+        // `command_sink.send` will eventually be a synchronous Swift callback that can itself
+        // call back into `report` before returning — so the lock must be released before `send`,
+        // not held across it.
+        let play_request_id = self
+            .current
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .play_request_id;
         self.command_sink.send(AudioCommand {
             session_generation: self.session_generation,
-            play_request_id: current.play_request_id,
+            play_request_id,
             kind,
             track_uri: String::new(),
             track_gid: [0; 16],
@@ -419,8 +555,28 @@ impl ShimPlayer {
         self.broadcast(PlayerEvent::AutoPlayChanged { auto_play });
     }
 
+    /// Mirrors upstream `Player::emit_filter_explicit_content_changed_event`: broadcasts
+    /// `FilterExplicitContentChanged`, and if `filter` just turned on while an explicit track is
+    /// currently playing or paused, also emits `EndOfTrack` for it so Spirc advances — the same
+    /// "client setting forbids this track" skip upstream performs.
     pub fn emit_filter_explicit_content_changed(&self, filter: bool) {
         self.broadcast(PlayerEvent::FilterExplicitContentChanged { filter });
+        if !filter {
+            return;
+        }
+        let skip = {
+            let current = self.current.lock().unwrap_or_else(|e| e.into_inner());
+            let loaded = matches!(current.phase, TrackPhase::Playing | TrackPhase::Paused);
+            (loaded && current.is_explicit)
+                .then(|| (current.play_request_id, current.track_id.clone()))
+        };
+        if let Some((play_request_id, track_id)) = skip {
+            debug!("Currently loaded track is explicit; ending it for the filter change");
+            self.broadcast(PlayerEvent::EndOfTrack {
+                play_request_id,
+                track_id,
+            });
+        }
     }
 
     pub fn emit_shuffle_changed(&self, shuffle: bool) {
@@ -494,6 +650,7 @@ impl ShimPlayer {
         let event = match report.kind {
             AudioReportKind::Playing => {
                 current.position_ms = report.position_ms;
+                current.phase = TrackPhase::Playing;
                 Some(PlayerEvent::Playing {
                     play_request_id,
                     track_id,
@@ -502,6 +659,7 @@ impl ShimPlayer {
             }
             AudioReportKind::Paused => {
                 current.position_ms = report.position_ms;
+                current.phase = TrackPhase::Paused;
                 Some(PlayerEvent::Paused {
                     play_request_id,
                     track_id,
@@ -532,18 +690,27 @@ impl ShimPlayer {
                     position_ms: report.position_ms,
                 })
             }
-            AudioReportKind::EndOfTrack => Some(PlayerEvent::EndOfTrack {
-                play_request_id,
-                track_id,
-            }),
-            AudioReportKind::Unavailable => Some(PlayerEvent::Unavailable {
-                play_request_id,
-                track_id,
-            }),
-            AudioReportKind::Stopped => Some(PlayerEvent::Stopped {
-                play_request_id,
-                track_id,
-            }),
+            AudioReportKind::EndOfTrack => {
+                current.phase = TrackPhase::Stopped;
+                Some(PlayerEvent::EndOfTrack {
+                    play_request_id,
+                    track_id,
+                })
+            }
+            AudioReportKind::Unavailable => {
+                current.phase = TrackPhase::Stopped;
+                Some(PlayerEvent::Unavailable {
+                    play_request_id,
+                    track_id,
+                })
+            }
+            AudioReportKind::Stopped => {
+                current.phase = TrackPhase::Stopped;
+                Some(PlayerEvent::Stopped {
+                    play_request_id,
+                    track_id,
+                })
+            }
             AudioReportKind::TimeToPreloadNext => Some(PlayerEvent::TimeToPreloadNextTrack {
                 play_request_id,
                 track_id,
@@ -561,4 +728,4 @@ impl ShimPlayer {
     }
 }
 
-// TODO(#208): impl SpircPlayer once the vendored connect crate lands
+// TODO(#208): impl SpircPlayer once state.rs is ready to hold a ShimPlayer

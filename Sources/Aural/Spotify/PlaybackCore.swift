@@ -2,6 +2,16 @@ import AuralDomain
 import AuralPlaybackCore
 import Foundation
 
+/// Failure returned by the audio-key request below. Does not carry key bytes.
+nonisolated enum AudioKeyError: Error, Equatable {
+    /// `trackGID` was not 16 bytes, or `fileID` was not 20 bytes.
+    case invalidIdentifier
+    /// The AP session is not connected; the caller should wait and retry.
+    case notConnected
+    /// Any other engine failure (timeout, AES key error), carrying the raw result code.
+    case engineFailure(Int32)
+}
+
 /// The complete Swift-facing boundary to Aural's embedded playback engine.
 ///
 /// The application is native SwiftUI, and all catalog, authentication, state, and rendering
@@ -277,6 +287,45 @@ nonisolated enum PlaybackCore {
     ) -> R {
         guard let string else { return body(nil) }
         return string.withCString { body($0) }
+    }
+
+    /// Fetches the AES decryption key for one file over the existing AP session. Blocking;
+    /// librespot times a single request out at 1500ms. Stage 1 scaffolding for #201/#208:
+    /// nothing consumes this yet. Spotify throttles key requests, so the eventual consumer must
+    /// cache a successful key per file id and coalesce concurrent misses instead of calling
+    /// this repeatedly.
+    ///
+    /// - Parameters:
+    ///   - trackGID: 16 raw bytes of the track's Spotify ID.
+    ///   - fileID: 20 raw bytes of the file ID (the specific encoded file being played).
+    nonisolated static func audioKey(
+        trackGID: [UInt8],
+        fileID: [UInt8]
+    ) -> Swift.Result<[UInt8], AudioKeyError> {
+        guard trackGID.count == 16, fileID.count == 20 else {
+            return .failure(.invalidIdentifier)
+        }
+
+        var keyOut = [UInt8](repeating: 0, count: 16)
+        let result = keyOut.withUnsafeMutableBufferPointer { keyPointer -> Result in
+            trackGID.withUnsafeBufferPointer { trackPointer in
+                fileID.withUnsafeBufferPointer { filePointer in
+                    // All three buffers are non-empty (lengths checked above), so the base
+                    // addresses are non-null as the header's `assume_nonnull` region requires.
+                    aural_playback_audio_key(
+                        trackPointer.baseAddress!,
+                        filePointer.baseAddress!,
+                        keyPointer.baseAddress!
+                    )
+                }
+            }
+        }
+
+        switch result.rawValue {
+        case 0: return .success(keyOut)
+        case -3: return .failure(.notConnected)
+        default: return .failure(.engineFailure(result.rawValue))
+        }
     }
 
     static func next() -> Result { aural_playback_next() }
