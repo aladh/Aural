@@ -17,7 +17,10 @@ struct FakeSink {
 
 impl AudioCommandSink for FakeSink {
     fn send(&self, command: AudioCommand) {
-        self.commands.lock().unwrap_or_else(|e| e.into_inner()).push(command);
+        self.commands
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .push(command);
     }
 }
 
@@ -135,13 +138,17 @@ fn load_emits_play_request_id_changed_then_loading_before_the_load_command() {
 
     let play_request_id = player.load(track_id, true, 500);
 
-    let first = events.try_recv().expect("PlayRequestIdChanged must be sent synchronously");
+    let first = events
+        .try_recv()
+        .expect("PlayRequestIdChanged must be sent synchronously");
     assert!(matches!(
         first,
         PlayerEvent::PlayRequestIdChanged { play_request_id: id } if id == play_request_id
     ));
 
-    let second = events.try_recv().expect("Loading must be sent synchronously");
+    let second = events
+        .try_recv()
+        .expect("Loading must be sent synchronously");
     assert!(matches!(
         second,
         PlayerEvent::Loading { play_request_id: id, position_ms: 500, .. } if id == play_request_id
@@ -264,7 +271,9 @@ fn matching_report_emits_playing_with_current_track_id() {
         duration_ms: 0,
     });
 
-    let event = events.try_recv().expect("matching report must emit an event");
+    let event = events
+        .try_recv()
+        .expect("matching report must emit an event");
     match event {
         PlayerEvent::Playing {
             play_request_id: id,
@@ -300,7 +309,9 @@ fn matching_end_of_track_report_emits_end_of_track() {
         duration_ms: 0,
     });
 
-    let event = events.try_recv().expect("matching report must emit an event");
+    let event = events
+        .try_recv()
+        .expect("matching report must emit an event");
     assert!(matches!(
         event,
         PlayerEvent::EndOfTrack { play_request_id: id, track_id: t }
@@ -323,7 +334,10 @@ fn select_audio_file_prefers_highest_bitrate_vorbis() {
 
 #[test]
 fn select_audio_file_falls_back_when_the_top_preference_is_missing() {
-    let files = vorbis_files(&[AudioFileFormat::OGG_VORBIS_96, AudioFileFormat::OGG_VORBIS_160]);
+    let files = vorbis_files(&[
+        AudioFileFormat::OGG_VORBIS_96,
+        AudioFileFormat::OGG_VORBIS_160,
+    ]);
 
     let (format, _) =
         select_audio_file(&files, &VORBIS_FORMAT_PREFERENCE).expect("a Vorbis file is available");
@@ -333,7 +347,10 @@ fn select_audio_file_falls_back_when_the_top_preference_is_missing() {
 #[test]
 fn select_audio_file_returns_none_without_a_vorbis_alternative() {
     let mut map = HashMap::new();
-    map.insert(AudioFileFormat::MP3_320, librespot_core::FileId::from_raw(&[1u8; 20]));
+    map.insert(
+        AudioFileFormat::MP3_320,
+        librespot_core::FileId::from_raw(&[1u8; 20]),
+    );
     let files = AudioFiles(map);
 
     assert!(select_audio_file(&files, &VORBIS_FORMAT_PREFERENCE).is_none());
