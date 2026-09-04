@@ -1,72 +1,65 @@
 # Product and acceptance contract
 
-This document records intentional product behavior that is easy to lose during a refactor, plus
-the safe way to test Spotty against a real Spotify account. Spotty is an unofficial, independent
-project with no affiliation with, endorsement by, or sponsorship from Spotify AB; its private
-Spotify integration may violate Spotify's terms. Architecture decisions belong in the ADRs;
-measured baselines belong in [playback engine ownership](playback-engine-ownership.md).
+This document preserves product behavior that refactors can obscure and defines safe testing with
+a real Spotify account. Spotty is unofficial and independent, with no affiliation, endorsement,
+or sponsorship from Spotify AB; its private integration may violate Spotify's terms. ADRs own
+architecture decisions; [playback engine ownership](playback-engine-ownership.md) owns measured
+baselines.
 
 ## Product direction
 
-- Spotty is a focused, polished, native macOS client for personal Spotify Premium use.
-- macOS is the only current platform target. Cross-platform UI work is not a present constraint.
-- Prefer idiomatic SwiftUI and AppKit behavior over custom chrome. Do not add a WebView, Chromium
-  runtime, or a second UI framework.
-- Use a Spotify-familiar composition without reproducing Spotify's pixels: artwork-led media
-  headers, dense track tables, a right-side queue/history rail, and a full-width bottom player
-  shelf. Spotty always uses a dark native appearance with a near-black content canvas; there is no
-  light appearance or appearance mode. Inactive windows, focus, and native selection retain macOS
-  semantics. Spotty's fixed green is reserved for media actions and current-playback state; it is
-  not a second selection or focus system. Do not introduce a theme system.
-- Keep the product surface small. In particular, Spotty has no in-app volume control or manual
-  Spotify refresh action. Playlist creation, rename, cover editing, collaborative permission
-  management, and arbitrary reordering are out of scope. Occurrence-safe add/remove for playlists
-  Spotty can justify as owned is in scope.
-- Spotty has no Settings scene or custom accent-color preference.
+- Spotty is a focused native macOS client for personal Spotify Premium use; macOS is its only
+  target. Prefer SwiftUI and AppKit over custom chrome, and do not add a WebView, Chromium runtime,
+  or second UI framework.
+- Use a Spotify-familiar composition without copying Spotify pixels: artwork-led headers, dense
+  track tables, a right queue/history rail, and a full-width player shelf. The app is dark-only,
+  with a near-black canvas and no appearance mode or theme system. Preserve macOS inactive-window,
+  focus, and selection behavior. Fixed green denotes media actions and current playback only.
+- Keep the surface small: no in-app volume control, manual refresh, Settings scene, or custom
+  accent-color preference. Playlist creation, renaming, cover editing, collaborative permissions,
+  and arbitrary reordering are out of scope. Occurrence-safe add/remove is allowed only for
+  playlists Spotty can establish it owns.
 
 ## Window and navigation behavior
 
-- The main window uses a native, resizable sidebar and inspector. Both side panels start near the
-  same compact 208-point width; the sidebar stays within 180–260 points and the inspector within
-  200–280 points. At compact sidebar widths, playlist shortcuts keep artwork and title while
-  hiding secondary metadata. Either panel may still be shown or hidden through its native command.
+- The main window has a native, resizable sidebar and inspector. Both begin near 208 points; the
+  sidebar remains 180–260 points and the inspector 200–280. Compact playlist shortcuts retain
+  artwork and title but hide secondary metadata. Native commands can show or hide either panel.
 - The sidebar has native navigation symbols for primary destinations and at most three playlist
   shortcuts. Those shortcuts may show compact artwork and metadata, with a text-only fallback. The
   full Playlists destination remains the library browser. Do not add a redundant app logo or
   app-name header to the content area.
-- The right inspector contains Queue and History in a stable segmented header. Switching tabs must
-  not move the header. Current and upcoming queue items may show compact artwork and duration when
-  metadata is available, with text-only fallbacks. VoiceOver uses the same catalog-enriched title,
-  artist, and available duration as the visible row. History may show artwork.
+- The inspector presents Queue and History under a stable segmented header. Queue rows may show
+  compact artwork and available duration, with text-only fallbacks; VoiceOver uses the same
+  catalog-enriched title, artist, and duration. History may show artwork.
 - Closing the main window purges presentation caches but does not quit Spotty. The app remains in the
   Dock and reopens through the Dock icon or the standard macOS Window command.
-- Sign Out belongs in the macOS **Spotty** application menu, not in a custom profile card. It remains
-  available while connecting or after a session failure; teardown drains accepted authorization
-  persistence before clearing the grant. There is no app-specific Settings surface.
+- Sign Out stays in the macOS **Spotty** menu, including while connecting or after a session
+  failure. Teardown drains accepted authorization persistence before clearing the grant.
 
 ## Playback presentation and ownership
 
-- The pinned Rust/librespot engine is the sole production implementation for the Spotify session,
-  Connect, streaming, decryption, decoding, and playback protocol. Swift owns application policy
-  and presentation; decoded PCM crosses the narrow playback adapter into the native AVFoundation
-  renderer.
+- The pinned Rust/librespot engine exclusively owns the Spotify session, Connect, streaming,
+  decryption, decoding, and playback protocol. Swift owns policy and presentation; decoded PCM
+  reaches AVFoundation through the narrow playback adapter.
 - Spotty mirrors the active Spotify Connect device automatically, including a device owned by a
   different computer. The now-playing title, artist, artwork, position, play/pause state, queue,
   and available controls must follow that owner without requiring a manual refresh.
-- When an identified remote device owns the current track, a thin green status strip attaches to
-  the bottom of the player shelf and names that device. It says whether playback is playing or
-  paused, disappears for local or unidentified ownership, and does not replace the device menu.
+- An identified remote owner adds a thin green strip to the player shelf that names the device and
+  its playing or paused state. It disappears for local or unidentified ownership and does not
+  replace the device menu.
 - Transport commands target the device that owns playback. Spotty must not silently transfer
   playback to this Mac merely because the user pressed a remote control. When no device is marked
   active but a current track remains, a remembered last remote device stays an uncertain remote
   candidate so commands remain remote-routable; a missing or stale fallback never becomes local.
-- With no current track, the primary control shows Play and is disabled. Pause appears only while
-  the observed playback state is actually playing.
+### Transport and progress
+
+- With no current track, Play is disabled. Pause appears only for observed playing state.
 - The transport order is shuffle, previous, play/pause, next, repeat. Previous and next use the
   track-skip symbols with an outside bar, not rewind or fast-forward symbols. Repeat stays to the
   right of Next.
-- Progress is interpolated smoothly between authoritative snapshots while playing. A new snapshot,
-  seek, pause, track change, or ownership change must re-anchor it instead of allowing drift.
+- Interpolate progress smoothly between authoritative playing snapshots. New snapshots, seeks,
+  pauses, track changes, and ownership changes re-anchor it.
 - Shuffle is a single on/off control backed by Spotty's persistent fewer-repeats policy. Spotify
   Connect does not expose a shuffle-style parameter, so no shuffle-style picker is presented.
 - Repeat cycles off → queue → track → off. Each step sends only the Connect flags that change,
@@ -79,27 +72,27 @@ measured baselines belong in [playback engine ownership](playback-engine-ownersh
   repeat; a compensated both-true track → off failure whose intermediate snapshot is still
   displayed as track (`context: false`, `track: true`) restores the captured previous track
   mode and both-true flags; unrelated newer authoritative repeat state is left intact.
-- Queue order comes from the playback source of truth. Catalog and Web API metadata may enrich
-  names but must not reorder the queue. Resolvable entries should progressively replace fallback
-  labels rather than remaining misleadingly `Unknown`.
+### Queue
+
+- Playback is the queue's ordering authority. Catalog and Web API metadata may enrich names but
+  cannot reorder it; resolvable entries progressively replace fallback `Unknown` labels.
 - Upcoming queue rows use a native selectable list. Delete/Backspace and **Remove from Queue**
   remove only selected *upcoming* occurrences by queue identity (Connect occurrence uid when
   present), never by track URI. Duplicate URIs or duplicate UIDs that cannot be proven fail
   closed. The now-playing row and History tab are not removable queue entries. Play from the queue
   remains a deliberate primary action (Return/double-click), not a single-click.
-- Queue replacement is a Spotify Connect `set_queue` of remaining protocol `next_tracks` plus the
-  current `prev_tracks` and the exact incoming ProvidedTrack metadata map (`metadata`, `uid`,
-  `provider`, and the other player.proto fields the snapshot carried). Spotty does not synthesize
-  `is_queued` or edit presentation state to fake success. Sequential Add to Queue is not atomic:
-  feedback reports full success, zero success, or a partial completed count.
-  Removal is gated on a complete Connect mutation snapshot, account/engine epoch, owner, and
-  player `disallow_set_queue` / `disallow_removing_from_next_tracks` reasons. Partial, provisional,
-  web-API-only, restricted, joining, local-owner, stale-selection, and rejected results leave the
-  visible queue intact and report through `TransientFeedbackPresenter`. A second removal while one
-  authoritative replacement is in flight is refused without feedback: cancelling the local task
-  cannot undo a `set_queue` Spotify already accepted. Cancelled and
-  account-epoch-invalidated in-flight removals also leave the visible queue intact, without
-  transient feedback.
+- Queue replacement calls Spotify Connect `set_queue` with remaining protocol `next_tracks`, current
+  `prev_tracks`, and the exact incoming ProvidedTrack metadata map (`metadata`, `uid`, `provider`,
+  and every other snapshot player.proto field). Never synthesize `is_queued` or alter presentation
+  state to imply success. Sequential Add to Queue is non-atomic and reports full, zero, or partial
+  completion.
+  Removal requires a complete Connect mutation snapshot, matching account/engine epoch and owner,
+  and no `disallow_set_queue` or `disallow_removing_from_next_tracks` reason. Partial, provisional,
+  web-API-only, restricted, joining, local-owner, stale-selection, and rejected requests retain the
+  visible queue and report through `TransientFeedbackPresenter`. While authoritative replacement is
+  in flight, silently refuse another removal: cancelling the local task cannot undo an accepted
+  `set_queue`. Cancelled or account-epoch-invalidated in-flight removals also retain the queue
+  without transient feedback.
 - Local-owner removal is disabled: librespot `Spirc` at the pinned revision exposes `add_to_queue`
   only, and inbound `SetQueue` is not a public local command. Any future support must remain within
   the retained engine boundary and pass focused checks. Add to Queue remains available for local
@@ -107,33 +100,29 @@ measured baselines belong in [playback engine ownership](playback-engine-ownersh
 
 ## Playlist behavior
 
-- The playlist hero begins close to the content edge and uses a compact approximately 230-point
-  dark blue-gray gradient surface with approximately 170-point artwork and a responsive, prominent
-  title. At approximately 840 points and wider, the title uses the large 64-point treatment while
-  retaining compact breakpoints and long-title scaling. It shows the loaded plain-text description
-  plus known owner, song count, and aggregate duration metadata without inferring public/private
-  visibility. A thin action strip contains the existing Play action as the only persistent playlist
-  action, and all foregrounds remain readable when the window is inactive.
+- The playlist hero starts near the content edge on a roughly 230-point dark blue-gray gradient,
+  with roughly 170-point artwork and a responsive title. At roughly 840 points wide and above it uses the
+  64-point title treatment, while preserving compact breakpoints and long-title scaling. It shows
+  the loaded plain-text description and known owner, song count, and aggregate duration without
+  inferring visibility. Its thin action strip has only the existing Play action; foregrounds remain
+  readable in inactive windows.
 - The owner, song count, and total duration share the metadata line beside the artwork when the
   current playlist snapshot is authoritative. Song count does not belong in the track table.
-- Playlist rows use the Spotify-familiar native columns `#`, `Title` (with 30–32-point track
-  artwork beside the stacked Artist), `Album`, `Date Added`, and `Duration`; artwork belongs in
-  the Title cell rather than a separate column. The `#` cell shows the one-based position in the
-  current display projection and becomes the current-track speaker indicator only while that URI
-  is playing. A paused current URI keeps its green display ordinal; selected rows retain native
-  selection foregrounds. Both current states expose the position to accessibility.
+- Playlist rows use native Spotify-familiar columns: `#`, `Title` (30–32-point artwork beside
+  stacked Artist), `Album`, `Date Added`, and `Duration`. Artwork stays in Title. `#` shows the
+  one-based display position and becomes a speaker only for a playing current URI. A paused current
+  URI keeps its green ordinal; selected rows retain native selection foregrounds. Accessibility
+  exposes the position in either current state.
   Playlist row durations round each track to the nearest second for display, and the hero's total
   sums those same rounded per-track seconds. Totals of at least one hour use `hr`/`min` units;
   player and progress formatting retain their existing floor-to-second behavior.
   Shared search, library, and album tables retain their separate Artist, Popularity, BPM, Key, and
   Time columns.
-- Playlist tables initially present newest Date Added first to match Spotify's Recently added
-  presentation. This is a local display projection and never mutates the playlist store's source
-  order. The native **Restore Playlist Order** toolbar command clears that projection and restores
-  the authoritative playlist order; it is disabled when the table is already in source order.
-- Clicking **Date Added** sorts directly and reverses the order on the next click through native
-  table sorting; it must never open a picker or menu. Clearing table sorting restores playlist
-  order.
+- Playlist tables initially show newest Date Added first, matching Spotify's Recently added view.
+  This local display projection never changes source order. **Restore Playlist Order** clears it,
+  restores authoritative order, and is disabled when already in source order. Clicking **Date
+  Added** sorts directly and reverses on the next click through native sorting; it never opens a
+  picker or menu. Clearing table sorting restores playlist order.
 - Track tables use native multi-selection. **Add to Playlist** is a context-menu command listing
   library playlists whose owner URI matches the signed-in profile. The selected rows are batched
   as one mutation, preserving duplicate track URIs from distinct occurrences and ignoring repeated
@@ -141,11 +130,10 @@ measured baselines belong in [playback engine ownership](playback-engine-ownersh
 - In an editable open playlist, Delete/Backspace and **Remove from Playlist** remove the selected
   occurrences by Pathfinder UID (`CatalogTrack.id`), never by track URI. Read-only playlists do
   not advertise or route those commands.
-- Successful add/remove refresh only the affected open playlist and report through
-  `TransientFeedbackPresenter`. Write failure, cancellation, and stale account/session results leave
-  presentation state unchanged. A committed write stays successful if that refresh fails; the open
-  playlist then keeps its previous rows, shows that they may be stale, and Retry reloads rows without
-  repeating the mutation.
+- Successful add/remove refreshes only the affected open playlist and reports through
+  `TransientFeedbackPresenter`. Failed, cancelled, and stale account/session writes leave
+  presentation unchanged. A committed write remains successful if refresh fails: retain prior rows,
+  mark them possibly stale, and let Retry reload without repeating the mutation.
 - Dragging selected tracks onto playlist rows is omitted. A native SwiftUI Table transfer
   representation serializes the dragged row rather than the occurrence-aware multi-selection;
   disabled drop targeting for non-editable rows could not be demonstrated without private
@@ -153,8 +141,8 @@ measured baselines belong in [playback engine ownership](playback-engine-ownersh
 
 ## Transient mutation feedback
 
-- User-initiated mutations such as Add to Queue report completion through one app-composed
-  `TransientFeedbackPresenter`. Playlist and queue management should use the same owner.
+- User-initiated mutations, including Add to Queue, report through the one app-composed
+  `TransientFeedbackPresenter`; playlist and queue management share it.
 - The banner is a single non-modal overlay just above the persistent player. It must not steal
   focus, intercept unrelated pointer or keyboard input, or shift window layout. A newer message
   replaces the current one; automatic dismissal is cancellable and must not clear a replacement.

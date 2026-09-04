@@ -94,10 +94,11 @@ values.
 
 ## Client behavior
 
-The codec/API and scheduling live in `TrackAttributes.swift` and
-`CatalogMetadataRepository.loadTrackAttributes(for:)`, respectively.
+The codec/API lives in `TrackAttributes.swift`; scheduling lives in
+`CatalogMetadataRepository.loadTrackAttributes(for:)`.
 
 - Batch 100 track URIs per request and cap each list load at 1,000 URIs.
-- Cache attributes per URI for the session and collapse duplicate playlist occurrences.
+- Cache attributes by URI in a bounded, account-scoped cache and collapse duplicate playlist
+  occurrences.
 - Treat enrichment as best-effort so track lists render before it finishes.
 - Do not cache failures or absent attributes; a later list load can retry them.

@@ -1,13 +1,11 @@
 # Playback engine ownership
 
 Live inventory for [ADR 005](ADR-005-retain-librespot.md). [ADR 004](ADR-004-swift-owned-playback-logic.md)
-is retained as historical context; its staged migration is superseded. Classify production logic as
-**librespot/protocol/runtime** (stays in `Backend/spotty-playback`) or **Spotty-owned** (lives in
-Swift).
+is historical; its staged migration is superseded. Production logic is either
+**librespot/protocol/runtime** in `Backend/spotty-playback` or **Spotty-owned** in Swift.
 
-This is not a second architecture manual. Product behavior stays in the
-[product and acceptance contract](product-and-acceptance-contract.md). Hard-rule owners stay
-in the [enforcement inventory](architecture-enforcement.md).
+Product behavior belongs in the [product and acceptance contract](product-and-acceptance-contract.md);
+hard-rule owners belong in the [enforcement inventory](architecture-enforcement.md).
 
 ## Swift (authoritative app state)
 
@@ -20,7 +18,7 @@ in the [enforcement inventory](architecture-enforcement.md).
 | `ConnectDeviceProjection` | Device-list activity, display sort, empty-type fallback |
 | `ConnectionSnapshotProjection` | Connection session phase, empty-device-id fallback |
 | `PlaybackSnapshotProjection` | Engine playback transport, empty-URI identity, timestamp correction |
-| `ResumeLoadPlan` | Resume-load target order from sticky resume-load URIs, for user resume and reconnect rehydration. `PlaybackStore` captures those URIs through the engine getters; `RustPlaybackEngine` iterates targets through `spotty_playback_load`. The engine signals a reconnect window with `resume_pending` and holds readiness until a Swift load lands, a load reports `ERROR_NEEDS_REINIT` (dead Spirc, which ends the wait for that window and triggers a rebuild), or the window times out |
+| `ResumeLoadPlan` | Target order from sticky resume-load URIs for user resume and reconnect rehydration. `PlaybackStore` captures the URIs through engine getters; `RustPlaybackEngine` loads each target. During reconnect, the engine holds readiness behind `resume_pending` until a Swift load lands, reports `ERROR_NEEDS_REINIT`, or times out. |
 | Catalog, OAuth, shuffle policy, HTTP retry | Application policy owned by Swift; these responsibilities do not belong in the engine |
 | `AudioRenderer` | Native AVFoundation output for the bounded PCM callback from the retained Rust/librespot player; owns output buffering, backpressure, route changes, and renderer teardown |
 
@@ -44,38 +42,34 @@ in the [enforcement inventory](architecture-enforcement.md).
 | `spirc_command_error.rs` | Adapter | Map librespot errors onto FFI codes Swift already understands |
 | `librespot-connect` | Protocol/runtime dependency | The pinned upstream Connect implementation remains the engine's Connect owner; updates require protocol and license review |
 
-## Implemented retained-engine guarantees
+## Retained-engine guarantees
 
-The combined retained-engine change establishes these guarantees within the existing Rust/librespot
-boundary. The issue links identify the scoped failure modes for traceability; they are not open work
-or a migration roadmap:
+The existing Rust/librespot boundary provides these guarantees:
 
-- [#179](https://github.com/aladh/Spotty/issues/179): Spirc load and activation failures use typed
-  outcomes. A closed command channel or failed rehydration returns the reinitialization outcome;
-  the lifecycle owner rebuilds through the existing recovery path, while a failed activation rolls
-  back its staged generation before readiness is published.
-- [#180](https://github.com/aladh/Spotty/issues/180): Session, mixer, player, Spirc, and listener
-  tasks stay local until initialization succeeds. The generation commits all object slots and task
-  handles together, and failed or superseded builds abort and join staged work. Teardown owns the
-  stop, cancellation, join, and generation invalidation sequence. Spirc gets a bounded opportunity
-  to finish gracefully; forced shutdown explicitly closes its Dealer connection before replacement.
-- [#181](https://github.com/aladh/Spotty/issues/181): Definitive streaming-credential rejection
-  is classified using the public error kind and the two exact AP rejection categories at the
-  pinned revision. Librespot keeps the detailed AP error type private, so this narrow adapter
-  comparison must be audited on dependency updates; general permission failures never qualify.
-  A definitive rejection clears only the engine's streaming credential cache
+- Spirc load and activation failures use typed outcomes. A closed command channel or failed
+  rehydration returns the reinitialization outcome; the lifecycle owner rebuilds through the
+  existing recovery path. A failed activation rolls back its staged generation before readiness is
+  published.
+- Session, mixer, player, Spirc, and listener tasks stay local until initialization succeeds. The
+  generation commits all object slots and task handles together, and failed or superseded builds
+  abort and join staged work. Teardown owns the stop, cancellation, join, and generation
+  invalidation sequence. Spirc gets a bounded opportunity to finish gracefully; forced shutdown
+  explicitly closes its Dealer connection before replacement.
+- Definitive streaming-credential rejection uses the public error kind and the two exact AP
+  rejection categories at the pinned revision. Librespot keeps the detailed AP error type private,
+  so this narrow adapter comparison must be audited on dependency updates; general permission
+  failures never qualify. A definitive rejection clears only the engine's streaming credential cache
   for the current generation, stops retrying that credential, and crosses as a typed
   `credentials_rejected` snapshot and a distinct initialization result. Swift stops launch restore
   on that result, preserves the independent Keymaster grant, and persists the reauthorization
   requirement with it. A fresh durably adopted grant clears the requirement; refresh-revoked grants
   are cleared only for their owning account generation.
-- [#184](https://github.com/aladh/Spotty/issues/184): Playback and connection snapshots carry the
-  protocol active-device fact with the observation. Swift derives ownership from that fact instead
-  of depending on connection and playback callback arrival order.
-- [#186](https://github.com/aladh/Spotty/issues/186): The retained snapshot ABI is represented in
-  the checked-in C header and Rust `repr(C)` types, with symbol/signature fixtures and a C-consumer
-  layout probe. Boundary strings normalize missing, empty, and interior-NUL values before Swift
-  consumes a callback.
+- Playback and connection snapshots carry the protocol active-device fact with the observation.
+  Swift derives ownership from that fact instead of depending on connection and playback callback
+  arrival order.
+- The retained snapshot ABI is represented in the checked-in C header and Rust `repr(C)` types, with
+  symbol/signature fixtures and a C-consumer layout probe. Boundary strings normalize missing,
+  empty, and interior-NUL values before Swift consumes a callback.
 
 ## FFI surface
 
@@ -120,9 +114,8 @@ migration plan.
 
 ## Historical measured baseline (2026-08-23)
 
-This measurement predates the retained-engine cleanup and is historical context, not a current
-performance claim or a migration gate. Any new comparison must record its commit and product
-surfaces.
+This predates the retained-engine cleanup. It is historical context, not a current performance
+claim or migration gate. Any new comparison must record its commit and product surfaces.
 
 Spotty 0.4.0 (4), optimized signed Release bundle, macOS 27.0 (26A5416b), Apple M1 Max, 32 GB.
 Five `ps` samples at one-second intervals after the state stabilized; memory is RSS; foreground
@@ -139,8 +132,8 @@ Renderer backpressure: of 1,971 one-millisecond playing observations, 1,935 were
 deliberate producer sleep, with no allocator hotspot. A Core Media sample-buffer pool is not
 warranted; the cursor-based renderer is the lower-risk design.
 
-The browse path behind these numbers included surfaces that have since been removed. A rerun should
-record its own commit and surfaces.
+The measured browse path included surfaces that have since been removed. A rerun must record its
+own commit and surfaces.
 
 ### Binary size
 

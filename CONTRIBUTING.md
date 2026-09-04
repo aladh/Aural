@@ -3,9 +3,7 @@
 This conventional filename is retained for repository tooling and links. Start with
 [AGENTS.md](AGENTS.md), then load only the procedure needed for the task.
 
-## Environment
-
-See the canonical prerequisites and toolchain versions in the
+Prerequisites, toolchain pins, signing setup, and generated local state are in the
 [development setup guide](docs/development-setup.md#fresh-clone).
 
 ## Build and run
@@ -16,11 +14,10 @@ From the repository root:
 ./script/build_and_run.sh
 ```
 
-The script compiles the Rust backend when needed, builds the SwiftPM executable, creates and signs a
-local `Spotty.app`, terminates any running development copy, and launches the replacement. Because that
-can disturb an authenticated session, use it only when the request authorizes launch or interactive
-acceptance; do not use it as a compile check. The path-specific contract is
-[`script/AGENTS.md`](script/AGENTS.md).
+The script builds the Rust backend and SwiftPM executable, packages and signs `Spotty.app`, replaces
+any running development copy, then launches it. It can disturb an authenticated session, so use it
+only when launch or interactive acceptance is authorized; it is not a compile check. The path-specific
+contract is [`script/AGENTS.md`](script/AGENTS.md).
 
 Useful modes:
 
@@ -31,14 +28,10 @@ Useful modes:
 ./script/build_and_run.sh --telemetry
 ```
 
-Authenticated launches require an Apple Development identity with a stable Team ID. A free Xcode
-Personal Team is sufficient for local personal use. When exactly one identity is installed, the
-script selects it; otherwise set `SPOTTY_DEVELOPMENT_SIGNING_IDENTITY` to the exact name from
-`security find-identity -p codesigning -v`.
-
-The generated identity under ignored `.build/spotty-signing/` is for build/package verification only.
-It is not trusted, is not a distribution identity, must not be used to sign in, and must never be
-installed in the login keychain or committed.
+Authenticated launches require an Apple Development identity with a stable Team ID. When exactly one
+is available, the script selects it; otherwise set `SPOTTY_DEVELOPMENT_SIGNING_IDENTITY` to the exact
+name reported by `security find-identity -p codesigning -v`. See the setup guide for creating an
+identity and for Keychain recovery.
 
 ## Normal verification
 
@@ -49,35 +42,25 @@ gate is:
 ./Scripts/check.sh
 ```
 
-The gate checks tracked Swift formatting, Rust formatting, warning-clean Clippy, locked Rust tests,
-the pinned cbindgen output against the checked-in header,
-Rust/C export and header parity, Swift builds with project-owned warnings as errors, deterministic
-Swift tests, architecture contracts, CI policy, and packaging metadata. It does not sign in
-or initiate playback.
+The gate checks formatting, warning-clean Clippy, locked Rust tests, pinned C-header generation,
+ABI parity, warning-clean Swift builds and deterministic tests, architecture contracts, CI policy,
+and packaging metadata. It does not sign in or initiate playback.
 
-After changing a generated ABI declaration, run `./Scripts/generate-c-header.sh` and commit the
-result with the Rust change. `./Scripts/generate-c-header.sh --check` verifies reproducibility without
-modifying the header. Install the version listed in the [setup guide](docs/development-setup.md#fresh-clone),
-or set `SPOTTY_CBINDGEN` to that executable's path. The wrapper checks the version and ABI export
-set and never installs tools; CI installs the pin explicitly. Generation does not replace the
-C/Rust layout, signature, ownership, or callback-lifetime checks.
+After changing a Rust ABI declaration, run `./Scripts/generate-c-header.sh` and commit the generated
+header. `--check` verifies reproducibility without modifying it. cbindgen is pinned in the
+[setup guide](docs/development-setup.md#fresh-clone); set `SPOTTY_CBINDGEN` when it is not on `PATH`.
+The wrapper validates its version and export set without installing tools.
 
-`Backend/spotty-playback/cbindgen.toml` generates all playback function declarations and snapshot
-layouts from Rust into `Sources/SpottyPlaybackCore/include/spotty_playback_generated.h`. Edit the Rust
-declarations and their ownership documentation, then regenerate; do not edit that artifact by hand.
-The public `spotty_playback.h` remains the umbrella include.
+`Backend/spotty-playback/cbindgen.toml` generates
+`Sources/SpottyPlaybackCore/include/spotty_playback_generated.h`. Edit the Rust declarations and
+their ownership documentation, then regenerate; never edit the generated header. Keep Swift-specific
+nullable-pointer and open-enum annotations in `spotty_playback_annotations.h`. Do not enable
+cbindgen's global nullable-pointer annotation: it would make required callback pointers nullable.
+The umbrella include remains `spotty_playback.h`.
 
-The small handwritten `spotty_playback_annotations.h` owns Swift's open-enum and nullable-pointer
-annotations. Rust uses matching primitive and typed-pointer aliases without runtime conversions.
-The generated declarations retain the existing assumed-nonnull contract. Do not enable cbindgen's
-global nullable-pointer annotation: it also marks required callback pointers nullable. Keep semantic
-annotations separate from generated field lists and function signatures.
-
-`Scripts/check-c-header-imports.sh` type-checks the Swift import contract and expected failures for
-nullable pointers used without unwrapping. It never links or executes the fixtures. Extend these
-probes when introducing another pointer shape. The C compiler independently checks the unchanged
-`abi-signatures.txt` contract through typedef aliases; the Rust assignments and C layout checks
-remain separate proof.
+`Scripts/check-c-header-imports.sh` compile-checks Swift imports, including nullable-pointer failures,
+without linking or running playback. Extend it for a new pointer shape. The full gate separately
+checks C/Rust layouts, signatures, exports, and callback lifetimes.
 
 Swift formatting uses the selected Swift 6.3 toolchain's `swift-format`:
 
@@ -95,9 +78,7 @@ The two non-shipping Swift Testing targets are:
 - `SpottyBoundaryTests`: concrete codecs, fixtures, stores, coordinators, queue flows, and other
   injected SpottyCore boundaries.
 
-Their sources live under `Tests/SpottyDomainTests/` and `Tests/SpottyBoundaryTests/`. Each behavior
-area is grouped in a named Swift Testing `@Suite`; parameterized suites are used for deterministic
-input matrices where the expected result is independent for each case.
+Their sources live under `Tests/SpottyDomainTests/` and `Tests/SpottyBoundaryTests/`.
 
 Use standard SwiftPM filtering for focused iteration:
 
@@ -116,10 +97,8 @@ SPOTTY_CHECK_SCOPE=rust ./Scripts/check.sh
 SPOTTY_CHECK_SCOPE=swift ./Scripts/check.sh
 ```
 
-The required `Debug quality gate` aggregates Rust verification, Swift/architecture verification, and
-the release compile. CI uses the [documented toolchain](docs/development-setup.md#fresh-clone), a
-content-keyed Rust archive, and configuration-safe SwiftPM caches; cache hits may reduce latency but
-never coverage.
+The required CI gate combines Rust verification, Swift and architecture verification, and a Release
+compile. CI uses the documented toolchain; caches do not reduce coverage.
 
 Use `SPOTTY_CHECK_REPEATS=N ./Scripts/check.sh` with `N` from 1 through 25 when concurrency or lifetime
 work merits stress.
@@ -132,12 +111,8 @@ The clean-room gate is:
 ./Scripts/check-clean.sh
 ```
 
-It removes generated Swift build products, rebuilds Rust, then verifies Debug and Release. Do not run
-destructive cleanup over unrelated work. `./Scripts/compile-release-spotty.sh` remains the local
-compile-only release command.
-
-Prefer behavior tests over source-text snapshots; regex is not the owner of concurrency, epochs, queue
-provenance, lifecycle, rollback, or payload correctness.
+It removes Swift build products, rebuilds Rust, then verifies Debug and Release. Do not use it to
+clean unrelated work. `./Scripts/compile-release-spotty.sh` is the compile-only Release command.
 
 ## Package, sign, and notarize
 
@@ -167,16 +142,17 @@ SPOTTY_NOTARY_PROFILE="spotty-notary" \
 
 `validate-app.sh --distribution` requires a Developer ID signature, a valid notarization ticket, and
 Gatekeeper acceptance. Signing proves artifact integrity; it does not make the private Spotify
-integration supported or policy-compliant. Before distributing a binary, generate and inspect the
-complete transitive license set from `Cargo.lock`.
+integration supported or policy-compliant. Review and update
+[THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) when distribution changes its dependency set. Before
+distributing a binary, generate and inspect the complete transitive license set from `Cargo.lock`.
 
 ## Tagged releases
 
-A matching `vX.Y.Z` tag runs the ARM64 release workflow. It compares the numeric tag with
-`CFBundleShortVersionString` in `Packaging/Info.plist`, runs the full gate, validates an ARM64-only
-app, creates a ZIP and SHA-256 checksum, and publishes an experimental prerelease. Until Developer ID
-and notarization credentials are configured, artifacts use a hardened-runtime ad-hoc signature and
-release notes must state that macOS will not automatically trust them.
+A matching `vX.Y.Z` tag runs the ARM64 release workflow. It checks the tag against
+`CFBundleShortVersionString`, runs the full gate, validates an ARM64-only app, then publishes a ZIP
+and SHA-256 checksum as an experimental prerelease. Until Developer ID and notarization credentials
+are configured, artifacts use a hardened-runtime ad-hoc signature and macOS will not automatically
+trust them; release notes must say so.
 
 Renovate owns dependency updates; GitHub Actions remain SHA-pinned with readable version comments;
 librespot updates receive protocol and license review rather than routine bump treatment.
