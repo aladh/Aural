@@ -11,9 +11,12 @@ let package = Package(
         .library(name: "SpottyDomain", targets: ["SpottyDomain"]),
     ],
     targets: [
-        .systemLibrary(
+        .target(
             name: "SpottyPlaybackCore",
-            path: "Sources/SpottyPlaybackCore"
+            path: "Sources/SpottyPlaybackCore",
+            exclude: ["AGENTS.md"],
+            sources: ["spotty_playback_shim.c"],
+            publicHeadersPath: "include"
         ),
         // Vendored stb_vorbis (public domain / MIT, pinned in Vendor/stb_vorbis/UPSTREAM.md).
         // stb_vorbis.c is excluded from `sources`: it is compiled once via #include inside
@@ -61,16 +64,12 @@ let package = Package(
         .testTarget(
             name: "SpottyDomainTests",
             dependencies: ["SpottyDomain"],
-            path: "Sources/SpottyChecks",
-            exclude: [
-                "AGENTS.md",
-                "DeferredBoundaryChecks",
-            ]
+            path: "Tests/SpottyDomainTests"
         ),
         .testTarget(
             name: "SpottyBoundaryTests",
             dependencies: ["SpottyCore"],
-            path: "Sources/SpottyChecks/DeferredBoundaryChecks",
+            path: "Tests/SpottyBoundaryTests",
             resources: [.copy("Fixtures")]
         ),
     ]

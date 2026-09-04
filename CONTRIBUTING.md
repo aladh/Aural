@@ -70,11 +70,15 @@ The two non-shipping Swift Testing targets are:
 - `SpottyBoundaryTests`: concrete codecs, fixtures, stores, coordinators, queue flows, and other
   injected SpottyCore boundaries.
 
+Their sources live under `Tests/SpottyDomainTests/` and `Tests/SpottyBoundaryTests/`. Each behavior
+area is grouped in a named Swift Testing `@Suite`; parameterized suites are used for deterministic
+input matrices where the expected result is independent for each case.
+
 Use standard SwiftPM filtering for focused iteration:
 
 ```bash
-swift test --disable-sandbox --filter SpottyDomainTests.testProtobuf
-swift test --disable-sandbox --no-parallel --filter SpottyBoundaryTests.testAuthFlow
+swift test --disable-sandbox --filter ProtobufTests/testProtobuf
+swift test --disable-sandbox --no-parallel --filter AuthFlowTests/testAuthFlow
 ```
 
 `swift test list` shows the discovered test names. No-argument execution runs all tests, and
