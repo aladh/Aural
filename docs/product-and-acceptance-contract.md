@@ -169,9 +169,12 @@ Without explicit playback permission, it is safe to:
 
 - run `./Scripts/check.sh` and the synthetic check executables;
 - launch, sign in, browse Home/Search/library/detail pages, sort tables, inspect devices and queue,
-  close/reopen the window, and sign out when sign-out testing is in scope;
+  and close/reopen the window;
 - observe remote playback state without pressing Play/Pause, Previous, Next, Shuffle, Repeat,
   Seek, Add to Queue, Transfer, Add to Playlist, or Remove from Playlist.
+
+Transport, seek, transfer, queue/library/playlist/follow mutation, and sign-out each require explicit
+current-request authorization naming that action.
 
 Do not infer playback permission from a request to launch, inspect, accept-test, or test read-only.
 Do not transfer playback, alter the queue, seek, or change transport modes as a substitute for a

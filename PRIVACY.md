@@ -36,6 +36,9 @@ playback services, plus artwork hosts returned by Spotify. It has no Spotty-oper
 Generated data remains on the Mac unless the user deliberately shares it. Spotty does not include
 analytics, advertising, crash-reporting SDKs, or project-operated telemetry.
 
+Repository fixtures are reduced, synthetic, and non-identifying; captured account payloads and
+account-derived fixtures do not belong in the repository.
+
 ## Diagnostics
 
 `Scripts/export-diagnostics.sh` exports a bounded slice of Spotty's Unified Logging into the ignored

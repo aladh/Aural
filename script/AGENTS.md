@@ -13,5 +13,5 @@ This directory owns the build, sign, terminate, and launch entry point. Read
   identities in the login keychain to suppress prompts.
 - Preserve non-destructive failure ordering: signing validation must fail before terminating the
   running app. Never erase credentials or unrelated generated state as recovery.
-`./Scripts/package-app.sh --debug` and `./Scripts/package-app.sh --release` package, sign, and
-validate the Spotty executable bundle without terminating or launching it.
+- `./Scripts/package-app.sh --debug` and `./Scripts/package-app.sh --release` package, sign, and
+  validate the Spotty executable bundle without terminating or launching it.

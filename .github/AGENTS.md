@@ -12,5 +12,5 @@ GitHub workflows and pull-request metadata are part of the verification and rele
   cache contents, restore prefixes, and timestamp refreshes as correctness-sensitive build behavior.
 - Do not install a second Swift formatter/linter in CI; use the selected Xcode toolchain and the
   repository wrappers. Prefer an existing runner `rg`, with the documented fallback only.
-Inspect workflow diffs for permissions, pins, trigger trust boundaries, shell interpolation, cache
-poisoning, and accidental coverage reduction.
+- Inspect workflow diffs for permissions, pins, trigger trust boundaries, shell interpolation, cache
+  poisoning, and accidental coverage reduction.

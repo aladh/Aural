@@ -115,7 +115,7 @@ review under `DOC-CI-001` and `DOC-REL-001`.
 | `DOC-AGENT-001`, `DOC-DOD-001` | Progressive context loading and no invented human handoff | Root `AGENTS.md` |
 | `DOC-MAP-001` | Repository ownership and path-specific instruction placement | Root `AGENTS.md` |
 | `DOC-IMPL-001` | Declarative composition/views, existing store split, real protocols only at boundaries, typed state | `Sources/Spotty/AGENTS.md`, `Sources/Spotty/Spotify/AGENTS.md`, and `Sources/Spotty/Views/AGENTS.md` |
-| `DOC-CONC-001`, `DOC-ESCAPE-001`, `DOC-COMBINE-001` | Treat Swift concurrency diagnostics as correctness; avoid ownership escapes; Combine only at a native publisher boundary | Root, SpottyCore, and Spotify scoped guidance |
+| `DOC-CONC-001`, `DOC-ESCAPE-001` | Treat Swift concurrency diagnostics as correctness and avoid ownership escapes | Root and scoped Spotify guidance |
 | `DOC-LOG-001` | User-facing errors are actionable and logs are privacy-safe | Scoped Spotify guidance, PRIVACY, SECURITY, sanitization checks |
 | `DOC-SAFE-001` | Live playback/account mutation is explicit-current-request opt-in and bounded | Product contract |
 | `DOC-VER-001`, `DOC-PR-001` | Local verification scope and pull-request authorization | Root `AGENTS.md` and `CONTRIBUTING.md` |

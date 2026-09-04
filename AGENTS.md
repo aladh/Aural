@@ -108,9 +108,9 @@ terminates an existing process and can disturb an authenticated session.
 
 ## Local verification
 
-Run the smallest focused check that exercises the change. Leave `./Scripts/check.sh`,
-`./Scripts/check-clean.sh`, cross-configuration builds, and repeated suites to PR CI unless the
-change modifies those gates, CI is unavailable, or broader diagnosis is needed.
+Run the smallest focused check that exercises the change. PR CI covers partitioned Rust, Swift/Debug,
+and Release compilation, but does not run `./Scripts/check-clean.sh`; reserve that local clean-room
+gate for changes to clean-build behavior or diagnosis that depends on a clean rebuild.
 
 ## Maintaining these instructions
 
