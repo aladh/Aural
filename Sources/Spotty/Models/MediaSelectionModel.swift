@@ -54,8 +54,6 @@ struct MediaSelectionModel: RawRepresentable {
         {
             self.selection = selection
             rememberedItem = persisted.rememberedItem
-        } else if let legacySelection = SidebarSelection(rawValue: rawValue) {
-            selection = legacySelection
         } else {
             selection = .destination(.home)
         }
@@ -100,37 +98,6 @@ struct MediaSelectionModel: RawRepresentable {
     mutating func reset() {
         selection = .destination(.home)
         rememberedItem = nil
-    }
-
-    mutating func migrateLegacyMetadata(
-        title: String,
-        subtitle: String,
-        artworkURL: String
-    ) -> Bool {
-        guard rememberedItem == nil, !title.isEmpty else { return false }
-        let kind: CatalogItem.Kind
-        let uri: String
-        switch selection {
-        case .destination:
-            return false
-        case let .playlist(selectedURI):
-            (kind, uri) = (.playlist, selectedURI)
-        case let .album(selectedURI):
-            (kind, uri) = (.album, selectedURI)
-        case let .artist(selectedURI):
-            (kind, uri) = (.artist, selectedURI)
-        }
-        rememberedItem = RememberedItem(
-            CatalogItem(
-                id: SpotifyURI.id(from: uri) ?? uri,
-                uri: uri,
-                title: title,
-                subtitle: subtitle,
-                artworkURL: artworkURL.isEmpty ? nil : URL(string: artworkURL),
-                kind: kind
-            )
-        )
-        return true
     }
 
     func item(

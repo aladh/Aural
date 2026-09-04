@@ -11,27 +11,10 @@ import Security
 
 /// Manages secure storage of authentication tokens in the Keychain
 nonisolated enum KeychainManager {
-    // MARK: - The dashboard grant, which no longer exists
-
-    /// Deletes what the dashboard app left behind: the Web API access and refresh tokens, and
-    /// the client id the user typed in to obtain them.
-    ///
-    /// Housekeeping on someone else's machine, run once per launch because there is nowhere
-    /// cheaper to run it. The refresh token is a live credential for the retired dashboard flow,
-    /// and leaving it in the user's keychain forever is not ours to do. Delete this
-    /// once enough releases have passed that no installed copy still holds one.
-    static func purgeDashboardGrant() {
-        for key in ["spotify_access_token", "spotify_refresh_token", "spotify_expires_at"] {
-            delete(key: key, service: "com.spotifly.oauth")
-        }
-        delete(key: "spotify_custom_client_id", service: "com.spotifly.config")
-    }
-
     // MARK: - Keymaster grant
 
     private static let keymasterService = "dev.spotty.app.keymaster"
     private static let keymasterTokensKey = "keymaster_tokens"
-    private static let previousServiceRetiredKey = "keymaster.previous-service-retired.v1"
 
     /// Stored as one item rather than a key per field, which is how the Web API tokens were
     /// kept. The four values are only meaningful together — an access token paired with another
@@ -43,71 +26,15 @@ nonisolated enum KeychainManager {
             data: JSONEncoder().encode(tokens),
             service: keymasterService,
         )
-        retirePreviousKeymasterService()
     }
 
     static func loadKeymasterTokens() -> KeymasterTokens? {
-        loadKeymasterTokensForMigration(
-            loadCurrent: { load(key: keymasterTokensKey, service: keymasterService) },
-            loadPrevious: {
-                load(
-                    key: keymasterTokensKey,
-                    service: PreviousInstallationIdentity.keychainService
-                )
-            },
-            saveCurrent: { tokens in
-                try save(
-                    key: keymasterTokensKey,
-                    data: JSONEncoder().encode(tokens),
-                    service: keymasterService
-                )
-            },
-            previousIsRetired: {
-                UserDefaults.standard.bool(forKey: previousServiceRetiredKey)
-            },
-            retirePrevious: retirePreviousKeymasterService
-        )
-    }
-
-    static func loadKeymasterTokensForMigration(
-        loadCurrent: () -> Data?,
-        loadPrevious: () -> Data?,
-        saveCurrent: (KeymasterTokens) throws -> Void,
-        previousIsRetired: () -> Bool,
-        retirePrevious: () -> Void
-    ) -> KeymasterTokens? {
-        if let data = loadCurrent() {
-            let tokens = KeymasterStoredGrantCodec.decode(data, source: .secure)
-            if tokens != nil {
-                retirePrevious()
-            }
-            return tokens
-        }
-        guard !previousIsRetired(), let data = loadPrevious() else { return nil }
-        guard let tokens = KeymasterStoredGrantCodec.decode(data, source: .secure) else {
-            retirePrevious()
-            return nil
-        }
-
-        do {
-            try saveCurrent(tokens)
-            retirePrevious()
-        } catch {
-            SpottyLog.authentication.error("Stored grant identity migration failed reason=secure-save")
-        }
-        return tokens
+        guard let data = load(key: keymasterTokensKey, service: keymasterService) else { return nil }
+        return KeymasterStoredGrantCodec.decode(data)
     }
 
     static func clearKeymasterTokens() {
-        // Persist retirement before deleting the current grant so an interrupted Sign Out
-        // cannot fall back to a previous-service refresh token on the next launch.
-        retirePreviousKeymasterService()
         delete(key: keymasterTokensKey, service: keymasterService)
-    }
-
-    private static func retirePreviousKeymasterService() {
-        UserDefaults.standard.set(true, forKey: previousServiceRetiredKey)
-        delete(key: keymasterTokensKey, service: PreviousInstallationIdentity.keychainService)
     }
 
     // MARK: - Private Keychain Operations

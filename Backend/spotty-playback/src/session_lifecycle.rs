@@ -31,13 +31,6 @@ impl CredentialsCacheError {
 pub(crate) fn credentials_cache_dir_from_home(
     home: Option<&std::path::Path>,
 ) -> Result<std::path::PathBuf, CredentialsCacheError> {
-    credentials_cache_dir_from_home_named(home, "Spotty")
-}
-
-fn credentials_cache_dir_from_home_named(
-    home: Option<&std::path::Path>,
-    product_directory_name: &str,
-) -> Result<std::path::PathBuf, CredentialsCacheError> {
     let home = home
         .filter(|path| !path.as_os_str().is_empty())
         .ok_or(CredentialsCacheError::Missing)?;
@@ -51,18 +44,8 @@ fn credentials_cache_dir_from_home_named(
     Ok(home
         .join("Library")
         .join("Application Support")
-        .join(product_directory_name)
+        .join("Spotty")
         .join("credentials"))
-}
-
-fn previous_product_directory_name() -> &'static str {
-    std::str::from_utf8(&[65, 117, 114, 97, 108])
-        .expect("previous product directory bytes must be valid UTF-8")
-}
-
-fn previous_credentials_cache_dir() -> Result<std::path::PathBuf, CredentialsCacheError> {
-    let home = std::env::var_os("HOME").map(std::path::PathBuf::from);
-    credentials_cache_dir_from_home_named(home.as_deref(), previous_product_directory_name())
 }
 
 /// Collapse `.` and refuse `..` without touching the filesystem or following symlinks.
@@ -110,64 +93,12 @@ pub(crate) fn ensure_private_credentials_dir(dir: &std::path::Path) -> Result<()
     Ok(())
 }
 
-/// Moves the previous installation's credential cache when Spotty has not created one yet.
-pub(crate) fn migrate_previous_credentials_dir(
-    current: &std::path::Path,
-    previous: &std::path::Path,
-    allow_fresh_cache: bool,
-) -> Result<(), String> {
-    match move_previous_credentials_dir(current, previous) {
-        Err(_) if allow_fresh_cache => Ok(()),
-        result => result,
-    }
-}
-
-fn move_previous_credentials_dir(
-    current: &std::path::Path,
-    previous: &std::path::Path,
-) -> Result<(), String> {
-    if current.exists() || !previous.exists() {
-        return Ok(());
-    }
-    let parent = current
-        .parent()
-        .ok_or_else(|| CredentialsCacheError::Missing.message().to_string())?;
-    ensure_private_credentials_dir(parent)?;
-    std::fs::rename(previous, current)
-        .map_err(|_| CredentialsCacheError::Missing.message().to_string())?;
-    ensure_private_credentials_dir(current)?;
-    if let Some(previous_parent) = previous.parent() {
-        let _ = std::fs::remove_dir(previous_parent);
-    }
-    Ok(())
-}
-
-pub(crate) fn retire_previous_credentials_dir(previous: &std::path::Path) {
-    clear_credentials_at(previous);
-    if let Some(previous_parent) = previous.parent() {
-        let _ = std::fs::remove_dir(previous_parent);
-    }
-}
-
-fn retire_previous_credentials_cache() {
-    match previous_credentials_cache_dir() {
-        Ok(previous) => retire_previous_credentials_dir(&previous),
-        Err(error) => debug!(
-            "Previous streaming credential cache unavailable after connection: {}",
-            error.message()
-        ),
-    }
-}
-
 /// Resolves the live cache directory and removes it. Unavailable locations are success:
 /// there is no app-owned cache to clear, and the C ABI remains a void cleanup.
 pub(crate) fn clear_resolved_credentials() {
     match credentials_cache_dir() {
         Ok(dir) => clear_credentials_at(&dir),
         Err(_) => debug!("Streaming credential cache unavailable; nothing to clear"),
-    }
-    if let Ok(dir) = previous_credentials_cache_dir() {
-        clear_credentials_at(&dir);
     }
 }
 
@@ -230,10 +161,6 @@ pub extern "C" fn spotty_playback_authorize_streaming(access_token: *const c_cha
                 .connect(credentials, true)
                 .await
                 .map_err(|e| format!("Connect failed: {:?}", e))?;
-            // Session::connect is the operation that persists a fresh grant. Retire the
-            // previous installation only after it has actually accepted the credentials;
-            // a failed authorization must leave the recovery cache available for retry.
-            retire_previous_credentials_cache();
             session.shutdown();
             Ok::<(), String>(())
         }) {
@@ -280,9 +207,6 @@ pub(crate) fn create_session(
         ..Default::default()
     };
     let cache_dir = credentials_cache_dir().map_err(|error| error.message().to_string())?;
-    let previous_cache_dir =
-        previous_credentials_cache_dir().map_err(|error| error.message().to_string())?;
-    migrate_previous_credentials_dir(&cache_dir, &previous_cache_dir, access_token.is_some())?;
     ensure_private_credentials_dir(&cache_dir)?;
     let cache = Cache::new(Some(cache_dir), None, None, None)
         .map_err(|_| CredentialsCacheError::Missing.message().to_string())?;
@@ -828,11 +752,6 @@ pub(crate) async fn build_player_async(
 
     match create_and_store_spirc(&session, &credentials, player, mixer).await {
         Ok(spirc) => {
-            // `Spirc::new` has completed Session::connect and the login5 authorization
-            // needed by the player path. Retire the previous cache only after that
-            // connection succeeds; failed reconnects must preserve it for retry.
-            retire_previous_credentials_cache();
-
             // Passive startup by default: do not take over the active device on launch.
             // Re-activate only when reconnecting from a previously-active local session.
             //

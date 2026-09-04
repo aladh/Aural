@@ -193,7 +193,7 @@ nonisolated struct PlaylistItemPosition: Encodable, Sendable {
 ///
 /// `enableWatchFeedEntrypoint` is required, not optional decoration: the stored query
 /// references it, and omitting it is a 400 rather than a default. Leaving it out is exactly
-/// what broke the playlist page on the first run of this migration.
+/// what broke the playlist page when this stored query was first adopted.
 nonisolated struct PathfinderPlaylistVariables: Encodable, Sendable {
     var uri: String
     var offset: Int = 0

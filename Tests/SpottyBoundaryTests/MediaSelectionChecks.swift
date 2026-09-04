@@ -57,28 +57,6 @@ struct MediaSelectionTests {
             let malformed = MediaSelectionModel(rawValue: "not persisted selection state")
             #expect((malformed?.selection) == (.destination(.home)), "malformed persistence falls back home")
 
-            let legacyURI = "spotify:artist:legacy"
-            var legacy = MediaSelectionModel(rawValue: SidebarSelection.artist(legacyURI).rawValue)
-            #expect((legacy?.selection) == (.artist(legacyURI)), "legacy scene selection remains restorable")
-            #expect(
-                (legacy?.migrateLegacyMetadata(
-                    title: "Legacy artist",
-                    subtitle: "Legacy subtitle",
-                    artworkURL: "https://example.invalid/legacy.jpg"
-                ) == true) == true, "legacy sibling metadata migrates once")
-            let migratedLegacyItem = item(uri: legacyURI, title: "Legacy artist", kind: .artist)
-            let migrated = legacy.flatMap { MediaSelectionModel(rawValue: $0.rawValue) }
-            #expect(
-                (migrated?.item(uri: legacyURI, kind: .artist, metadataItem: nil))
-                    == (CatalogItem(
-                        id: migratedLegacyItem.id,
-                        uri: migratedLegacyItem.uri,
-                        title: migratedLegacyItem.title,
-                        subtitle: "Legacy subtitle",
-                        artworkURL: URL(string: "https://example.invalid/legacy.jpg"),
-                        kind: .artist
-                    )), "legacy metadata mounts a usable restored item")
-
             let trackURI = "spotify:track:private-track-id"
             #expect(
                 (model.select(item(uri: trackURI, title: "Track", kind: .track))) == (.play(trackURI)),

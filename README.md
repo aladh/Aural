@@ -24,8 +24,7 @@ design reference, not a pixel copy or an indication of affiliation with Spotify.
 
 > **Naming note:** Spotty is the product and technical identity throughout the repository, app
 > bundle, executable, Swift and Rust modules, C ABI, local storage, diagnostics, build tooling, and
-> release artifacts. A one-way first-launch migration carries forward state from installations that
-> predate the complete rename. The name does not imply affiliation with Spotify.
+> release artifacts. The name does not imply affiliation with Spotify.
 
 The MIT license covers this repository's code; it does not grant rights to Spotify's service,
 content, trademarks, or private interfaces. Spotty is intended for personal, non-commercial
@@ -106,8 +105,7 @@ Spotty has no analytics, advertising, crash-reporting SDK, or Spotty-operated se
 requested directly from Spotify and rendered locally. OAuth credentials are stored in Keychain.
 Authenticated development launches require an Apple-issued signing identity with a stable Team ID;
 self-signed packages are build-only because their per-build CDHash does not provide durable
-Keychain authorization. Leftover plaintext from older development builds is read once and then
-deleted.
+Keychain authorization.
 
 Read [PRIVACY.md](PRIVACY.md) before signing in. Report security issues through the private process
 in [SECURITY.md](SECURITY.md), not a public issue.

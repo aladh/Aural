@@ -15,55 +15,23 @@ import Foundation
 /// observe what was written cannot check it.
 nonisolated protocol KeymasterTokenStoring: Sendable {
     func load() -> KeymasterTokens?
-    func loadGrant() -> KeymasterGrantLoad
     func save(_ tokens: KeymasterTokens) throws
-    func clear()
-}
-
-extension KeymasterTokenStoring {
-    func loadGrant() -> KeymasterGrantLoad {
-        KeymasterGrantLoad(tokens: load(), needsSecurePersist: false)
-    }
-}
-
-/// Result of reading persisted tokens. `needsSecurePersist` is true only for a leftover
-/// plaintext grant that `load()` itself must not write; the session commits it after it
-/// still owns the load generation.
-struct KeymasterGrantLoad: Sendable, Equatable {
-    var tokens: KeymasterTokens?
-    var needsSecurePersist: Bool
-}
-
-/// One-way reader for the retired defaults-backed grant. Production code must never write
-/// this value; leftover plaintext is deleted after a migration attempt.
-nonisolated protocol KeymasterLegacyTokenReading: Sendable {
-    func load() -> KeymasterTokens?
     func clear()
 }
 
 /// Privacy-safe persistence diagnostics. Messages name a storage category and a reason;
 /// they must never include a token, username, payload, account id, or request data.
 enum KeymasterGrantPersistenceDiagnostics {
-    static func unreadableGrant(source: KeymasterStoredGrantCodec.Source) -> String {
-        "Stored grant is unreadable source=\(source.rawValue)"
-    }
-
-    static let legacyMigrationSaveFailed = "Legacy grant migration failed reason=secure-save"
-    static let supersededPersistRepairFailed = "Superseded grant repair failed reason=secure-save"
+    static let unreadableGrant = "Stored grant is unreadable source=secure"
 }
 
 enum KeymasterStoredGrantCodec {
-    enum Source: String, Sendable {
-        case secure
-        case legacy
-    }
-
-    static func decode(_ data: Data, source: Source) -> KeymasterTokens? {
+    static func decode(_ data: Data) -> KeymasterTokens? {
         do {
             return try JSONDecoder().decode(KeymasterTokens.self, from: data)
         } catch {
             SpottyLog.authentication.error(
-                "\(KeymasterGrantPersistenceDiagnostics.unreadableGrant(source: source), privacy: .public)"
+                "\(KeymasterGrantPersistenceDiagnostics.unreadableGrant, privacy: .public)"
             )
             return nil
         }
@@ -82,67 +50,5 @@ nonisolated struct KeymasterKeychainStore: KeymasterTokenStoring {
 
     func clear() {
         KeychainManager.clearKeymasterTokens()
-    }
-}
-
-/// Retired plaintext location used by older locally signed development builds.
-nonisolated struct KeymasterLegacyDefaultsStore: KeymasterLegacyTokenReading {
-    static let storageKey = "keymaster.tokens.v1"
-
-    func load() -> KeymasterTokens? {
-        guard let data = UserDefaults.standard.data(forKey: Self.storageKey) else { return nil }
-        return KeymasterStoredGrantCodec.decode(data, source: .legacy)
-    }
-
-    func clear() {
-        UserDefaults.standard.removeObject(forKey: Self.storageKey)
-    }
-}
-
-/// Secure storage with a one-way migration from the retired defaults-backed store.
-///
-/// Every build uses Keychain as the writer. A leftover `keymaster.tokens.v1` value is
-/// read once and then deleted even if secure persistence later fails, so the rotating
-/// refresh token is not deliberately kept in plaintext. `load()` / `loadGrant()` never
-/// write the secure store: a concurrent `adopt` or `clear` already owns disk, and a
-/// leftover save belongs to `KeymasterSession` only after that load generation still
-/// holds the slot. A successful decode still returns the grant for the current process;
-/// a corrupt blob fails closed after a sanitized diagnostic.
-nonisolated struct KeymasterMigratingStore: KeymasterTokenStoring {
-    private let secureStore: any KeymasterTokenStoring
-    private let legacyStore: any KeymasterLegacyTokenReading
-
-    init(
-        secureStore: any KeymasterTokenStoring = KeymasterKeychainStore(),
-        legacyStore: any KeymasterLegacyTokenReading = KeymasterLegacyDefaultsStore()
-    ) {
-        self.secureStore = secureStore
-        self.legacyStore = legacyStore
-    }
-
-    func load() -> KeymasterTokens? {
-        loadGrant().tokens
-    }
-
-    func loadGrant() -> KeymasterGrantLoad {
-        if let tokens = secureStore.load() {
-            legacyStore.clear()
-            return KeymasterGrantLoad(tokens: tokens, needsSecurePersist: false)
-        }
-        defer { legacyStore.clear() }
-        guard let tokens = legacyStore.load() else {
-            return KeymasterGrantLoad(tokens: nil, needsSecurePersist: false)
-        }
-        return KeymasterGrantLoad(tokens: tokens, needsSecurePersist: true)
-    }
-
-    func save(_ tokens: KeymasterTokens) throws {
-        defer { legacyStore.clear() }
-        try secureStore.save(tokens)
-    }
-
-    func clear() {
-        secureStore.clear()
-        legacyStore.clear()
     }
 }

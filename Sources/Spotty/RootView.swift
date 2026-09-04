@@ -8,9 +8,6 @@ struct RootView: View {
     let feedback: TransientFeedbackPresenter
 
     @SceneStorage("sidebarSelection") private var mediaSelectionRawValue = MediaSelectionModel().rawValue
-    @SceneStorage("selectedMediaTitle") private var legacyMediaTitle = ""
-    @SceneStorage("selectedMediaSubtitle") private var legacyMediaSubtitle = ""
-    @SceneStorage("selectedMediaArtworkURL") private var legacyMediaArtworkURL = ""
     @State private var searchText = ""
     @SceneStorage("showsPlaybackInspector") private var showsSidePanel = false
 
@@ -42,7 +39,6 @@ struct RootView: View {
         .onChange(of: player.state.accountEpoch) {
             resetMediaSelection()
         }
-        .onAppear(perform: migrateLegacyMediaSelection)
         .onChange(of: mediaSelectionRawValue) {
             SpottyLog.ui.info("Sidebar selection changed: \(mediaSelection.diagnosticLabel, privacy: .public)")
         }
@@ -258,25 +254,7 @@ struct RootView: View {
         mediaSelectionRawValue = model.rawValue
     }
 
-    private func migrateLegacyMediaSelection() {
-        var model = mediaSelection
-        guard
-            model.migrateLegacyMetadata(
-                title: legacyMediaTitle,
-                subtitle: legacyMediaSubtitle,
-                artworkURL: legacyMediaArtworkURL
-            )
-        else { return }
-        mediaSelectionRawValue = model.rawValue
-        legacyMediaTitle = ""
-        legacyMediaSubtitle = ""
-        legacyMediaArtworkURL = ""
-    }
-
     private func resetMediaSelection() {
         updateMediaSelection { $0.reset() }
-        legacyMediaTitle = ""
-        legacyMediaSubtitle = ""
-        legacyMediaArtworkURL = ""
     }
 }
