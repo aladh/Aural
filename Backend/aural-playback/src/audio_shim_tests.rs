@@ -29,7 +29,10 @@ impl FakeSink {
             .arrived
             .wait_timeout_while(guard, timeout, |commands| commands.len() < count)
             .unwrap_or_else(|e| e.into_inner());
-        assert!(!result.timed_out(), "timed out waiting for {count} command(s)");
+        assert!(
+            !result.timed_out(),
+            "timed out waiting for {count} command(s)"
+        );
         guard.clone()
     }
 }
