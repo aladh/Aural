@@ -17,9 +17,9 @@
 
 use librespot_connect::SpircPlayer;
 use librespot_core::{Error as LibrespotError, FileId, Session, SpotifyUri};
-use librespot_playback::player::QueueTrack;
 use librespot_metadata::audio::{AudioFileFormat, AudioFiles, AudioItem};
 use librespot_metadata::track::Tracks;
+use librespot_playback::player::QueueTrack;
 use librespot_playback::player::{PlayerEvent, PlayerEventChannel};
 use log::debug;
 use std::future::Future;

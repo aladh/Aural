@@ -636,11 +636,10 @@ fn create_shim_player(session: &Session, generation: u64) -> Arc<dyn SpircPlayer
         "Player initialized: Swift audio path (ShimPlayer), generation={}",
         generation
     );
-    let player = Arc::new(ShimPlayer::new(
-        Arc::new(FfiAudioCommandSink),
-        Arc::new(SessionAudioItemResolver::new(session.clone())),
-        generation,
-    ));
+    let sink: Arc<dyn AudioCommandSink> = Arc::new(FfiAudioCommandSink);
+    let resolver: Arc<dyn AudioItemResolver> =
+        Arc::new(SessionAudioItemResolver::new(session.clone()));
+    let player = Arc::new(ShimPlayer::new(sink, resolver, generation));
     *SHIM_PLAYER.lock().unwrap_or_else(|e| e.into_inner()) = Some(Arc::clone(&player));
 
     let player: Arc<dyn SpircPlayer> = player;

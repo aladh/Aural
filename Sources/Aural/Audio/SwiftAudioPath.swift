@@ -25,6 +25,9 @@ import Foundation
 /// operations the audio path needs around it. Injectable so checks can drive the whole
 /// reducer-to-effects machinery against an in-memory fake instead of a CDN.
 protocol AudioTrackByteSource: DecodeByteSource {
+    /// The same read as `DecodeByteSource.read`, asynchronously. `OggSeeker` bisects from a
+    /// concurrency context, where blocking the way the decode thread may is not allowed.
+    func readRange(offset: Int, length: Int) async throws -> Data
     /// The file's total byte length, fetching whatever it takes to learn it.
     func totalLength() async throws -> Int
     /// Downloads every byte still missing. Gates `TimeToPreloadNext`.
@@ -56,14 +59,14 @@ protocol AudioOutput: PCMSink {
 
 extension AudioRenderer: AudioOutput {}
 
-/// Adapts any `DecodeByteSource` to `OggSeeker`'s reader, whose `length` is non-optional and
-/// synchronous. Built once per seek, after the total length is already known.
+/// Adapts a track's byte source to `OggSeeker`'s reader, whose `length` is non-optional and
+/// whose `read` is async. Built once per seek, after the total length is already known.
 struct DecodeByteSourceSeekReader: OggByteReader {
-    let source: any DecodeByteSource
+    let source: any AudioTrackByteSource
     let length: Int
 
     func read(offset: Int, length: Int) async throws -> Data {
-        try await source.read(offset: offset, length: length)
+        try await source.readRange(offset: offset, length: length)
     }
 }
 
@@ -343,7 +346,7 @@ actor SwiftAudioPath {
     /// running pipeline, which picks it up between frames. A seek that arrives before the
     /// pipeline exists is held and replayed by `startPipeline`, rather than dropped.
     private func seek(to positionMs: UInt32) {
-        guard let pipeline, let source, let track = session.current else {
+        guard pipeline != nil, source != nil, let track = session.current else {
             pendingSeekMs = positionMs
             return
         }
@@ -353,26 +356,26 @@ actor SwiftAudioPath {
             positionMs: positionMs,
             sessionGeneration: session.sessionGeneration
         )
-        Task { [weak self] in
-            await self?.performSeek(pipeline: pipeline, source: source, request: request)
-        }
+        Task { await self.performSeek(request) }
     }
 
-    private func performSeek(
-        pipeline: VorbisDecodePipeline,
-        source: any AudioTrackByteSource,
-        request: LoadRequest
-    ) async {
+    /// The pipeline is deliberately not passed through the `Task` above and is re-read here
+    /// instead: it is not `Sendable` (by design — see its file header), and re-reading it after
+    /// the await is also what makes a seek whose load was superseded mid-bisection a no-op.
+    private func performSeek(_ request: LoadRequest) async {
+        guard let source else { return }
         do {
             let totalLength = try await source.totalLength()
-            // A seek to 0 still has to land on the first audio page, not on the header offset
-            // it would otherwise short-circuit to, so it goes through the seeker like any other.
+            // A seek to 0 still has to land on the first audio page, not short-circuit to the
+            // header offset, so it goes through the seeker like any other target.
             let offset = try await startOffset(
                 in: source,
                 totalLength: totalLength,
                 positionMs: max(request.positionMs, 1)
             )
-            guard session.current?.playRequestID == request.track.playRequestID else { return }
+            guard session.current?.playRequestID == request.track.playRequestID,
+                let pipeline
+            else { return }
             pipeline.seek(toByteOffset: offset, positionMs: request.positionMs)
         } catch {
             enqueue(.failed(Self.failure(for: error)), request: request)

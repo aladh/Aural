@@ -113,11 +113,9 @@ fn load_command(session_generation: u64, play_request_id: u64) -> AudioCommand {
 
 /// A shim whose current load is `play_request_id` 1, stored where the report export looks.
 fn install_shim(session_generation: u64) -> Arc<ShimPlayer> {
-    let player = Arc::new(ShimPlayer::new(
-        Arc::new(FfiAudioCommandSink),
-        Arc::new(FailingResolver),
-        session_generation,
-    ));
+    let sink: Arc<dyn AudioCommandSink> = Arc::new(FfiAudioCommandSink);
+    let resolver: Arc<dyn AudioItemResolver> = Arc::new(FailingResolver);
+    let player = Arc::new(ShimPlayer::new(sink, resolver, session_generation));
     let play_request_id = player.load(fixture_track_id(), true, 0);
     assert_eq!(play_request_id, 1, "first load must be play_request_id 1");
     *SHIM_PLAYER.lock().unwrap_or_else(|e| e.into_inner()) = Some(Arc::clone(&player));
@@ -198,7 +196,10 @@ fn a_command_sent_with_no_callback_registered_is_dropped() {
 
     FfiAudioCommandSink.send(load_command(4, 11));
 
-    assert!(RECEIVED.lock().unwrap_or_else(|e| e.into_inner()).is_empty());
+    assert!(RECEIVED
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .is_empty());
 }
 
 #[test]
