@@ -23,6 +23,12 @@ enum AuralPalette {
     static let playerPrimary = Color.primary.opacity(0.92)
     static let playerSecondary = Color.secondary.opacity(0.92)
     static let remotePlaybackForeground = Color(red: 0.025, green: 0.12, blue: 0.06)
+    /// Data columns (BPM, key, time signature, popularity, duration, relative times). Measures
+    /// ≥4.5:1 against `catalogCanvas`, meeting WCAG AA for normal text.
+    static let dataText = Color(white: 0.64)
+    /// The unfilled progress rail on `playerShelf`. Measures ≥3:1 against `playerShelf`, meeting
+    /// WCAG AA for non-text UI components.
+    static let progressTrack = Color(white: 0.40)
 
     static func mediaCardSurface(isHovering: Bool) -> Color {
         isHovering ? mediaSurfaceHover : .clear

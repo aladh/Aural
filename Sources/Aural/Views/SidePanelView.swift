@@ -234,7 +234,7 @@ private struct QueueUpcomingRow: View {
             if let durationText {
                 Text(durationText)
                     .font(.caption2.monospacedDigit())
-                    .foregroundStyle(.tertiary)
+                    .foregroundStyle(AuralPalette.dataText)
                     .lineLimit(1)
             }
         }
@@ -271,7 +271,7 @@ private struct HistoryRow: View {
 
                 Text(entry.playedAt.formatted(.relative(presentation: .named)))
                     .font(.caption2)
-                    .foregroundStyle(.tertiary)
+                    .foregroundStyle(AuralPalette.dataText)
                     .lineLimit(1)
             }
             .padding(4)
@@ -321,7 +321,7 @@ private struct CurrentTrackRow: View {
                 if player.duration > 0 {
                     Text(formatDuration(player.duration))
                         .font(.caption2.monospacedDigit())
-                        .foregroundStyle(.tertiary)
+                        .foregroundStyle(AuralPalette.dataText)
                 }
             }
         }

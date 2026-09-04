@@ -307,7 +307,7 @@ struct TrackTable: View {
                 TableColumn("Duration", value: \.duration) { row in
                     Text(formatCatalogDuration(row.track.duration))
                         .monospacedDigit()
-                        .foregroundStyle(.tertiary)
+                        .foregroundStyle(AuralPalette.dataText)
                         .frame(minHeight: CatalogLayout.playlistRowMinimumHeight, alignment: .center)
                 }
                 .width(70)
@@ -329,28 +329,28 @@ struct TrackTable: View {
 
                 TableColumn("Popularity", value: \.popularitySortValue) { row in
                     Text(attributeText(metadata.trackAttributes[row.track.uri]?.popularity.map(String.init)))
-                        .foregroundStyle(.tertiary)
+                        .foregroundStyle(AuralPalette.dataText)
                 }
                 .width(64)
 
                 TableColumn("BPM", value: \.bpmSortValue) { row in
                     Text(attributeText(metadata.trackAttributes[row.track.uri]?.bpm.map(String.init)))
                         .monospacedDigit()
-                        .foregroundStyle(.tertiary)
+                        .foregroundStyle(AuralPalette.dataText)
                         .accessibilityLabel("Tempo in beats per minute")
                 }
                 .width(44)
 
                 TableColumn("Key", value: \.keySortValue) { row in
                     Text(attributeText(metadata.trackAttributes[row.track.uri]?.key))
-                        .foregroundStyle(.tertiary)
+                        .foregroundStyle(AuralPalette.dataText)
                 }
                 .width(38)
 
                 TableColumn("Time", value: \.duration) { row in
                     Text(formatDuration(row.track.duration))
                         .monospacedDigit()
-                        .foregroundStyle(.tertiary)
+                        .foregroundStyle(AuralPalette.dataText)
                 }
                 .width(44)
             }
@@ -474,7 +474,7 @@ struct TrackTable: View {
             } else {
                 Text(String(position))
                     .monospacedDigit()
-                    .foregroundStyle(.tertiary)
+                    .foregroundStyle(AuralPalette.dataText)
                     .accessibilityLabel("Track \(position) of \(total)")
             }
         }

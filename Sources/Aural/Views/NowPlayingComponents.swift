@@ -51,7 +51,7 @@ struct NowPlayingProgress: View {
         TimelineView(.animation(minimumInterval: 1.0 / 30.0, paused: !player.showsPauseControl)) { timeline in
             GeometryReader { proxy in
                 ZStack(alignment: .leading) {
-                    Capsule().fill(Color.white.opacity(0.20)).frame(height: height)
+                    Capsule().fill(AuralPalette.progressTrack).frame(height: height)
                     if player.hasCurrentTrack {
                         Capsule().fill(isHovering ? AuralPalette.mediaGreen : AuralPalette.playerPrimary)
                             .frame(width: proxy.size.width * fraction(at: timeline.date), height: height)
