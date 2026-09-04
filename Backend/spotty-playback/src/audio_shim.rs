@@ -516,7 +516,9 @@ impl ShimPlayer {
         if kind == AudioCommandKind::Load {
             broadcast_event(
                 &event_senders,
-                PlayerEvent::TrackChanged { audio_item: item },
+                PlayerEvent::TrackChanged {
+                    audio_item: Box::new(item),
+                },
             );
         }
     }

@@ -164,10 +164,10 @@ fn wait_for_event(events: &mut PlayerEventChannel) -> PlayerEvent {
 
 /// File resolution is async: after `PlayRequestIdChanged`/`Loading`, wait for the Load
 /// command and the `TrackChanged` that carries duration to Spirc.
-fn wait_for_resolved_load(sink: &FakeSink, events: &mut PlayerEventChannel) -> AudioItem {
+fn wait_for_resolved_load(sink: &FakeSink, events: &mut PlayerEventChannel) {
     sink.wait_for_commands(1, Duration::from_secs(2));
     match wait_for_event(events) {
-        PlayerEvent::TrackChanged { audio_item } => audio_item,
+        PlayerEvent::TrackChanged { .. } => {}
         other => panic!("expected TrackChanged after a resolved Load, got {other:?}"),
     }
 }
@@ -268,7 +268,7 @@ fn stale_report_with_wrong_play_request_id_is_dropped() {
     let track_id = fixture_track_id();
     let sink = Arc::new(FakeSink::default());
     let resolver = resolving_resolver(track_id.clone());
-    let player = shim_player(sink, resolver, 9);
+    let player = shim_player(Arc::clone(&sink), resolver, 9);
     let mut events = player.get_player_event_channel();
 
     let play_request_id = player.load(track_id, false, 0);
@@ -297,7 +297,7 @@ fn stale_report_with_wrong_session_generation_is_dropped() {
     let track_id = fixture_track_id();
     let sink = Arc::new(FakeSink::default());
     let resolver = resolving_resolver(track_id.clone());
-    let player = shim_player(sink, resolver, 9);
+    let player = shim_player(Arc::clone(&sink), resolver, 9);
     let mut events = player.get_player_event_channel();
 
     let play_request_id = player.load(track_id, false, 0);
@@ -322,7 +322,7 @@ fn matching_report_emits_playing_with_current_track_id() {
     let track_id = fixture_track_id();
     let sink = Arc::new(FakeSink::default());
     let resolver = resolving_resolver(track_id.clone());
-    let player = shim_player(sink, resolver, 3);
+    let player = shim_player(Arc::clone(&sink), resolver, 3);
     let mut events = player.get_player_event_channel();
 
     let play_request_id = player.load(track_id.clone(), false, 0);
@@ -361,7 +361,7 @@ fn matching_end_of_track_report_emits_end_of_track() {
     let track_id = fixture_track_id();
     let sink = Arc::new(FakeSink::default());
     let resolver = resolving_resolver(track_id.clone());
-    let player = shim_player(sink, resolver, 3);
+    let player = shim_player(Arc::clone(&sink), resolver, 3);
     let mut events = player.get_player_event_channel();
 
     let play_request_id = player.load(track_id.clone(), false, 0);
