@@ -306,7 +306,7 @@ nonisolated enum PlaybackCore {
         }
 
         var keyOut = [UInt8](repeating: 0, count: 16)
-        let code = keyOut.withUnsafeMutableBufferPointer { keyPointer -> Int32 in
+        let code = keyOut.withUnsafeMutableBufferPointer { keyPointer -> Result in
             trackGID.withUnsafeBufferPointer { trackPointer in
                 fileID.withUnsafeBufferPointer { filePointer in
                     aural_playback_audio_key(
@@ -318,10 +318,10 @@ nonisolated enum PlaybackCore {
             }
         }
 
-        switch code {
+        switch code.rawValue {
         case 0: return .success(keyOut)
         case -3: return .failure(.notConnected)
-        default: return .failure(.engineFailure(code))
+        default: return .failure(.engineFailure(code.rawValue))
         }
     }
 
