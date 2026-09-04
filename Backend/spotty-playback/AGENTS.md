@@ -39,18 +39,3 @@ across the Swift/Rust boundary.
 - `librespot-connect` is vendored under `Backend/vendor/librespot-connect` with a small patch (see
   its `PATCHES.md`) so `Spirc::new` takes `Arc<dyn SpircPlayer>` instead of the concrete `Player`;
   keep the patch minimal and re-diff it against upstream when the pinned rev moves.
-
-## Code review rules
-
-Flag lifecycle writes outside the mutex, guards held across `await`, inner lock re-entry, missing
-post-lock generation checks, writes from superseded work, unguarded exports, locks across Swift
-callbacks, blocking PCM paths, presentation filtering in Rust, or ABI/fixture drift. The safe path is
-one serialized lifecycle owner, captured-and-revalidated generations, panic-contained exports, and
-paired Rust/Swift boundary evidence.
-
-## Verification
-
-Add Rust coverage beside the owning module. Focused Cargo commands are acceptable for iteration; the
-completion gate for Rust, lifecycle, FFI, dependency, or archive changes is
-`./Scripts/check-clean.sh` from the repository root. Inspect C-header/export parity.
-Live playback is never required for unit or ABI proof.

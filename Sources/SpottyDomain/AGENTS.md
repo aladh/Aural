@@ -21,16 +21,3 @@ changing state transitions, queue/device policy, parsing, sorting, or lifetime s
   identity from authoritative engine playback, not `queue.contextURI`. Resume-load target
   order for user resume and reconnect rehydration lives in `ResumeLoadPlan`, captured from
   sticky resume-load URIs rather than presentation `playbackContextURI`.
-- Prefer immutable `Sendable` values, typed state, exhaustive switches, and pure functions. Match the
-  surrounding naming and comment density; document only non-obvious invariants.
-
-## Code review rules
-
-Flag target-boundary imports, hidden I/O, a second playback-state writer, mutable global policy, or a
-transition without stale/cancellation behavior. The safe path is a pure typed transformation with a
-focused deterministic check.
-
-## Verification
-
-Add or update the closest suite under `Sources/SpottyChecks/`. Use focused `SpottyChecks` suites while
-iterating, then run `./Scripts/check.sh` from the repository root.

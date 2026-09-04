@@ -28,16 +28,3 @@ and capable without advertising every capability.
 - Views render state and invoke narrow actions. They do not construct network/auth/playback
   dependencies or own asynchronous orchestration. Downsample artwork to rendered Retina size, keep
   presentation caches cost-bounded, and release them with the window lifecycle.
-
-## Code review rules
-
-Flag custom behavior that replaces a native convention without a measured product need, hidden or
-lying state, layout that loses spatial anchors, inaccessible unlabeled controls, a new persistent
-control without frequent use, or dependency construction in a view. The safe path is the smallest
-native surface that truthfully represents existing capability across all edge states.
-
-## Verification
-
-Add deterministic projection/workflow coverage where possible and run `./Scripts/check.sh`. UI
-acceptance should cover the whole affected loop, not one screenshot. Launch only when explicitly
-allowed, and keep live Spotify activity read-only unless separately authorized.

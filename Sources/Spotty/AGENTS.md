@@ -19,14 +19,3 @@ ownership, or transient feedback.
   `Sources/Spotty/Views/`.
 - Add a protocol only at a real system or substitution boundary. Do not rebuild the app around a
   god controller, TCA, or a generic `Effect` type.
-- Prefer typed state, exhaustive switches, Observation, structured concurrency, and owned
-  cancellation. Use Combine only at a publisher-native system boundary where it is simpler.
-
-## Review and verification
-
-Flag live-dependency construction below composition, a task without a lifetime owner, feedback
-entering playback state, or top-level files absorbing behavior owned by a deeper scope.
-
-Add pure policy/state coverage under `Sources/SpottyChecks/`; add concrete service or composition
-coverage under `Sources/SpottyChecks/DeferredBoundaryChecks/`. Use focused suites while iterating,
-then run the proportional root gate. Live-account activity remains opt-in.

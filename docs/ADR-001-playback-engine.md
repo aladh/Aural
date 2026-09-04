@@ -5,10 +5,6 @@ Status: accepted on 2026-08-18.
 Under staged review per #201. The decision below stands until a later record supersedes it;
 the replacement stages and their gates live in [playback engine ownership](playback-engine-ownership.md).
 
-Like all of Spotty, this decision concerns an unofficial, independent, educational client with no
-affiliation with Spotify AB, built on reverse-engineered Spotify interfaces; using it may violate
-Spotify's Terms of Use.
-
 ## Context
 
 Spotty needs local Spotify Premium playback and Spotify Connect without the Spotify desktop app, a

@@ -1,30 +1,12 @@
 # Agent operations for Spotty
 
-Spotty is maintained exclusively by autonomous coding agents. This conventional filename is retained
-for repository tooling and links; it is an execution manual, not a human-contribution workflow.
-Start with [AGENTS.md](AGENTS.md), then load only the sections and path-specific guidance needed for
-the task. Never defer implementation, review, testing, issue validation, or release work to a
-hypothetical maintainer.
-
-Spotty is an unofficial, independent personal-use client built on private Spotify interfaces. It is
-not affiliated with, endorsed by, or sponsored by Spotify AB. Read the warning in
-[README.md](README.md).
-Keep changes inside the requested outcome and the deliberately small product surface; unsupported
-protocol risk is a design constraint, not an excuse for speculative machinery.
+This conventional filename is retained for repository tooling and links. Start with
+[AGENTS.md](AGENTS.md), then load only the procedure needed for the task.
 
 ## Environment
 
-- Apple Silicon Mac running macOS 26.2 or newer for development; runtime target macOS 15+
-- Xcode 26.6 with Swift 6.3.3
-- Rustup; `rust-toolchain.toml` pins the toolchain, components, and ARM64 macOS target
-- [ripgrep](https://github.com/BurntSushi/ripgrep) for repository verification
-- Spotify Premium only for explicitly authorized live integration testing
-
-No credentials or account exports belong in the repository. Never commit OAuth callbacks, tokens,
-diagnostics, generated signing material, raw API responses, real-account fixtures, or screenshots
-containing private library/account information. The
-[development setup](docs/development-setup.md) guide owns fresh-clone setup, generated local state,
-signing recovery, and non-destructive cleanup.
+See the canonical prerequisites and toolchain versions in the
+[development setup guide](docs/development-setup.md#fresh-clone).
 
 ## Build and run
 
@@ -60,9 +42,8 @@ installed in the login keychain or committed.
 
 ## Normal verification
 
-For source, runtime, integration, build, or release changes, run the complete non-playback gate before
-opening a pull request. Documentation-only changes use the documentation evidence listed under
-[Clean and risk-specific verification](#clean-and-risk-specific-verification).
+Follow the local-verification policy in [AGENTS.md](AGENTS.md#local-verification). The complete non-playback
+gate is:
 
 ```bash
 ./Scripts/check.sh
@@ -89,7 +70,7 @@ The two non-shipping check products are:
 - `SpottyBoundaryChecks`: concrete codecs, fixtures, stores, coordinators, queue flows, and other
   injected SpottyCore boundaries.
 
-Use focused suites for iteration, never as the completion gate:
+Available focused suites are:
 
 ```bash
 swift run --disable-sandbox --product SpottyChecks -- --list
@@ -109,62 +90,28 @@ SPOTTY_CHECK_SCOPE=rust ./Scripts/check.sh
 SPOTTY_CHECK_SCOPE=swift ./Scripts/check.sh
 ```
 
-Those scopes are CI/iteration controls, not substitutes for the ordinary local gate. The required
-`Debug quality gate` aggregates Rust verification, Swift/architecture verification, and the release
-compile. CI pins Xcode 26.6 / Swift 6.3.3 and uses content-keyed Rust archive plus configuration-safe
-SwiftPM caches; cache hits may reduce latency but never coverage.
+The required `Debug quality gate` aggregates Rust verification, Swift/architecture verification, and
+the release compile. CI uses the [documented toolchain](docs/development-setup.md#fresh-clone), a
+content-keyed Rust archive, and configuration-safe SwiftPM caches; cache hits may reduce latency but
+never coverage.
 
 Use `SPOTTY_CHECK_REPEATS=N ./Scripts/check.sh` with `N` from 1 through 25 when concurrency or lifetime
 work merits stress.
 
 ## Clean and risk-specific verification
 
-For Rust, lifecycle, FFI, dependency, build, signing, packaging, CI, or release changes, run:
+The clean-room gate is:
 
 ```bash
 ./Scripts/check-clean.sh
 ```
 
-The clean gate removes generated Swift build products, rebuilds Rust, then verifies Debug and Release.
-Do not run destructive cleanup over unrelated work. `./Scripts/compile-release-spotty.sh` remains the
-local compile-only release command.
+It removes generated Swift build products, rebuilds Rust, then verifies Debug and Release. Do not run
+destructive cleanup over unrelated work. `./Scripts/compile-release-spotty.sh` remains the local
+compile-only release command.
 
-Add deterministic evidence at the closest owner:
-
-| Change | Evidence |
-| --- | --- |
-| Portable state, parsing, sorting, queue/device policy | `Sources/SpottyChecks/` |
-| Concrete Swift adapters, stores, codecs, workflows | `Sources/SpottyChecks/DeferredBoundaryChecks/` |
-| Rust lifecycle, Connect, queue serialization, FFI | `Backend/spotty-playback/src/` tests |
-| Cross-language payload or ABI | Paired Rust serialization/signature coverage and Swift boundary fixture |
-| Documentation only | Link/command validation, rendered Markdown when relevant, stage the intended files, then `git diff --check HEAD` |
-| Performance | Like-for-like measurements with environment and methodology recorded |
-
-Fixtures are reduced, synthetic, and non-identifying. Do not use real Spotify payloads. Prefer
-behavior tests over source-text snapshots; regex is not the owner of concurrency, epochs, queue
+Prefer behavior tests over source-text snapshots; regex is not the owner of concurrency, epochs, queue
 provenance, lifecycle, rollback, or payload correctness.
-
-## Architecture and technical context
-
-Accepted architecture is indexed in the
-[architecture decision records](docs/architecture-decisions.md), and hard-rule enforcement is routed
-through the [architecture enforcement inventory](docs/architecture-enforcement.md). Supporting
-protocol notes, research, and measured baselines are linked once from the ADR index's
-[related technical context](docs/architecture-decisions.md#related-technical-context). Do not
-duplicate those documents into this operations guide.
-
-## Safe live acceptance
-
-The default is no playback and no account mutation. Launch, sign-in, and read-only observation do not
-authorize transport, seek, device transfer, queue edits, library/playlist/follow mutation, or sign-out.
-Each live action needs explicit current-request scope. Follow the bounded procedures in the
-[product and acceptance contract](docs/product-and-acceptance-contract.md), including active-device
-inspection, local mute before local audio, named content, a short interval, cleanup/restoration, and
-an exact activity report.
-
-If the environment or authorization cannot support live acceptance, do not block safe completion or
-invent a human fallback. Run the strongest deterministic evidence available and record precisely what
-was not observed and why.
 
 ## Package, sign, and notarize
 
@@ -205,16 +152,13 @@ app, creates a ZIP and SHA-256 checksum, and publishes an experimental prereleas
 and notarization credentials are configured, artifacts use a hardened-runtime ad-hoc signature and
 release notes must state that macOS will not automatically trust them.
 
-Tags, releases, version changes, remotes, repository settings, credentials, and publication require
-explicit authorization. Never publish merely to test a workflow. Renovate owns dependency updates;
-GitHub Actions remain SHA-pinned with readable version comments; librespot updates receive protocol
-and license review rather than routine bump treatment.
+Renovate owns dependency updates; GitHub Actions remain SHA-pinned with readable version comments;
+librespot updates receive protocol and license review rather than routine bump treatment.
 
 ## Diagnostics
 
 Release builds use Unified Logging. `./Scripts/export-diagnostics.sh` writes a bounded report under
-ignored `diagnostics/`. Inspect it before sharing and discard any report containing credentials,
-OAuth redirects, raw payloads, or private account/library data.
+ignored `diagnostics/`. Handle reports according to [PRIVACY.md](PRIVACY.md).
 
 ## Pull-request execution
 
@@ -222,49 +166,3 @@ A request to open a PR authorizes the agent to create a branch, commit the compl
 push it, open the PR, monitor available checks/reviews during the run, and address automated findings.
 It does not authorize merge, release, tag, repository-setting changes, or issue closure unless the
 request says so.
-
-The PR must state:
-
-- the user-visible or repository outcome and why it is needed;
-- the canonical owner and important design choice;
-- exact commands and results, including any unavailable gate;
-- all launch/live-account activity, including none;
-- known remaining risk and deliberately unverified behavior.
-
-Keep the diff cohesive. Update public or canonical documents when requirements, behavior, storage,
-permissions, architecture, setup, security, attribution, or release mechanics change. Inspect the
-final staged diff for generated/private files.
-
-Do not use issue-closing keywords such as `Closes`, `Fixes`, or `Resolves` in commits or PR bodies.
-Use plain wording such as `Contributes to #13`. Auto-close is disabled. After an authorized merge, an
-agent must re-read the issue acceptance criteria against `main`; close the issue only when every
-criterion is satisfied and issue mutation is authorized.
-
-### Automated review resolution
-
-CodeRabbit performs incremental reviews and provides the required current-head approval. Cursor is
-configured to review a PR once, so do not retrigger it merely to clear stale review state.
-
-Reply to every actionable automated finding and resolve its thread. Fix valid findings at the owning
-boundary; explicitly decline invalid or out-of-scope findings with evidence. An agent with repository
-admin scope may dismiss a stale Cursor `CHANGES_REQUESTED` review only when:
-
-- it targets an older commit than the PR head;
-- every finding is fixed or explicitly declined with a documented reason;
-- no Cursor review thread remains unresolved;
-- CodeRabbit approves the current head;
-- required checks pass and a final semantic agent review finds the diff ready.
-
-The dismissal message identifies why the review is stale and points to the fixing commit or documented
-decline. Never dismiss a current-head review, an unresolved valid finding, or a review merely to bypass
-conversation resolution.
-
-## Maintaining repository guidance
-
-Repository-wide instruction policy is canonical in
-[Maintaining these instructions](AGENTS.md#maintaining-these-instructions). This operations guide owns
-only the validation procedure below.
-
-Do not add a byte-count gate or a second source-contract harness. Validate instruction discovery from
-the repository root and representative nested scopes, including `script/`, and let CI own formatting
-and mechanically checkable policy.

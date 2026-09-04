@@ -14,17 +14,8 @@ sections of [agent operations](../CONTRIBUTING.md) and the
   erase unrelated work or credentials.
 - `script/build_and_run.sh` terminates a running Spotty executable and can touch an authenticated
   development session. Do not route compile-only verification through launch.
-- Generated archives, app bundles, diagnostics, signing material, and caches stay outside Git. Never
-  install project-generated identities in the login keychain or weaken signing to silence prompts.
-- Shell changes must quote paths/values, propagate failures, use pinned inputs, and remain safe on the
-  supported Apple-silicon macOS environment. Do not add Linux portability unless the product contract
-  changes.
-- Packaging, notarization, tag, release, credential, or repository-setting actions require explicit
-  current-request authorization; never publish merely to exercise a script.
+- Never install project-generated identities in the login keychain or weaken signing to silence
+  prompts.
 - `report-size.sh` is informational only: it reports release binary/archive size after
   `compile-release-spotty.sh` and must never fail the job over an optional tool (`size`, `nm`) being
   unavailable.
-
-For script, build, CI, packaging, signing, or release-mechanics changes, run
-`./Scripts/check-clean.sh` plus the affected command in its non-publishing mode. Report exact commands,
-configuration, generated outputs, and any external action that was intentionally not performed.

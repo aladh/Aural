@@ -51,21 +51,4 @@ boundaries. Read the relevant ADRs and the
   `PlaylistMutationController`; Pathfinder mutation DTOs do not enter views.
 - PCM goes directly from the engine adapter to `AudioRenderer`, never observable UI state. Keep
   callbacks bounded and never block the Rust callback thread.
-- Never log tokens, cookies, redirects, raw payloads, or private identifiers. Fixtures are reduced,
-  synthetic, and non-identifying.
-
-## Live-account rule
-
-Reading remote state is read-only. Transport, seek, transfer, queue, library, playlist, follow, and
-sign-out actions require explicit current-request authorization.
-
-## Review and verification
-
-Flag a second state writer, bypassed reducer acceptance, feature-owned live dependency, unowned task,
-second C-module importer/caller, unchecked post-`await` apply, missing generation/revision handling,
-lock-held continuation callback, presentation policy in Rust, raw payload logging, or unauthorized
-live mutation.
-
-Add boundary coverage under `Sources/SpottyChecks/DeferredBoundaryChecks/`; Rust-facing changes also
-need Rust coverage and ABI parity. Use `./Scripts/check-clean.sh` for FFI, engine lifecycle, build,
-or archive changes. Perform live acceptance only when authorized.
+- Never log tokens, cookies, redirects, raw payloads, or private identifiers.

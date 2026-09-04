@@ -147,17 +147,6 @@ measured baselines belong in [playback engine ownership](playback-engine-ownersh
   disabled drop targeting for non-editable rows could not be demonstrated without private
   hit-testing or pixel coordinates. The context-menu command is the keyboard-accessible add path.
 
-## Engineering defaults
-
-- Prefer Swift structured concurrency, `AsyncStream`, and Observation for new asynchronous state.
-  Do not introduce Combine unless a publisher-native system boundary makes it materially simpler.
-- Keep the playback engine behind the boundary described in
-  [ADR 001](ADR-001-playback-engine.md); Swift continues to own product policy and presentation.
-- Production code must use live integrations. Deterministic checks use injected ports and reduced,
-  synthetic fixtures—never captured account payloads.
-- Account-scoped work must retain the epoch, cancellation, and stale-result rules in
-  [ADR 002](ADR-002-playback-state-and-dependencies.md).
-
 ## Transient mutation feedback
 
 - User-initiated mutations such as Add to Queue report completion through one app-composed
@@ -180,9 +169,12 @@ Without explicit playback permission, it is safe to:
 
 - run `./Scripts/check.sh` and the synthetic check executables;
 - launch, sign in, browse Home/Search/library/detail pages, sort tables, inspect devices and queue,
-  close/reopen the window, and sign out when sign-out testing is in scope;
+  and close/reopen the window;
 - observe remote playback state without pressing Play/Pause, Previous, Next, Shuffle, Repeat,
   Seek, Add to Queue, Transfer, Add to Playlist, or Remove from Playlist.
+
+Transport, seek, transfer, queue/library/playlist/follow mutation, and sign-out each require explicit
+current-request authorization naming that action.
 
 Do not infer playback permission from a request to launch, inspect, accept-test, or test read-only.
 Do not transfer playback, alter the queue, seek, or change transport modes as a substitute for a
@@ -202,5 +194,5 @@ Only when the user has explicitly allowed playback for the current test:
 5. Treat transfer, queue mutation, shuffle/repeat changes, sleep/wake, and output-device changes as
    separately scoped mutations; do not bundle them into a basic playback check.
 
-Never include tokens, OAuth callbacks, real API payloads, private library screenshots, or account
-identifiers in source, fixtures, diagnostics, issues, or pull requests.
+Handle test data and artifacts according to [PRIVACY.md](../PRIVACY.md) and
+[SECURITY.md](../SECURITY.md).

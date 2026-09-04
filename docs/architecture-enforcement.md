@@ -27,33 +27,6 @@ source check can own an exact boundary.
 Stable IDs below preserve searchability for existing issue and code history. They are navigation, not
 an API and not a reason to create one row per implementation detail.
 
-## Agent-context ownership
-
-The old single-file policy is retired. The root [AGENTS.md](../AGENTS.md) contains repository-wide
-outcomes, authorization boundaries, ownership, safety, and completion evidence. For a changed path,
-agents load the root-to-nearest `AGENTS.md` chain; the nearest file contains only path-specific
-invariants and review rules. `AGENTS.md` is the repository's sole instruction format.
-
-| Scope | Semantic owner |
-| --- | --- |
-| Repository-wide outcome, autonomy, live-account safety, work loop | `AGENTS.md` |
-| Reusable build, verification, PR, automated-review, packaging, release procedures | `CONTRIBUTING.md` |
-| SpottyCore composition, app shell, task registry, transient feedback | `Sources/Spotty/AGENTS.md` |
-| Spotify state/effects/dependencies, auth, queue, audio, lifetime, Swift/Rust hazards | `Sources/Spotty/Spotify/AGENTS.md` |
-| Native UI taste and review criteria | `Sources/Spotty/Views/AGENTS.md` |
-| Portable deterministic policy | `Sources/SpottyDomain/AGENTS.md` |
-| C ABI surface | `Sources/SpottyPlaybackCore/AGENTS.md` |
-| Rust/librespot lifecycle and export boundary | `Backend/spotty-playback/AGENTS.md` |
-| Deterministic check design and fixtures | `Sources/SpottyChecks/AGENTS.md` |
-| Build, verification, packaging, signing, diagnostics, release helpers | `Scripts/AGENTS.md` |
-| Development build/sign/terminate/launch entry point | `script/AGENTS.md` |
-| CI, PR metadata, and release workflows | `.github/AGENTS.md` |
-
-Instruction files should contain only constraints a capable agent cannot reliably infer from nearby
-code. Put durable decisions in ADR/product/security documents and multi-step procedures in the
-operations guide. Do not add a byte-count gate or another source-contract harness; validate
-root-to-nearest discovery for representative paths.
-
 ## Mechanically enforced families
 
 ### Toolchain, platform, and package graph
@@ -127,7 +100,7 @@ the package graph, deterministic suites, current focused checks, or semantic rev
 | `CI-RUST-001` | Rust cache key/content stays tied to runner architecture, toolchain, and lockfile | `Scripts/check.sh` plus semantic workflow review |
 | `CI-FMT-001` | CI uses the selected toolchain formatter, not Homebrew Swift formatting/lint tools | `Scripts/check.sh` |
 | `CI-REL-001` | Rust, Swift/architecture, and release compile lanes all feed the required aggregate without reducing coverage | workflow commands/dependencies asserted from `Scripts/check.sh` |
-| `CI-TOOL-001` | CI lanes select the pinned Xcode (26.6 / Swift 6.3.3), run on the pinned macOS runner, check out without persisted credentials, and restore caches by the exact content keys | literal workflow fragments asserted from `Scripts/check.sh`; the pin values are the documented toolchain in `CONTRIBUTING.md` and change together |
+| `CI-TOOL-001` | CI lanes select the documented toolchain, run on the pinned macOS runner, check out without persisted credentials, and restore caches by the exact content keys | literal workflow fragments asserted from `Scripts/check.sh`; the pin values are owned by the development setup guide and change together |
 
 Action SHA pins, least permissions, cache contents beyond asserted fragments, tag/version agreement,
 release-note warnings, notarization credentials, and publication authorization remain semantic agent
@@ -138,31 +111,14 @@ review under `DOC-CI-001` and `DOC-REL-001`.
 | IDs | Decision or judgment | Canonical owner |
 | --- | --- | --- |
 | `DOC-PRI-001`, `DOC-PROD-001` | Safety/correctness/native-small-surface priority; experimental, unofficial, independent, no-affiliation product envelope | Root `AGENTS.md`, README, product contract, ADR 001 |
-| `DOC-ENG-001` | Match surrounding code, fix at the owner, make the smallest cohesive change, avoid speculative machinery | Root and scoped `AGENTS.md` |
 | `DOC-TASTE-001`, `DOC-UI-001`, `DOC-CACHE-001` | Native-Mac restraint, truthful edge states, stable layout, accessibility, and bounded presentation cost | Product contract and `Sources/Spotty/Views/AGENTS.md` |
-| `DOC-AGENT-001`, `DOC-DOD-001` | Progressive context loading, autonomous work loop, exact completion evidence, and no invented human handoff | Root `AGENTS.md` |
-| `DOC-MAP-001` | Repository ownership and path-specific instruction placement | Root `AGENTS.md` and this inventory |
+| `DOC-AGENT-001`, `DOC-DOD-001` | Progressive context loading and no invented human handoff | Root `AGENTS.md` |
+| `DOC-MAP-001` | Repository ownership and path-specific instruction placement | Root `AGENTS.md` |
 | `DOC-IMPL-001` | Declarative composition/views, existing store split, real protocols only at boundaries, typed state | `Sources/Spotty/AGENTS.md`, `Sources/Spotty/Spotify/AGENTS.md`, and `Sources/Spotty/Views/AGENTS.md` |
-| `DOC-CONC-001`, `DOC-ESCAPE-001`, `DOC-COMBINE-001` | Treat Swift concurrency diagnostics as correctness; avoid ownership escapes; Combine only at a native publisher boundary | Root, SpottyCore, and Spotify scoped guidance |
+| `DOC-CONC-001`, `DOC-ESCAPE-001` | Treat Swift concurrency diagnostics as correctness and avoid ownership escapes | Root and scoped Spotify guidance |
 | `DOC-LOG-001` | User-facing errors are actionable and logs are privacy-safe | Scoped Spotify guidance, PRIVACY, SECURITY, sanitization checks |
-| `DOC-SAFE-001` | Live playback/account mutation is explicit-current-request opt-in and bounded | Root `AGENTS.md` and product contract |
-| `DOC-VER-001`, `DOC-PR-001` | Proportional verification, exact PR evidence, plain issue references, automated-review resolution | `CONTRIBUTING.md` and PR template |
-| `DOC-GEN-001`, `DOC-DEP-001` | Generated/private state stays untracked; Actions/dependencies remain pinned and deliberately reviewed | Root guidance, development setup, operations guide |
+| `DOC-SAFE-001` | Live playback/account mutation is explicit-current-request opt-in and bounded | Product contract |
+| `DOC-VER-001`, `DOC-PR-001` | Local verification scope and pull-request authorization | Root `AGENTS.md` and `CONTRIBUTING.md` |
+| `DOC-GEN-001`, `DOC-DEP-001` | Generated/private state stays untracked; Actions/dependencies remain pinned and deliberately reviewed | Development setup and operations guide |
 | `DOC-SEC-001`–`002` | Credentials/private data never enter Git; authenticated launch uses a stable Apple-issued Team ID | PRIVACY, SECURITY, development setup, `script/AGENTS.md`, signature checks |
 | `DOC-ARCH-001` | New async/callback/provider/optimistic flows define owner, lifetime, cancellation, ordering, stale behavior, failure policy, and coverage | ADR 002 and scoped Spotify guidance |
-
-## Rule lifecycle
-
-When an invariant changes:
-
-1. Update the accepted product, ADR, privacy/security, or repository-policy owner.
-2. Choose the strongest honest enforcement layer from the hierarchy above.
-3. Add deterministic behavior coverage before adding a source-text snapshot.
-4. Update this routing table and the nearest scoped agent guidance only when the agent needs the rule
-   before reading the implementation.
-5. Remove superseded prose and checks in the same change so one invariant has one canonical decision
-   and one primary proof.
-
-A green gate proves only what its owners assert. The completing agent still inspects the final diff,
-accounts for affected failure modes, reports unavailable acceptance exactly, and does not translate
-“not tested” into “someone else will test it.”
