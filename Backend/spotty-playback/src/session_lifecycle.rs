@@ -123,7 +123,7 @@ fn clear_retired_credentials_cache() {
 }
 
 pub(crate) fn clear_retired_credentials_at(dir: &std::path::Path) {
-    clear_credentials_at(&dir);
+    clear_credentials_at(dir);
     if let Some(parent) = dir.parent() {
         let _ = std::fs::remove_dir(parent);
     }
