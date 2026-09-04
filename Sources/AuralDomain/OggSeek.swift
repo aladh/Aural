@@ -7,6 +7,12 @@
 //  the byte offset to restart decoding from. Pure logic; `OggByteReader` is the seam the CDN
 //  fetcher/decryptor slice adapts, so this file never touches the network or a decryptor.
 //
+//  The byte offset just past the three Vorbis header packets — the earliest sane restart point —
+//  is not this file's concern: the decode owner knows how many bytes its header parse consumed,
+//  so callers pass that in as `streamStart` rather than this file re-deriving it from granule
+//  positions (which, per the doc comment below, can't distinguish a header page from a
+//  legitimate first audio page whose packet doesn't complete).
+//
 
 import Foundation
 
@@ -54,12 +60,16 @@ public enum OggSeeker {
     /// by granule position (monotonically increasing along the stream), narrowing until the
     /// interval is smaller than `probe`, then scans pages linearly forward from the narrowed
     /// lower bound to pick the exact page. A page with an unknown granule position (-1, "no
-    /// packet ends on this page") cannot be compared against `target`, so it is treated as
-    /// uninformative and the bisection looks further ahead instead of narrowing on it. A target
-    /// beyond the last page's granule clamps to the last page.
+    /// packet ends on this page") cannot be compared against `target`, so — mirroring
+    /// stb_vorbis's `seek_to_sample_coarse` (`Vendor/stb_vorbis/stb_vorbis.c`, the
+    /// `mid.last_decoded_sample != ~0U` walk) — the probe steps forward page by page, at each
+    /// page's exact computed end offset rather than re-searching for a capture pattern (which
+    /// could land inside a page's payload and mistake stray bytes for "OggS"), until it finds a
+    /// page with a known granule or runs out of room before `high`. That resolved page, not the
+    /// original probe midpoint, is what narrows `low`/`high`. A target beyond the last page's
+    /// granule clamps to the last page.
     public static func byteOffset(
         forGranule target: UInt64,
-        sampleRate: UInt32 = 44_100,
         in reader: some OggByteReader,
         streamStart: Int,
         probe: Int = 64 * 1024,
@@ -78,27 +88,28 @@ public enum OggSeeker {
         while high - low > probe, iterations < maxIterations {
             iterations += 1
             let mid = low + (high - low) / 2
-            guard let page = try await firstPage(in: reader, atOrAfter: mid, probe: probe, hardLimit: length) else {
-                // No page starts in [mid, length): the answer must be before mid.
+            guard let page = try await firstPage(in: reader, atOrAfter: mid, probe: probe, hardLimit: high) else {
+                // No page starts in [mid, high): the answer must be before mid.
                 high = mid
                 continue
             }
-            guard let granule = knownGranule(page.header) else {
-                // Unknown granule: uninformative, so look further ahead without narrowing `high`.
-                low = page.offset + 1
+            let resolved = try await firstKnownGranulePage(from: page, in: reader, probe: probe, hardLimit: high)
+            guard let resolved else {
+                // Every page from mid to high has an unknown granule: uninformative, so shrink
+                // toward the already-narrowed side rather than looping on the same bounds.
+                high = mid
                 continue
             }
-            if granule <= target {
-                low = page.offset
+            if resolved.granule <= target {
+                low = resolved.page.offset
             } else {
-                high = page.offset
+                high = resolved.page.offset
             }
         }
 
-        // Final linear scan forward from `low`, which may not itself be page-aligned (the
-        // unknown-granule branch above advances it by one byte), so realign onto the next real
-        // page first. Keep the last page seen with a known granule `<= target`; stop as soon as
-        // a page's known granule exceeds it.
+        // Final linear scan forward from `low` (already page-aligned: the bisection above only
+        // ever assigns it a real page's offset). Keep the last page seen with a known granule
+        // `<= target`; stop as soon as a page's known granule exceeds it.
         var best: OggSeekResult?
         var cursor = low
         while cursor < length {
@@ -135,31 +146,6 @@ public enum OggSeeker {
         return OggSeekResult(pageOffset: fallbackPage.offset, granulePosition: granule)
     }
 
-    /// The offset of the first page after the three Vorbis header packets (identification,
-    /// comment, setup) whose granule position is not 0. stb_vorbis's pushdata API resyncs on any
-    /// page, but a seek target before the first audio page is pointless — there is no audio
-    /// there to decode — so decode must restart from here or later.
-    public static func headerOffset(
-        in reader: some OggByteReader,
-        streamStart: Int,
-        probe: Int = 64 * 1024
-    ) async throws -> Int {
-        var cursor = streamStart
-        let length = reader.length
-        while cursor < length {
-            guard let page = try await parsePage(in: reader, at: cursor, probe: probe) else {
-                throw OggSeekError.noPagesFound
-            }
-            if page.header.granulePosition != 0 {
-                return page.offset
-            }
-            let nextOffset = page.offset + page.header.totalLength
-            guard nextOffset > page.offset else { throw OggSeekError.truncatedPage }
-            cursor = nextOffset
-        }
-        throw OggSeekError.noPagesFound
-    }
-
     // MARK: - Page reading
 
     private struct LocatedPage {
@@ -171,6 +157,28 @@ public enum OggSeeker {
     /// negative once known; only the "unknown" sentinel is negative).
     private static func knownGranule(_ header: OggPageHeader) -> UInt64? {
         header.granulePosition < 0 ? nil : UInt64(header.granulePosition)
+    }
+
+    /// Starting from `page` (already located), steps forward through consecutive pages — each at
+    /// the previous page's exact computed end offset, never by re-searching for a capture pattern
+    /// — until one has a known granule, or the next page would start at or past `hardLimit`.
+    /// Returns nil in the latter case: no known-granule page exists in the searched range.
+    private static func firstKnownGranulePage(
+        from page: LocatedPage,
+        in reader: some OggByteReader,
+        probe: Int,
+        hardLimit: Int
+    ) async throws -> (page: LocatedPage, granule: UInt64)? {
+        var current = page
+        while true {
+            if let granule = knownGranule(current.header) {
+                return (current, granule)
+            }
+            let nextOffset = current.offset + current.header.totalLength
+            guard nextOffset > current.offset, nextOffset < hardLimit else { return nil }
+            guard let next = try await parsePage(in: reader, at: nextOffset, probe: probe) else { return nil }
+            current = next
+        }
     }
 
     /// Reads a `probe`-sized window at or after `from`, locates the first capture pattern in it,
