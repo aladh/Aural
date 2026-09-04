@@ -316,6 +316,90 @@ void spotty_playback_register_audio_data_callback(AudioDataCallback callback);
 /// Registers a callback for audio playback control events (start/stop/clear).
 void spotty_playback_register_audio_control_callback(AudioControlCallback callback);
 
+// ============================================================================
+// Swift-owned audio path (Stage 1 of #201, #208)
+// ============================================================================
+//
+// Debug-only and default off. When Swift registers an audio-command callback *before*
+// spotty_playback_init_player, the engine builds a ShimPlayer instead of librespot's own
+// Player: Spirc's Load/Play/Pause/Seek/Stop/Preload are forwarded to Swift as
+// SpottyAudioCommand snapshots, and Swift reports playback back through
+// spotty_playback_report_audio. With no callback registered the engine keeps decoding
+// in-process and delivering PCM through AudioDataCallback above, unchanged.
+
+/// What a SpottyAudioCommand asks the Swift audio path to do. Values match librespot's
+/// Spirc-facing player operations and Swift's own AudioCommand.Kind raw values.
+typedef enum __attribute__((enum_extensibility(open))) SpottyAudioCommandKind : uint8_t {
+    SpottyAudioCommandKindLoad = 0,
+    SpottyAudioCommandKindPlay = 1,
+    SpottyAudioCommandKindPause = 2,
+    SpottyAudioCommandKindSeek = 3,
+    SpottyAudioCommandKindStop = 4,
+    SpottyAudioCommandKindPreload = 5,
+} SpottyAudioCommandKind;
+
+/// What a report carries back about a load's progress. Values match Swift's AudioReportKind.
+typedef enum __attribute__((enum_extensibility(open))) SpottyAudioReportKind : uint8_t {
+    SpottyAudioReportKindPlaying = 0,
+    SpottyAudioReportKindPaused = 1,
+    SpottyAudioReportKindPosition = 2,
+    SpottyAudioReportKindSeeked = 3,
+    SpottyAudioReportKindPositionCorrection = 4,
+    SpottyAudioReportKindEndOfTrack = 5,
+    SpottyAudioReportKindUnavailable = 6,
+    SpottyAudioReportKindStopped = 7,
+    SpottyAudioReportKindTimeToPreloadNext = 8,
+    SpottyAudioReportKindDuration = 9,
+} SpottyAudioReportKind;
+
+/// One forwarded Spirc command. `track_uri` is valid only for the callback; Swift must copy it
+/// before returning, and NULL means missing. `track_gid` (16 bytes), `file_id` (20 bytes),
+/// `audio_format`, `duration_ms` and `start_playing` carry meaningful values only for Load and
+/// Preload; the transport kinds leave them zeroed, except `position_ms`, which Seek uses.
+///
+/// `session_generation` names the engine session this command belongs to, and
+/// `play_request_id` the one load attempt. Both must be stamped back onto every report for
+/// that load, so the engine can reject a report from a session or a load it has abandoned.
+typedef struct SpottyAudioCommand {
+    uint64_t session_generation;
+    uint64_t play_request_id;
+    const char* _Nullable track_uri;
+    uint32_t position_ms;
+    uint32_t duration_ms;
+    uint8_t track_gid[16];
+    uint8_t file_id[20];
+    SpottyAudioCommandKind kind;
+    uint8_t audio_format;
+    uint8_t start_playing;
+} SpottyAudioCommand;
+
+/// Callback function type for forwarded Spirc audio commands.
+/// Called from the engine's Tokio runtime, never the main thread; must be thread-safe.
+/// May call back into spotty_playback_report_audio synchronously.
+typedef void (*AudioCommandCallback)(const SpottyAudioCommand* command);
+
+/// Registers the Swift audio path's command sink, and by doing so selects it.
+///
+/// Registering before spotty_playback_init_player makes the session build a ShimPlayer; leaving
+/// it unregistered keeps the in-process librespot Player and its PCM callbacks. Registering
+/// after a session is up affects only the next rebuild.
+void spotty_playback_register_audio_command_callback(AudioCommandCallback callback);
+
+/// Reports one playback fact from the Swift audio path back to Spirc.
+///
+/// `position_ms` is meaningful for Playing/Paused/Position/Seeked/PositionCorrection and
+/// TimeToPreloadNext; `duration_ms` only for Duration. Returns SpottyPlaybackResultOk when the
+/// report was applied and SpottyPlaybackResultError when it was rejected: no ShimPlayer is
+/// running, `kind` is not a known SpottyAudioReportKind, or the report names a session
+/// generation or play request the engine has already abandoned.
+SpottyPlaybackResult spotty_playback_report_audio(
+    uint64_t session_generation,
+    uint64_t play_request_id,
+    SpottyAudioReportKind kind,
+    uint32_t position_ms,
+    uint32_t duration_ms
+);
+
 /// Skips to the next track in the queue.
 SpottyPlaybackResult spotty_playback_next(void);
 

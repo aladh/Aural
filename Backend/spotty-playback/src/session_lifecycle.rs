@@ -592,6 +592,9 @@ pub(crate) fn do_reconnect_cleanup() {
     // rendering and skip resetting its real-time throttle on the next start.
     proxy_sink::ProxySink::notify_player_gone();
     *PLAYER.lock().unwrap_or_else(|e| e.into_inner()) = None;
+    // Dropped alongside the player it aliases, so a late `spotty_playback_report_audio` from a
+    // Swift pipeline that has not been torn down yet finds nothing to report to.
+    *SHIM_PLAYER.lock().unwrap_or_else(|e| e.into_inner()) = None;
 
     // Clear Mixer
     *MIXER.lock().unwrap_or_else(|e| e.into_inner()) = None;
@@ -682,8 +685,27 @@ pub extern "C" fn spotty_playback_init_player(access_token: *const c_char) -> i3
     })
 }
 
-/// Helper function to create a new Player instance
-pub(crate) fn create_new_player(session: &Session) -> Arc<Player> {
+/// Builds the player this session's `Spirc` drives, and stores it globally.
+///
+/// Two shapes, one choice, made once per build: when Swift has registered an audio-command
+/// callback (`spotty_playback_register_audio_command_callback`), the Stage 1 Swift audio path is
+/// in use and this builds a [`ShimPlayer`], which forwards `Load/Play/Pause/Seek/Stop/Preload`
+/// to Swift and turns Swift's reports back into `PlayerEvent`s. Otherwise it builds librespot's
+/// own `Player`, which decodes in-process and hands PCM to Swift through `proxy_sink.rs`. Nothing
+/// downstream cares which: `Spirc` and `player_event_pump.rs` both take `Arc<dyn SpircPlayer>`.
+///
+/// `generation` stamps every `AudioCommand` the shim sends, so a report arriving from a Swift
+/// pipeline that belongs to a session already replaced is rejected rather than applied.
+/// The shim constructor lives next to `FfiAudioCommandSink` in `audio_command_sink.rs`.
+pub(crate) fn create_new_player(session: &Session, generation: u64) -> Arc<dyn SpircPlayer> {
+    if swift_audio_path_enabled() {
+        return create_shim_player(session, generation);
+    }
+    create_librespot_player(session)
+}
+
+/// Builds librespot's own Player, decoding in-process and delivering PCM through `proxy_sink.rs`.
+fn create_librespot_player(session: &Session) -> Arc<dyn SpircPlayer> {
     let (bitrate, bitrate_kbps) = match BITRATE_SETTING.load(Ordering::SeqCst) {
         0 => (Bitrate::Bitrate96, 96),
         2 => (Bitrate::Bitrate320, 320),
@@ -720,6 +742,7 @@ pub(crate) fn create_new_player(session: &Session) -> Arc<Player> {
     );
 
     // Store player globally
+    let player: Arc<dyn SpircPlayer> = player;
     *PLAYER.lock().unwrap_or_else(|e| e.into_inner()) = Some(Arc::clone(&player));
 
     player
@@ -793,7 +816,7 @@ pub(crate) async fn build_player_async(
 
     // Create new player - must be created with the new session because Player is
     // tightly coupled to Session's ChannelManager for decryption key requests
-    let player = create_new_player(&session);
+    let player = create_new_player(&session, current_generation);
     let event_stop_tx = start_player_event_pump(Arc::clone(&player), current_generation);
 
     *SESSION.lock().unwrap_or_else(|e| e.into_inner()) = Some(session.clone());

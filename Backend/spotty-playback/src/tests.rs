@@ -830,6 +830,11 @@ fn exported_c_function_signatures() -> Vec<ExportedCFunctionSignature> {
         "SpottyPlaybackResult (void)"
     );
     signature!(
+        spotty_playback_register_audio_command_callback,
+        extern "C" fn(AudioCommandCallback),
+        "void (AudioCommandCallback)"
+    );
+    signature!(
         spotty_playback_register_audio_control_callback,
         extern "C" fn(extern "C" fn(u8)),
         "void (AudioControlCallback)"
@@ -858,6 +863,11 @@ fn exported_c_function_signatures() -> Vec<ExportedCFunctionSignature> {
         spotty_playback_register_queue_callback,
         extern "C" fn(QueueSnapshotCallback),
         "void (QueueCallback)"
+    );
+    signature!(
+        spotty_playback_report_audio,
+        extern "C" fn(u64, u64, u8, u32, u32) -> i32,
+        "SpottyPlaybackResult (uint64_t, uint64_t, SpottyAudioReportKind, uint32_t, uint32_t)"
     );
     signature!(
         spotty_playback_resume,
@@ -955,7 +965,7 @@ fn parse_abi_signature_fixture(fixture: &str) -> Vec<ExportedCFunctionSignature>
 #[test]
 fn exported_c_function_signatures_are_stable() {
     let signatures = exported_c_function_signatures();
-    assert_eq!(signatures.len(), 39);
+    assert_eq!(signatures.len(), 41);
 }
 
 /// The checked-in C fixture is compared to the header by `Scripts/check.sh`; this Rust-side
@@ -967,6 +977,27 @@ fn exported_c_function_signatures_match_fixture() {
         parse_abi_signature_fixture(fixture),
         exported_c_function_signatures()
     );
+}
+
+/// `SpottyAudioCommand` must match the header's struct byte for byte: the whole Stage 1 audio
+/// path reads its fields straight out of this snapshot on the Swift side.
+#[test]
+fn audio_command_repr_c_layout_matches_header() {
+    assert_eq!(std::mem::size_of::<SpottyAudioCommand>(), 72);
+    assert_eq!(std::mem::align_of::<SpottyAudioCommand>(), 8);
+    assert_eq!(
+        std::mem::offset_of!(SpottyAudioCommand, session_generation),
+        0
+    );
+    assert_eq!(std::mem::offset_of!(SpottyAudioCommand, play_request_id), 8);
+    assert_eq!(std::mem::offset_of!(SpottyAudioCommand, track_uri), 16);
+    assert_eq!(std::mem::offset_of!(SpottyAudioCommand, position_ms), 24);
+    assert_eq!(std::mem::offset_of!(SpottyAudioCommand, duration_ms), 28);
+    assert_eq!(std::mem::offset_of!(SpottyAudioCommand, track_gid), 32);
+    assert_eq!(std::mem::offset_of!(SpottyAudioCommand, file_id), 48);
+    assert_eq!(std::mem::offset_of!(SpottyAudioCommand, kind), 68);
+    assert_eq!(std::mem::offset_of!(SpottyAudioCommand, audio_format), 69);
+    assert_eq!(std::mem::offset_of!(SpottyAudioCommand, start_playing), 70);
 }
 
 #[test]

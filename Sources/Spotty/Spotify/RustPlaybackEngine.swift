@@ -78,11 +78,28 @@ nonisolated final class RustPlaybackEngine: LocalPlaybackEngine, @unchecked Send
     }
     func forceReconnect() -> Int32 { PlaybackCore.forceReconnect() }
 
-    /// Stage 1 scaffolding (#208): the AP audio-key request, forwarded so `PlaybackCore` stays
-    /// the only C importer. No caller yet.
+    /// The AP audio-key request, forwarded so `PlaybackCore` stays the only C importer.
+    /// `SpotifyAudioSourceProvider` caches per file id and never retries in a loop.
     func audioKey(trackGID: [UInt8], fileID: [UInt8]) -> Swift.Result<[UInt8], AudioKeyError> {
         PlaybackCore.audioKey(trackGID: trackGID, fileID: fileID)
     }
+
+    /// The Stage 1 Swift audio path (#208), built only when `SwiftAudioPathSwitch` is on.
+    ///
+    /// Built eagerly on first `events()` rather than lazily on the first command: registering
+    /// the callback is what tells the engine to build a `ShimPlayer`, and that decision is made
+    /// once, at `spotty_playback_init_player`, which the store performs right after subscribing.
+    private static let swiftAudioPath: SwiftAudioPath? = {
+        guard SwiftAudioPathSwitch.isEnabled(), let renderer = try? spottyAudioRendererResult.get() else {
+            return nil
+        }
+        let provider = SpotifyAudioSourceProvider(requestAudioKey: { trackGID, fileID in
+            PlaybackCore.audioKey(trackGID: trackGID, fileID: fileID)
+        })
+        return SwiftAudioPath(sources: provider, output: renderer) { report in
+            PlaybackCore.reportAudio(report)
+        }
+    }()
 
     /// Activate/`play()` first. On a non-reconnect failure, iterate Swift load targets.
     /// `PlaybackCoordinator` serializes this whole operation.
@@ -125,17 +142,28 @@ nonisolated final class RustPlaybackEngine: LocalPlaybackEngine, @unchecked Send
         }
         guard shouldRegister else { return }
 
-        PlaybackCore.registerAudioDataCallback { samples, count in
-            guard let samples else { return }
-            try? spottyAudioRendererResult.get().writeAudioData(samples, count: count)
-        }
-        PlaybackCore.registerAudioControlCallback { event in
-            guard let renderer = try? spottyAudioRendererResult.get() else { return }
-            switch event {
-            case .stop: renderer.stop()
-            case .start: renderer.start()
-            case .clear: renderer.flush()
-            @unknown default: break
+        if let audioPath = Self.swiftAudioPath {
+            PlaybackCore.registerAudioCommandCallback { pointer in
+                guard let command = PlaybackCore.audioCommand(from: pointer) else { return }
+                RustPlaybackEngine.swiftAudioPath?.deliver(command)
+            }
+            Task { await audioPath.run() }
+            // `SwiftAudioPath` owns start/stop/flush on the same renderer. Registering the
+            // shipped PCM/control callbacks as well would let `ProxySink::notify_player_gone`
+            // fight the mailbox for that renderer.
+        } else {
+            PlaybackCore.registerAudioDataCallback { samples, count in
+                guard let samples else { return }
+                try? spottyAudioRendererResult.get().writeAudioData(samples, count: count)
+            }
+            PlaybackCore.registerAudioControlCallback { event in
+                guard let renderer = try? spottyAudioRendererResult.get() else { return }
+                switch event {
+                case .stop: renderer.stop()
+                case .start: renderer.start()
+                case .clear: renderer.flush()
+                @unknown default: break
+                }
             }
         }
         PlaybackCore.registerPlaybackStateCallback { pointer in

@@ -3,12 +3,12 @@
 //  Spotty
 //
 //  Stage 1 of #201, slice 2b (#208): drives `OggVorbisDecoder` from a `DecodeByteSource` to a
-//  `PCMSink` on a dedicated thread. Not yet wired into playback -- the CDN fetcher, AES-CTR
-//  decryptor, and `RustPlaybackEngine` wiring are other slices of #208. Nothing here decides how
-//  bytes are fetched or decrypted, or how PCM reaches the speakers; it only paces decode against
-//  the sink's backpressure and reports transport-relevant events. Byte-layout knowledge (e.g.
-//  where the Ogg stream actually starts in a Spotify file) belongs to that CDN/decrypt adapter,
-//  not here -- this type only ever sees the offset it is given.
+//  `PCMSink` on a dedicated thread. `SwiftAudioPath` constructs and starts it when the debug
+//  Swift audio-path switch is on. Nothing here decides how bytes are fetched or decrypted, or
+//  how PCM reaches the speakers; it only paces decode against the sink's backpressure and
+//  reports transport-relevant events. Byte-layout knowledge (e.g. where the Ogg stream
+//  actually starts in a Spotify file) belongs to that CDN/decrypt adapter, not here -- this
+//  type only ever sees the offset it is given.
 //
 //  Thread safety: `OggVorbisDecoder` requires a single owning thread end to end (see its own file
 //  header), so this pipeline spins one dedicated `Thread` per `start()` call. The decode loop
@@ -42,31 +42,9 @@ final class VorbisDecodePipeline {
     /// Decode-to-renderer pipeline events. Delivered on the decode thread (except `.paused`,
     /// `.playing` from `resume()`, and `.stopped`, which the calling thread emits directly); a
     /// caller that touches UI/main-actor state from `events` must hop back itself.
-    enum Event: Sendable {
-        case playing
-        case paused
-        case position(UInt32)
-        case seeked(UInt32)
-        case endOfTrack
-        case stopped
-        case failed(FailureReason)
-
-        /// Privacy-safe classification of what failed. Never carries the underlying error's
-        /// description -- a CDN-backed `DecodeByteSource` can throw errors whose messages embed
-        /// signed URLs (`__token__` query parameters and the like), which must not reach logs.
-        enum FailureReason: Sendable {
-            /// `DecodeByteSource.read` threw.
-            case sourceRead
-            /// The Vorbis headers never opened (see `VorbisDecodePipelineError`).
-            case headers
-            /// The stream opened but is not 44.1 kHz stereo.
-            case unsupportedFormat
-            /// `OggVorbisDecoder.decodeFrame` threw once already open.
-            case decode
-            /// A seek's target byte offset had no real Ogg page within the search cap.
-            case seek
-        }
-    }
+    /// The domain's `AudioPipelineEvent`, not a second enum of its own: `AudioPlaybackSession`
+    /// reduces exactly these values, so the two must be one type (#219).
+    typealias Event = AudioPipelineEvent
 
     /// Initial `openHeaders` prefix size; doubled on `.needMoreData` up to `maxHeaderPrefixSize`.
     private static let initialHeaderPrefixSize = 16 * 1_024
@@ -347,9 +325,9 @@ final class VorbisDecodePipeline {
         }
     }
 
-    /// Classifies a thrown error into a privacy-safe `Event.FailureReason` -- never the error's
+    /// Classifies a thrown error into a privacy-safe `AudioPipelineFailure` -- never the error's
     /// own description, which for a CDN-backed source can embed a signed URL.
-    private static func failureReason(for error: Error) -> Event.FailureReason {
+    private static func failureReason(for error: Error) -> AudioPipelineFailure {
         if let vorbisError = error as? OggVorbisDecoderError {
             if case .unsupportedFormat = vorbisError { return .unsupportedFormat }
             return .decode

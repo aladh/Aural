@@ -28,6 +28,52 @@ nonisolated enum PlaybackCore {
         spotty_playback_register_audio_control_callback(callback)
     }
 
+    /// Registers Swift's audio-command sink, and by doing so selects the Stage 1 Swift audio
+    /// path: the engine builds a `ShimPlayer` on its next init instead of librespot's `Player`.
+    /// Leaving it unregistered keeps the shipped `proxy_sink` PCM path untouched.
+    static func registerAudioCommandCallback(_ callback: AudioCommandCallback) {
+        spotty_playback_register_audio_command_callback(callback)
+    }
+
+    /// The typed audio command a callback received, or nil for a null snapshot. Copies every
+    /// pointer: the C snapshot is valid only for the callback.
+    static func audioCommand(from pointer: UnsafePointer<SpottyAudioCommand>?) -> AudioCommand? {
+        guard let pointer else { return nil }
+        let command = pointer.pointee
+        guard let kind = AudioCommand.Kind(rawValue: command.kind.rawValue) else { return nil }
+        return AudioCommand(
+            sessionGeneration: command.session_generation,
+            playRequestID: command.play_request_id,
+            kind: kind,
+            trackURI: optionalCString(command.track_uri) ?? "",
+            trackGID: withUnsafeBytes(of: command.track_gid) { Array($0) },
+            fileID: withUnsafeBytes(of: command.file_id) { Array($0) },
+            audioFormat: command.audio_format,
+            positionMs: command.position_ms,
+            startPlaying: command.start_playing != 0,
+            durationMs: command.duration_ms
+        )
+    }
+
+    /// Reports one playback fact from the Swift audio path. The engine rejects a report whose
+    /// `sessionGeneration`/`playRequestID` no longer names what it believes is loaded, which is
+    /// an ordinary outcome (a superseded load), not an error worth surfacing.
+    @discardableResult
+    static func reportAudio(_ report: AudioReport) -> Result {
+        // The imported C enum is open, so the raw-value initializer is failable even though
+        // `AudioReportKind` is a closed Swift set whose values match the header.
+        guard let kind = SpottyAudioReportKind(rawValue: report.kind.rawValue) else {
+            return .error
+        }
+        return spotty_playback_report_audio(
+            report.sessionGeneration,
+            report.playRequestID,
+            kind,
+            report.positionMs,
+            report.durationMs
+        )
+    }
+
     static func registerPlaybackStateCallback(_ callback: PlaybackStateCallback) {
         spotty_playback_register_playback_state_callback(callback)
     }

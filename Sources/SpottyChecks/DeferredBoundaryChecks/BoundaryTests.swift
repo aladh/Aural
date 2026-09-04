@@ -66,6 +66,7 @@ enum BoundaryChecksMain {
             RegisteredCheckSuite(name: "ranged-audio-fetcher") { await runRangedAudioFetcherChecks($0) },
             RegisteredCheckSuite(name: "ogg-vorbis-decoder") { runOggVorbisDecoderChecks($0) },
             RegisteredCheckSuite(name: "vorbis-decode-pipeline") { await runVorbisDecodePipelineChecks($0) },
+            RegisteredCheckSuite(name: "swift-audio-path") { await runSwiftAudioPathChecks($0) },
             RegisteredCheckSuite(name: "check-suite-selection") { runner in
                 runCheckSuiteSelectionChecks(runner, catalog: BoundaryChecksMain.suiteNames)
             },
