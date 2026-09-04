@@ -98,8 +98,12 @@ private func runStaleGenerationProducesNoWorkCheck(_ check: CheckRunner) async {
     let release = DispatchSemaphore(value: 0)
     let parked = ParkingTrackSource(blockingUntil: release)
     let exhausted = ExhaustedTrackSource()
-    let provider = RecordingSourceProvider { fileID in
-        fileID == fileA ? parked : exhausted
+    let provider = RecordingSourceProvider { (fileID: [UInt8]) -> any AudioTrackByteSource in
+        if fileID == fileA {
+            parked
+        } else {
+            exhausted
+        }
     }
     let output = RecordingOutput()
     let reports = ReportCollector()
