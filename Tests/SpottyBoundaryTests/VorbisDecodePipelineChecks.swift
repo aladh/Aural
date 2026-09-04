@@ -158,7 +158,16 @@ private func runFixtureDecodeThroughFakeSinkCheck() async {
     #expect(
         (await waitUntil(timeout: .seconds(10)) { collector.all.contains(where: isEndOfTrack) }) == true,
         "fixture decode reaches .endOfTrack")
-    #expect((collector.all.contains(where: isPlaying)) == true, "fixture decode emitted .playing before .endOfTrack")
+    let events = collector.all
+    let playingBeforeEnd: Bool
+    if let playingIndex = events.firstIndex(where: isPlaying),
+        let endOfTrackIndex = events.firstIndex(where: isEndOfTrack)
+    {
+        playingBeforeEnd = playingIndex < endOfTrackIndex
+    } else {
+        playingBeforeEnd = false
+    }
+    #expect((playingBeforeEnd) == true, "fixture decode emitted .playing before .endOfTrack")
 
     let totalFrames = sink.totalFrameCount
     #expect((totalFrames > 0) == true, "fixture decode produced frames")
