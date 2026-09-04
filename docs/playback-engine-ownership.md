@@ -19,7 +19,7 @@ in the [enforcement inventory](architecture-enforcement.md).
 | `ConnectDeviceProjection` | Device-list activity, display sort, empty-type fallback |
 | `ConnectionSnapshotProjection` | Connection session phase, empty-device-id fallback |
 | `PlaybackSnapshotProjection` | Engine playback transport, empty-URI identity, timestamp correction |
-| `ResumeLoadPlan` | Resume-load target order from sticky resume-load URIs, for user resume and reconnect rehydration. `PlaybackStore` captures those URIs through the engine getters; `RustPlaybackEngine` iterates targets through `aural_playback_load`. The engine signals a reconnect window with `resume_pending` and holds readiness until Swift's loads land or the window times out |
+| `ResumeLoadPlan` | Resume-load target order from sticky resume-load URIs, for user resume and reconnect rehydration. `PlaybackStore` captures those URIs through the engine getters; `RustPlaybackEngine` iterates targets through `aural_playback_load`. The engine signals a reconnect window with `resume_pending` and holds readiness until a Swift load lands, a load reports `ERROR_NEEDS_REINIT` (dead Spirc, which ends the wait for that window and triggers a rebuild), or the window times out |
 | Catalog, OAuth, shuffle policy, HTTP retry | Unchanged; never belonged in Rust |
 | `SpotifyAudioFormat` / `SpotifyAudioHeader` | Stage 1 building block (#208): librespot audio-file format tags and the fixed-size normalisation-gain header prefix. Not yet wired into any decode path |
 | `StorageResolveResponse` / `CDNURLExpiry` | Stage 1 building block (#208): storage-resolve protobuf decoding and librespot's CDN-URL expiry heuristics. Not yet wired into any resolve/fetch path |
@@ -35,40 +35,84 @@ in the [enforcement inventory](architecture-enforcement.md).
 | `session_lifecycle.rs` | Mixed | AP connect and credential cache are librespot. Path policy and logout cache wipe are Spotty-owned but must run next to the cache. Streaming grant completion stays here because only librespot performs AP login. |
 | `lifecycle_serialization.rs` | Spotty-owned coordination that must stay with Rust globals | One async lifecycle mutex, reconnect unit outcomes, generation revalidation |
 | `connect.rs` | Mixed | Dealer subscribe, hidden-member bootstrap PUT, and protobuf parse are protocol. Device-list and connection-snapshot presentation are Swift-owned. `cluster_offer_decision`, bootstrap-vs-push linearization, and `is_active_in_cluster` (this engine's Connect role) stay until cluster observations can cross the boundary without a second protobuf stack. |
-| `queue.rs` | Adapter after this slice | Forwards unfiltered `ProvidedTrack` rows, slim current-track identity, protocol playback flags, and protocol `context_uri` on cluster snapshots as a typed C queue snapshot. Local `PlayerEvent` playback snapshots send an empty context. Does **not** own delimiter hiding, upcoming presentation, or transport presentation. |
+| `queue.rs` | Adapter | Forwards unfiltered `ProvidedTrack` rows, slim current-track identity, protocol playback flags, and protocol `context_uri` on cluster snapshots as a typed C queue snapshot. Local `PlayerEvent` playback snapshots send an empty context. Does **not** own delimiter hiding, upcoming presentation, or transport presentation. |
 | `state.rs` | Mixed | Librespot object slots (`SESSION`, `SPIRC`, `PLAYER`, `MIXER`). Snapshot stamps and connection aggregation live here. Queue, connection, playback, and device-list observations use typed C snapshots. |
 | `transport.rs` | Adapter | Seek-capable `load_at_position`, one-target `LoadRequest` construction, playing-event waits, and the reconnect rehydration window (`has_resume_identity`, `wait_for_rehydration`). Target order and capture are Swift-owned for user resume and reconnect alike. |
 | `player_control.rs` | Adapter | Spirc play/pause/seek/shuffle/repeat/transfer/queue-add, plus FFI getters for sticky resume URIs |
 | `player_event_pump.rs` | Adapter | Local `PlayerEvent` → position and protocol playing/paused bits when this device is active |
 | `spirc_command_error.rs` | Adapter | Map librespot errors onto FFI codes Swift already understands |
 
-## JSON / FFI surface
+### Planned owner per #201 stage
 
-Control observations for connection, playback, devices, and queue are typed C snapshots
-with `revision` and `session_generation`. Connection observations use
-`AuralConnectionSnapshot` with session flags, `device_id`, and `last_error`. Playback
-observations use `AuralPlaybackSnapshot` with protocol playing/paused flags, URIs, timing,
-and options. Device-list observations use `AuralDevicesSnapshot` with protocol members plus
-`active_device_id`. Queue observations use `AuralQueueSnapshot` with unfiltered protocol
-rows, slim current-track identity, `queue_revision`, and replacement-disallow flags.
-Queue snapshots no longer carry presentation `next_tracks` / `prev_tracks` or catalog
-labels. Device snapshots no longer carry `is_active` or unused Web API volume/restriction
-fields; they send protocol members plus `active_device_id`. Playback snapshots send protocol
-playing/paused flags, track URI, context URI, timing, and options; Swift projects transport.
-Local player-event snapshots send an empty `context_uri`. Hardcoded `device_name` is gone, and
-write-only `reconnect_attempt`, `connected_since_ms`, and `session_connection_id` were removed
-from `ConnectionState`. Later slices should prefer typed payloads or rawer protocol rows over
-new Spotty-only fields.
+- Stage 1 (audio path): audio-key request, CDN fetch, decrypt, and Vorbis decode move to Swift
+  and feed `AudioRenderer`; `proxy_sink.rs` and the PCM callback retire. The #159 spike decides
+  go/no-go.
+- Stage 2 (session): AP resolve, handshake, login, and credential cache move to Swift;
+  `session_lifecycle.rs` and `lifecycle_serialization.rs` shrink to what Spirc still needs.
+- Stage 3 (Spirc): dealer, cluster, transfer, and `set_queue` move to Swift once synthetic,
+  non-account-derived protocol fixtures for transfer, remote pause, `set_queue`, and cluster
+  bootstrap exist (test-only; never captured account payloads, per the root `AGENTS.md`); the
+  remaining modules, the C ABI, and `Backend/` retire.
 
-`aural_playback_get_queue_snapshot` still returns the last cluster queue so
-Swift can recover after a provisional empty `SetQueue`. Caching that snapshot in Rust is
-adapter convenience, not a second app-facing store.
+Each stage lands as its own issue and re-measures the baseline below.
 
-## Later slices (not this change)
+## FFI surface
+
+Control observations for connection, playback, devices, and queue are typed C snapshots with
+`revision` and `session_generation`:
+
+- `AuralConnectionSnapshot`: `session_connected`, `spirc_ready`, `is_active_device`,
+  `resume_pending`, `device_id`, `last_error`.
+- `AuralPlaybackSnapshot`: protocol playing/paused flags, track URI, context URI (empty on local
+  player-event snapshots), timing, and shuffle/repeat options.
+- `AuralDevicesSnapshot`: protocol members (`id`, `name`, type name) plus `active_device_id`.
+- `AuralQueueSnapshot`: unfiltered protocol rows, slim current-track identity, `queue_revision`,
+  and replacement-disallow flags.
+
+Swift projects transport, session phase, device activity, and upcoming rows from these; Rust sends
+no presentation copy. New fields should be typed payloads or rawer protocol rows, not Spotty-only
+presentation.
+
+`aural_playback_get_queue_snapshot` returns the last cluster queue (freed with
+`aural_playback_free_queue_snapshot`) so Swift can recover after a provisional empty `SetQueue`.
+It returns null when no cluster snapshot has been received yet; null means "not told anything",
+which Swift must keep distinct from an empty queue.
+Caching that snapshot in Rust is adapter convenience, not a second app-facing store.
+
+## Remaining Spotty-owned logic in Rust
 
 - Moving the sticky resume-load globals (`CURRENT_CONTEXT_URI`, `CURRENT_TRACK_URI`,
   `RESUME_POSITION_MS`) to Swift, which would retire the three resume getters and the
   engine's `has_resume_identity` check
 
-Do not move PCM, Spirc, session connect, or dealer cluster fetch into Swift in order to
-satisfy this inventory.
+## Standing constraints
+
+- Do not move PCM, Spirc, session connect, or dealer cluster fetch into Swift to satisfy a slice
+  of this inventory. Only a measured #201 stage issue, with its go/no-go recorded, may move them.
+- Rehydrate before announcing readiness. Bootstrapping from the Web API on readiness reopens the
+  stale-position window the `resume_pending` hold exists to close.
+- Do not reintroduce `device_name`, `reconnect_attempt`, `connected_since_ms`, or
+  `session_connection_id` into `ConnectionState` or its snapshot; reconnect backoff stays
+  loop-local.
+- Do not widen `aural_playback_resume`; resume targets are Swift-owned loads.
+- Do not forward raw cluster protobuf to Swift ahead of a stage that owns the models.
+
+## Measured baseline (2026-08-23)
+
+Aural 0.4.0 (4), optimized signed Release bundle, macOS 27.0 (26A5416b), Apple M1 Max, 32 GB.
+Five `ps` samples at one-second intervals after the state stabilized; memory is RSS; foreground
+and background are window open and closed in the same process.
+
+| State | Window | Mean CPU | Mean RSS |
+| --- | --- | ---: | ---: |
+| Paused | Foreground | 0.0% | 256.20 MiB |
+| Paused | Background | 0.0% | 254.83 MiB |
+| Playing | Foreground | 28.58% | 262.65 MiB |
+| Playing | Background | 20.80% | 262.39 MiB |
+
+Renderer backpressure: of 1,971 one-millisecond playing observations, 1,935 were in the renderer's
+deliberate producer sleep, with no allocator hotspot. A Core Media sample-buffer pool is not
+warranted; the cursor-based renderer is the lower-risk design.
+
+The browse path behind these numbers included surfaces that have since been removed, so a rerun
+must record its own commit and surfaces. #201 requires re-measurement at each stage boundary.

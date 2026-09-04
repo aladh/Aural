@@ -4,7 +4,7 @@ This document records intentional product behavior that is easy to lose during a
 the safe way to test Spotty against a real Spotify account. Spotty is an unofficial, independent
 project with no affiliation with, endorsement by, or sponsorship from Spotify AB; its private
 Spotify integration may violate Spotify's terms. Architecture decisions belong in the ADRs;
-historical measurements belong in the performance baseline.
+measured baselines belong in [playback engine ownership](playback-engine-ownership.md).
 
 ## Product direction
 
@@ -151,7 +151,7 @@ historical measurements belong in the performance baseline.
 
 - Prefer Swift structured concurrency, `AsyncStream`, and Observation for new asynchronous state.
   Do not introduce Combine unless a publisher-native system boundary makes it materially simpler.
-- Keep Rust/librespot as the contained playback leaf described in
+- Keep the playback engine behind the boundary described in
   [ADR 001](ADR-001-playback-engine.md); Swift continues to own product policy and presentation.
 - Production code must use live integrations. Deterministic checks use injected ports and reduced,
   synthetic fixtures—never captured account payloads.
