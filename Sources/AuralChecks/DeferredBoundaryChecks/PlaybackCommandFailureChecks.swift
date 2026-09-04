@@ -513,11 +513,14 @@ func runPlaybackCommandFailureChecks(_ runner: CheckRunner) async {
         )
         reconciledEngine.finish(with: PlaybackEngineResult(rawValue: -2))
         _ = await waitUntil { !reconciledCompletions.isEmpty }
-        runner.equal("already-reconciled reconnect-required finish completes as success", reconciledCompletions, [true])
-        runner.nil_("already-reconciled reconnect-required finish shows no command notice", reconciled.transientCommandError)
+        runner.equal(
+            "already-reconciled reconnect-required finish completes as success", reconciledCompletions, [true])
+        runner.nil_(
+            "already-reconciled reconnect-required finish shows no command notice", reconciled.transientCommandError)
         runner.equal("already-reconciled transport keeps the reconciled state", reconciled.state.transport, .paused)
         _ = await waitUntil { reconciledAccount.authorizeCount == 1 }
-        runner.equal("already-reconciled reconnect-required finish still starts connect", reconciledAccount.authorizeCount, 1)
+        runner.equal(
+            "already-reconciled reconnect-required finish still starts connect", reconciledAccount.authorizeCount, 1)
         await reconciled.shutdownForTermination()
     }
 
