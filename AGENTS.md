@@ -68,20 +68,20 @@ material.
 
 | Path | Ownership |
 | --- | --- |
-| `Sources/AuralApp/` | Thin executable launcher. |
-| `Sources/Aural/` | `AuralCore`: composition, native UI, feature stores, Spotify/auth adapters, audio renderer, playback adapter. |
-| `Sources/AuralDomain/` | Portable models, reducer, lifetime rules, parsing, sorting, and policies. |
-| `Sources/AuralPlaybackCore/` | Checked-in C header and module map for the Rust ABI. |
-| `Backend/aural-playback/` | Rust/librespot session, Connect, streaming, decoding, recovery, protocol rows, and C exports. |
+| `Sources/SpottyApp/` | Thin executable launcher. |
+| `Sources/Spotty/` | `SpottyCore`: composition, native UI, feature stores, Spotify/auth adapters, audio renderer, playback adapter. |
+| `Sources/SpottyDomain/` | Portable models, reducer, lifetime rules, parsing, sorting, and policies. |
+| `Sources/SpottyPlaybackCore/` | Checked-in C header and module map for the Rust ABI. |
+| `Backend/spotty-playback/` | Rust/librespot session, Connect, streaming, decoding, recovery, protocol rows, and C exports. |
 | `Backend/vendor/` | Vendored, patched third-party crates (see each crate's `PATCHES.md`); not routine dependency bumps. |
-| `Sources/AuralChecks/` | Deterministic domain and boundary evidence; never ships. |
+| `Sources/SpottyChecks/` | Deterministic domain and boundary evidence; never ships. |
 | `Scripts/` | Verification, packaging, signing, diagnostics, and release helpers. |
 | `script/` | Development build/sign/launch entry point. |
 | `.github/` | CI, pull-request metadata, and release workflows. |
 | `Packaging/` | App metadata and privacy manifest. |
 | `docs/` | Product contract, decisions, enforcement inventory, protocol notes, and measured baselines. |
 
-Swift target direction is `AuralApp -> AuralCore -> AuralDomain`; `AuralCore` reaches the C/Rust leaf
+Swift target direction is `SpottyApp -> SpottyCore -> SpottyDomain`; `SpottyCore` reaches the C/Rust leaf
 through one narrow adapter. Do not add a reverse edge for convenience.
 
 ## Global engineering constraints
@@ -114,7 +114,7 @@ the specific action. For authorized live tests, follow the bounded procedure in 
 [product contract](docs/product-and-acceptance-contract.md#safe-acceptance-testing) and report any
 state that could not be restored.
 
-Do not launch the Aural executable merely to prove compilation: `./script/build_and_run.sh`
+Do not launch the Spotty executable merely to prove compilation: `./script/build_and_run.sh`
 terminates an existing process and can disturb an authenticated session.
 
 ## Work loop and evidence

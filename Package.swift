@@ -3,19 +3,19 @@
 import PackageDescription
 
 let package = Package(
-    name: "Aural",
+    name: "Spotty",
     platforms: [.macOS(.v15)],
     products: [
-        .executable(name: "Aural", targets: ["AuralApp"]),
-        .library(name: "AuralCore", targets: ["AuralCore"]),
-        .library(name: "AuralDomain", targets: ["AuralDomain"]),
-        .executable(name: "AuralChecks", targets: ["AuralChecks"]),
-        .executable(name: "AuralBoundaryChecks", targets: ["AuralBoundaryChecks"]),
+        .executable(name: "Spotty", targets: ["SpottyApp"]),
+        .library(name: "SpottyCore", targets: ["SpottyCore"]),
+        .library(name: "SpottyDomain", targets: ["SpottyDomain"]),
+        .executable(name: "SpottyChecks", targets: ["SpottyChecks"]),
+        .executable(name: "SpottyBoundaryChecks", targets: ["SpottyBoundaryChecks"]),
     ],
     targets: [
         .systemLibrary(
-            name: "AuralPlaybackCore",
-            path: "Sources/AuralPlaybackCore"
+            name: "SpottyPlaybackCore",
+            path: "Sources/SpottyPlaybackCore"
         ),
         // Vendored stb_vorbis (public domain / MIT, pinned in Vendor/stb_vorbis/UPSTREAM.md).
         // stb_vorbis.c is excluded from `sources`: it is compiled once via #include inside
@@ -33,9 +33,9 @@ let package = Package(
             ]
         ),
         .target(
-            name: "AuralCore",
-            dependencies: ["AuralDomain", "AuralPlaybackCore", "CVorbis"],
-            path: "Sources/Aural",
+            name: "SpottyCore",
+            dependencies: ["SpottyDomain", "SpottyPlaybackCore", "CVorbis"],
+            path: "Sources/Spotty",
             exclude: [
                 "AGENTS.md",
                 "Spotify/AGENTS.md",
@@ -43,7 +43,7 @@ let package = Package(
             ],
             linkerSettings: [
                 .unsafeFlags(["-LBackend/lib"]),
-                .linkedLibrary("aural_playback"),
+                .linkedLibrary("spotty_playback"),
                 .linkedFramework("SystemConfiguration"),
                 .linkedFramework("Security"),
                 .linkedFramework("CoreFoundation"),
@@ -51,32 +51,32 @@ let package = Package(
             ]
         ),
         .executableTarget(
-            name: "AuralApp",
-            dependencies: ["AuralCore"],
-            path: "Sources/AuralApp"
+            name: "SpottyApp",
+            dependencies: ["SpottyCore"],
+            path: "Sources/SpottyApp"
         ),
         .target(
-            name: "AuralDomain",
-            path: "Sources/AuralDomain",
+            name: "SpottyDomain",
+            path: "Sources/SpottyDomain",
             exclude: ["AGENTS.md"]
         ),
         // Shared check CLI selection only. Not a CheckRunner/waitUntil library.
         .target(
-            name: "AuralCheckSelection",
-            path: "Sources/AuralCheckSelection"
+            name: "SpottyCheckSelection",
+            path: "Sources/SpottyCheckSelection"
         ),
         .executableTarget(
-            name: "AuralChecks",
-            dependencies: ["AuralDomain", "AuralCheckSelection"],
+            name: "SpottyChecks",
+            dependencies: ["SpottyDomain", "SpottyCheckSelection"],
             exclude: [
                 "AGENTS.md",
                 "DeferredBoundaryChecks",
             ]
         ),
         .executableTarget(
-            name: "AuralBoundaryChecks",
-            dependencies: ["AuralCore", "AuralCheckSelection"],
-            path: "Sources/AuralChecks/DeferredBoundaryChecks",
+            name: "SpottyBoundaryChecks",
+            dependencies: ["SpottyCore", "SpottyCheckSelection"],
+            path: "Sources/SpottyChecks/DeferredBoundaryChecks",
             resources: [.copy("Fixtures")]
         ),
     ]

@@ -33,8 +33,8 @@ jobs:
           path: |
             ~/.cargo/git
             ~/.cargo/registry
-            Backend/aural-playback/target
-          key: macos-release-rust-${{ hashFiles('Backend/aural-playback/Cargo.lock') }}
+            Backend/spotty-playback/target
+          key: macos-release-rust-${{ hashFiles('Backend/spotty-playback/Cargo.lock') }}
           restore-keys: |
             macos-release-rust-
             macos-rust-
@@ -65,18 +65,18 @@ jobs:
 
       - name: Build and validate release archive
         env:
-          AURAL_SIGNING_IDENTITY: "-"
+          SPOTTY_SIGNING_IDENTITY: "-"
         run: |
           version="${GITHUB_REF_NAME#v}"
           ./Scripts/archive-app.sh
-          architectures="$(lipo -archs Aural.app/Contents/MacOS/Aural)"
+          architectures="$(lipo -archs Spotty.app/Contents/MacOS/Spotty)"
           if [[ "$architectures" != "arm64" ]]; then
             echo "Expected an ARM64-only app, found: $architectures" >&2
             exit 1
           fi
-          mv "dist/Aural-$version.zip" "dist/Aural-$version-arm64.zip"
+          mv "dist/Spotty-$version.zip" "dist/Spotty-$version-arm64.zip"
           cd dist
-          shasum -a 256 "Aural-$version-arm64.zip" > "Aural-$version-arm64.zip.sha256"
+          shasum -a 256 "Spotty-$version-arm64.zip" > "Spotty-$version-arm64.zip.sha256"
 
       - name: Publish experimental release
         env:
@@ -95,8 +95,8 @@ jobs:
         run: |
           version="${GITHUB_REF_NAME#v}"
           gh release create "$GITHUB_REF_NAME" \
-            "dist/Aural-$version-arm64.zip" \
-            "dist/Aural-$version-arm64.zip.sha256" \
+            "dist/Spotty-$version-arm64.zip" \
+            "dist/Spotty-$version-arm64.zip.sha256" \
             --verify-tag \
             --prerelease \
             --generate-notes \

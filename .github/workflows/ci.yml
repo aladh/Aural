@@ -33,13 +33,13 @@ jobs:
           path: |
             ~/.cargo/git
             ~/.cargo/registry
-            Backend/aural-playback/target/debug
-            Backend/aural-playback/target/.rustc_info.json
-          key: macos-rust-debug-${{ runner.arch }}-${{ hashFiles('rust-toolchain.toml', 'Backend/aural-playback/Cargo.lock') }}
+            Backend/spotty-playback/target/debug
+            Backend/spotty-playback/target/.rustc_info.json
+          key: macos-rust-debug-${{ runner.arch }}-${{ hashFiles('rust-toolchain.toml', 'Backend/spotty-playback/Cargo.lock') }}
           restore-keys: macos-rust-debug-${{ runner.arch }}-
 
       - name: Run Rust checks
-        run: AURAL_CHECK_SCOPE=rust ./Scripts/check.sh
+        run: SPOTTY_CHECK_SCOPE=rust ./Scripts/check.sh
 
   checks:
     name: Debug and deterministic checks
@@ -80,13 +80,13 @@ jobs:
       - name: Cache playback archive
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
-          path: Backend/lib/libaural_playback.a
-          key: macos-playback-archive-${{ runner.arch }}-${{ env.RUST_TOOLCHAIN_KEY }}-${{ hashFiles('rust-toolchain.toml', 'Backend/aural-playback/Cargo.toml', 'Backend/aural-playback/Cargo.lock', 'Backend/aural-playback/build.sh', 'Backend/aural-playback/src/**', 'Backend/vendor/librespot-connect/**') }}
+          path: Backend/lib/libspotty_playback.a
+          key: macos-playback-archive-${{ runner.arch }}-${{ env.RUST_TOOLCHAIN_KEY }}-${{ hashFiles('rust-toolchain.toml', 'Backend/spotty-playback/Cargo.toml', 'Backend/spotty-playback/Cargo.lock', 'Backend/spotty-playback/build.sh', 'Backend/spotty-playback/src/**', 'Backend/vendor/librespot-connect/**') }}
 
       - name: Refresh cached playback archive timestamp
         run: |
-          if [[ -f Backend/lib/libaural_playback.a ]]; then
-            touch Backend/lib/libaural_playback.a
+          if [[ -f Backend/lib/libspotty_playback.a ]]; then
+            touch Backend/lib/libspotty_playback.a
           fi
 
       - name: Cache SwiftPM build directory
@@ -94,14 +94,14 @@ jobs:
         with:
           path: |
             .build/*
-            !.build/aural-signing
+            !.build/spotty-signing
           key: macos-swiftpm-debug-${{ runner.os }}-${{ runner.arch }}-${{ env.SWIFT_TOOLCHAIN_KEY }}-${{ hashFiles('Package.swift', 'Package.resolved') }}-${{ github.sha }}
           restore-keys: |
             macos-swiftpm-debug-${{ runner.os }}-${{ runner.arch }}-${{ env.SWIFT_TOOLCHAIN_KEY }}-
             macos-swiftpm-${{ runner.os }}-${{ runner.arch }}-${{ env.SWIFT_TOOLCHAIN_KEY }}-
 
       - name: Run checks
-        run: AURAL_CHECK_SCOPE=swift ./Scripts/check.sh
+        run: SPOTTY_CHECK_SCOPE=swift ./Scripts/check.sh
 
   release:
     name: Release distribution compile
@@ -133,8 +133,8 @@ jobs:
         id: playback-archive
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
-          path: Backend/lib/libaural_playback.a
-          key: macos-playback-archive-${{ runner.arch }}-${{ env.RUST_TOOLCHAIN_KEY }}-${{ hashFiles('rust-toolchain.toml', 'Backend/aural-playback/Cargo.toml', 'Backend/aural-playback/Cargo.lock', 'Backend/aural-playback/build.sh', 'Backend/aural-playback/src/**', 'Backend/vendor/librespot-connect/**') }}
+          path: Backend/lib/libspotty_playback.a
+          key: macos-playback-archive-${{ runner.arch }}-${{ env.RUST_TOOLCHAIN_KEY }}-${{ hashFiles('rust-toolchain.toml', 'Backend/spotty-playback/Cargo.toml', 'Backend/spotty-playback/Cargo.lock', 'Backend/spotty-playback/build.sh', 'Backend/spotty-playback/src/**', 'Backend/vendor/librespot-connect/**') }}
 
       - name: Cache Rust dependencies and build products
         if: steps.playback-archive.outputs.cache-hit != 'true'
@@ -143,16 +143,16 @@ jobs:
           path: |
             ~/.cargo/git
             ~/.cargo/registry
-            Backend/aural-playback/target
-          key: macos-rust-${{ hashFiles('Backend/aural-playback/Cargo.lock') }}
+            Backend/spotty-playback/target
+          key: macos-rust-${{ hashFiles('Backend/spotty-playback/Cargo.lock') }}
           restore-keys: macos-rust-
 
       - name: Prepare playback archive
         run: |
-          if [[ -f Backend/lib/libaural_playback.a ]]; then
-            touch Backend/lib/libaural_playback.a
+          if [[ -f Backend/lib/libspotty_playback.a ]]; then
+            touch Backend/lib/libspotty_playback.a
           else
-            ./Backend/aural-playback/build.sh
+            ./Backend/spotty-playback/build.sh
           fi
 
       - name: Cache SwiftPM release build directory
@@ -160,14 +160,14 @@ jobs:
         with:
           path: |
             .build/*
-            !.build/aural-signing
+            !.build/spotty-signing
           key: macos-swiftpm-release-${{ runner.os }}-${{ runner.arch }}-${{ env.SWIFT_TOOLCHAIN_KEY }}-${{ hashFiles('Package.swift', 'Package.resolved') }}-${{ github.sha }}
           restore-keys: |
             macos-swiftpm-release-${{ runner.os }}-${{ runner.arch }}-${{ env.SWIFT_TOOLCHAIN_KEY }}-
             macos-swiftpm-${{ runner.os }}-${{ runner.arch }}-${{ env.SWIFT_TOOLCHAIN_KEY }}-
 
-      - name: Compile release Aural with AURAL_DISTRIBUTION
-        run: ./Scripts/compile-release-aural.sh
+      - name: Compile release Spotty with SPOTTY_DISTRIBUTION
+        run: ./Scripts/compile-release-spotty.sh
 
       - name: Report release build size
         run: ./Scripts/report-size.sh --out-dir "$RUNNER_TEMP"

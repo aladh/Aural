@@ -2,17 +2,17 @@
 set -euo pipefail
 
 project_root="${0:A:h:h}"
-source_icon="$project_root/Assets/AuralIcon.png"
-output_icon="$project_root/Assets/Aural.icns"
+source_icon="$project_root/Assets/SpottyIcon.png"
+output_icon="$project_root/Assets/Spotty.icns"
 temporary_root="${TMPDIR%/}"
-working_dir="$(mktemp -d "$temporary_root/aural-icon.XXXXXX")"
-iconset_dir="$working_dir/Aural.iconset"
+working_dir="$(mktemp -d "$temporary_root/spotty-icon.XXXXXX")"
+iconset_dir="$working_dir/Spotty.iconset"
 module_cache="$working_dir/module-cache"
 mkdir "$iconset_dir"
 mkdir "$module_cache"
 
 cleanup() {
-    if [[ -d "$working_dir" && "$working_dir" == "$temporary_root"/aural-icon.* ]]; then
+    if [[ -d "$working_dir" && "$working_dir" == "$temporary_root"/spotty-icon.* ]]; then
         find "$working_dir" -depth -delete
     fi
 }

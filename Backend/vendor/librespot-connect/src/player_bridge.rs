@@ -1,4 +1,4 @@
-// Aural patch: see ../PATCHES.md.
+// Spotty patch: see ../PATCHES.md.
 //
 // `SpircTask` only ever needs a narrow slice of `librespot_playback::player::Player`. This
 // trait names exactly that slice so `Spirc::new` can accept any player implementation, not
@@ -10,7 +10,7 @@ use crate::{
 };
 
 /// The player operations `SpircTask` calls. Implemented for librespot's own `Player` below;
-/// an Aural implementation can swap in a different audio path behind the same Spirc logic.
+/// an Spotty implementation can swap in a different audio path behind the same Spirc logic.
 pub trait SpircPlayer: Send + Sync {
     /// Starts loading and, if `start_playing`, playing `track_id` from `position_ms`.
     fn load(&self, track_id: SpotifyUri, start_playing: bool, position_ms: u32);

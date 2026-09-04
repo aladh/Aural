@@ -35,7 +35,7 @@ From the repository root:
 ```
 
 The script compiles the Rust backend when needed, builds the SwiftPM executable, creates and signs a
-local `Aural.app`, terminates any running development copy, and launches the replacement. Because that
+local `Spotty.app`, terminates any running development copy, and launches the replacement. Because that
 can disturb an authenticated session, use it only when the request authorizes launch or interactive
 acceptance; do not use it as a compile check. The path-specific contract is
 [`script/AGENTS.md`](script/AGENTS.md).
@@ -51,10 +51,10 @@ Useful modes:
 
 Authenticated launches require an Apple Development identity with a stable Team ID. A free Xcode
 Personal Team is sufficient for local personal use. When exactly one identity is installed, the
-script selects it; otherwise set `AURAL_DEVELOPMENT_SIGNING_IDENTITY` to the exact name from
+script selects it; otherwise set `SPOTTY_DEVELOPMENT_SIGNING_IDENTITY` to the exact name from
 `security find-identity -p codesigning -v`.
 
-The generated identity under ignored `.build/aural-signing/` is for build/package verification only.
+The generated identity under ignored `.build/spotty-signing/` is for build/package verification only.
 It is not trusted, is not a distribution identity, must not be used to sign in, and must never be
 installed in the login keychain or committed.
 
@@ -85,17 +85,17 @@ Swift formatting uses the selected Swift 6.3 toolchain's `swift-format`:
 
 The two non-shipping check products are:
 
-- `AuralChecks`: pure `AuralDomain` state, policy, parsing, and deterministic playback traces.
-- `AuralBoundaryChecks`: concrete codecs, fixtures, stores, coordinators, queue flows, and other
-  injected AuralCore boundaries.
+- `SpottyChecks`: pure `SpottyDomain` state, policy, parsing, and deterministic playback traces.
+- `SpottyBoundaryChecks`: concrete codecs, fixtures, stores, coordinators, queue flows, and other
+  injected SpottyCore boundaries.
 
 Use focused suites for iteration, never as the completion gate:
 
 ```bash
-swift run --disable-sandbox --product AuralChecks -- --list
-swift run --disable-sandbox --product AuralChecks -- protobuf playback-reducer
-swift run --disable-sandbox --product AuralBoundaryChecks -- --list
-swift run --disable-sandbox --product AuralBoundaryChecks -- auth-flow workflow
+swift run --disable-sandbox --product SpottyChecks -- --list
+swift run --disable-sandbox --product SpottyChecks -- protobuf playback-reducer
+swift run --disable-sandbox --product SpottyBoundaryChecks -- --list
+swift run --disable-sandbox --product SpottyBoundaryChecks -- auth-flow workflow
 ```
 
 `--list` prints stable suite names in registration order. Unknown or empty names fail before any
@@ -105,8 +105,8 @@ and `check.sh` never passes suite filters.
 CI may partition the gate with:
 
 ```bash
-AURAL_CHECK_SCOPE=rust ./Scripts/check.sh
-AURAL_CHECK_SCOPE=swift ./Scripts/check.sh
+SPOTTY_CHECK_SCOPE=rust ./Scripts/check.sh
+SPOTTY_CHECK_SCOPE=swift ./Scripts/check.sh
 ```
 
 Those scopes are CI/iteration controls, not substitutes for the ordinary local gate. The required
@@ -114,7 +114,7 @@ Those scopes are CI/iteration controls, not substitutes for the ordinary local g
 compile. CI pins Xcode 26.6 / Swift 6.3.3 and uses content-keyed Rust archive plus configuration-safe
 SwiftPM caches; cache hits may reduce latency but never coverage.
 
-Use `AURAL_CHECK_REPEATS=N ./Scripts/check.sh` with `N` from 1 through 25 when concurrency or lifetime
+Use `SPOTTY_CHECK_REPEATS=N ./Scripts/check.sh` with `N` from 1 through 25 when concurrency or lifetime
 work merits stress.
 
 ## Clean and risk-specific verification
@@ -126,16 +126,16 @@ For Rust, lifecycle, FFI, dependency, build, signing, packaging, CI, or release 
 ```
 
 The clean gate removes generated Swift build products, rebuilds Rust, then verifies Debug and Release.
-Do not run destructive cleanup over unrelated work. `./Scripts/compile-release-aural.sh` remains the
+Do not run destructive cleanup over unrelated work. `./Scripts/compile-release-spotty.sh` remains the
 local compile-only release command.
 
 Add deterministic evidence at the closest owner:
 
 | Change | Evidence |
 | --- | --- |
-| Portable state, parsing, sorting, queue/device policy | `Sources/AuralChecks/` |
-| Concrete Swift adapters, stores, codecs, workflows | `Sources/AuralChecks/DeferredBoundaryChecks/` |
-| Rust lifecycle, Connect, queue serialization, FFI | `Backend/aural-playback/src/` tests |
+| Portable state, parsing, sorting, queue/device policy | `Sources/SpottyChecks/` |
+| Concrete Swift adapters, stores, codecs, workflows | `Sources/SpottyChecks/DeferredBoundaryChecks/` |
+| Rust lifecycle, Connect, queue serialization, FFI | `Backend/spotty-playback/src/` tests |
 | Cross-language payload or ABI | Paired Rust serialization/signature coverage and Swift boundary fixture |
 | Documentation only | Link/command validation, rendered Markdown when relevant, stage the intended files, then `git diff --check HEAD` |
 | Performance | Like-for-like measurements with environment and methodology recorded |
@@ -179,7 +179,7 @@ Local packages are development artifacts:
 A hardened-runtime Developer ID archive requires an explicitly supplied identity:
 
 ```bash
-AURAL_SIGNING_IDENTITY="Developer ID Application: Your Name (TEAMID)" \
+SPOTTY_SIGNING_IDENTITY="Developer ID Application: Your Name (TEAMID)" \
   ./Scripts/archive-app.sh
 ```
 
@@ -187,8 +187,8 @@ The archive is written to ignored `dist/`. Notarization additionally requires an
 `notarytool` profile:
 
 ```bash
-AURAL_SIGNING_IDENTITY="Developer ID Application: Your Name (TEAMID)" \
-AURAL_NOTARY_PROFILE="aural-notary" \
+SPOTTY_SIGNING_IDENTITY="Developer ID Application: Your Name (TEAMID)" \
+SPOTTY_NOTARY_PROFILE="spotty-notary" \
   ./Scripts/notarize-app.sh
 ```
 

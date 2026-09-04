@@ -12,7 +12,7 @@ sections of [agent operations](../CONTRIBUTING.md) and the
   rollback, or payload semantics as regex snapshots.
 - Keep `check-clean.sh` the clean Debug-and-Release owner. Do not add destructive cleanup that can
   erase unrelated work or credentials.
-- `script/build_and_run.sh` terminates a running Aural executable and can touch an authenticated
+- `script/build_and_run.sh` terminates a running Spotty executable and can touch an authenticated
   development session. Do not route compile-only verification through launch.
 - Generated archives, app bundles, diagnostics, signing material, and caches stay outside Git. Never
   install project-generated identities in the login keychain or weaken signing to silence prompts.
@@ -22,7 +22,7 @@ sections of [agent operations](../CONTRIBUTING.md) and the
 - Packaging, notarization, tag, release, credential, or repository-setting actions require explicit
   current-request authorization; never publish merely to exercise a script.
 - `report-size.sh` is informational only: it reports release binary/archive size after
-  `compile-release-aural.sh` and must never fail the job over an optional tool (`size`, `nm`) being
+  `compile-release-spotty.sh` and must never fail the job over an optional tool (`size`, `nm`) being
   unavailable.
 
 For script, build, CI, packaging, signing, or release-mechanics changes, run
