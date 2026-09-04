@@ -56,8 +56,7 @@ pub extern "C" fn aural_playback_audio_key(
             }
         };
 
-        let result =
-            block_on_export(async move { session.audio_key().request(track, file).await });
+        let result = block_on_export(async move { session.audio_key().request(track, file).await });
         match result {
             Ok(Ok(key)) => {
                 // Safety: key_out is non-null (checked above) and points to at least
