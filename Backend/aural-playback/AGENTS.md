@@ -20,7 +20,9 @@ across the Swift/Rust boundary.
   Use `block_on_export`; call `refuse_if_nested_runtime` before mutating flags that nested `block_on`
   would have reached. Nested runtime re-entry returns `ERROR_GENERAL` and is not supersession.
 - Map panics to the defined sentinel. Do not replace the process panic hook, hold Rust locks while
-  invoking Swift, or assume the barrier makes invalid foreign pointers safe.
+  invoking Swift, or assume the barrier makes invalid foreign pointers safe. When a sink or callback
+  is typed `Arc<dyn Trait>`, coerce a concrete `Arc` with `x.clone()` or `as Arc<dyn Trait>`;
+  `Arc::clone(&x)` infers the trait object from the expected type and fails to compile.
 - Rust emits bounded PCM and immutable protocol/state envelopes. Keep callbacks non-blocking. What
   crosses the boundary, and which side owns each field, is
   [playback engine ownership](../../docs/playback-engine-ownership.md); do not enumerate it here.
