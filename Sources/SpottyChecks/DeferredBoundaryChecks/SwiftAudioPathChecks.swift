@@ -83,9 +83,18 @@ private func runLoadDrivesSourceAndOutputCheck(_ check: CheckRunner) async {
 /// An older-generation command must not start a source or emit a report. A newer-generation
 /// load must tear the previous one down first, and any report that does go out must carry the
 /// new stamp — not the abandoned load's.
+///
+/// The first load parks so the pipeline stays live (a load that already failed to `.stopped`
+/// does not emit `.stop` on the next load). The second load uses an exhausting source so the
+/// reducer emits a deterministic `.unavailable` stamped with the new generation.
 @MainActor
 private func runStaleGenerationProducesNoWorkCheck(_ check: CheckRunner) async {
-    let provider = RecordingSourceProvider(source: ExhaustedTrackSource())
+    let release = DispatchSemaphore(value: 0)
+    let parked = ParkingTrackSource(blockingUntil: release)
+    let exhausted = ExhaustedTrackSource()
+    let provider = RecordingSourceProvider { fileID in
+        fileID == fileA ? parked : exhausted
+    }
     let output = RecordingOutput()
     let reports = ReportCollector()
     let path = SwiftAudioPath(sources: provider, output: output, report: { reports.record($0) })
@@ -94,12 +103,11 @@ private func runStaleGenerationProducesNoWorkCheck(_ check: CheckRunner) async {
     path.deliver(audioCommand(generation: 7, playRequestID: 1, kind: .load, fileID: fileA))
     let firstSource = await waitUntil { provider.callCount == 1 }
     check.check("the first load creates a source", firstSource)
-    let firstUnavailable = await waitUntil {
-        reports.all.contains { $0.kind == .unavailable && $0.sessionGeneration == 7 }
-    }
-    check.check("the first load's failure reports generation 7", firstUnavailable)
-    let startsAfterFirst = output.startCount
+    let loading = await waitUntil { await path.phase == .loading(playRequestID: 1) }
+    check.check("the first load stays .loading while parked", loading)
+    check.equal("a live parked load has not stopped the output yet", output.stopCount, 0)
     let reportsAfterFirst = reports.all.count
+    let startsAfterFirst = output.startCount
 
     path.deliver(audioCommand(generation: 6, playRequestID: 1, kind: .play, fileID: fileA))
     let staleDidWork = await waitUntil(timeout: .milliseconds(300)) {
@@ -112,21 +120,21 @@ private func runStaleGenerationProducesNoWorkCheck(_ check: CheckRunner) async {
     )
 
     path.deliver(audioCommand(generation: 8, playRequestID: 2, kind: .load, fileID: fileB))
-    let secondSource = await waitUntil { provider.callCount == 2 }
+    let tornDown = await waitUntil(timeout: .seconds(5)) { output.stopCount >= 1 }
+    check.check("the newer load tears the previous pipeline/output down first", tornDown)
+    let secondSource = await waitUntil(timeout: .seconds(5)) { provider.callCount == 2 }
     check.check("a newer-generation load creates a second source", secondSource)
     check.equal("the second load uses the new file id", provider.calls.last?.fileID ?? [], fileB)
-    let tornDown = await waitUntil { output.stopCount >= 1 }
-    check.check("the newer load tears the previous pipeline/output down first", tornDown)
-    let newStamp = await waitUntil {
+    let newStamp = await waitUntil(timeout: .seconds(5)) {
         reports.all.contains { $0.kind == .unavailable && $0.sessionGeneration == 8 }
     }
     check.check("later reports carry the new session generation", newStamp)
-    let firstNew = reports.all.firstIndex { $0.sessionGeneration == 8 }
     check.check(
-        "no report after the second load still claims generation 7",
-        firstNew.map { index in !reports.all[index...].contains { $0.sessionGeneration == 7 } } ?? false
+        "no report still claims the abandoned generation",
+        !reports.all.contains { $0.sessionGeneration == 7 }
     )
 
+    release.signal()
     runTask.cancel()
 }
 
@@ -141,10 +149,14 @@ private struct SourceCall: Equatable, Sendable {
 private final class RecordingSourceProvider: AudioTrackByteSourceProviding, @unchecked Sendable {
     private let lock = NSLock()
     private var recorded: [SourceCall] = []
-    private let source: any AudioTrackByteSource
+    private let sourceForFileID: @Sendable ([UInt8]) -> any AudioTrackByteSource
 
     init(source: any AudioTrackByteSource) {
-        self.source = source
+        sourceForFileID = { _ in source }
+    }
+
+    init(sourceForFileID: @escaping @Sendable ([UInt8]) -> any AudioTrackByteSource) {
+        self.sourceForFileID = sourceForFileID
     }
 
     var calls: [SourceCall] { lock.withLock { recorded } }
@@ -158,7 +170,7 @@ private final class RecordingSourceProvider: AudioTrackByteSourceProviding, @unc
         lock.withLock {
             recorded.append(SourceCall(trackGID: trackGID, fileID: fileID, format: format))
         }
-        return source
+        return sourceForFileID(fileID)
     }
 }
 
