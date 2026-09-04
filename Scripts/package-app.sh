@@ -12,26 +12,26 @@ case "$package_mode" in
 esac
 
 project_root="${0:A:h:h}"
-app_path="${AURAL_APP_PATH:-$project_root/Aural.app}"
-staged_launch_path="$project_root/.build/aural-launch/Aural.app"
-executable="$project_root/.build/$build_configuration/Aural"
-icon="$project_root/Assets/Aural.icns"
+app_path="${SPOTTY_APP_PATH:-$project_root/Spotty.app}"
+staged_launch_path="$project_root/.build/spotty-launch/Spotty.app"
+executable="$project_root/.build/$build_configuration/Spotty"
+icon="$project_root/Assets/Spotty.icns"
 info_template="$project_root/Packaging/Info.plist"
 third_party_notices="$project_root/THIRD_PARTY_NOTICES.md"
 # Version bump procedure: edit CFBundleShortVersionString and CFBundleVersion in
-# Packaging/Info.plist (the source of truth); AURAL_VERSION/AURAL_BUILD_NUMBER are
+# Packaging/Info.plist (the source of truth); SPOTTY_VERSION/SPOTTY_BUILD_NUMBER are
 # one-off overrides only and must not be relied on for releases.
-app_version="${AURAL_VERSION:-$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$info_template")}"
-app_build_number="${AURAL_BUILD_NUMBER:-$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$info_template")}"
-distribution_identity="${AURAL_SIGNING_IDENTITY:-}"
-development_identity="${AURAL_DEVELOPMENT_SIGNING_IDENTITY:-}"
+app_version="${SPOTTY_VERSION:-$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$info_template")}"
+app_build_number="${SPOTTY_BUILD_NUMBER:-$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$info_template")}"
+distribution_identity="${SPOTTY_SIGNING_IDENTITY:-}"
+development_identity="${SPOTTY_DEVELOPMENT_SIGNING_IDENTITY:-}"
 
 if [[ -n "$distribution_identity" && -n "$development_identity" ]]; then
-    print -u2 "Set only one of AURAL_SIGNING_IDENTITY or AURAL_DEVELOPMENT_SIGNING_IDENTITY"
+    print -u2 "Set only one of SPOTTY_SIGNING_IDENTITY or SPOTTY_DEVELOPMENT_SIGNING_IDENTITY"
     exit 2
 fi
 
-export AURAL_BUILD_CONFIGURATION="$build_configuration"
+export SPOTTY_BUILD_CONFIGURATION="$build_configuration"
 "$project_root/Scripts/check.sh"
 
 for required_file in "$executable" "$icon" "$info_template" "$third_party_notices"; do
@@ -42,25 +42,25 @@ for required_file in "$executable" "$icon" "$info_template" "$third_party_notice
 done
 
 if [[ ! "$app_version" =~ '^[0-9]+(\.[0-9]+){1,2}$' ]]; then
-    print -u2 "AURAL_VERSION must be a numeric dotted version"
+    print -u2 "SPOTTY_VERSION must be a numeric dotted version"
     exit 2
 fi
 if [[ ! "$app_build_number" =~ '^[1-9][0-9]*$' ]]; then
-    print -u2 "AURAL_BUILD_NUMBER must be a positive integer"
+    print -u2 "SPOTTY_BUILD_NUMBER must be a positive integer"
     exit 2
 fi
 
 # This is a generated bundle at one exact path; recreate it so stale binaries and resources
 # cannot survive a packaging run.
-if [[ "$app_path" != "$project_root/Aural.app" && "$app_path" != "$staged_launch_path" ]]; then
+if [[ "$app_path" != "$project_root/Spotty.app" && "$app_path" != "$staged_launch_path" ]]; then
     print -u2 "Refusing to replace an unexpected app path"
     exit 1
 fi
 rm -rf "$app_path"
 mkdir -p "$app_path/Contents/MacOS" "$app_path/Contents/Resources"
 printf 'APPL????' > "$app_path/Contents/PkgInfo"
-cp "$executable" "$app_path/Contents/MacOS/Aural"
-cp "$icon" "$app_path/Contents/Resources/Aural.icns"
+cp "$executable" "$app_path/Contents/MacOS/Spotty"
+cp "$icon" "$app_path/Contents/Resources/Spotty.icns"
 cp "$third_party_notices" "$app_path/Contents/Resources/ThirdPartyNotices.md"
 cp "$info_template" "$app_path/Contents/Info.plist"
 
@@ -69,10 +69,10 @@ plutil -replace CFBundleVersion -string "$app_build_number" "$app_path/Contents/
 plutil -lint "$app_path/Contents/Info.plist"
 
 sign_with_local_identity() {
-    local signing_dir="$project_root/.build/aural-signing"
-    local signing_keychain="$signing_dir/Aural.keychain-db"
+    local signing_dir="$project_root/.build/spotty-signing"
+    local signing_keychain="$signing_dir/Spotty.keychain-db"
     local password_file="$signing_dir/keychain-password"
-    local identity_name="Aural Local Development"
+    local identity_name="Spotty Local Development"
 
     mkdir -p "$signing_dir"
     chmod 700 "$signing_dir"
@@ -85,7 +85,7 @@ sign_with_local_identity() {
 
     if [[ ! -f "$signing_dir/certificate.pem" || ! -f "$signing_dir/private-key.pem" ]]; then
         openssl req -x509 -newkey rsa:2048 -sha256 -nodes -days 3650 \
-            -subj '/CN=Aural Local Development/O=Aural' \
+            -subj '/CN=Spotty Local Development/O=Spotty' \
             -addext 'keyUsage=critical,digitalSignature' \
             -addext 'extendedKeyUsage=codeSigning' \
             -keyout "$signing_dir/private-key.pem" \
@@ -157,11 +157,11 @@ if [[ -n "$development_identity" ]]; then
 fi
 
 if [[ "$build_configuration" == "release" && -n "$development_identity" ]]; then
-    print -u2 "Release bundle uses an Apple Development identity; set AURAL_SIGNING_IDENTITY to create a distributable Developer ID build."
+    print -u2 "Release bundle uses an Apple Development identity; set SPOTTY_SIGNING_IDENTITY to create a distributable Developer ID build."
 elif [[ "$build_configuration" == "release" && -z "$distribution_identity" ]]; then
-    print -u2 "Release bundle uses the local identity; set AURAL_SIGNING_IDENTITY to create a distributable Developer ID build."
+    print -u2 "Release bundle uses the local identity; set SPOTTY_SIGNING_IDENTITY to create a distributable Developer ID build."
 elif [[ "$build_configuration" == "release" && "$distribution_identity" == "-" ]]; then
-    print -u2 "Release bundle uses an ad-hoc signature; set AURAL_SIGNING_IDENTITY to a Developer ID identity for distribution."
+    print -u2 "Release bundle uses an ad-hoc signature; set SPOTTY_SIGNING_IDENTITY to a Developer ID identity for distribution."
 fi
 if [[ -z "$distribution_identity" && -z "$development_identity" ]]; then
     print -u2 "Self-signed bundles are build-only: authenticated launches require an Apple-issued team identity."

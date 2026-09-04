@@ -2,7 +2,7 @@
 
 ## Spotifly playback bridge and authentication support
 
-Portions of `Backend/aural-playback` and `Sources/Aural/Spotify` are adapted from
+Portions of `Backend/spotty-playback` and `Sources/Spotty/Spotify` are adapted from
 [Spotifly](https://github.com/ralph/Spotifly), commit
 `35991ac25a04aa14f8839d88f46129da6c6b59c0`. The Connect command and metadata request shapes are
 adapted from commit `bcb522675e9657599faa007c531c2159e506246f`.
@@ -57,7 +57,7 @@ THE SOFTWARE.
 ## Transitive Rust dependencies
 
 The source repository does not vendor or publish a precompiled Rust archive. Building Spotty fetches
-the exact transitive dependency graph recorded in `Backend/aural-playback/Cargo.lock`. Each fetched
+the exact transitive dependency graph recorded in `Backend/spotty-playback/Cargo.lock`. Each fetched
 package carries its own license metadata and license files.
 
 Anyone distributing a compiled Spotty binary must generate, review, and bundle the notices and

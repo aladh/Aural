@@ -1,0 +1,3 @@
+import SpottyCore
+
+runSpottyApplication()

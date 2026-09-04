@@ -13,7 +13,7 @@ if [[ ! -x "$wrapper" || ! -f "$config_path" ]]; then
     exit 1
 fi
 
-tmp="$(mktemp -d "${TMPDIR:-/tmp}/aural-format-swift.XXXXXX")"
+tmp="$(mktemp -d "${TMPDIR:-/tmp}/spotty-format-swift.XXXXXX")"
 {
     fake_bin="$tmp/fake-bin"
     mkdir -p "$tmp/Scripts" "$tmp/Sources" "$fake_bin"
@@ -64,7 +64,7 @@ EOF
     cat > "$fake_bin/swift-format" <<'EOF'
 #!/bin/zsh
 set -euo pipefail
-log="${AURAL_FAKE_FORMAT_LOG:?}"
+log="${SPOTTY_FAKE_FORMAT_LOG:?}"
 print -r -- "$*" >> "$log"
 if [[ "${1:-}" == --version ]]; then
     print "0.0.0-self-test"
@@ -134,8 +134,8 @@ EOF
     chmod +x "$fake_bin/swift-format"
 
     git -C "$tmp" init -q
-    git -C "$tmp" config user.email "format-swift-self-test@aural.invalid"
-    git -C "$tmp" config user.name "Aural format-swift self-test"
+    git -C "$tmp" config user.email "format-swift-self-test@spotty.invalid"
+    git -C "$tmp" config user.name "Spotty format-swift self-test"
 
     print 'let value = UNFORMATTED' > "$tmp/Package.swift"
     print 'let source = UNFORMATTED' > "$tmp/Sources/App.swift"
@@ -159,7 +159,7 @@ EOF
         .swift-format \
         Scripts/format-swift.sh
 
-    export AURAL_FAKE_FORMAT_LOG="$log"
+    export SPOTTY_FAKE_FORMAT_LOG="$log"
     export PATH="$fake_bin:$PATH"
 
     write_xcrun 1 0
@@ -220,7 +220,7 @@ EOF
     cp "$config" "$empty/.swift-format"
     git -C "$empty" init -q
     git -C "$empty" add .swift-format Scripts/format-swift.sh
-    if PATH="$fake_bin:$PATH" AURAL_FAKE_FORMAT_LOG="$log" "$empty/Scripts/format-swift.sh" --check \
+    if PATH="$fake_bin:$PATH" SPOTTY_FAKE_FORMAT_LOG="$log" "$empty/Scripts/format-swift.sh" --check \
         >/dev/null 2> "$tmp/empty.err"; then
         print -u2 "expected --check to fail when no tracked Swift files exist"
         exit 1

@@ -22,7 +22,7 @@ model, and the domain reducer stays framework-free.
 
 A Spotty-specific command runner: a per-command plan with a token, captured epoch, and single
 in-flight rule. Easier to script in checks, but it covers only transport commands, needs the same
-follow-up policy as the registry, and promoting it into `AuralDomain` either leaks coordinator
+follow-up policy as the registry, and promoting it into `SpottyDomain` either leaks coordinator
 types or becomes the generic effect type below.
 
 The Composable Architecture or a generic `Effect` type: brings `TestStore` and `cancelInFlight`
@@ -53,7 +53,7 @@ Keep `PlaybackEffectRegistry`. Do not adopt TCA. Do not introduce a generic Effe
   the registry.
 
 Optimistic seek hold, play-target presentation, rollback, and cancellation semantics are proven by
-the `AuralChecks` suites `PlaybackCommandPresentationChecks`, `PlaybackCommandEffectSpike`,
+the `SpottyChecks` suites `PlaybackCommandPresentationChecks`, `PlaybackCommandEffectSpike`,
 `PlaybackCommandLifecycleParityChecks`, `PlaybackCommandFailureChecks`, and the follow-up cases
 in `SessionLifetimeChecks`.
 

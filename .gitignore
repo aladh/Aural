@@ -5,7 +5,7 @@
 .build/
 diagnostics/
 .swiftpm/
-AuralArtwork/
-Backend/aural-playback/target/
+SpottyArtwork/
+Backend/spotty-playback/target/
 DerivedData/
 dist/

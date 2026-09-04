@@ -21,11 +21,14 @@ playback services, plus artwork hosts returned by Spotify. It has no Spotty-oper
   rebuilds. Older development builds that wrote the grant to local preferences are migrated
   one way: the leftover value is read, then deleted, and is never written again.
 - Local preferences also retain a random installation/device identifier, UI preferences, shuffle
-  history, and playback preferences.
+  history, and playback preferences. The first launch after the complete identity rename moves
+  prior-installation preferences and credentials into Spotty-owned storage, then removes the
+  superseded copies after successful transfer.
 - Artwork is held in a bounded ephemeral URL cache and in-memory image cache; the app purges its
   artwork cache when the main window closes.
 - Spotify/librespot session credentials may be cached under the app's local cache directory so the
-  playback device can reconnect.
+  playback device can reconnect. A prior-installation cache is moved into Spotty's directory when
+  no current cache exists.
 - Apple Unified Logging stores local operational events. The intended contract excludes tokens,
   OAuth redirects, raw API bodies, and raw user payloads; treat logs and diagnostic exports as
   potentially sensitive and review them before sharing.

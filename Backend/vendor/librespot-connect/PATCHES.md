@@ -2,12 +2,12 @@
 
 Vendored from `librespot-connect` 0.8.0 at upstream rev
 [`9c7d75615fc093bdcbdb29adbce3fed38c531852`](https://github.com/librespot-org/librespot/tree/9c7d75615fc093bdcbdb29adbce3fed38c531852/connect),
-the same rev `Backend/aural-playback` pins for `librespot-core`/`librespot-playback`/`librespot-protocol`.
+the same rev `Backend/spotty-playback` pins for `librespot-core`/`librespot-playback`/`librespot-protocol`.
 
 ## Why
 
 `Spirc::new` takes the concrete `Arc<librespot_playback::player::Player>`, and there is no seam
-inside `Player` to swap fetch/decrypt/decode. Aural's Stage 1 audio path (`#208`) needs `Spirc` to
+inside `Player` to swap fetch/decrypt/decode. Spotty's Stage 1 audio path (`#208`) needs `Spirc` to
 drive a player implemented in Swift instead of librespot's own fetch/decrypt/Vorbis pipeline, so
 `SpircTask` needs to hold something other than the concrete `Player`. This patch is the smallest
 change that unblocks that: a trait naming exactly the methods `SpircTask` calls, implemented for

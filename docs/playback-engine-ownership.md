@@ -1,7 +1,7 @@
 # Playback engine ownership
 
 Working inventory for [ADR 004](ADR-004-swift-owned-playback-logic.md). Classify logic as
-**librespot/protocol** (stays in `Backend/aural-playback` unless a later slice forwards a
+**librespot/protocol** (stays in `Backend/spotty-playback` unless a later slice forwards a
 rawer observation) or **Spotty-owned** (must live in Swift when practical).
 
 This is not a second architecture manual. Product behavior stays in the
@@ -19,7 +19,7 @@ in the [enforcement inventory](architecture-enforcement.md).
 | `ConnectDeviceProjection` | Device-list activity, display sort, empty-type fallback |
 | `ConnectionSnapshotProjection` | Connection session phase, empty-device-id fallback |
 | `PlaybackSnapshotProjection` | Engine playback transport, empty-URI identity, timestamp correction |
-| `ResumeLoadPlan` | Resume-load target order from sticky resume-load URIs, for user resume and reconnect rehydration. `PlaybackStore` captures those URIs through the engine getters; `RustPlaybackEngine` iterates targets through `aural_playback_load`. The engine signals a reconnect window with `resume_pending` and holds readiness until a Swift load lands, a load reports `ERROR_NEEDS_REINIT` (dead Spirc, which ends the wait for that window and triggers a rebuild), or the window times out |
+| `ResumeLoadPlan` | Resume-load target order from sticky resume-load URIs, for user resume and reconnect rehydration. `PlaybackStore` captures those URIs through the engine getters; `RustPlaybackEngine` iterates targets through `spotty_playback_load`. The engine signals a reconnect window with `resume_pending` and holds readiness until a Swift load lands, a load reports `ERROR_NEEDS_REINIT` (dead Spirc, which ends the wait for that window and triggers a rebuild), or the window times out |
 | Catalog, OAuth, shuffle policy, HTTP retry | Unchanged; never belonged in Rust |
 | `SpotifyAudioFormat` / `SpotifyAudioHeader` | Stage 1 building block (#208): librespot audio-file format tags and the fixed-size normalisation-gain header prefix. Not yet wired into any decode path |
 | `StorageResolveResponse` / `CDNURLExpiry` | Stage 1 building block (#208): storage-resolve protobuf decoding and librespot's CDN-URL expiry heuristics. Not yet wired into any resolve/fetch path |
@@ -27,10 +27,10 @@ in the [enforcement inventory](architecture-enforcement.md).
 | `RangedAudioFetcher` | Stage 1 building block (#208): ranged CDN download with a sparse downloaded-byte store, 429/403 handling, and read-ahead prefetch. Not yet wired into any playback path |
 | `OggVorbisDecoder` / `OggPageHeader` | Stage 1 of #201: a Swift wrapper over vendored stb_vorbis's pushdata API, plus a pure Ogg page scanner for later seeking. Not yet wired into playback — the audio-key/CDN/decrypt path and `AudioRenderer` still get PCM from `proxy_sink.rs` |
 | `VorbisDecodePipeline` | Stage 1 of #201, slice 2b (#208): drives `OggVorbisDecoder` from a `DecodeByteSource` to a `PCMSink` on a dedicated thread, pacing on the sink's backpressure and reporting playing/position/seeked/endOfTrack/stopped/failed. A privacy-safe `FailureReason` classifies `.failed`, never the raw error (a CDN-backed source's errors can embed signed URLs). Not yet wired into playback — no `DecodeByteSource` adapter over the CDN fetcher/decryptor exists yet, and `RustPlaybackEngine` does not construct or drive this pipeline |
-| `DecodeByteSource` (`Sources/Aural/Spotify`) | The pipeline's input seam: a synchronous, random-access byte-range read over one decrypted track. Synchronous because the decode thread exists precisely so it is free to block; a later slice adapts the CDN fetcher plus AES-CTR decryptor to this. Checks use a fake |
-| `PCMSink` (`Sources/Aural/Spotify`) | The pipeline's output seam: a cancellable, blocking `write(_:frames:until:)` plus `flush`/`bufferedSeconds`. `AudioRenderer` conforms via a small extension, backed by a new `write(_:frames:until:)` that shares its ring/throttle with `writeAudioData` but waits instead of dropping. Checks use a fake |
+| `DecodeByteSource` (`Sources/Spotty/Spotify`) | The pipeline's input seam: a synchronous, random-access byte-range read over one decrypted track. Synchronous because the decode thread exists precisely so it is free to block; a later slice adapts the CDN fetcher plus AES-CTR decryptor to this. Checks use a fake |
+| `PCMSink` (`Sources/Spotty/Spotify`) | The pipeline's output seam: a cancellable, blocking `write(_:frames:until:)` plus `flush`/`bufferedSeconds`. `AudioRenderer` conforms via a small extension, backed by a new `write(_:frames:until:)` that shares its ring/throttle with `writeAudioData` but waits instead of dropping. Checks use a fake |
 | `OggSeeker` | Stage 1 of #201: pure time-to-byte-offset seek — bisects Ogg pages by granule position (`OggByteReader` is the seam a later slice adapts to the CDN fetcher/decryptor) so Spirc's millisecond seeks can restart Vorbis decode at the right page. Not yet wired into playback |
-| `AudioPlaybackSession` | Stage 1 of #201: pure reducer for the future `ShimPlayer` audio-command boundary. Turns forwarded `Load/Play/Pause/Seek/Stop/Preload` commands and decode-pipeline events into effects — command and generation-reset teardown (`.stop`/`.cancelPreload` for any live pipeline or held preload), preload-file-id reuse vs. cancellation, transport commands honored while still `.loading`, seek clamping, a once-per-load `timeToPreloadNext` threshold, and pipeline events scoped by `sessionGeneration`/`playRequestID` so a stale delivery can never resurrect a torn-down load. Not yet wired to any FFI; there is no `ShimPlayer`, audio-command callback, or `aural_playback_report_audio` yet |
+| `AudioPlaybackSession` | Stage 1 of #201: pure reducer for the future `ShimPlayer` audio-command boundary. Turns forwarded `Load/Play/Pause/Seek/Stop/Preload` commands and decode-pipeline events into effects — command and generation-reset teardown (`.stop`/`.cancelPreload` for any live pipeline or held preload), preload-file-id reuse vs. cancellation, transport commands honored while still `.loading`, seek clamping, a once-per-load `timeToPreloadNext` threshold, and pipeline events scoped by `sessionGeneration`/`playRequestID` so a stale delivery can never resurrect a torn-down load. Not yet wired to any FFI; there is no `ShimPlayer`, audio-command callback, or `spotty_playback_report_audio` yet |
 
 ## Rust crate by module
 
@@ -41,7 +41,7 @@ in the [enforcement inventory](architecture-enforcement.md).
 | `session_lifecycle.rs` | Mixed | AP connect and credential cache are librespot. Path policy and logout cache wipe are Spotty-owned but must run next to the cache. Streaming grant completion stays here because only librespot performs AP login. |
 | `lifecycle_serialization.rs` | Spotty-owned coordination that must stay with Rust globals | One async lifecycle mutex, reconnect unit outcomes, generation revalidation |
 | `connect.rs` | Mixed | Dealer subscribe, hidden-member bootstrap PUT, and protobuf parse are protocol. Device-list and connection-snapshot presentation are Swift-owned. `cluster_offer_decision`, bootstrap-vs-push linearization, and `is_active_in_cluster` (this engine's Connect role) stay until cluster observations can cross the boundary without a second protobuf stack. |
-| `queue.rs` | Adapter | Forwards unfiltered `ProvidedTrack` rows, slim current-track identity, protocol playback flags, and protocol `context_uri` on cluster snapshots as a typed C queue snapshot. Local `PlayerEvent` playback snapshots send an empty context. Does **not** own delimiter hiding, upcoming presentation, or transport presentation. |
+| `queue.rs` | Adapter | Forwards unfiltered `ProvidedTrack` rows and slim current-track identity as `SpottyQueueSnapshot`. Cluster protocol playback flags and `context_uri` cross separately as `SpottyPlaybackSnapshot`; local `PlayerEvent` playback snapshots send an empty context. Does **not** own delimiter hiding, upcoming presentation, or transport presentation. |
 | `state.rs` | Mixed | Librespot object slots (`SESSION`, `SPIRC`, `PLAYER`, `MIXER`). Snapshot stamps and connection aggregation live here. Queue, connection, playback, and device-list observations use typed C snapshots. |
 | `transport.rs` | Adapter | Seek-capable `load_at_position`, one-target `LoadRequest` construction, playing-event waits, and the reconnect rehydration window (`has_resume_identity`, `wait_for_rehydration`). Target order and capture are Swift-owned for user resume and reconnect alike. |
 | `player_control.rs` | Adapter | Spirc play/pause/seek/shuffle/repeat/transfer/queue-add, plus FFI getters for sticky resume URIs |
@@ -70,25 +70,25 @@ Each stage lands as its own issue and re-measures the baseline below.
 Control observations for connection, playback, devices, and queue are typed C snapshots with
 `revision` and `session_generation`:
 
-- `AuralConnectionSnapshot`: `session_connected`, `spirc_ready`, `is_active_device`,
+- `SpottyConnectionSnapshot`: `session_connected`, `spirc_ready`, `is_active_device`,
   `resume_pending`, `device_id`, `last_error`.
-- `AuralPlaybackSnapshot`: protocol playing/paused flags, track URI, context URI (empty on local
+- `SpottyPlaybackSnapshot`: protocol playing/paused flags, track URI, context URI (empty on local
   player-event snapshots), timing, and shuffle/repeat options.
-- `AuralDevicesSnapshot`: protocol members (`id`, `name`, type name) plus `active_device_id`.
-- `AuralQueueSnapshot`: unfiltered protocol rows, slim current-track identity, `queue_revision`,
+- `SpottyDevicesSnapshot`: protocol members (`id`, `name`, type name) plus `active_device_id`.
+- `SpottyQueueSnapshot`: unfiltered protocol rows, slim current-track identity, `queue_revision`,
   and replacement-disallow flags.
 
 Swift projects transport, session phase, device activity, and upcoming rows from these; Rust sends
 no presentation copy. New fields should be typed payloads or rawer protocol rows, not Spotty-only
 presentation.
 
-`aural_playback_get_queue_snapshot` returns the last cluster queue (freed with
-`aural_playback_free_queue_snapshot`) so Swift can recover after a provisional empty `SetQueue`.
+`spotty_playback_get_queue_snapshot` returns the last cluster queue (freed with
+`spotty_playback_free_queue_snapshot`) so Swift can recover after a provisional empty `SetQueue`.
 It returns null when no cluster snapshot has been received yet; null means "not told anything",
 which Swift must keep distinct from an empty queue.
 Caching that snapshot in Rust is adapter convenience, not a second app-facing store.
 
-`aural_playback_audio_key` fetches one file's AES decryption key over the existing AP session;
+`spotty_playback_audio_key` fetches one file's AES decryption key over the existing AP session;
 it is Stage 1 scaffolding for #201/#208 and nothing calls it yet. Spotify throttles key requests,
 so the eventual consumer must cache successes per file id and coalesce concurrent misses.
 
@@ -107,7 +107,7 @@ so the eventual consumer must cache successes per file id and coalesce concurren
 - Do not reintroduce `device_name`, `reconnect_attempt`, `connected_since_ms`, or
   `session_connection_id` into `ConnectionState` or its snapshot; reconnect backoff stays
   loop-local.
-- Do not widen `aural_playback_resume`; resume targets are Swift-owned loads.
+- Do not widen `spotty_playback_resume`; resume targets are Swift-owned loads.
 - Do not forward raw cluster protobuf to Swift ahead of a stage that owns the models.
 - `Vendor/stb_vorbis` is the only vendored C in this repo (the `CVorbis` SwiftPM target). It is
   pinned to an exact upstream commit in `Vendor/stb_vorbis/UPSTREAM.md`; refresh the pin there
@@ -115,7 +115,7 @@ so the eventual consumer must cache successes per file id and coalesce concurren
 
 ## Measured baseline (2026-08-23)
 
-Aural 0.4.0 (4), optimized signed Release bundle, macOS 27.0 (26A5416b), Apple M1 Max, 32 GB.
+Spotty 0.4.0 (4), optimized signed Release bundle, macOS 27.0 (26A5416b), Apple M1 Max, 32 GB.
 Five `ps` samples at one-second intervals after the state stabilized; memory is RSS; foreground
 and background are window open and closed in the same process.
 
@@ -136,7 +136,7 @@ must record its own commit and surfaces. #201 requires re-measurement at each st
 ### Binary size
 
 Every CI run's "Release distribution compile" job publishes a size table (app binary,
-`libaural_playback.a`, binary segment totals, archive exported symbol count) to the job
+`libspotty_playback.a`, binary segment totals, archive exported symbol count) to the job
 summary via `Scripts/report-size.sh`, and uploads the same data as the `size-report` artifact
 (`size-report.json`, 30-day retention).
 

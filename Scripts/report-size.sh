@@ -12,15 +12,15 @@ trap 'echo "report-size.sh: failed at line $LINENO" >&2' ERR
 # Usage:
 #   Scripts/report-size.sh [--binary PATH] [--archive PATH] [--out-dir DIR]
 #
-# Defaults match Scripts/compile-release-aural.sh's release layout:
-#   --binary   <repo>/.build/release/Aural
-#   --archive  <repo>/Backend/lib/libaural_playback.a
+# Defaults match Scripts/compile-release-spotty.sh's release layout:
+#   --binary   <repo>/.build/release/Spotty
+#   --archive  <repo>/Backend/lib/libspotty_playback.a
 #   --out-dir  <repo>/.build (ignored by git)
 
 project_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
-binary_path="$project_root/.build/release/Aural"
-archive_path="$project_root/Backend/lib/libaural_playback.a"
+binary_path="$project_root/.build/release/Spotty"
+archive_path="$project_root/Backend/lib/libspotty_playback.a"
 out_dir="$project_root/.build"
 
 while [[ $# -gt 0 ]]; do
@@ -46,10 +46,10 @@ done
 
 if [[ ! -f "$binary_path" ]]; then
     # SwiftPM does not always create the `.build/release` convenience symlink (compile-
-    # release-aural.sh resolves the real path via `swift build --show-bin-path`, which can
+    # release-spotty.sh resolves the real path via `swift build --show-bin-path`, which can
     # land under a platform-triple directory such as `.build/arm64-apple-macosx/release`).
     # Fall back to searching for it there before giving up.
-    for candidate in "$project_root"/.build/*/release/Aural; do
+    for candidate in "$project_root"/.build/*/release/Spotty; do
         if [[ -f "$candidate" ]]; then
             binary_path="$candidate"
             break
@@ -123,7 +123,7 @@ render_table() {
     echo "| Metric | Value |"
     echo "| --- | ---: |"
     echo "| App binary | ${binary_bytes} bytes (${binary_mib} MiB) |"
-    echo "| libaural_playback.a | ${archive_bytes} bytes (${archive_mib} MiB) |"
+    echo "| libspotty_playback.a | ${archive_bytes} bytes (${archive_mib} MiB) |"
     if [[ "$have_size_tool" -eq 1 ]]; then
         echo "| Binary __TEXT | ${text_bytes} bytes ($(to_mib "$text_bytes") MiB) |"
         echo "| Binary __DATA | ${data_bytes} bytes ($(to_mib "$data_bytes") MiB) |"

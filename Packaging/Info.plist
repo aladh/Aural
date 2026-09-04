@@ -7,11 +7,11 @@
 	<key>CFBundleDisplayName</key>
 	<string>Spotty</string>
 	<key>CFBundleExecutable</key>
-	<string>Aural</string>
+	<string>Spotty</string>
 	<key>CFBundleIconFile</key>
-	<string>Aural</string>
+	<string>Spotty</string>
 	<key>CFBundleIdentifier</key>
-	<string>dev.aural.app</string>
+	<string>dev.spotty.app</string>
 	<key>CFBundleInfoDictionaryVersion</key>
 	<string>6.0</string>
 	<key>CFBundleName</key>

@@ -5,7 +5,7 @@ project_root="${0:A:h:h}"
 lookback="${1:-15m}"
 timestamp="$(date -u +%Y%m%dT%H%M%SZ)"
 output_dir="$project_root/diagnostics"
-output="$output_dir/aural-$timestamp.log"
+output="$output_dir/spotty-$timestamp.log"
 
 mkdir -p "$output_dir"
 {
@@ -17,7 +17,7 @@ mkdir -p "$output_dir"
     print "Commit: $(git -C "$project_root" rev-parse --short HEAD 2>/dev/null || print unknown)"
     print
     /usr/bin/log show --info --style compact --last "$lookback" \
-        --predicate 'process == "Aural" && subsystem == "dev.aural.app"'
+        --predicate 'process == "Spotty" && subsystem == "dev.spotty.app"'
 } > "$output"
 
 print "$output"
