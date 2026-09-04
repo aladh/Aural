@@ -21,6 +21,7 @@ in the [enforcement inventory](architecture-enforcement.md).
 | `PlaybackSnapshotProjection` | Engine playback transport, empty-URI identity, timestamp correction |
 | `ResumeLoadPlan` | Resume-load target order from sticky resume-load URIs, for user resume and reconnect rehydration. `PlaybackStore` captures those URIs through the engine getters; `RustPlaybackEngine` iterates targets through `aural_playback_load`. The engine signals a reconnect window with `resume_pending` and holds readiness until a Swift load lands, a load reports `ERROR_NEEDS_REINIT` (dead Spirc, which ends the wait for that window and triggers a rebuild), or the window times out |
 | Catalog, OAuth, shuffle policy, HTTP retry | Unchanged; never belonged in Rust |
+| `OggVorbisDecoder` / `OggPageHeader` | Stage 1 of #201: a Swift wrapper over vendored stb_vorbis's pushdata API, plus a pure Ogg page scanner for later seeking. Not yet wired into playback — the audio-key/CDN/decrypt path and `AudioRenderer` still get PCM from `proxy_sink.rs` |
 
 ## Rust crate by module
 
@@ -92,6 +93,9 @@ Caching that snapshot in Rust is adapter convenience, not a second app-facing st
   loop-local.
 - Do not widen `aural_playback_resume`; resume targets are Swift-owned loads.
 - Do not forward raw cluster protobuf to Swift ahead of a stage that owns the models.
+- `Vendor/stb_vorbis` is the only vendored C in this repo (the `CVorbis` SwiftPM target). It is
+  pinned to an exact upstream commit in `Vendor/stb_vorbis/UPSTREAM.md`; refresh the pin there
+  rather than editing `stb_vorbis.c` in place.
 
 ## Measured baseline (2026-08-23)
 
