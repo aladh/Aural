@@ -13,6 +13,13 @@ pub(crate) static SPIRC: Lazy<Mutex<Option<Arc<Spirc>>>> = Lazy::new(|| Mutex::n
 pub(crate) static IS_PLAYING: AtomicBool = AtomicBool::new(false);
 pub(crate) static PLAYING_EVENT_SEQ: AtomicU64 = AtomicU64::new(0);
 
+/// Listener generation of the pump that last advanced [`PLAYING_EVENT_SEQ`], written just
+/// before the increment. A reconnect's rehydration window accepts a Playing event only when
+/// this matches the generation that opened the window: the pump gates events on the
+/// generation before applying them, but a pump preempted between that check and its
+/// increment could otherwise satisfy a window opened by a newer session.
+pub(crate) static PLAYING_EVENT_GENERATION: AtomicU64 = AtomicU64::new(0);
+
 /// Set while a `aural_playback_resume` is working, so only one runs at a time.
 ///
 /// Resuming is not instantaneous: `Spirc::play` only queues a command, then this export

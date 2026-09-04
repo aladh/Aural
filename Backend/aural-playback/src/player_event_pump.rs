@@ -100,6 +100,7 @@ fn apply_player_event(event: PlayerEvent, event_listener_generation: u64) {
             set_current_track_uri(track_uri);
             IS_PLAYING.store(true, Ordering::SeqCst);
             set_active_device(true);
+            PLAYING_EVENT_GENERATION.store(event_listener_generation, Ordering::SeqCst);
             PLAYING_EVENT_SEQ.fetch_add(1, Ordering::SeqCst);
             // Playback is running again, so any saved resume point belongs
             // to a deactivation that has been recovered from.

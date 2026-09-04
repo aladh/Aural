@@ -120,7 +120,8 @@ pub(crate) fn has_resume_identity() -> bool {
 /// How a rehydration window closed.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum RehydrationOutcome {
-    /// The Player reported playback: a Swift load landed.
+    /// The Player of the generation that opened the window reported playback: a Swift load
+    /// landed. A Playing event stamped with another generation does not count.
     Playing,
     /// A Swift load found the Spirc command channel closed; the build must fail.
     NeedsReinit,
@@ -156,15 +157,23 @@ pub(crate) fn note_load_needs_reinit(load_generation: u64) {
     }
 }
 
+/// Whether the most recent Playing event came from the pump of the generation that opened
+/// the current rehydration window.
+fn playing_event_belongs_to_window() -> bool {
+    PLAYING_EVENT_GENERATION.load(Ordering::SeqCst)
+        == REHYDRATION_WINDOW_GENERATION.load(Ordering::SeqCst)
+}
+
 /// Waits inside the runtime for a Swift rehydration load to land, fail terminally, or time
-/// out, without parking a tokio worker.
+/// out, without parking a tokio worker. A sequence advance from a superseded generation's
+/// pump is ignored; only the window's own generation can close it as `Playing`.
 pub(crate) async fn wait_for_rehydration(
     previous_seq: u64,
     timeout: Duration,
 ) -> RehydrationOutcome {
     let deadline = tokio::time::Instant::now() + timeout;
     loop {
-        if playing_event_advanced(previous_seq) {
+        if playing_event_advanced(previous_seq) && playing_event_belongs_to_window() {
             return RehydrationOutcome::Playing;
         }
         if REHYDRATION_NEEDS_REINIT.load(Ordering::SeqCst) {

@@ -253,7 +253,15 @@ fn rehydration_window_reports_playing_reinit_or_timeout() {
     );
     REHYDRATION_NEEDS_REINIT.store(false, Ordering::SeqCst);
 
+    // A Playing event from a superseded pump advances the sequence but not this window.
+    PLAYING_EVENT_GENERATION.store(6, Ordering::SeqCst);
     PLAYING_EVENT_SEQ.fetch_add(1, Ordering::SeqCst);
+    assert_eq!(
+        RUNTIME.block_on(wait_for_rehydration(seq, Duration::ZERO)),
+        RehydrationOutcome::TimedOut
+    );
+
+    PLAYING_EVENT_GENERATION.store(7, Ordering::SeqCst);
     assert_eq!(
         RUNTIME.block_on(wait_for_rehydration(seq, Duration::ZERO)),
         RehydrationOutcome::Playing
@@ -295,14 +303,6 @@ fn playing_event_waits_observe_sequence_advances_and_timeouts() {
     let current = PLAYING_EVENT_SEQ.load(Ordering::SeqCst);
     assert!(!playing_event_advanced(current));
     assert!(!wait_for_playing_event(current, Duration::ZERO));
-    assert_eq!(
-        RUNTIME.block_on(wait_for_rehydration(previous, Duration::ZERO)),
-        RehydrationOutcome::Playing
-    );
-    assert_eq!(
-        RUNTIME.block_on(wait_for_rehydration(current, Duration::ZERO)),
-        RehydrationOutcome::TimedOut
-    );
 }
 
 #[test]
