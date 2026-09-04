@@ -2,8 +2,9 @@ import Testing
 import SpottyDomain
 import Foundation
 
-/// Shared synthetic-data helpers for `OggVorbisDecoderChecks` and `VorbisDecodePipelineChecks`,
-/// which both exercise the same kind of Ogg/Vorbis byte stream at different layers.
+/// Shared synthetic-data helpers for `OggVorbisDecoderChecks`, `VorbisDecodePipelineChecks`, and
+/// `SpotifyEncryptedVorbisChecks`, which exercise the same Ogg/Vorbis byte stream at different
+/// layers.
 
 /// Loads the committed `tone-44100-stereo.ogg` resource. A missing file fails the suite, matching
 /// the JSON fixtures in the same `Fixtures` copy — it does not skip-pass.

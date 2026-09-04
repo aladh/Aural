@@ -182,12 +182,12 @@ private func isStopped(_ event: VorbisDecodePipeline.Event) -> Bool {
     return false
 }
 
-private func isPlaying(_ event: VorbisDecodePipeline.Event) -> Bool {
+func isPlaying(_ event: VorbisDecodePipeline.Event) -> Bool {
     if case .playing = event { return true }
     return false
 }
 
-private func isEndOfTrack(_ event: VorbisDecodePipeline.Event) -> Bool {
+func isEndOfTrack(_ event: VorbisDecodePipeline.Event) -> Bool {
     if case .endOfTrack = event { return true }
     return false
 }
@@ -240,48 +240,40 @@ private final class FakeByteSource: DecodeByteSource, @unchecked Sendable {
 /// Fake `PCMSink`: records every write and reports zero buffered seconds, so `endOfTrack` fires
 /// as soon as decoding is done rather than waiting out a drain that never applies to a fake.
 /// Never cancels -- these checks care about the decode/threading plumbing, not backpressure.
-private final class FakeSink: PCMSink, @unchecked Sendable {
+/// Shared with `SpotifyEncryptedVorbisChecks` (same decode-thread sink).
+final class FakeSink: PCMSink, @unchecked Sendable {
     private let lock = NSLock()
     private var frameCount = 0
 
     func write(_ samples: UnsafePointer<Float>, frames: Int, until cancelled: () -> Bool) -> PCMWriteOutcome {
-        lock.lock()
-        frameCount += frames
-        lock.unlock()
+        lock.withLock { frameCount += frames }
         return .queued
     }
 
     func flush() {
-        lock.lock()
-        frameCount = 0
-        lock.unlock()
+        lock.withLock { frameCount = 0 }
     }
 
     var bufferedSeconds: Double { 0 }
 
     var totalFrameCount: Int {
-        lock.lock()
-        defer { lock.unlock() }
-        return frameCount
+        lock.withLock { frameCount }
     }
 }
 
 /// Thread-safe collector for events delivered from the pipeline's dedicated decode thread (and,
 /// for `.paused`/`.playing`/`.stopped`, from whatever thread called `pause`/`resume`/`stop`).
-private final class EventCollector: @unchecked Sendable {
+/// Shared with `SpotifyEncryptedVorbisChecks`.
+final class EventCollector: @unchecked Sendable {
     private let lock = NSLock()
     private var events: [VorbisDecodePipeline.Event] = []
 
     func record(_ event: VorbisDecodePipeline.Event) {
-        lock.lock()
-        events.append(event)
-        lock.unlock()
+        lock.withLock { events.append(event) }
     }
 
     var all: [VorbisDecodePipeline.Event] {
-        lock.lock()
-        defer { lock.unlock() }
-        return events
+        lock.withLock { events }
     }
 
     /// Polls (via the shared `waitUntil`) until at least `count` events have been recorded.
