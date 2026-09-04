@@ -48,6 +48,14 @@ if [[ "$check_scope" != swift ]]; then
         print -u2 "Rust cargo was not found. Install Rust or set SPOTTY_CARGO to an executable cargo path."
         exit 1
     fi
+    if [[ "$cargo_bin" == */* ]]; then
+        export PATH="${cargo_bin:h}:$PATH"
+    fi
+
+    # Regeneration is a Rust-lane development-tool check. The app and Swift lane continue to
+    # consume the checked-in header; cbindgen is never downloaded as part of an app build.
+    "$project_root/Scripts/generate-c-header.sh" --check
+
     "$cargo_bin" fmt --all --manifest-path "$project_root/Backend/spotty-playback/Cargo.toml" -- --check
     "$cargo_bin" clippy --locked --manifest-path "$project_root/Backend/spotty-playback/Cargo.toml" \
         --all-targets -- -D warnings
@@ -84,9 +92,22 @@ header_symbols="$(mktemp /tmp/spotty-header-symbols.XXXXXX)"
 library_symbols="$(mktemp /tmp/spotty-library-symbols.XXXXXX)"
 consumed_symbols="$(mktemp /tmp/spotty-consumed-symbols.XXXXXX)"
 header_signatures="$(mktemp /tmp/spotty-header-signatures.XXXXXX)"
-trap 'rm -f "$header_symbols" "$library_symbols" "$consumed_symbols" "$header_signatures"' EXIT
-rg -o --pcre2 'spotty_playback_[a-z0-9_]+(?=\s*\()' \
-    "$playback_header" | sort -u > "$header_symbols"
+header_ast="$(mktemp /tmp/spotty-header-ast.XXXXXX)"
+trap 'rm -f "$header_symbols" "$library_symbols" "$consumed_symbols" "$header_signatures" "$header_ast"' EXIT
+
+# Parse the umbrella header once. Clang follows its quoted includes, so declarations in the
+# checked-in cbindgen fragment remain part of the symbol, signature, and dead-export contracts.
+if ! command -v clang >/dev/null 2>&1; then
+    print -u2 "Clang is required to inspect the checked-in Spotty C ABI signatures"
+    exit 1
+fi
+if ! clang -x c -fsyntax-only -Xclang -ast-dump \
+    "$playback_header" > "$header_ast" 2>/dev/null; then
+    print -u2 "Clang could not parse the checked-in Spotty C ABI header"
+    exit 1
+fi
+sed -nE "s/.*FunctionDecl .* (spotty_playback_[a-z0-9_]+) '([^']+)'$/\\1/p" \
+    "$header_ast" | sort -u > "$header_symbols"
 (nm -gU "$backend_lib" 2>/dev/null || true) \
     | sed -nE 's/.*_(spotty_playback_[a-z0-9_]+)$/\1/p' \
     | sort -u > "$library_symbols"
@@ -100,18 +121,10 @@ fi
 # attributes, typedefs, and multiline declarations before emitting one stable type spelling.
 # Nullability annotations are source-level ownership metadata and do not affect the ABI type.
 abi_signature_fixture="$project_root/Backend/spotty-playback/abi-signatures.txt"
-if ! command -v clang >/dev/null 2>&1; then
-    print -u2 "Clang is required to inspect the checked-in Spotty C ABI signatures"
-    exit 1
-fi
-if ! clang -x c -fsyntax-only -Xclang -ast-dump \
-    "$playback_header" 2>/dev/null \
-    | sed -nE "s/.*FunctionDecl .* (spotty_playback_[a-z0-9_]+) '([^']+)'$/\\1|\\2/p" \
+sed -nE "s/.*FunctionDecl .* (spotty_playback_[a-z0-9_]+) '([^']+)'$/\\1|\\2/p" \
+    "$header_ast" \
     | sed -E 's/ _Nullable| _Nonnull//g; s/ +/ /g' \
-    | sort -u > "$header_signatures"; then
-    print -u2 "Clang could not parse the checked-in Spotty C ABI header"
-    exit 1
-fi
+    | sort -u > "$header_signatures"
 if ! diff -u "$abi_signature_fixture" "$header_signatures"; then
     print -u2 "The C header and Rust Spotty ABI signature fixture differ"
     exit 1

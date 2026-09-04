@@ -50,9 +50,25 @@ gate is:
 ```
 
 The gate checks tracked Swift formatting, Rust formatting, warning-clean Clippy, locked Rust tests,
+the pinned cbindgen output against the checked-in header,
 Rust/C export and header parity, Swift builds with project-owned warnings as errors, deterministic
 Swift tests, architecture contracts, CI policy, and packaging metadata. It does not sign in
 or initiate playback.
+
+After changing a generated ABI declaration, run `./Scripts/generate-c-header.sh` and commit the
+result with the Rust change. `./Scripts/generate-c-header.sh --check` verifies reproducibility without
+modifying the header. Install the version listed in the [setup guide](docs/development-setup.md#fresh-clone),
+or set `SPOTTY_CBINDGEN` to that executable's path. The wrapper checks the version and never installs
+tools; CI installs the pin explicitly. Generation does not replace the C/Rust layout, signature,
+ownership, or callback-lifetime checks.
+
+The pilot generates `spotty_playback_register_connection_state_callback` and its snapshot from
+`Backend/spotty-playback/cbindgen.toml`; the other 37 exports remain in the umbrella header. The config
+supplies one nullable C-string typedef because cbindgen's global nullable-pointer annotation also
+marks required callback pointers nullable. Rust fields use the matching pointer alias;
+the generated declarations retain the existing assumed-nonnull callback contract. Keep this semantic
+annotation separate from generated field lists and signatures, and verify Swift imports when expanding
+generation to another pointer shape.
 
 Swift formatting uses the selected Swift 6.3 toolchain's `swift-format`:
 

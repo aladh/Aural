@@ -46,6 +46,13 @@ jobs:
           fi
           brew install ripgrep
 
+      - name: Install pinned cbindgen
+        run: |
+          set -euo pipefail
+          CARGO_HOME="$RUNNER_TEMP/spotty-cbindgen-cargo" \
+            cargo install cbindgen --locked --version 0.29.4 --root "$RUNNER_TEMP/spotty-cbindgen"
+          echo "$RUNNER_TEMP/spotty-cbindgen/bin" >> "$GITHUB_PATH"
+
       - name: Verify tag and runner
         run: |
           if [[ ! "$GITHUB_REF_NAME" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then

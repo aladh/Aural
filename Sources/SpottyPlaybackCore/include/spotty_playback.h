@@ -5,6 +5,10 @@
 #include <stddef.h>
 #include <stdint.h>
 
+// Generated from the Rust connection callback ABI. Keep this include outside the
+// assume_nonnull region; Clang rejects includes nested in that pragma.
+#include "spotty_playback_connection_state_generated.h"
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -277,34 +281,6 @@ typedef void (*DevicesCallback)(const SpottyDevicesSnapshot* snapshot);
 /// Registers a callback to receive the Connect device list from cluster updates.
 /// Fires only when the list actually changes, not on every cluster tick.
 void spotty_playback_register_devices_callback(DevicesCallback callback);
-
-/// Connection observation. `device_id` and `last_error` are valid only for the callback;
-/// Swift must copy them before returning. NULL means missing; outbound empty strings and
-/// strings containing an interior NUL are also delivered as NULL. Flags are 0 or 1.
-/// `credentials_rejected` is a typed, definitive streaming-credential rejection. It takes
-/// precedence over generic reconnect errors; it does not revoke the independent Keymaster grant.
-/// `resume_pending` is set only inside a reconnect's rehydration window: the session is
-/// connected and activated but `spirc_ready` is deliberately still 0, and Swift should
-/// issue its resume-load targets through `spotty_playback_load` now. Readiness is published
-/// once a Playing event lands, a load reports a dead Spirc, or the window times out.
-typedef struct SpottyConnectionSnapshot {
-    uint64_t revision;
-    uint64_t session_generation;
-    uint8_t session_connected;
-    uint8_t spirc_ready;
-    uint8_t is_active_device;
-    uint8_t resume_pending;
-    uint8_t credentials_rejected;
-    const char* _Nullable device_id;
-    const char* _Nullable last_error;
-} SpottyConnectionSnapshot;
-
-/// Callback function type for connection state change notifications.
-typedef void (*ConnectionStateCallback)(const SpottyConnectionSnapshot* snapshot);
-
-/// Registers a callback to receive connection state change notifications.
-/// Called whenever the connection state changes (connect, disconnect, error, etc.).
-void spotty_playback_register_connection_state_callback(ConnectionStateCallback callback);
 
 // ============================================================================
 // Audio output callbacks
