@@ -236,7 +236,7 @@ func runPlaybackSupportChecks(_ check: CheckRunner) {
         let remote = ConnectDevice(id: "phone", name: "Phone", type: "smartphone", isActive: true)
         check.equal(
             "local device is identified even while inactive", local.displayName(localDeviceID: "local"),
-            "Spotty (This Mac)")
+            "This Mac")
         check.equal(
             "active remote device is identified as playing", remote.displayName(localDeviceID: "local"),
             "Phone (Playing)")

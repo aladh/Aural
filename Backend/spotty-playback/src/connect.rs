@@ -425,15 +425,22 @@ pub(crate) fn notify_devices(
 }
 
 /// Creates the standard ConnectConfig for Spirc.
-pub(crate) fn create_connect_config() -> ConnectConfig {
+pub(crate) fn create_connect_config(device_name: &str) -> ConnectConfig {
     let initial_volume = INITIAL_VOLUME_SETTING.load(Ordering::SeqCst);
     ConnectConfig {
-        name: "Spotty".to_string(),
+        name: device_name.to_string(),
         device_type: DeviceType::Computer,
         initial_volume,
         emit_set_queue_events: true,
         ..Default::default()
     }
+}
+
+pub(crate) fn configured_connect_device_name() -> Option<String> {
+    CONNECT_DEVICE_NAME_SETTING
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .clone()
 }
 
 /// Creates Spirc, spawns its background task, and stores it globally.
@@ -444,7 +451,9 @@ pub(crate) async fn create_and_store_spirc(
     player: Arc<dyn SpircPlayer>,
     mixer: Arc<SoftMixer>,
 ) -> Result<Arc<Spirc>, String> {
-    let connect_config = create_connect_config();
+    let device_name = configured_connect_device_name()
+        .ok_or_else(|| "Connect device identity was not configured".to_string())?;
+    let connect_config = create_connect_config(&device_name);
 
     let (spirc, spirc_task) = Spirc::new(
         connect_config,

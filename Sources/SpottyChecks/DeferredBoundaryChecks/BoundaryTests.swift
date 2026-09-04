@@ -36,6 +36,7 @@ enum BoundaryChecksMain {
             RegisteredCheckSuite(name: "resume-load-sequence") { runResumeLoadSequenceChecks($0) },
             RegisteredCheckSuite(name: "fixture-contract") { runFixtureContractChecks($0) },
             RegisteredCheckSuite(name: "engine-payload-contract") { runEnginePayloadContractChecks($0) },
+            RegisteredCheckSuite(name: "connect-device-identity") { runConnectDeviceIdentityChecks($0) },
             RegisteredCheckSuite(name: "pcm-write-space") { runPCMWriteSpaceChecks($0) },
             RegisteredCheckSuite(name: "engine-event-fanout") { runEngineEventFanoutChecks($0) },
             RegisteredCheckSuite(name: "audio-renderer-ownership") {
