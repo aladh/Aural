@@ -24,14 +24,15 @@ AuralCore codecs, adapters, stores, and injected workflows.
 
 ## Authoring rules CI enforces
 
-- `CheckRunner` methods (`check`, `equal`, ...) are `@MainActor`; any helper that calls them must be
-  `@MainActor` too.
-- In async check bodies never block: no `Thread.sleep`, no `DispatchSemaphore.wait`; use the harness
-  `waitUntil` helper. `NSLock.lock()`/`unlock()` are unavailable in async contexts — use `withLock`.
+- In `DeferredBoundaryChecks` (the `AuralBoundaryChecks` product) `BoundaryCheckRunner` is `@MainActor`,
+  so any helper that calls `check`/`equal` there must be `@MainActor` too, and async waits go through
+  that directory's `waitUntil` rather than `Thread.sleep` or `DispatchSemaphore.wait`. Domain suites
+  keep their existing cooperative waits; neither rule applies to them.
+- `NSLock.lock()`/`unlock()` are unavailable in async contexts — use `withLock`.
 - swift-format (120 cols) rejects a trailing closure passed directly as a `check.check(...)` argument;
   bind it to a `let` first.
-- The registry name in `AuralChecksMain.swift` must derive from the run function name (`runFooChecks`
-  → `foo`); boundary suites register in `DeferredBoundaryChecks/BoundaryTests.swift` instead.
+- Suite names are derived by `CheckSuiteRegistration.suiteName(fromRunFunction:)`, which kebab-cases
+  the stem (`runPCMWriteSpaceChecks` → `pcm-write-space`); `check-suite-selection` enforces it.
 - Swift 6 strict concurrency: a `@Sendable` closure (e.g. `Thread { }`, `Task.detached`) cannot
   capture non-Sendable `self` or a protocol existential. Move the work to a `static` function taking
   only Sendable parameters, or make the type `Sendable`.
