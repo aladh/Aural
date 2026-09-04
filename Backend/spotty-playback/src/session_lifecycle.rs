@@ -31,6 +31,13 @@ impl CredentialsCacheError {
 pub(crate) fn credentials_cache_dir_from_home(
     home: Option<&std::path::Path>,
 ) -> Result<std::path::PathBuf, CredentialsCacheError> {
+    credentials_cache_dir_from_home_named(home, "Spotty")
+}
+
+fn credentials_cache_dir_from_home_named(
+    home: Option<&std::path::Path>,
+    product_directory_name: &str,
+) -> Result<std::path::PathBuf, CredentialsCacheError> {
     let home = home
         .filter(|path| !path.as_os_str().is_empty())
         .ok_or(CredentialsCacheError::Missing)?;
@@ -44,8 +51,13 @@ pub(crate) fn credentials_cache_dir_from_home(
     Ok(home
         .join("Library")
         .join("Application Support")
-        .join("Spotty")
+        .join(product_directory_name)
         .join("credentials"))
+}
+
+fn retired_credentials_cache_dir() -> Result<std::path::PathBuf, CredentialsCacheError> {
+    let home = std::env::var_os("HOME").map(std::path::PathBuf::from);
+    credentials_cache_dir_from_home_named(home.as_deref(), "Aural")
 }
 
 /// Collapse `.` and refuse `..` without touching the filesystem or following symlinks.
@@ -99,6 +111,21 @@ pub(crate) fn clear_resolved_credentials() {
     match credentials_cache_dir() {
         Ok(dir) => clear_credentials_at(&dir),
         Err(_) => debug!("Streaming credential cache unavailable; nothing to clear"),
+    }
+    clear_retired_credentials_cache();
+}
+
+fn clear_retired_credentials_cache() {
+    let Ok(dir) = retired_credentials_cache_dir() else {
+        return;
+    };
+    clear_retired_credentials_at(&dir);
+}
+
+pub(crate) fn clear_retired_credentials_at(dir: &std::path::Path) {
+    clear_credentials_at(&dir);
+    if let Some(parent) = dir.parent() {
+        let _ = std::fs::remove_dir(parent);
     }
 }
 
@@ -161,6 +188,7 @@ pub extern "C" fn spotty_playback_authorize_streaming(access_token: *const c_cha
                 .connect(credentials, true)
                 .await
                 .map_err(|e| format!("Connect failed: {:?}", e))?;
+            clear_retired_credentials_cache();
             session.shutdown();
             Ok::<(), String>(())
         }) {
@@ -752,6 +780,8 @@ pub(crate) async fn build_player_async(
 
     match create_and_store_spirc(&session, &credentials, player, mixer).await {
         Ok(spirc) => {
+            clear_retired_credentials_cache();
+
             // Passive startup by default: do not take over the active device on launch.
             // Re-activate only when reconnecting from a previously-active local session.
             //

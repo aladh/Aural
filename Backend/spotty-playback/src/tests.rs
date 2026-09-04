@@ -559,6 +559,31 @@ fn clearing_credentials_removes_the_directory() {
 }
 
 #[test]
+fn clearing_retired_credentials_removes_only_the_retired_directory() {
+    let root = std::env::temp_dir().join(format!(
+        "spotty-retired-credential-cleanup-{}",
+        std::process::id()
+    ));
+    let retired = root.join("Aural").join("credentials");
+    let current = root.join("Spotty").join("credentials");
+    let _ = std::fs::remove_dir_all(&root);
+    std::fs::create_dir_all(&retired).expect("create retired fixture");
+    std::fs::create_dir_all(&current).expect("create current fixture");
+    std::fs::write(retired.join("credentials.json"), b"retired").expect("write retired fixture");
+    std::fs::write(current.join("credentials.json"), b"current").expect("write current fixture");
+
+    clear_retired_credentials_at(&retired);
+
+    assert!(!retired.exists());
+    assert!(!retired.parent().expect("retired parent").exists());
+    assert_eq!(
+        std::fs::read(current.join("credentials.json")).expect("read current fixture"),
+        b"current"
+    );
+    let _ = std::fs::remove_dir_all(&root);
+}
+
+#[test]
 fn clearing_credentials_that_are_not_there_is_fine() {
     // Logging out without ever having authorized streaming is ordinary, not an error.
     let dir = std::env::temp_dir().join(format!("spotty-absent-{}", std::process::id()));

@@ -40,15 +40,24 @@ enum KeymasterStoredGrantCodec {
 
 /// The real store, in the same keychain service the Web API half uses.
 nonisolated struct KeymasterKeychainStore: KeymasterTokenStoring {
+    private static let retiredDefaultsKey = "keymaster.tokens.v1"
+
     func load() -> KeymasterTokens? {
+        clearRetiredPlaintextGrant()
         KeychainManager.loadKeymasterTokens()
     }
 
     func save(_ tokens: KeymasterTokens) throws {
+        clearRetiredPlaintextGrant()
         try KeychainManager.saveKeymasterTokens(tokens)
     }
 
     func clear() {
+        clearRetiredPlaintextGrant()
         KeychainManager.clearKeymasterTokens()
+    }
+
+    private func clearRetiredPlaintextGrant() {
+        UserDefaults.standard.removeObject(forKey: Self.retiredDefaultsKey)
     }
 }

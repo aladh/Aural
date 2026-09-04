@@ -15,12 +15,14 @@ nonisolated enum KeychainManager {
 
     private static let keymasterService = "dev.spotty.app.keymaster"
     private static let keymasterTokensKey = "keymaster_tokens"
+    private static let retiredKeymasterService = "dev.aural.app.keymaster"
 
     /// Stored as one item rather than a key per field, which is how the Web API tokens were
     /// kept. The four values are only meaningful together — an access token paired with another
     /// grant's expiry, or with a refresh token that has since rotated, is worse than nothing —
     /// and a single write cannot leave them half-updated.
     static func saveKeymasterTokens(_ tokens: KeymasterTokens) throws {
+        clearRetiredKeymasterTokens()
         try save(
             key: keymasterTokensKey,
             data: JSONEncoder().encode(tokens),
@@ -29,12 +31,18 @@ nonisolated enum KeychainManager {
     }
 
     static func loadKeymasterTokens() -> KeymasterTokens? {
+        clearRetiredKeymasterTokens()
         guard let data = load(key: keymasterTokensKey, service: keymasterService) else { return nil }
         return KeymasterStoredGrantCodec.decode(data)
     }
 
     static func clearKeymasterTokens() {
+        clearRetiredKeymasterTokens()
         delete(key: keymasterTokensKey, service: keymasterService)
+    }
+
+    private static func clearRetiredKeymasterTokens() {
+        delete(key: keymasterTokensKey, service: retiredKeymasterService)
     }
 
     // MARK: - Private Keychain Operations
