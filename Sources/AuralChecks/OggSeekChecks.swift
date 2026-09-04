@@ -20,9 +20,7 @@ private final class RecordingReader: OggByteReader, @unchecked Sendable {
     var length: Int { data.count }
 
     func read(offset: Int, length: Int) async throws -> Data {
-        lock.lock()
-        readCount += 1
-        lock.unlock()
+        lock.withLock { readCount += 1 }
         let start = data.startIndex + offset
         let end = min(data.endIndex, start + length)
         guard start >= data.startIndex, start <= data.endIndex else { return Data() }
