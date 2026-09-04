@@ -10,10 +10,17 @@
 //
 //  Thread safety: `OggVorbisDecoder` requires a single owning thread end to end (see its own file
 //  header), so this pipeline spins one dedicated `Thread` per `start()` call and keeps the decoder,
-//  the pending-bytes buffer, and the read cursor thread-confined there. `pause`/`resume`/`seek`/
-//  `stop` are called from whatever thread owns transport control (expected: the main actor) and
-//  only ever touch the condition-protected gate state below -- never the decoder or the buffers.
-//  This type is not `Sendable`; a single controller owns one instance for one track's playback.
+//  the pending-bytes buffer, and the read cursor as locals of that thread's own call stack -- never
+//  stored properties, so nothing else can reach them. `pause`/`resume`/`seek`/`stop` are called from
+//  whatever thread owns transport control (expected: the main actor) and only ever touch the
+//  `NSCondition`-guarded gate state declared below. `events` is the one exception: it is written
+//  once in `start()`, strictly before that call spins the thread, and never written again, so
+//  every later reader (any thread) sees it via the happens-before edge `Thread.start()` already
+//  establishes. Every stored property is therefore either an immutable `static let`, gate-guarded,
+//  the semaphore itself, or that write-once closure -- so this class is safe to mark `@unchecked
+//  Sendable`, which `Thread.init(block:)`'s `@Sendable` closure parameter requires of a capture.
+//  A single controller still owns one instance for one track's playback; `Sendable` here describes
+//  safe sharing across the two threads this type itself spins up, not an invitation to share wider.
 //
 
 import AuralDomain
@@ -35,8 +42,8 @@ enum VorbisDecodePipelineError: Error, Sendable {
 }
 
 /// Drives an `OggVorbisDecoder` from a `DecodeByteSource` to a `PCMSink` on a dedicated thread.
-/// See the file header for the ownership and thread-confinement contract.
-final class VorbisDecodePipeline {
+/// See the file header for the ownership, thread-confinement, and `@unchecked Sendable` rationale.
+final class VorbisDecodePipeline: @unchecked Sendable {
     /// Decode-to-renderer pipeline events. Delivered on the decode thread; a caller that touches
     /// UI/main-actor state from `events` must hop back itself.
     enum Event: Sendable {

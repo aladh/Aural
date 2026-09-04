@@ -9,9 +9,11 @@
 /// Where `VorbisDecodePipeline` delivers decoded interleaved stereo Float32 samples.
 ///
 /// Thread safety: every method may be called from the pipeline's dedicated decode thread, never
-/// from the main actor. A conformer must be safe to call from that one background thread; it does
-/// not need to be `Sendable` at the type level (`AudioRenderer` already synchronizes internally).
-protocol PCMSink: AnyObject {
+/// from the main actor. `Sendable` is required here because the pipeline hands a `PCMSink`
+/// straight into the `@Sendable` closure that seeds its dedicated `Thread` -- a conformer must
+/// synchronize its own state internally (`AudioRenderer` already does, under `bufferLock`) rather
+/// than rely on the compiler to catch cross-thread misuse.
+protocol PCMSink: AnyObject, Sendable {
     /// Writes interleaved stereo Float32 samples. May block the caller on backpressure -- see
     /// `AudioRenderer.writeAudioData`, which is what makes the decode loop self-pacing.
     func write(_ samples: UnsafePointer<Float>, count: Int)
