@@ -424,8 +424,8 @@ pub(crate) static GAPLESS_SETTING: AtomicBool = AtomicBool::new(true);
 // Initial volume (0-65535), default 50%
 pub(crate) static INITIAL_VOLUME_SETTING: AtomicU16 = AtomicU16::new(65535 / 2);
 // Swift resolves the user-facing macOS Computer Name and supplies the full Connect label.
-pub(crate) static CONNECT_DEVICE_NAME_SETTING: Lazy<Mutex<String>> =
-    Lazy::new(|| Mutex::new("Spotty".to_string()));
+pub(crate) static CONNECT_DEVICE_NAME_SETTING: Lazy<Mutex<Option<String>>> =
+    Lazy::new(|| Mutex::new(None));
 
 /// Current-track identity on a queue snapshot. Presentation labels are Swift-owned.
 #[derive(Clone, Debug, PartialEq, Eq)]

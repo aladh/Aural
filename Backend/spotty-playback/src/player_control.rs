@@ -593,7 +593,7 @@ pub extern "C" fn spotty_playback_set_device_name(device_name: *const c_char) {
         }
         *CONNECT_DEVICE_NAME_SETTING
             .lock()
-            .unwrap_or_else(|e| e.into_inner()) = device_name.to_string();
+            .unwrap_or_else(|e| e.into_inner()) = Some(device_name.to_string());
     })
 }
 

@@ -140,7 +140,10 @@ nonisolated enum PlaybackCore {
     }
 
     static func initialize() -> Result {
-        spotty_playback_init_player(nil)
+        ConnectDeviceIdentity.current.withCString {
+            spotty_playback_set_device_name($0)
+        }
+        return spotty_playback_init_player(nil)
     }
 
     static func play(uri: String, trackIndex: Int32 = -1) -> Result {
@@ -354,12 +357,6 @@ nonisolated enum PlaybackCore {
         guard let pointer = spotty_playback_get_queue_snapshot() else { return nil }
         defer { spotty_playback_free_queue_snapshot(pointer) }
         return queueState(from: UnsafePointer(pointer))
-    }
-
-    static func configureDeviceIdentity() {
-        ConnectDeviceIdentity.current.withCString {
-            spotty_playback_set_device_name($0)
-        }
     }
 
     static func configureHighQualityPlayback() {

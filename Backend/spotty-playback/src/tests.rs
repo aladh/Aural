@@ -7,6 +7,16 @@ fn connect_config_advertises_configured_device_name() {
     assert_eq!(create_connect_config(name).name, name);
 }
 
+#[test]
+fn connect_config_uses_device_name_written_through_ffi() {
+    let expected = "Studio Mac (Spotty)";
+    let name = CString::new(expected).expect("test device name is valid");
+    spotty_playback_set_device_name(name.as_ptr());
+
+    let configured = configured_connect_device_name().expect("device name was stored");
+    assert_eq!(create_connect_config(&configured).name, expected);
+}
+
 // Recovery must start from transport evidence, not from Connect activity. These cover
 // the distinction that P0.1 was about: librespot emits the same deactivation event for
 // an ordinary handoff and for an unexpected Spirc shutdown.
