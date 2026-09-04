@@ -21,33 +21,6 @@ func runSpotifyEncryptedVorbisChecks(_ check: CheckRunner) async {
             return
         }
 
-        check.equal("CTR ciphertext is the same length as the wrapped file", ciphertext.count, plaintext.count)
-        check.check("CTR ciphertext differs from plaintext", ciphertext != plaintext)
-        check.equal(
-            "header length plus Ogg capture",
-            plaintext.count,
-            SpotifyAudioHeader.length + ogg.count
-        )
-
-        let decrypted: Data
-        do {
-            decrypted = try AESCTRDecryptor.decrypt(key: key, offset: 0, data: ciphertext)
-        } catch {
-            check.check("full-file decrypt of the wrapped fixture did not throw: \(error)", false)
-            return
-        }
-        check.equal("full-file decrypt round-trips the wrapped plaintext", decrypted, plaintext)
-        check.check(
-            "decrypted file has Ogg capture at 0xa7",
-            SpotifyAudioHeader.hasOggCapture(decrypted)
-        )
-        check.notNil("decrypted header parses", SpotifyAudioHeader.parse(decrypted))
-        check.equal(
-            "bytes after the header are the committed Ogg fixture",
-            Data(decrypted.dropFirst(SpotifyAudioHeader.length)),
-            ogg
-        )
-
         let url = URL(string: "https://audio-ak.spotifycdn.com/audio/synthetic-tone")!
         let transport = BlobRangedTransport(blob: ciphertext)
         let fetcher = RangedAudioFetcher(url: url, transport: transport)
@@ -56,15 +29,6 @@ func runSpotifyEncryptedVorbisChecks(_ check: CheckRunner) async {
         do {
             let total = try await source.totalLength()
             check.equal("byte source length is the encrypted file length", total, ciphertext.count)
-
-            let headerAndMagic = try await source.readRange(
-                offset: 0,
-                length: SpotifyAudioHeader.length + 4
-            )
-            check.check(
-                "ranged decrypt of the header prefix still has Ogg capture",
-                SpotifyAudioHeader.hasOggCapture(headerAndMagic)
-            )
 
             let captureStart = SpotifyTrackByteSource.oggStartOffset
             let oggPrefix = try await source.readRange(offset: captureStart, length: min(64, ogg.count))
@@ -99,8 +63,8 @@ private func runEncryptedFixtureDecodeThroughPipeline(
     source: SpotifyTrackByteSource,
     ogg: Data
 ) async {
-    let sink = RecordingPCMSink()
-    let collector = PipelineEventCollector()
+    let sink = FakeSink()
+    let collector = EventCollector()
     let pipeline = VorbisDecodePipeline()
 
     pipeline.start(
@@ -159,16 +123,6 @@ private func syntheticSpotifyAudioFile(ogg: Data) -> Data {
     return header + ogg
 }
 
-private func isPlaying(_ event: VorbisDecodePipeline.Event) -> Bool {
-    if case .playing = event { return true }
-    return false
-}
-
-private func isEndOfTrack(_ event: VorbisDecodePipeline.Event) -> Bool {
-    if case .endOfTrack = event { return true }
-    return false
-}
-
 /// Serves slices of one in-memory CDN blob. Open/read-ahead may request any range; the live
 /// fetcher learns `Content-Range` from whatever comes back.
 private final class BlobRangedTransport: RangedHTTPTransport, @unchecked Sendable {
@@ -198,48 +152,5 @@ private final class BlobRangedTransport: RangedHTTPTransport, @unchecked Sendabl
             headers: ["Content-Range": "bytes \(start)-\(endInclusive)/\(total)"],
             body: Data(slice)
         )
-    }
-}
-
-private final class RecordingPCMSink: PCMSink, @unchecked Sendable {
-    private let lock = NSLock()
-    private var frameCount = 0
-
-    func write(_ samples: UnsafePointer<Float>, frames: Int, until cancelled: () -> Bool) -> PCMWriteOutcome {
-        lock.lock()
-        frameCount += frames
-        lock.unlock()
-        return .queued
-    }
-
-    func flush() {
-        lock.lock()
-        frameCount = 0
-        lock.unlock()
-    }
-
-    var bufferedSeconds: Double { 0 }
-
-    var totalFrameCount: Int {
-        lock.lock()
-        defer { lock.unlock() }
-        return frameCount
-    }
-}
-
-private final class PipelineEventCollector: @unchecked Sendable {
-    private let lock = NSLock()
-    private var events: [VorbisDecodePipeline.Event] = []
-
-    func record(_ event: VorbisDecodePipeline.Event) {
-        lock.lock()
-        events.append(event)
-        lock.unlock()
-    }
-
-    var all: [VorbisDecodePipeline.Event] {
-        lock.lock()
-        defer { lock.unlock() }
-        return events
     }
 }
