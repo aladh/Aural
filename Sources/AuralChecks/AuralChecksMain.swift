@@ -40,6 +40,7 @@ enum AuralChecksMain {
             RegisteredCheckSuite(name: "resume-load-plan") { runResumeLoadPlanChecks($0) },
             RegisteredCheckSuite(name: "spotify-audio-file") { runSpotifyAudioFileChecks($0) },
             RegisteredCheckSuite(name: "storage-resolve") { runStorageResolveChecks($0) },
+            RegisteredCheckSuite(name: "ogg-page") { runOggPageChecks($0) },
             RegisteredCheckSuite(name: "check-suite-selection") { runner in
                 runCheckSuiteSelectionChecks(runner, catalog: AuralChecksMain.suiteNames)
             },

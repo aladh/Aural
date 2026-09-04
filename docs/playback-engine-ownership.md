@@ -25,6 +25,7 @@ in the [enforcement inventory](architecture-enforcement.md).
 | `StorageResolveResponse` / `CDNURLExpiry` | Stage 1 building block (#208): storage-resolve protobuf decoding and librespot's CDN-URL expiry heuristics. Not yet wired into any resolve/fetch path |
 | `AESCTRDecryptor` | Stage 1 building block (#208): AES-128-CTR decryption with Spotify's fixed IV and seekable byte-offset counter arithmetic. Not yet wired into any decode path |
 | `RangedAudioFetcher` | Stage 1 building block (#208): ranged CDN download with a sparse downloaded-byte store, 429/403 handling, and read-ahead prefetch. Not yet wired into any playback path |
+| `OggVorbisDecoder` / `OggPageHeader` | Stage 1 of #201: a Swift wrapper over vendored stb_vorbis's pushdata API, plus a pure Ogg page scanner for later seeking. Not yet wired into playback — the audio-key/CDN/decrypt path and `AudioRenderer` still get PCM from `proxy_sink.rs` |
 
 ## Rust crate by module
 
@@ -41,6 +42,7 @@ in the [enforcement inventory](architecture-enforcement.md).
 | `player_control.rs` | Adapter | Spirc play/pause/seek/shuffle/repeat/transfer/queue-add, plus FFI getters for sticky resume URIs |
 | `player_event_pump.rs` | Adapter | Local `PlayerEvent` → position and protocol playing/paused bits when this device is active |
 | `spirc_command_error.rs` | Adapter | Map librespot errors onto FFI codes Swift already understands |
+| `audio_key.rs` | Adapter | Stage 1 (#208) AP audio-key request over FFI. No caller yet; the consumer must cache successes per file id and coalesce concurrent misses |
 
 ### Planned owner per #201 stage
 
@@ -79,6 +81,10 @@ It returns null when no cluster snapshot has been received yet; null means "not 
 which Swift must keep distinct from an empty queue.
 Caching that snapshot in Rust is adapter convenience, not a second app-facing store.
 
+`aural_playback_audio_key` fetches one file's AES decryption key over the existing AP session;
+it is Stage 1 scaffolding for #201/#208 and nothing calls it yet. Spotify throttles key requests,
+so the eventual consumer must cache successes per file id and coalesce concurrent misses.
+
 ## Remaining Spotty-owned logic in Rust
 
 - Moving the sticky resume-load globals (`CURRENT_CONTEXT_URI`, `CURRENT_TRACK_URI`,
@@ -96,6 +102,9 @@ Caching that snapshot in Rust is adapter convenience, not a second app-facing st
   loop-local.
 - Do not widen `aural_playback_resume`; resume targets are Swift-owned loads.
 - Do not forward raw cluster protobuf to Swift ahead of a stage that owns the models.
+- `Vendor/stb_vorbis` is the only vendored C in this repo (the `CVorbis` SwiftPM target). It is
+  pinned to an exact upstream commit in `Vendor/stb_vorbis/UPSTREAM.md`; refresh the pin there
+  rather than editing `stb_vorbis.c` in place.
 
 ## Measured baseline (2026-08-23)
 
