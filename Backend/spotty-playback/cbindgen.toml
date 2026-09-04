@@ -10,9 +10,8 @@ style = "both"
 sort_by = "Name"
 usize_is_size_t = true
 
+includes = ["spotty_playback_annotations.h"]
 after_includes = """
-/* Snapshot text fields may be NULL. */
-typedef const char *_Nullable SpottyNullableCString;
 #pragma clang assume_nonnull begin
 """
 
@@ -20,46 +19,37 @@ trailer = """
 #pragma clang assume_nonnull end
 """
 
-[export]
-exclude = [
-    "spotty_playback_add_to_queue",
-    "spotty_playback_authorize_streaming",
-    "spotty_playback_cleanup",
-    "spotty_playback_clear_streaming_credentials",
-    "spotty_playback_disconnect",
-    "spotty_playback_force_reconnect",
-    "spotty_playback_free_queue_snapshot",
-    "spotty_playback_free_string",
-    "spotty_playback_get_position_ms",
-    "spotty_playback_get_queue_snapshot",
-    "spotty_playback_get_resume_context_uri",
-    "spotty_playback_get_resume_position_ms",
-    "spotty_playback_get_resume_track_uri",
-    "spotty_playback_init_player",
-    "spotty_playback_load",
-    "spotty_playback_next",
-    "spotty_playback_pause",
-    "spotty_playback_play_tracks",
-    "spotty_playback_play_uri",
-    "spotty_playback_previous",
-    "spotty_playback_register_audio_control_callback",
-    "spotty_playback_register_audio_data_callback",
-    "spotty_playback_register_devices_callback",
-    "spotty_playback_register_playback_state_callback",
-    "spotty_playback_register_queue_callback",
-    "spotty_playback_resume",
-    "spotty_playback_seek",
-    "spotty_playback_set_bitrate",
-    "spotty_playback_set_device_name",
-    "spotty_playback_set_gapless",
-    "spotty_playback_set_initial_volume",
-    "spotty_playback_set_repeat_context",
-    "spotty_playback_set_repeat_track",
-    "spotty_playback_set_shuffle",
-    "spotty_playback_shutdown",
-    "spotty_playback_transfer_playback",
-    "spotty_playback_transfer_to_local",
-]
-
 [export.rename]
 ConnectionSnapshotCallback = "ConnectionStateCallback"
+QueueSnapshotCallback = "QueueCallback"
+PlaybackSnapshotCallback = "PlaybackStateCallback"
+DevicesSnapshotCallback = "DevicesCallback"
+
+[export]
+# Keep the semantic nullable-pointer aliases in the C shim. cbindgen 0.29.4
+# transfers a `cbindgen:no-export` annotation on a pointer alias to its pointee
+# struct, so explicit excludes avoid suppressing the generated repr(C) layouts;
+# the include list below keeps those pointee layouts in this header.
+exclude = [
+    "SpottyNullableCString",
+    "SpottyNullableMutCString",
+    "SpottyNullableCStringArray",
+    "SpottyNullableFloatSamples",
+    "SpottyNullableStringPairPointer",
+    "SpottyNullableRestrictionPointer",
+    "SpottyNullableQueueTrackPointer",
+    "SpottyNullableDevicePointer",
+    "SpottyNullableQueueSnapshot",
+    "SpottyPlaybackResult",
+    "SpottyPlaybackAudioControlEvent",
+]
+include = [
+    "SpottyStringPair",
+    "SpottyRestriction",
+    "SpottyProtocolQueueTrack",
+    "SpottyQueueSnapshot",
+    "SpottyConnectionSnapshot",
+    "SpottyProtocolDevice",
+    "SpottyDevicesSnapshot",
+    "SpottyPlaybackSnapshot",
+]

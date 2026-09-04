@@ -58,17 +58,26 @@ or initiate playback.
 After changing a generated ABI declaration, run `./Scripts/generate-c-header.sh` and commit the
 result with the Rust change. `./Scripts/generate-c-header.sh --check` verifies reproducibility without
 modifying the header. Install the version listed in the [setup guide](docs/development-setup.md#fresh-clone),
-or set `SPOTTY_CBINDGEN` to that executable's path. The wrapper checks the version and pilot export
-scope and never installs tools; CI installs the pin explicitly. Generation does not replace the
+or set `SPOTTY_CBINDGEN` to that executable's path. The wrapper checks the version and ABI export
+set and never installs tools; CI installs the pin explicitly. Generation does not replace the
 C/Rust layout, signature, ownership, or callback-lifetime checks.
 
-The pilot generates `spotty_playback_register_connection_state_callback` and its snapshot from
-`Backend/spotty-playback/cbindgen.toml`; the other 37 exports remain in the umbrella header. The config
-supplies one nullable C-string typedef because cbindgen's global nullable-pointer annotation also
-marks required callback pointers nullable. Rust fields use the matching pointer alias;
-the generated declarations retain the existing assumed-nonnull callback contract. Keep this semantic
-annotation separate from generated field lists and signatures, and verify Swift imports when expanding
-generation to another pointer shape.
+`Backend/spotty-playback/cbindgen.toml` generates all playback function declarations and snapshot
+layouts from Rust into `Sources/SpottyPlaybackCore/include/spotty_playback_generated.h`. Edit the Rust
+declarations and their ownership documentation, then regenerate; do not edit that artifact by hand.
+The public `spotty_playback.h` remains the umbrella include.
+
+The small handwritten `spotty_playback_annotations.h` owns Swift's open-enum and nullable-pointer
+annotations. Rust uses matching primitive and typed-pointer aliases without runtime conversions.
+The generated declarations retain the existing assumed-nonnull contract. Do not enable cbindgen's
+global nullable-pointer annotation: it also marks required callback pointers nullable. Keep semantic
+annotations separate from generated field lists and function signatures.
+
+`Scripts/check-c-header-imports.sh` type-checks the Swift import contract and expected failures for
+nullable pointers used without unwrapping. It never links or executes the fixtures. Extend these
+probes when introducing another pointer shape. The C compiler independently checks the unchanged
+`abi-signatures.txt` contract through typedef aliases; the Rust assignments and C layout checks
+remain separate proof.
 
 Swift formatting uses the selected Swift 6.3 toolchain's `swift-format`:
 
