@@ -116,3 +116,15 @@ warranted; the cursor-based renderer is the lower-risk design.
 
 The browse path behind these numbers included surfaces that have since been removed, so a rerun
 must record its own commit and surfaces. #201 requires re-measurement at each stage boundary.
+
+### Binary size
+
+Every CI run's "Release distribution compile" job publishes a size table (app binary,
+`libaural_playback.a`, binary segment totals, archive exported symbol count) to the job
+summary via `Scripts/report-size.sh`, and uploads the same data as the `size-report` artifact
+(`size-report.json`, 30-day retention).
+
+To compare two runs: `gh run view <run-id>` for the job summary, or
+`gh run download <run-id> -n size-report` to fetch the JSON for a scripted diff.
+
+Pre-Stage-1 reference: fill in run id at switchover.
