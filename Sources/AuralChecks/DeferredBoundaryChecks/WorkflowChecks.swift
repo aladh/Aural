@@ -5,16 +5,6 @@ import Foundation
 private final class RecordingLocalEngine: LocalPlaybackEngine, @unchecked Sendable {
     private let lock = NSLock()
     private var storedOperations: [LocalPlaybackOperation] = []
-    private let gate = NSCondition()
-    private var executesHeld = false
-
-    /// While held, `execute` blocks on the coordinator's thread so later operations queue.
-    func holdExecutes(_ held: Bool) {
-        gate.lock()
-        executesHeld = held
-        gate.broadcast()
-        gate.unlock()
-    }
 
     var operations: [LocalPlaybackOperation] {
         lock.lock()
@@ -233,6 +223,16 @@ private final class WorkflowEngine: LocalPlaybackEngine, @unchecked Sendable {
     private var continuation: AsyncStream<RustPlaybackEventEnvelope>.Continuation?
     private var storage: [String: Int] = [:]
     private var storedOperations: [LocalPlaybackOperation] = []
+    private let gate = NSCondition()
+    private var executesHeld = false
+
+    /// While held, `execute` blocks on the coordinator's thread so later operations queue.
+    func holdExecutes(_ held: Bool) {
+        gate.lock()
+        executesHeld = held
+        gate.broadcast()
+        gate.unlock()
+    }
 
     var operations: [LocalPlaybackOperation] {
         lock.lock(); defer { lock.unlock() }

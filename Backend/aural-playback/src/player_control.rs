@@ -211,7 +211,13 @@ pub extern "C" fn aural_playback_load(
             return ERROR_GENERAL;
         };
         let track_hint = unsafe { c_string_arg(track_hint) };
-        load_at_position(uri, track_hint, position_ms, from_context, rehydrating_generation)
+        load_at_position(
+            uri,
+            track_hint,
+            position_ms,
+            from_context,
+            rehydrating_generation,
+        )
     })
 }
 

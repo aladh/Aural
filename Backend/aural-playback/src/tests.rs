@@ -164,11 +164,17 @@ fn a_rehydration_load_runs_only_for_the_current_generation_with_an_open_window()
 
     SESSION_GENERATION.store(11, Ordering::SeqCst);
     let _ = open_rehydration_window(11);
-    assert!(!rehydration_load_is_current(11), "window is not open until published");
+    assert!(
+        !rehydration_load_is_current(11),
+        "window is not open until published"
+    );
 
     with_connection(|c| c.resume_pending = true);
     assert!(rehydration_load_is_current(11));
-    assert!(!rehydration_load_is_current(10), "a load for an older session is stale");
+    assert!(
+        !rehydration_load_is_current(10),
+        "a load for an older session is stale"
+    );
 
     SESSION_GENERATION.store(12, Ordering::SeqCst);
     assert!(
@@ -596,8 +602,7 @@ fn exported_c_function_signatures_are_stable() {
     let _: extern "C" fn(*const c_char) -> i32 = aural_playback_transfer_playback;
     let _: extern "C" fn(*const c_char) -> i32 = aural_playback_add_to_queue;
     let _: extern "C" fn(*const c_char, i32) -> i32 = aural_playback_play_uri;
-    let _: extern "C" fn(*const c_char, *const c_char, u32, bool, u64) -> i32 =
-        aural_playback_load;
+    let _: extern "C" fn(*const c_char, *const c_char, u32, bool, u64) -> i32 = aural_playback_load;
     let _: extern "C" fn(u32) -> i32 = aural_playback_seek;
     let _: extern "C" fn() -> u32 = aural_playback_get_position_ms;
     let _: extern "C" fn() -> u32 = aural_playback_get_resume_position_ms;
