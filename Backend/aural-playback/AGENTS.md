@@ -21,20 +21,15 @@ across the Swift/Rust boundary.
   would have reached. Nested runtime re-entry returns `ERROR_GENERAL` and is not supersession.
 - Map panics to the defined sentinel. Do not replace the process panic hook, hold Rust locks while
   invoking Swift, or assume the barrier makes invalid foreign pointers safe.
-- Rust emits bounded PCM and immutable protocol/state envelopes. Keep callbacks non-blocking. Queue
-  and device rows plus connection and playback observations remain protocol/runtime truth; Swift owns
-  queue, device-list, connection-phase, local-label, playback-transport, and metadata presentation.
-  Do not reintroduce `device_name`, `reconnect_attempt`, `connected_since_ms`, or
-  `session_connection_id` into `ConnectionState` or its envelope; reconnect backoff remains
-  loop-local. Connection, playback, device-list, and queue observations are typed C snapshots, not JSON. Do not synthesize
-  transport presentation in Rust; send protocol playing/paused flags.
-  Cluster playback snapshots send protocol `context_uri`; local `PlayerEvent` snapshots send an
-  empty context. Swift reads sticky `CURRENT_CONTEXT_URI` / `CURRENT_TRACK_URI` through
-  FFI getters and issues seek-capable `aural_playback_load` from Swift targets, for user
-  resume and for reconnect rehydration. A reconnect publishes `resume_pending` with
-  `spirc_ready` clear and holds readiness until a load lands, a load reports a dead Spirc, or
-  the window times out; do not rebuild a resume plan in Rust. Do not widen
-  `aural_playback_resume`. Do not send sticky context on local PlayerEvent snapshots.
+- Rust emits bounded PCM and immutable protocol/state envelopes. Keep callbacks non-blocking. What
+  crosses the boundary, and which side owns each field, is
+  [playback engine ownership](../../docs/playback-engine-ownership.md); do not enumerate it here.
+  Hard rules: connection, playback, device-list, and queue observations are typed C snapshots, not
+  JSON. Do not synthesize presentation in Rust; send protocol rows and playing/paused flags. Do not
+  widen `aural_playback_resume`. Do not send sticky context on local `PlayerEvent` snapshots. A
+  reconnect publishes `resume_pending` with `spirc_ready` clear and holds readiness until a Swift
+  load lands, a load reports a dead Spirc, or the window times out; do not rebuild a resume plan
+  in Rust.
 - Keep the checked-in C header, exported symbol set, signatures, ownership, allocation, and callback
   lifetime aligned.
 - Treat librespot changes as protocol migrations. Preserve the ownership classification instead of

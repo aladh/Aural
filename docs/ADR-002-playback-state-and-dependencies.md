@@ -2,6 +2,9 @@
 
 Status: accepted on 2026-08-23
 
+Like all of Spotty, this decision concerns an unofficial, independent, experimental client with no
+affiliation with Spotify AB.
+
 ## Context
 
 Playback, account, Connect ownership, queue provenance, metadata, and catalog work previously met
@@ -10,18 +13,13 @@ could still combine values from different account, engine, command, queue, or se
 
 ## Decision
 
-- `AuralDomain.PlaybackState` is the single playback presentation snapshot. Device-list
-  activity, display sort, and empty-type fallback are projected into that snapshot in Swift
-  (`ConnectDeviceProjection`) from unfiltered cluster members plus `active_device_id`.
-  Connection session phase and empty-device-id fallback are projected in Swift
-  (`ConnectionSnapshotProjection`). Engine playback transport, empty-URI identity, and
-  timestamp correction are projected in Swift (`PlaybackSnapshotProjection`). Protocol
-  `context_uri` is stored as `PlaybackState.playbackContextURI`, distinct from
-  `queue.contextURI`. Resume-load target order for user resume and reconnect rehydration is
-  Swift `ResumeLoadPlan` captured from sticky resume-load URIs, not presentation
-  `playbackContextURI`.
+- `AuralDomain.PlaybackState` is the single playback presentation snapshot. Everything the UI
+  shows about playback, connection, devices, and the upcoming queue is projected into it in Swift;
+  which projection owns which field is listed in
+  [playback engine ownership](playback-engine-ownership.md).
 - `PlaybackReducer` is the only mutation mechanism for that snapshot. External callbacks enter as
-  account/engine/source-stamped events; ordered sources also carry revisions.
+  account/engine/source-stamped events; ordered sources also carry revisions. An event is applied
+  only when the reducer accepts the stamped envelope; intake must not guess a newer generation.
 - `PlaybackStore` is a `@MainActor` compatibility and action surface. `PlaybackCoordinator`
   serializes playback effects and talks only to injected ports.
 - `AccountStore` owns restore, interactive authorization, revocation, logout, and account epochs.
@@ -30,17 +28,13 @@ could still combine values from different account, engine, command, queue, or se
   snapshot state, not a second imperative lifecycle counter. Every suspended account operation
   revalidates its generation and epoch before mutation.
 - `QueueService` owns source precedence, context identity, and the Connect mutation snapshot used
-  for `set_queue`. Upcoming presentation rows are projected in Swift from unfiltered Connect
-  protocol tracks (`QueueProtocolProjection`); the engine must not send a second presentation
-  copy. Metadata enrichment cannot reorder a queue, and stale or provisional results
+  for `set_queue`. Metadata enrichment cannot reorder a queue, and stale or provisional results
   cannot erase a newer authoritative snapshot. Same-context Web API `/me/player/queue` snapshots
-  may enrich labels only; complete Connect occurrence order remains authoritative and is not
-  replaced by Web entry order. A same-context Web snapshot must not copy its revision or
-  receivedAt onto that Connect ordering snapshot; those clocks stay distinct per source. Connect `set_queue` replacement reads that mutation snapshot
-  (`next`/`prev` protocol tracks, including Connect occurrence uids and the incoming metadata map,
-  `queue_revision`, restriction flags). QueueService updates it from Connect intake and from a
-  committed remote replacement, not from Web metadata enrichment. `PlaybackStore.queueMutation` is
-  a MainActor projection of that owner, not a second mutation source.
+  may enrich labels only; complete Connect occurrence order remains authoritative, and a Web
+  snapshot must not copy its revision or `receivedAt` onto that Connect snapshot. Connect queue
+  callback identity is a distinct generation+revision watermark that adopting an engine epoch does
+  not clear. `PlaybackStore.queueMutation` is a MainActor projection of that owner, not a second
+  mutation source.
 - Home/library, search, and selected-playlist work have separate stores, request scopes, and
   account-epoch snapshots. The metadata repository independently rejects cross-account writes.
   Playlist add/remove is a focused `PlaylistMutating` port injected beside read-only
@@ -57,35 +51,21 @@ could still combine values from different account, engine, command, queue, or se
   `RootView`. Transient mutation success/info/failure is not `PlaybackState` and is not a
   NotificationCenter or generic event bus.
 
-`AuralDomain`, `AuralCore`, `AuralChecks`, and `AuralBoundaryChecks` are separate SwiftPM products.
-The two check executables do not ship. A separate infrastructure target is not created solely for
-folder aesthetics: those adapters still share private Spotify transport models, while dependency
-direction is enforced by injected protocols and static checks.
+`AuralDomain` and `AuralCore` are separate SwiftPM products; check products do not ship. A
+separate infrastructure target is not created solely for folder aesthetics: those adapters still
+share private Spotify transport models, while dependency direction is enforced by injected
+protocols and static checks.
 
 ## Consequences
 
 Event ordering, optimistic command reconciliation, account replacement, queue precedence, and
 paused remote ownership can be replayed in `AuralDomain` without Spotify, Rust, Keychain, AppKit,
-or SwiftUI. Concrete app boundaries and injected coordinator/queue workflows run separately in
-`AuralBoundaryChecks`. The shipping executable contains neither check harness.
+or SwiftUI. Concrete app boundaries and injected coordinator/queue workflows run in separate
+boundary checks. The shipping executable contains no check harness.
 
-Ordered engine *playback*, *connection*, *device*, and *queue* callbacks are applied only when
-`PlaybackReducer.reduce` accepts the stamped envelope. Queue intake stamps
-`RustQueueState.sessionGeneration` from the payload (including `refreshQueueSnapshot` after decode),
-not the MainActor `engineGeneration` mirror. `PlaybackStore.engineGeneration` mirrors
-`state.engineEpoch` after that success; intake must not guess a newer generation. Connect *queue
-callback* identity remains a distinct generation+revision watermark; adopting an engine epoch in
-`reduce` does not clear it, because provenance-snapshot revisions on `.engineQueue` are a
-different namespace.
-
-Adding a new callback, queue provider, or account-scoped request now requires an explicit epoch,
+Adding a new callback, queue provider, or account-scoped request requires an explicit epoch,
 revision/provenance rule, effect owner, and cancellation rule. This is intentional friction at the
 boundaries where Spotty historically regressed.
 
-Command and other store-level asynchronous work keeps `PlaybackEffectRegistry` as the task owner.
-Reducer-driven generic effects and The Composable Architecture were evaluated and rejected in
-[ADR 003](ADR-003-playback-command-effects.md). Reducer acceptance normally gates follow-ups. A
-rejected transport finish may report success only when a same-lifetime authoritative snapshot
-already reconciled the pending expected transport, and a reconnect-required engine failure still
-rebuilds the connection in that case; stale, superseded, teardown, epoch-invalidated,
-and non-transport results stay inert.
+Store-level asynchronous work keeps `PlaybackEffectRegistry` as the task owner; command follow-up
+gating is decided in [ADR 003](ADR-003-playback-command-effects.md).
