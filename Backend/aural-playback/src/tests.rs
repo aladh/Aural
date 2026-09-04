@@ -118,36 +118,12 @@ fn remote_playback_is_left_alone() {
     .should_resume());
 }
 
-// The Stopped event cannot say why playback stopped, so a deactivation saves its own
-// resume point rather than relying on the live position surviving.
-
-#[test]
-fn a_deactivation_resume_point_outranks_the_live_position() {
-    // The live value is what Stopped reset it to on the way out.
-    assert_eq!(resume_position(93606, 0), 93606);
-}
-
-#[test]
-fn an_ordinary_resume_uses_the_live_position() {
-    // Nothing saved: a pause and play that never went through a deactivation.
-    assert_eq!(resume_position(0, 12087), 12087);
-}
-
-#[test]
-fn a_queue_that_ran_out_resumes_from_the_start() {
-    // `next` on the last track stops playback without deactivating, so nothing is
-    // saved and Stopped has zeroed the live position. Pressing play must not restart
-    // the track partway through.
-    assert_eq!(resume_position(0, 0), 0);
-}
-
 #[test]
 fn nothing_is_resumed_without_also_being_activated() {
-    // `resume_via_load` requires an already-activated device: Spirc discards `Load`
-    // while inactive, and the function no longer claims activity for itself. Its
-    // reconnect caller gets that from `activate_after_connect`, which is a separate
-    // argument to `init_player_async` — so pin the implication that keeps the two
-    // consistent rather than leaving it to whoever next edits the call.
+    // Rehydration loads require an already-activated device: Spirc discards `Load`
+    // while inactive. `build_player_async` activates from `activate_after_connect`, a
+    // separate argument from `resume_after_connect` — so pin the implication that keeps
+    // the two consistent rather than leaving it to whoever next edits the call.
     for was_playing in [false, true] {
         for was_active in [false, true] {
             let intent = RecoveryIntent {
@@ -166,53 +142,6 @@ fn a_paused_local_player_is_not_resumed() {
         was_active: true
     }
     .should_resume());
-}
-
-#[test]
-fn resume_load_plan_prefers_context_then_track_at_the_resume_position() {
-    let plan = ResumeLoadPlan::capture(
-        93606,
-        0,
-        Some("spotify:playlist:ctx".to_string()),
-        Some("spotify:track:one".to_string()),
-    );
-    assert_eq!(
-        plan.targets(),
-        vec![
-            ResumeLoadTarget::Context {
-                uri: "spotify:playlist:ctx".to_string(),
-                track_hint: Some("spotify:track:one".to_string()),
-                position_ms: 93606,
-            },
-            ResumeLoadTarget::Track {
-                uri: "spotify:track:one".to_string(),
-                position_ms: 93606,
-            },
-        ]
-    );
-}
-
-#[test]
-fn resume_load_plan_skips_empty_context_and_empty_track_fallback() {
-    let plan = ResumeLoadPlan::capture(0, 12087, Some(String::new()), Some(String::new()));
-    assert_eq!(plan.position_ms, 12087);
-    assert!(plan.context_uri.is_none());
-    assert!(
-        plan.targets().is_empty(),
-        "empty context and empty track must not produce a load target"
-    );
-}
-
-#[test]
-fn resume_load_plan_with_only_a_track_loads_that_track() {
-    let plan = ResumeLoadPlan::capture(0, 0, None, Some("spotify:track:solo".to_string()));
-    assert_eq!(
-        plan.targets(),
-        vec![ResumeLoadTarget::Track {
-            uri: "spotify:track:solo".to_string(),
-            position_ms: 0,
-        }]
-    );
 }
 
 #[test]
@@ -272,21 +201,61 @@ fn resume_identity_exports_read_session_globals() {
 }
 
 #[test]
-fn resume_load_plan_keeps_an_empty_track_as_a_context_hint_only() {
-    let plan = ResumeLoadPlan::capture(
-        10,
-        1,
-        Some("spotify:album:ctx".to_string()),
-        Some(String::new()),
+fn resume_identity_is_present_only_for_a_nonempty_context_or_track() {
+    let _guard = lock_global_state();
+    *CURRENT_CONTEXT_URI.lock().unwrap() = None;
+    *CURRENT_TRACK_URI.lock().unwrap() = None;
+    assert!(!has_resume_identity());
+
+    *CURRENT_CONTEXT_URI.lock().unwrap() = Some(String::new());
+    *CURRENT_TRACK_URI.lock().unwrap() = Some(String::new());
+    assert!(
+        !has_resume_identity(),
+        "empty strings are missing, matching the Swift plan's empty targets"
     );
+
+    *CURRENT_TRACK_URI.lock().unwrap() = Some("spotify:track:solo".into());
+    assert!(has_resume_identity());
+
+    *CURRENT_CONTEXT_URI.lock().unwrap() = Some("spotify:playlist:ctx".into());
+    *CURRENT_TRACK_URI.lock().unwrap() = None;
+    assert!(has_resume_identity());
+
+    *CURRENT_CONTEXT_URI.lock().unwrap() = None;
+}
+
+#[test]
+fn rehydration_window_reports_playing_reinit_or_timeout() {
+    let _guard = lock_global_state();
+
+    // Opening resets a stale reinit flag and captures the sequence to wait past.
+    REHYDRATION_NEEDS_REINIT.store(true, Ordering::SeqCst);
+    let seq = open_rehydration_window();
+    assert!(!REHYDRATION_NEEDS_REINIT.load(Ordering::SeqCst));
+    assert_eq!(seq, PLAYING_EVENT_SEQ.load(Ordering::SeqCst));
+
     assert_eq!(
-        plan.targets(),
-        vec![ResumeLoadTarget::Context {
-            uri: "spotify:album:ctx".to_string(),
-            track_hint: Some(String::new()),
-            position_ms: 10,
-        }]
+        RUNTIME.block_on(wait_for_rehydration(seq, Duration::ZERO)),
+        RehydrationOutcome::TimedOut
     );
+
+    REHYDRATION_NEEDS_REINIT.store(true, Ordering::SeqCst);
+    assert_eq!(
+        RUNTIME.block_on(wait_for_rehydration(seq, Duration::ZERO)),
+        RehydrationOutcome::NeedsReinit
+    );
+    REHYDRATION_NEEDS_REINIT.store(false, Ordering::SeqCst);
+
+    PLAYING_EVENT_SEQ.fetch_add(1, Ordering::SeqCst);
+    assert_eq!(
+        RUNTIME.block_on(wait_for_rehydration(seq, Duration::ZERO)),
+        RehydrationOutcome::Playing
+    );
+}
+
+#[test]
+fn connection_state_starts_without_an_open_rehydration_window() {
+    assert!(!ConnectionState::default().resume_pending);
 }
 
 #[test]
@@ -298,8 +267,14 @@ fn playing_event_waits_observe_sequence_advances_and_timeouts() {
     let current = PLAYING_EVENT_SEQ.load(Ordering::SeqCst);
     assert!(!playing_event_advanced(current));
     assert!(!wait_for_playing_event(current, Duration::ZERO));
-    assert!(RUNTIME.block_on(wait_for_playing_event_async(previous, Duration::ZERO)));
-    assert!(!RUNTIME.block_on(wait_for_playing_event_async(current, Duration::ZERO)));
+    assert_eq!(
+        RUNTIME.block_on(wait_for_rehydration(previous, Duration::ZERO)),
+        RehydrationOutcome::Playing
+    );
+    assert_eq!(
+        RUNTIME.block_on(wait_for_rehydration(current, Duration::ZERO)),
+        RehydrationOutcome::TimedOut
+    );
 }
 
 #[test]
@@ -627,6 +602,10 @@ fn connection_snapshot_repr_c_layout_matches_header() {
         std::mem::offset_of!(AuralConnectionSnapshot, is_active_device),
         18
     );
+    assert_eq!(
+        std::mem::offset_of!(AuralConnectionSnapshot, resume_pending),
+        19
+    );
     assert_eq!(std::mem::offset_of!(AuralConnectionSnapshot, device_id), 24);
     assert_eq!(
         std::mem::offset_of!(AuralConnectionSnapshot, last_error),
@@ -643,6 +622,7 @@ fn connection_snapshot_callback_copies_nullable_fields() {
         assert_eq!(snapshot.session_connected, 1);
         assert_eq!(snapshot.spirc_ready, 1);
         assert_eq!(snapshot.is_active_device, 1);
+        assert_eq!(snapshot.resume_pending, 1);
         assert!(!snapshot.device_id.is_null());
         assert_eq!(
             unsafe { CStr::from_ptr(snapshot.device_id) }
@@ -665,11 +645,13 @@ fn connection_snapshot_callback_copies_nullable_fields() {
             device_id: Some("fixture-mac".to_string()),
             last_error: None,
             is_active_device: true,
+            resume_pending: true,
         },
     );
 
     extern "C" fn capture_missing(snapshot: *const AuralConnectionSnapshot) {
         let snapshot = unsafe { &*snapshot };
+        assert_eq!(snapshot.resume_pending, 0);
         assert!(snapshot.device_id.is_null());
         assert!(!snapshot.last_error.is_null());
         assert_eq!(
@@ -692,6 +674,7 @@ fn connection_snapshot_callback_copies_nullable_fields() {
             device_id: None,
             last_error: Some("fixture-session-timeout".to_string()),
             is_active_device: false,
+            resume_pending: false,
         },
     );
 
@@ -713,6 +696,7 @@ fn connection_snapshot_callback_copies_nullable_fields() {
             device_id: Some(String::new()),
             last_error: Some("err\0or".to_string()),
             is_active_device: false,
+            resume_pending: false,
         },
     );
 }

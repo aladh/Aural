@@ -677,8 +677,16 @@ pub(crate) async fn init_player_async(
 /// activation and the rehydrating load still had to run — so Swift, which reacts to that
 /// publication by bootstrapping from the Web API, fetched and applied a server snapshot
 /// that Rust then immediately overwrote. That was visible as the playback position jumping
-/// forward to a stale value and back. Publishing once, when nothing further is pending,
-/// removes the window rather than racing it.
+/// forward to a stale value and back. Publishing readiness once, when nothing further is
+/// pending, removes the window rather than racing it.
+///
+/// The rehydrating load itself is Swift's. When local playback is being recovered, this
+/// function publishes one snapshot with `session_connected` set, `spirc_ready` still clear,
+/// and `resume_pending` set; Swift answers by issuing its `ResumeLoadPlan` targets through
+/// `aural_playback_load`, and this function holds readiness until a Playing event lands,
+/// a load reports a dead Spirc, or [`REHYDRATION_WINDOW`] elapses. Target order and
+/// capture stay in one place (Swift); the engine keeps only the session globals the plan
+/// reads through the existing getters.
 pub(crate) async fn build_player_async(
     access_token: Option<&str>,
     activate_after_connect: bool,
@@ -743,46 +751,64 @@ pub(crate) async fn build_player_async(
             // the session returns healthy and silent while Swift still shows the pre-outage
             // position, because IS_PLAYING and the position anchor survive the rebuild.
             //
+            // The load comes from Swift. Publishing `resume_pending` with `spirc_ready`
+            // still clear tells `PlaybackStore` to issue its `ResumeLoadPlan` targets now;
+            // `session_connected` must already be true for those loads to pass
+            // `require_session_connected`. Swift's session phase stays non-ready until the
+            // commit below, so its Web API bootstrap still waits for the rehydrated state.
+            //
             // This used to arm a five-second window waiting for a Paused event, on the
             // assumption that the track would load itself via transfer(None) — nothing in
             // this path ever called transfer(None), so the event never came.
             if resume_after_connect {
-                let seq_before = PLAYING_EVENT_SEQ.load(Ordering::SeqCst);
-                let result = resume_via_load(&spirc);
-                debug!(
-                    "[WAKE +{}ms] Rehydrate after reconnect: load result={}",
-                    elapsed_since_wake_ms(),
-                    result
-                );
+                if has_resume_identity() {
+                    let seq_before = open_rehydration_window();
+                    with_connection(|c| {
+                        c.session_connected = true;
+                        c.resume_pending = true;
+                        c.last_error = None;
+                    });
+                    notify_connection_state_change();
 
-                if result == ERROR_NEEDS_REINIT {
-                    // Closed command channel: this Spirc is already dead, so the session can
-                    // never play. Nothing to roll back — success is committed below, after
-                    // this point, so the connection state still reads disconnected.
-                    return Err("Rehydration failed: Spirc command channel closed".to_string());
-                }
+                    let outcome = wait_for_rehydration(seq_before, REHYDRATION_WINDOW).await;
+                    with_connection(|c| c.resume_pending = false);
+                    debug!(
+                        "[WAKE +{}ms] Rehydrate after reconnect: {:?}",
+                        elapsed_since_wake_ms(),
+                        outcome
+                    );
 
-                if result != 0 {
+                    match outcome {
+                        RehydrationOutcome::NeedsReinit => {
+                            // Closed command channel: this Spirc is already dead, so the
+                            // session can never play. Success is committed below, after
+                            // this point, so the connection state still reads not ready;
+                            // the reconnect loop treats the error as another attempt.
+                            with_connection(|c| c.session_connected = false);
+                            return Err(
+                                "Rehydration failed: Spirc command channel closed".to_string(),
+                            );
+                        }
+                        RehydrationOutcome::TimedOut => {
+                            // `Spirc::load` only queues a command, so an accepted load may
+                            // still land after this. Waiting kept Swift's Web API bootstrap
+                            // out of the gap; a timeout is not fatal.
+                            debug!(
+                                "[WAKE +{}ms] Rehydrate: nothing landed within {:?}, publishing anyway",
+                                elapsed_since_wake_ms(),
+                                REHYDRATION_WINDOW
+                            );
+                        }
+                        RehydrationOutcome::Playing => {}
+                    }
+                } else {
                     // Nothing to resume — no saved context or track URI. Reachable when an
                     // outage lands between a play command and the player events that record
                     // what is playing. The session itself is fine, so failing here would
                     // make every later attempt fail identically, forever.
                     debug!(
-                        "[WAKE +{}ms] Rehydrate: nothing to resume (result={})",
-                        elapsed_since_wake_ms(),
-                        result
-                    );
-                } else if !wait_for_playing_event_async(seq_before, REHYDRATE_PLAYING_TIMEOUT).await
-                {
-                    // Spirc::load only queues a command, so a zero result means "accepted",
-                    // not "playing". Waiting keeps Swift's Web API bootstrap out of the gap
-                    // between the two. A timeout is not fatal: the load may still land, and
-                    // tearing down an otherwise healthy session would be worse than
-                    // announcing it late.
-                    debug!(
-                        "[WAKE +{}ms] Rehydrate: no Playing event within {:?}, publishing anyway",
-                        elapsed_since_wake_ms(),
-                        REHYDRATE_PLAYING_TIMEOUT
+                        "[WAKE +{}ms] Rehydrate: nothing to resume",
+                        elapsed_since_wake_ms()
                     );
                 }
             }
@@ -837,6 +863,7 @@ pub(crate) async fn build_player_async(
             with_connection(|c| {
                 c.spirc_ready = true;
                 c.session_connected = true;
+                c.resume_pending = false;
                 c.last_error = None;
             });
             notify_connection_state_change();

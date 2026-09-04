@@ -41,11 +41,12 @@ boundaries. Read the relevant ADRs and the
   Queue observations arrive as `AuralQueueSnapshot`, not JSON.
 - `PlaybackSnapshotProjection` owns engine playback transport, empty-URI identity, timestamp
   correction, and omitted-repeat fallback. The engine sends protocol playing/paused flags and
-  cluster `context_uri`. User resume captures sticky resume-load URIs through FFI and
-  iterates `ResumeLoadPlan` through `aural_playback_load`. Do not feed `playbackContextURI`
-  into that plan: local PlayerEvent snapshots send an empty context on purpose.
-  Do not treat playback context as QueueService mutation identity. Do not widen
-  `aural_playback_resume`. Reconnect rehydration still loads from session globals.
+  cluster `context_uri`. User resume and reconnect rehydration capture sticky resume-load
+  URIs through FFI and iterate `ResumeLoadPlan` through `aural_playback_load`; a connection
+  snapshot with `resumePending` and `spircReady` clear triggers one rehydration sequence per
+  engine session generation. Do not feed `playbackContextURI` into that plan: local
+  PlayerEvent snapshots send an empty context on purpose. Do not treat playback context as
+  QueueService mutation identity. Do not widen `aural_playback_resume`.
 - Keep read-only catalog access separate from playlist mutation. Writes use `PlaylistMutating` and
   `PlaylistMutationController`; Pathfinder mutation DTOs do not enter views.
 - PCM goes directly from the engine adapter to `AudioRenderer`, never observable UI state. Keep

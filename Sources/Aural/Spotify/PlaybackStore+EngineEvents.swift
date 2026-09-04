@@ -345,6 +345,35 @@ extension PlaybackStore {
         )
         guard accepted else { return }
         accountStore.receiveEngineConnection(session)
+        rehydrateIfEngineIsWaiting(state)
+    }
+
+    /// Reconnect rehydration on Swift load targets.
+    ///
+    /// The engine publishes `resume_pending` once its rebuilt session is connected and
+    /// activated, and keeps `spirc_ready` clear until a load lands or its window times out,
+    /// so the session phase stays non-ready (no Web API bootstrap) while this runs. The plan
+    /// comes from the same sticky engine getters as user resume; nothing is mirrored here.
+    /// One sequence per engine session generation: the engine republishes the flag on every
+    /// snapshot inside its window.
+    private func rehydrateIfEngineIsWaiting(_ state: RustConnectionState) {
+        guard state.resumePending, !state.spircReady,
+            rehydratedSessionGeneration != state.sessionGeneration
+        else { return }
+        rehydratedSessionGeneration = state.sessionGeneration
+        let plan = resumeLoadPlan()
+        let lifetime = playbackLifetime
+        effects.replace(
+            .reconnectRehydration,
+            with: Task { [weak self] in
+                guard let self, self.playbackLifetime == lifetime else { return }
+                let result = await self.coordinator.performLocal(.rehydrate(plan))
+                if !result.isOK {
+                    AuralLog.playback.debug(
+                        "Reconnect rehydration did not land; result=\(result.rawValue, privacy: .public)"
+                    )
+                }
+            })
     }
 
 }

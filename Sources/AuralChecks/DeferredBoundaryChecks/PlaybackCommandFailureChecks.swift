@@ -2092,6 +2092,47 @@ func runPlaybackCommandFailureChecks(_ runner: CheckRunner) async {
         runner.equal("exhausted loads try every target", failedLoads, 2)
     }
 
+    runner.suite("Reconnect rehydration load sequence") {
+        let context = ResumeLoadPlan.Target.context(
+            uri: "spotify:playlist:ctx",
+            trackHint: "spotify:track:one",
+            positionMS: 10
+        )
+        let track = ResumeLoadPlan.Target.track(uri: "spotify:track:one", positionMS: 10)
+        let reconnect = PlaybackEngineResult(rawValue: -2)
+
+        var loaded: [ResumeLoadPlan.Target] = []
+        let landed = ReconnectRehydrationSequence.completing(targets: [context, track]) {
+            loaded.append($0)
+            return .ok
+        }
+        runner.equal("rehydration issues no play and stops at the first landed load", loaded, [context])
+        runner.equal("a landed load is the sequence result", landed, .ok)
+
+        loaded = []
+        let fellBack = ReconnectRehydrationSequence.completing(targets: [context, track]) {
+            loaded.append($0)
+            if case .track = $0 { return .ok }
+            return .error
+        }
+        runner.equal("a timed-out context load falls back to the track", loaded, [context, track])
+        runner.equal("the fallback result is reported", fellBack, .ok)
+
+        loaded = []
+        let dead = ReconnectRehydrationSequence.completing(targets: [context, track]) {
+            loaded.append($0)
+            return reconnect
+        }
+        runner.equal("a dead Spirc stops the sequence", loaded, [context])
+        runner.equal("a dead Spirc is reported as reconnect-required", dead, reconnect)
+
+        runner.equal(
+            "no targets is an ordinary failure",
+            ReconnectRehydrationSequence.completing(targets: []) { _ in .ok },
+            .error
+        )
+    }
+
     await runner.suite("User resume captures sticky identity not presentation") {
         let engine = ScriptedLocalEngine(
             result: .ok,

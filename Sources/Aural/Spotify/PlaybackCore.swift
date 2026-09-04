@@ -89,6 +89,7 @@ nonisolated enum PlaybackCore {
             sessionConnected: snapshot.session_connected != 0,
             spircReady: snapshot.spirc_ready != 0,
             isActiveDevice: snapshot.is_active_device != 0,
+            resumePending: snapshot.resume_pending != 0,
             lastError: optionalCString(snapshot.last_error),
             deviceID: optionalCString(snapshot.device_id)
         )

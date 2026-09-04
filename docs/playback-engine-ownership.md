@@ -19,7 +19,7 @@ in the [enforcement inventory](architecture-enforcement.md).
 | `ConnectDeviceProjection` | Device-list activity, display sort, empty-type fallback |
 | `ConnectionSnapshotProjection` | Connection session phase, empty-device-id fallback |
 | `PlaybackSnapshotProjection` | Engine playback transport, empty-URI identity, timestamp correction |
-| `ResumeLoadPlan` | User-resume load target order from sticky resume-load URIs. `PlaybackStore` captures those URIs; `RustPlaybackEngine` iterates targets through `aural_playback_load`. Reconnect rehydration still uses the engine plan |
+| `ResumeLoadPlan` | Resume-load target order from sticky resume-load URIs, for user resume and reconnect rehydration. `PlaybackStore` captures those URIs through the engine getters; `RustPlaybackEngine` iterates targets through `aural_playback_load`. The engine signals a reconnect window with `resume_pending` and holds readiness until Swift's loads land or the window times out |
 | Catalog, OAuth, shuffle policy, HTTP retry | Unchanged; never belonged in Rust |
 
 ## Rust crate by module
@@ -33,7 +33,7 @@ in the [enforcement inventory](architecture-enforcement.md).
 | `connect.rs` | Mixed | Dealer subscribe, hidden-member bootstrap PUT, and protobuf parse are protocol. Device-list and connection-snapshot presentation are Swift-owned. `cluster_offer_decision`, bootstrap-vs-push linearization, and `is_active_in_cluster` (this engine's Connect role) stay until cluster observations can cross the boundary without a second protobuf stack. |
 | `queue.rs` | Adapter after this slice | Forwards unfiltered `ProvidedTrack` rows, slim current-track identity, protocol playback flags, and protocol `context_uri` on cluster snapshots as a typed C queue snapshot. Local `PlayerEvent` playback snapshots send an empty context. Does **not** own delimiter hiding, upcoming presentation, or transport presentation. |
 | `state.rs` | Mixed | Librespot object slots (`SESSION`, `SPIRC`, `PLAYER`, `MIXER`). Snapshot stamps and connection aggregation live here. Queue, connection, playback, and device-list observations use typed C snapshots. |
-| `transport.rs` | Mixed | Reconnect `ResumeLoadPlan` / `resume_via_load`, playing-event waits, and seek-capable `load_at_position` stay here. User-resume capture and target iteration are Swift-owned. |
+| `transport.rs` | Adapter | Seek-capable `load_at_position`, one-target `LoadRequest` construction, playing-event waits, and the reconnect rehydration window (`has_resume_identity`, `wait_for_rehydration`). Target order and capture are Swift-owned for user resume and reconnect alike. |
 | `player_control.rs` | Adapter | Spirc play/pause/seek/shuffle/repeat/transfer/queue-add, plus FFI getters for sticky resume URIs |
 | `player_event_pump.rs` | Adapter | Local `PlayerEvent` → position and protocol playing/paused bits when this device is active |
 | `spirc_command_error.rs` | Adapter | Map librespot errors onto FFI codes Swift already understands |
@@ -62,8 +62,9 @@ adapter convenience, not a second app-facing store.
 
 ## Later slices (not this change)
 
-- Moving reconnect rehydration loads onto Swift targets without duplicating session globals
-  (reconnect must still rehydrate before announcing readiness)
+- Moving the sticky resume-load globals (`CURRENT_CONTEXT_URI`, `CURRENT_TRACK_URI`,
+  `RESUME_POSITION_MS`) to Swift, which would retire the three resume getters and the
+  engine's `has_resume_identity` check
 
 Do not move PCM, Spirc, session connect, or dealer cluster fetch into Swift in order to
 satisfy this inventory.

@@ -222,6 +222,19 @@ private final class WorkflowEngine: LocalPlaybackEngine, @unchecked Sendable {
     private let lock = NSLock()
     private var continuation: AsyncStream<RustPlaybackEventEnvelope>.Continuation?
     private var storage: [String: Int] = [:]
+    private var storedOperations: [LocalPlaybackOperation] = []
+
+    var operations: [LocalPlaybackOperation] {
+        lock.lock(); defer { lock.unlock() }
+        return storedOperations
+    }
+
+    var rehydrations: [ResumeLoadPlan] {
+        operations.compactMap { operation in
+            if case let .rehydrate(plan) = operation { return plan }
+            return nil
+        }
+    }
 
     func events() -> AsyncStream<RustPlaybackEventEnvelope> {
         AsyncStream { continuation in
@@ -255,8 +268,17 @@ private final class WorkflowEngine: LocalPlaybackEngine, @unchecked Sendable {
 
     func authorizeStreaming(with _: String) -> Int32 { record("authorize"); return 0 }
     func initialize() -> PlaybackEngineResult { record("initialize"); return .ok }
-    func execute(_: LocalPlaybackOperation) -> PlaybackEngineResult { record("execute"); return .ok }
+    func execute(_ operation: LocalPlaybackOperation) -> PlaybackEngineResult {
+        lock.lock()
+        storedOperations.append(operation)
+        storage["execute", default: 0] += 1
+        lock.unlock()
+        return .ok
+    }
     func positionMilliseconds() -> UInt32 { 0 }
+    func resumePositionMilliseconds() -> UInt32 { 10 }
+    func resumeContextURI() -> String? { "spotify:playlist:ctx" }
+    func resumeTrackURI() -> String? { "spotify:track:one" }
     func queueSnapshot() -> RustQueueState? { nil }
     func configureHighQualityPlayback() { record("configure") }
     func shutdown() -> PlaybackEngineResult { record("shutdown"); return .ok }
@@ -264,6 +286,29 @@ private final class WorkflowEngine: LocalPlaybackEngine, @unchecked Sendable {
     func clearStreamingCredentials() { record("clearCredentials") }
     func disconnect() -> PlaybackEngineResult { record("disconnect"); return .ok }
     func forceReconnect() -> Int32 { record("reconnect"); return 0 }
+}
+
+private func workflowConnectionEnvelope(
+    sequence: UInt64,
+    sessionGeneration: UInt64,
+    spircReady: Bool,
+    resumePending: Bool
+) -> RustPlaybackEventEnvelope {
+    RustPlaybackEventEnvelope(
+        sequence: sequence,
+        receivedAt: Date(),
+        event: .connection(
+            RustConnectionState(
+                revision: sequence,
+                sessionGeneration: sessionGeneration,
+                sessionConnected: true,
+                spircReady: spircReady,
+                isActiveDevice: true,
+                resumePending: resumePending,
+                lastError: nil,
+                deviceID: "local"
+            ))
+    )
 }
 
 private final class WorkflowAccount: AccountSession, @unchecked Sendable {
@@ -923,6 +968,80 @@ func runWorkflowChecks(_ runner: CheckRunner) async {
         runner.equal("termination cancels the engine-event subscription", engine.count("activeEventSubscriptions"), 0)
         runner.equal("termination cancels the grant-revocation subscription", account.activeSubscriptionCount, 0)
         runner.equal("termination cancels the lifecycle subscription", lifecycle.activeSubscriptionCount, 0)
+    }
+
+    await runner.suite("Reconnect rehydration issues Swift load targets once per engine session") {
+        let engine = WorkflowEngine()
+        let account = WorkflowAccount()
+        let lifecycle = WorkflowLifecycle()
+        let environment = PlaybackEnvironment(
+            remote: RecordingRemoteClient(),
+            local: engine,
+            webQueue: UnavailableWebQueue(),
+            account: account,
+            audioOutput: WorkflowAudio(),
+            preferences: WorkflowPreferences(),
+            lifecycle: lifecycle,
+            clock: WorkflowClock(),
+            catalog: WorkflowCatalog(),
+            playlistMutations: UnavailablePlaylistMutations(),
+            trackAttributes: WorkflowAttributes()
+        )
+        let player = PlaybackStore(
+            environment: environment,
+            feedback: TransientFeedbackPresenter(clock: environment.clock)
+        )
+        await player.restore()
+        runner.check(
+            "restore subscribes to engine events",
+            await waitUntil { engine.count("eventSubscriptions") != 0 }
+        )
+        let expectedPlan = ResumeLoadPlan(
+            positionMS: 10,
+            contextURI: "spotify:playlist:ctx",
+            trackURI: "spotify:track:one"
+        )
+
+        engine.emit(
+            workflowConnectionEnvelope(sequence: 1, sessionGeneration: 1, spircReady: false, resumePending: true))
+        runner.check(
+            "a pending, not-ready connection snapshot triggers one rehydration",
+            await waitUntil { engine.rehydrations.count == 1 }
+        )
+        runner.equal(
+            "rehydration captures the sticky engine identity, not presentation",
+            engine.rehydrations.first,
+            expectedPlan
+        )
+
+        await player.effects.settlement(of: .reconnectRehydration)?.wait()
+        engine.emit(
+            workflowConnectionEnvelope(sequence: 2, sessionGeneration: 1, spircReady: false, resumePending: true))
+        engine.emit(
+            workflowConnectionEnvelope(sequence: 3, sessionGeneration: 1, spircReady: true, resumePending: false))
+        runner.check(
+            "the ready snapshot is accepted after the window",
+            await waitUntil { player.state.sourceRevisions[.engineConnection] == 3 }
+        )
+        runner.equal("a republished window and the ready snapshot do not rehydrate again", engine.rehydrations.count, 1)
+
+        engine.emit(
+            workflowConnectionEnvelope(sequence: 4, sessionGeneration: 2, spircReady: false, resumePending: true))
+        runner.check(
+            "a later engine session rehydrates once more",
+            await waitUntil { engine.rehydrations.count == 2 }
+        )
+
+        await player.effects.settlement(of: .reconnectRehydration)?.wait()
+        engine.emit(
+            workflowConnectionEnvelope(sequence: 5, sessionGeneration: 3, spircReady: true, resumePending: true))
+        runner.check(
+            "the contradictory snapshot is accepted",
+            await waitUntil { player.state.sourceRevisions[.engineConnection] == 5 }
+        )
+        runner.equal("a ready snapshot never rehydrates even if the flag is set", engine.rehydrations.count, 2)
+
+        await player.shutdownForTermination()
     }
 
     await runner.suite("Termination wins during playback-store startup") {

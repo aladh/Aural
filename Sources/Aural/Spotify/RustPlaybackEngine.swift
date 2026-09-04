@@ -47,6 +47,10 @@ nonisolated final class RustPlaybackEngine: LocalPlaybackEngine, @unchecked Send
         case let .playTracks(tracks): engineResult(PlaybackCore.play(tracks: tracks))
         case .pause: engineResult(PlaybackCore.pause())
         case let .resume(plan): resume(plan)
+        case let .rehydrate(plan):
+            ReconnectRehydrationSequence.completing(targets: plan.targets()) {
+                engineResult(PlaybackCore.load($0))
+            }
         case .next: engineResult(PlaybackCore.next())
         case .previous: engineResult(PlaybackCore.previous())
         case let .seek(milliseconds): engineResult(PlaybackCore.seek(to: milliseconds))

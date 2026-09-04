@@ -27,11 +27,29 @@ nonisolated enum UserResumeLoadSequence {
     }
 }
 
+/// Reconnect rehydration: the engine has already activated and is holding readiness open,
+/// so there is no `play()` step. Try each target until one lands or reports a dead Spirc.
+/// No targets is an ordinary failure; the engine's window then times out on its own.
+nonisolated enum ReconnectRehydrationSequence {
+    static func completing(
+        targets: [ResumeLoadPlan.Target],
+        load: (ResumeLoadPlan.Target) -> PlaybackEngineResult
+    ) -> PlaybackEngineResult {
+        for target in targets {
+            let loaded = load(target)
+            if loaded.isOK || loaded.requiresReconnect { return loaded }
+        }
+        return .error
+    }
+}
+
 nonisolated enum LocalPlaybackOperation: Sendable {
     case playURI(String)
     case playTracks([String])
     case pause
     case resume(ResumeLoadPlan)
+    /// Engine reconnect published `resume_pending`; issue the plan's loads without `play()`.
+    case rehydrate(ResumeLoadPlan)
     case next
     case previous
     case seek(UInt32)

@@ -8,29 +8,24 @@ pub(crate) const PLAYING_EVENT_POLL_INTERVAL: Duration = Duration::from_millis(2
 pub(crate) const PLAY_COMMAND_PLAYING_TIMEOUT: Duration = Duration::from_millis(500);
 
 /// How long each seek-capable load waits for a Playing event before Swift may try the next
-/// target (reconnect rehydration uses [`REHYDRATE_PLAYING_TIMEOUT`] instead).
+/// target. Reconnect rehydration issues the same loads from Swift inside
+/// [`REHYDRATION_WINDOW`].
 pub(crate) const RESUME_LOAD_PLAYING_TIMEOUT: Duration = Duration::from_secs(2);
 
-/// How long rehydration waits for the Player to actually start before giving up on the
-/// wait (not on the session). Observed load-to-playing is around a second.
-pub(crate) const REHYDRATE_PLAYING_TIMEOUT: Duration = Duration::from_secs(3);
+/// How long a reconnect keeps readiness unpublished while Swift issues its resume-load
+/// targets. Two targets at [`RESUME_LOAD_PLAYING_TIMEOUT`] each plus dispatch; a timeout
+/// gives up on the wait, not on the session. Observed load-to-playing is around a second.
+pub(crate) const REHYDRATION_WINDOW: Duration = Duration::from_secs(5);
 
-/// Context and track URIs captured for a resume load, with the seek position they share.
-///
-/// Target order is the Swift `ResumeLoadPlan` policy. Reconnect rehydration still
-/// builds a plan from session globals here. User resume iterates Swift targets through
-/// [`load_at_position`]. Empty strings are missing: that is how the session globals
-/// read after cleanup, not a URI Spirc can load.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct ResumeLoadPlan {
-    pub(crate) position_ms: u32,
-    pub(crate) context_uri: Option<String>,
-    pub(crate) track_uri: Option<String>,
-}
+/// Set by [`load_at_position`] when a load finds the Spirc command channel closed, so the
+/// reconnect that opened the rehydration window can fail the build instead of announcing a
+/// session that can never play. Reset when a window opens.
+pub(crate) static REHYDRATION_NEEDS_REINIT: AtomicBool = AtomicBool::new(false);
 
-/// One ordered resume-load fallback. Context is tried first, with an optional current-track
-/// hint; a single-track load is last. A queued success stops the sequence — the next target
-/// is only for a non-terminal failure.
+/// One seek-capable load target. Target *order* is the Swift `ResumeLoadPlan` policy for
+/// user resume and reconnect rehydration alike; this crate only turns one target into a
+/// `LoadRequest`. Context carries an optional current-track hint; a single-track load has
+/// none.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum ResumeLoadTarget {
     Context {
@@ -44,62 +39,10 @@ pub(crate) enum ResumeLoadTarget {
     },
 }
 
-impl ResumeLoadPlan {
-    pub(crate) fn capture(
-        saved_at_deactivation: u32,
-        live: u32,
-        context_uri: Option<String>,
-        track_uri: Option<String>,
-    ) -> Self {
-        Self {
-            position_ms: resume_position(saved_at_deactivation, live),
-            context_uri: nonempty_uri(context_uri),
-            // Keep Some("") as a context track hint; only the single-track fallback
-            // treats empty as missing, matching the previous inline load sequence.
-            track_uri,
-        }
-    }
-
-    pub(crate) fn from_saved_playback() -> Self {
-        let context_uri = CURRENT_CONTEXT_URI
-            .lock()
-            .unwrap_or_else(|e| e.into_inner())
-            .clone();
-        let track_uri = CURRENT_TRACK_URI
-            .lock()
-            .unwrap_or_else(|e| e.into_inner())
-            .clone();
-        Self::capture(
-            RESUME_POSITION_MS.load(Ordering::SeqCst),
-            POSITION_MS.load(Ordering::SeqCst),
-            context_uri,
-            track_uri,
-        )
-    }
-
-    pub(crate) fn targets(&self) -> Vec<ResumeLoadTarget> {
-        let mut targets = Vec::new();
-        if let Some(context_uri) = self.context_uri.clone() {
-            targets.push(ResumeLoadTarget::Context {
-                uri: context_uri,
-                track_hint: self.track_uri.clone(),
-                position_ms: self.position_ms,
-            });
-        }
-        if let Some(track_uri) = nonempty_uri(self.track_uri.clone()) {
-            targets.push(ResumeLoadTarget::Track {
-                uri: track_uri,
-                position_ms: self.position_ms,
-            });
-        }
-        targets
-    }
-}
-
 impl ResumeLoadTarget {
-    /// Logs this fallback and builds the Spirc load. The loop in [`resume_via_load`] only
-    /// issues the request; start-playing, seek, track-hint, and the diagnostic wording live
-    /// here so they cannot drift from the ordered targets.
+    /// Logs this fallback and builds the Spirc load. [`load_at_position`] only issues the
+    /// request; start-playing, seek, track-hint, and the diagnostic wording live here so they
+    /// cannot drift between targets.
     fn into_load(self) -> (LoadRequest, &'static str) {
         match self {
             Self::Context {
@@ -150,6 +93,64 @@ fn nonempty_uri(uri: Option<String>) -> Option<String> {
     uri.filter(|uri| !uri.is_empty())
 }
 
+/// Whether the sticky session globals hold anything a resume load could reload.
+///
+/// This is the only resume-load fact the reconnect path reads for itself: with neither a
+/// context nor a track URI, Swift's `ResumeLoadPlan` has no targets and opening a
+/// rehydration window would only delay readiness. Empty strings are missing, exactly as
+/// Swift's plan treats them. Target order stays Swift-owned.
+pub(crate) fn has_resume_identity() -> bool {
+    let context = CURRENT_CONTEXT_URI
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .clone();
+    let track = CURRENT_TRACK_URI
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .clone();
+    nonempty_uri(context).is_some() || nonempty_uri(track).is_some()
+}
+
+/// How a rehydration window closed.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum RehydrationOutcome {
+    /// The Player reported playback: a Swift load landed.
+    Playing,
+    /// A Swift load found the Spirc command channel closed; the build must fail.
+    NeedsReinit,
+    /// Nothing landed in time. Not fatal: a load may still arrive, and tearing down an
+    /// otherwise healthy session would be worse than announcing it late.
+    TimedOut,
+}
+
+/// Opens a rehydration window: clears the reinit flag and returns the playing-event
+/// sequence to wait past. Call before publishing `resume_pending` to Swift.
+pub(crate) fn open_rehydration_window() -> u64 {
+    REHYDRATION_NEEDS_REINIT.store(false, Ordering::SeqCst);
+    PLAYING_EVENT_SEQ.load(Ordering::SeqCst)
+}
+
+/// Waits inside the runtime for a Swift rehydration load to land, fail terminally, or time
+/// out, without parking a tokio worker.
+pub(crate) async fn wait_for_rehydration(
+    previous_seq: u64,
+    timeout: Duration,
+) -> RehydrationOutcome {
+    let deadline = tokio::time::Instant::now() + timeout;
+    loop {
+        if playing_event_advanced(previous_seq) {
+            return RehydrationOutcome::Playing;
+        }
+        if REHYDRATION_NEEDS_REINIT.load(Ordering::SeqCst) {
+            return RehydrationOutcome::NeedsReinit;
+        }
+        if tokio::time::Instant::now() >= deadline {
+            return RehydrationOutcome::TimedOut;
+        }
+        tokio::time::sleep(PLAYING_EVENT_POLL_INTERVAL).await;
+    }
+}
+
 /// Helper to ensure the device is active before loading content.
 /// If not active, activates via Spirc directly (no spclient HTTP needed).
 /// Returns Ok(()) if ready to load, Err(i32) with error code if activation failed.
@@ -192,22 +193,6 @@ pub(crate) fn wait_for_playing_event(previous_seq: u64, timeout: Duration) -> bo
     }
 }
 
-/// Waits for the Player to report playback, without parking a runtime worker.
-///
-/// Runs inside `init_player_async`, where the thread sleep above would block a tokio worker.
-pub(crate) async fn wait_for_playing_event_async(previous_seq: u64, timeout: Duration) -> bool {
-    let deadline = tokio::time::Instant::now() + timeout;
-    loop {
-        if playing_event_advanced(previous_seq) {
-            return true;
-        }
-        if tokio::time::Instant::now() >= deadline {
-            return false;
-        }
-        tokio::time::sleep(PLAYING_EVENT_POLL_INTERVAL).await;
-    }
-}
-
 /// Queues one `LoadRequest`. `None` means try the next fallback; a closed channel is terminal.
 pub(crate) fn issue_load_target(spirc: &Spirc, target: ResumeLoadTarget) -> Option<i32> {
     let (load_request, what) = target.into_load();
@@ -220,37 +205,16 @@ pub(crate) fn issue_load_target(spirc: &Spirc, target: ResumeLoadTarget) -> Opti
     }
 }
 
-/// Reloads what was playing, at the position it stopped.
+/// One seek-capable load for Swift `ResumeLoadPlan` targets, for user resume and for
+/// reconnect rehydration alike. Each target is given the resume-load playing timeout; a
+/// timeout lets Swift try the next fallback.
 ///
-/// **The caller must have activated the device.** `Spirc::load` only hands the command to a
-/// channel, so `Ok` means "queued", not "accepted" — and `SpircTask` drops `Load` while its
-/// connect state is inactive. This used to call `set_active_device(true)` on that `Ok`,
-/// which turned a discarded load into an apparent takeover: Swift then believed Aural was
-/// the active device and routed every later transport command to a local player that was
-/// ignoring all of them. Activity is recorded where it is actually established — by
-/// `ensure_active_for_playback` and by `init_player_async` — never inferred from a queued
-/// command. The remaining caller is rehydration in `init_player_async`, which runs only when
-/// `should_resume()` held (so `was_active` and `spirc.activate()` already ran). User resume
-/// load fallbacks are Swift `ResumeLoadPlan` targets via [`load_at_position`].
-pub(crate) fn resume_via_load(spirc: &Arc<Spirc>) -> i32 {
-    // Read rather than taken. `Spirc::load` only queues a command, so reaching this point
-    // does not mean playback resumed — the load can fail on a closed channel, or be accepted
-    // and never produce audio. Clearing here would throw away the only pre-deactivation
-    // position and leave the retry restarting the track from zero. The `Playing` event
-    // clears it instead, which is the one signal that the resume actually landed.
-    let plan = ResumeLoadPlan::from_saved_playback();
-
-    for target in plan.targets() {
-        if let Some(result) = issue_load_target(spirc, target) {
-            return result;
-        }
-    }
-
-    ERROR_GENERAL
-}
-
-/// One seek-capable load for Swift `ResumeLoadPlan` targets. Each target is given the
-/// resume-load playing timeout; a timeout lets Swift try the next fallback.
+/// `Spirc::load` only hands the command to a channel, so `Ok` means "queued", not
+/// "accepted", and `SpircTask` drops `Load` while its connect state is inactive. Activity is
+/// therefore established by `ensure_active_for_playback` here (or by `build_player_async`
+/// before it publishes `resume_pending`), never inferred from a queued command. This used to
+/// be inferred, which turned a discarded load into an apparent takeover: Swift believed
+/// Aural was the active device and routed every later command to a player ignoring them.
 pub(crate) fn load_at_position(
     uri: String,
     track_hint: Option<String>,
@@ -287,6 +251,12 @@ pub(crate) fn load_at_position(
                 ERROR_GENERAL
             }
         }
+        Some(ERROR_NEEDS_REINIT) => {
+            // Reported to the caller as usual, and also to a reconnect that may be holding
+            // readiness open for this very load: its Spirc is already dead.
+            REHYDRATION_NEEDS_REINIT.store(true, Ordering::SeqCst);
+            ERROR_NEEDS_REINIT
+        }
         Some(code) => code,
         None => ERROR_GENERAL,
     }
@@ -319,7 +289,8 @@ pub(crate) fn pause_playback() -> i32 {
 }
 
 /// Resumes playback: activate, `play()`, then return so Swift can issue seek-capable
-/// load fallbacks. Reconnect rehydration still calls [`resume_via_load`].
+/// load fallbacks. Reconnect rehydration uses the same Swift targets through
+/// [`load_at_position`] while `build_player_async` holds readiness open.
 pub(crate) fn resume_playback() -> i32 {
     debug!("aural_playback_resume called");
     if let Err(e) = require_session_connected() {

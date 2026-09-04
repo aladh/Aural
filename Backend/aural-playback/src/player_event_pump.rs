@@ -220,7 +220,7 @@ fn apply_player_event(event: PlayerEvent, event_listener_generation: u64) {
             debug!("Loading event: {} at {}ms", track_uri_str, position_ms);
 
             // Both, together. The position and the track URI are read as a
-            // pair — `resume_via_load` seeks `POSITION_MS` within
+            // pair — a resume load seeks `POSITION_MS` within
             // `CURRENT_TRACK_URI` — so leaving the position behind here
             // meant that for the length of a load they described different
             // tracks. A natural transition hides it, because `EndOfTrack`
