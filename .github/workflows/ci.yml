@@ -169,6 +169,16 @@ jobs:
       - name: Compile release Aural with AURAL_DISTRIBUTION
         run: ./Scripts/compile-release-aural.sh
 
+      - name: Report release build size
+        run: ./Scripts/report-size.sh --out-dir "$RUNNER_TEMP"
+
+      - name: Upload size report
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: size-report
+          path: ${{ runner.temp }}/size-report.json
+          retention-days: 30
+
   gate:
     name: Debug quality gate
     if: always()
