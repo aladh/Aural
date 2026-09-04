@@ -25,7 +25,7 @@ struct TransportRetryTests {
             let dateSleep = RecordingSleeper()
             let now = Date(timeIntervalSince1970: 1_000_000)
             let dateTransport = ScriptedRetryTransport(steps: [
-                .http(status: 429, headers: ["Retry-After": "Mon, 12 Jan 1970 13:47:10 GMT"]),
+                .http(status: 429, headers: ["Retry-After": "Mon, 12 Jan 1970 13:46:52 GMT"]),
                 .http(status: 200, body: profileBody),
             ])
             let dateProfile = try? await partnerAPI(
@@ -33,7 +33,7 @@ struct TransportRetryTests {
                 retryTiming: timing(now: now, sleeper: dateSleep)
             ).profile()
             #expect((dateProfile?.name) == ("Listener"), "Retry-After HTTP-date succeeds after one retry")
-            #expect((dateSleep.delays) == ([30]), "Retry-After HTTP-date delay is the delta until that instant")
+            #expect((dateSleep.delays) == ([12]), "Retry-After HTTP-date delay is the delta until that instant")
 
             let malformedSleep = RecordingSleeper()
             let malformedTransport = ScriptedRetryTransport(steps: [

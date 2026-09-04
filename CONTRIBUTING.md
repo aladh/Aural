@@ -77,8 +77,8 @@ input matrices where the expected result is independent for each case.
 Use standard SwiftPM filtering for focused iteration:
 
 ```bash
-swift test --disable-sandbox --filter SpottyDomainTests.testProtobuf
-swift test --disable-sandbox --no-parallel --filter SpottyBoundaryTests.testAuthFlow
+swift test --disable-sandbox --filter ProtobufTests/testProtobuf
+swift test --disable-sandbox --no-parallel --filter AuthFlowTests/testAuthFlow
 ```
 
 `swift test list` shows the discovered test names. No-argument execution runs all tests, and

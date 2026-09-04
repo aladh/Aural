@@ -746,7 +746,7 @@ struct WorkflowTests {
                 "a completed lookup publishes an incremental update")
 
             var completed: Set<String> = Set(initiallyRequested.prefix(1))
-            while completed.count < 10 {
+            while completed.count < entries.count {
                 for uri in await remote.requestedURIs where completed.insert(uri).inserted {
                     await remote.complete(uri)
                 }
