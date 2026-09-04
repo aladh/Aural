@@ -44,7 +44,7 @@ nonisolated struct KeymasterKeychainStore: KeymasterTokenStoring {
 
     func load() -> KeymasterTokens? {
         clearRetiredPlaintextGrant()
-        KeychainManager.loadKeymasterTokens()
+        return KeychainManager.loadKeymasterTokens()
     }
 
     func save(_ tokens: KeymasterTokens) throws {
