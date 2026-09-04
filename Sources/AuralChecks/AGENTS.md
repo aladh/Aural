@@ -23,6 +23,6 @@ AuralCore codecs, adapters, stores, and injected workflows.
   assertions by awaiting `PlaybackEffectRegistry.settlement(of:)` rather than a fixed sleep.
 
 Run the focused check product while iterating, then `./Scripts/check.sh` from the repository root.
-Suite selection flags (`--list`, `--help`, names after `--`) are documented in
+Suite selection (`--list` and suite names after `--`) is documented in
 [agent operations](../../CONTRIBUTING.md).
 Rust/FFI contract changes also require Rust coverage and `./Scripts/check-clean.sh`.
