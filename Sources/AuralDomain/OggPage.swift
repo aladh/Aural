@@ -91,6 +91,22 @@ public struct OggPageHeader: Equatable, Sendable {
         return data.distance(from: data.startIndex, to: firstByteRange.lowerBound)
     }
 
+    /// Finds the next page whose header actually parses at or after `offset`: scans for `"OggS"`
+    /// via `nextCaptureOffset`, tries `parse(_:at:)` there, and on a false-positive match (the
+    /// bytes happened to occur inside packet payload data, not a real page boundary) resumes the
+    /// capture search one byte later instead of returning garbage. Returns nil once no further
+    /// capture pattern remains.
+    public static func nextValidPage(in data: Data, from offset: Int) -> (offset: Int, header: OggPageHeader)? {
+        var searchFrom = offset
+        while let captureOffset = nextCaptureOffset(in: data, from: searchFrom) {
+            if let header = parse(data, at: captureOffset) {
+                return (captureOffset, header)
+            }
+            searchFrom = captureOffset + 1
+        }
+        return nil
+    }
+
     private static func littleEndianUInt64(_ data: Data, at index: Data.Index) -> UInt64 {
         var result: UInt64 = 0
         for offset in 0..<8 {

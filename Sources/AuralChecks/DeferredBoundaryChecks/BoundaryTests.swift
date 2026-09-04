@@ -62,7 +62,7 @@ enum BoundaryChecksMain {
             RegisteredCheckSuite(name: "visual-contrast") { runVisualContrastChecks($0) },
             RegisteredCheckSuite(name: "wait-until") { await runWaitUntilChecks($0) },
             RegisteredCheckSuite(name: "ogg-vorbis-decoder") { runOggVorbisDecoderChecks($0) },
-            RegisteredCheckSuite(name: "vorbis-decode-pipeline") { runVorbisDecodePipelineChecks($0) },
+            RegisteredCheckSuite(name: "vorbis-decode-pipeline") { await runVorbisDecodePipelineChecks($0) },
             RegisteredCheckSuite(name: "check-suite-selection") { runner in
                 runCheckSuiteSelectionChecks(runner, catalog: BoundaryChecksMain.suiteNames)
             },
