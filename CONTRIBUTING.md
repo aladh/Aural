@@ -231,6 +231,13 @@ The PR must state:
 - all launch/live-account activity, including none;
 - known remaining risk and deliberately unverified behavior.
 
+`.gitattributes` marks the append-only check registries and the ownership table
+(`Sources/AuralChecks/AuralChecksMain.swift`, `Sources/AuralChecks/DeferredBoundaryChecks/BoundaryTests.swift`,
+`docs/playback-engine-ownership.md`) as `merge=union` so parallel PRs adding entries to
+them don't conflict. A merge touching these files should still be eyeballed by hand,
+since union merge can't distinguish an intentional removal or reorder from a line the
+other side simply didn't have.
+
 Keep the diff cohesive. Update public or canonical documents when requirements, behavior, storage,
 permissions, architecture, setup, security, attribution, or release mechanics change. Inspect the
 final staged diff for generated/private files.

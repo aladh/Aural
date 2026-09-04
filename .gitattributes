@@ -1,0 +1,12 @@
+# These files are append-only lists (check-suite registrations, ownership table
+# rows) where a merge of two independent branches almost always wants both
+# sides' additions rather than a conflict. `merge=union` keeps every line
+# added by either side instead of forcing manual resolution.
+#
+# Caveat: union merge cannot tell an intentional removal or reorder from a
+# line that "disappeared" because the other side didn't have it. If your
+# change removes or reorders entries in one of these files, review the merge
+# result by hand — union merge will silently keep a line you meant to delete.
+Sources/AuralChecks/AuralChecksMain.swift merge=union
+Sources/AuralChecks/DeferredBoundaryChecks/BoundaryTests.swift merge=union
+docs/playback-engine-ownership.md merge=union
