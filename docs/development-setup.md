@@ -76,12 +76,6 @@ macOS `security` and `codesign`. Grant the script as a unit instead of approving
 commands. Signing with an Apple Development identity can require the identity's private-key access
 once; it must not require Spotty to reauthorize its stored Spotify credential after every rebuild.
 
-The first launch after the complete Spotty identity rename migrates the prior installation's
-Keychain grant, defaults, device identifier, playback preferences, and librespot
-credential cache. macOS may ask once for permission to read the prior Keychain item. Enter the
-login-keychain password and choose **Always Allow**. Later builds signed by the same Apple team must
-reuse the new authorization without prompting.
-
 If the current item's authorization cannot be repaired, delete only that item as a fallback:
 
 ```bash
@@ -95,8 +89,7 @@ repeat it as a workaround for later builds; a later prompt means the app is not 
 team identity and should be diagnosed with `codesign -dvvv Spotty.app`.
 
 On first launch, choose Connect and complete Spotify authorization in the browser. The grant is
-stored in the macOS Keychain; leftover plaintext from older development builds is migrated once
-and then deleted. Authentication state is machine-local and intentionally not stored in Git.
+stored in the macOS Keychain. Authentication state is machine-local and intentionally not stored in Git.
 Follow the
 [product and acceptance contract](product-and-acceptance-contract.md) before exercising a live
 Spotify account; playback is opt-in during acceptance testing.

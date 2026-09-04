@@ -197,7 +197,7 @@ nonisolated struct PathfinderLibraryMembershipResponse: Decodable, Sendable {
 ///
 /// The last row is what `/me/playlists` returned — a flat list including playlists nested in
 /// folders, with no folder ever appearing — so the app's existing flat list is a variable pair
-/// rather than a feature away. Leaving `flatten` false is what made this migration show four
+/// rather than a feature away. Leaving `flatten` false showed four
 /// broken folder rows *and* hide the 24 playlists inside them.
 nonisolated struct PathfinderLibraryVariables: Encodable, Sendable {
     var filters: [String]

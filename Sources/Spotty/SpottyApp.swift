@@ -111,7 +111,6 @@ struct SpottyApp: App {
     @State private var feedback: TransientFeedbackPresenter
 
     init() {
-        PreviousInstallationIdentity.migrateDefaults()
         let environment = PlaybackEnvironment.live
         let feedback = TransientFeedbackPresenter(clock: environment.clock)
         _feedback = State(initialValue: feedback)
