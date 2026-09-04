@@ -37,6 +37,7 @@ in the [enforcement inventory](architecture-enforcement.md).
 | `player_control.rs` | Adapter | Spirc play/pause/seek/shuffle/repeat/transfer/queue-add, plus FFI getters for sticky resume URIs |
 | `player_event_pump.rs` | Adapter | Local `PlayerEvent` → position and protocol playing/paused bits when this device is active |
 | `spirc_command_error.rs` | Adapter | Map librespot errors onto FFI codes Swift already understands |
+| `Backend/vendor/librespot-connect` | Vendored third-party, patched | librespot's `connect` crate pinned to the same rev as the git dependencies, patched so `Spirc::new` takes `Arc<dyn SpircPlayer>` instead of the concrete `Arc<Player>`. See its `PATCHES.md` for the exact diff. This is the seam Stage 1 needs to drive playback through a Swift-owned player without forking `Spirc`/`SpircTask`. |
 
 ### Planned owner per #201 stage
 

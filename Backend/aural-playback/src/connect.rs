@@ -450,7 +450,7 @@ pub(crate) async fn create_and_store_spirc(
         connect_config,
         session.clone(),
         credentials.clone(),
-        player,
+        player as Arc<dyn SpircPlayer>,
         mixer as Arc<dyn Mixer>,
     )
     .await
