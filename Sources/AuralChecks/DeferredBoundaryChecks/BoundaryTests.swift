@@ -33,6 +33,7 @@ enum BoundaryChecksMain {
             RegisteredCheckSuite(name: "formatting") { runFormattingChecks($0) },
             RegisteredCheckSuite(name: "track-attribute") { runTrackAttributeChecks($0) },
             RegisteredCheckSuite(name: "media-selection") { runMediaSelectionChecks($0) },
+            RegisteredCheckSuite(name: "resume-load-sequence") { runResumeLoadSequenceChecks($0) },
             RegisteredCheckSuite(name: "fixture-contract") { runFixtureContractChecks($0) },
             RegisteredCheckSuite(name: "engine-payload-contract") { runEnginePayloadContractChecks($0) },
             RegisteredCheckSuite(name: "pcm-write-space") { runPCMWriteSpaceChecks($0) },
@@ -58,6 +59,7 @@ enum BoundaryChecksMain {
             RegisteredCheckSuite(name: "queue-management") { await runQueueManagementChecks($0) },
             RegisteredCheckSuite(name: "transient-feedback") { await runTransientFeedbackChecks($0) },
             RegisteredCheckSuite(name: "visual-style-contract") { runVisualStyleContractChecks($0) },
+            RegisteredCheckSuite(name: "visual-contrast") { runVisualContrastChecks($0) },
             RegisteredCheckSuite(name: "wait-until") { await runWaitUntilChecks($0) },
             RegisteredCheckSuite(name: "check-suite-selection") { runner in
                 runCheckSuiteSelectionChecks(runner, catalog: BoundaryChecksMain.suiteNames)

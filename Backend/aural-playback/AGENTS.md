@@ -29,9 +29,11 @@ across the Swift/Rust boundary.
   loop-local. Connection, playback, device-list, and queue observations are typed C snapshots, not JSON. Do not synthesize
   transport presentation in Rust; send protocol playing/paused flags.
   Cluster playback snapshots send protocol `context_uri`; local `PlayerEvent` snapshots send an
-  empty context. User resume reads sticky `CURRENT_CONTEXT_URI` / `CURRENT_TRACK_URI` through
-  FFI getters and issues seek-capable `aural_playback_load` from Swift targets.
-  Reconnect rehydration still uses `resume_via_load` from those session globals. Do not widen
+  empty context. Swift reads sticky `CURRENT_CONTEXT_URI` / `CURRENT_TRACK_URI` through
+  FFI getters and issues seek-capable `aural_playback_load` from Swift targets, for user
+  resume and for reconnect rehydration. A reconnect publishes `resume_pending` with
+  `spirc_ready` clear and holds readiness until a load lands, a load reports a dead Spirc, or
+  the window times out; do not rebuild a resume plan in Rust. Do not widen
   `aural_playback_resume`. Do not send sticky context on local PlayerEvent snapshots.
 - Keep the checked-in C header, exported symbol set, signatures, ownership, allocation, and callback
   lifetime aligned.

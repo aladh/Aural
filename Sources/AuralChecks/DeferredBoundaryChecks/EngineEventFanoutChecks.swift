@@ -456,6 +456,7 @@ private func connectionEvent() -> RustPlaybackEvent {
             sessionConnected: true,
             spircReady: true,
             isActiveDevice: false,
+            resumePending: false,
             lastError: nil,
             deviceID: "local"
         )

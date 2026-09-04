@@ -100,6 +100,7 @@ fn apply_player_event(event: PlayerEvent, event_listener_generation: u64) {
             set_current_track_uri(track_uri);
             IS_PLAYING.store(true, Ordering::SeqCst);
             set_active_device(true);
+            PLAYING_EVENT_GENERATION.store(event_listener_generation, Ordering::SeqCst);
             PLAYING_EVENT_SEQ.fetch_add(1, Ordering::SeqCst);
             // Playback is running again, so any saved resume point belongs
             // to a deactivation that has been recovered from.
@@ -220,7 +221,7 @@ fn apply_player_event(event: PlayerEvent, event_listener_generation: u64) {
             debug!("Loading event: {} at {}ms", track_uri_str, position_ms);
 
             // Both, together. The position and the track URI are read as a
-            // pair — `resume_via_load` seeks `POSITION_MS` within
+            // pair — a resume load seeks `POSITION_MS` within
             // `CURRENT_TRACK_URI` — so leaving the position behind here
             // meant that for the length of a load they described different
             // tracks. A natural transition hides it, because `EndOfTrack`

@@ -2178,50 +2178,6 @@ func runPlaybackCommandFailureChecks(_ runner: CheckRunner) async {
         await acceptedLocalMacStore.shutdownForTermination()
     }
 
-    runner.suite("User resume load sequence") {
-        let context = ResumeLoadPlan.Target.context(
-            uri: "spotify:playlist:ctx",
-            trackHint: "spotify:track:one",
-            positionMS: 10
-        )
-        let track = ResumeLoadPlan.Target.track(uri: "spotify:track:one", positionMS: 10)
-        let reconnect = PlaybackEngineResult(rawValue: -2)
-
-        runner.equal(
-            "successful play does not load",
-            UserResumeLoadSequence.completing(play: .ok, targets: [context, track]) { _ in
-                runner.check("successful play must not load", false)
-                return .error
-            },
-            .ok
-        )
-        runner.equal(
-            "reconnect-required play does not load",
-            UserResumeLoadSequence.completing(play: reconnect, targets: [context, track]) { _ in
-                runner.check("reconnect-required play must not load", false)
-                return .ok
-            },
-            reconnect
-        )
-
-        var loaded: [ResumeLoadPlan.Target] = []
-        let recovered = UserResumeLoadSequence.completing(play: .error, targets: [context, track]) {
-            loaded.append($0)
-            if case .track = $0 { return .ok }
-            return .error
-        }
-        runner.equal("timeout tries context then track", loaded, [context, track])
-        runner.equal("a later target can recover the timeout", recovered, .ok)
-
-        var failedLoads = 0
-        let exhausted = UserResumeLoadSequence.completing(play: .error, targets: [context, track]) { _ in
-            failedLoads += 1
-            return .error
-        }
-        runner.equal("exhausted loads keep the play timeout", exhausted, .error)
-        runner.equal("exhausted loads try every target", failedLoads, 2)
-    }
-
     await runner.suite("User resume captures sticky identity not presentation") {
         let engine = ScriptedLocalEngine(
             result: .ok,

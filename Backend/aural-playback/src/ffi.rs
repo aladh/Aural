@@ -100,6 +100,7 @@ pub struct AuralConnectionSnapshot {
     pub session_connected: u8,
     pub spirc_ready: u8,
     pub is_active_device: u8,
+    pub resume_pending: u8,
     pub device_id: *const c_char,
     pub last_error: *const c_char,
 }
@@ -119,6 +120,7 @@ pub(crate) fn send_connection_snapshot(
         session_connected: u8::from(state.session_connected),
         spirc_ready: u8::from(state.spirc_ready),
         is_active_device: u8::from(state.is_active_device),
+        resume_pending: u8::from(state.resume_pending),
         device_id: device_id
             .as_ref()
             .map(|value| value.as_ptr())

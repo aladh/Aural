@@ -13,11 +13,19 @@ pub(crate) static SPIRC: Lazy<Mutex<Option<Arc<Spirc>>>> = Lazy::new(|| Mutex::n
 pub(crate) static IS_PLAYING: AtomicBool = AtomicBool::new(false);
 pub(crate) static PLAYING_EVENT_SEQ: AtomicU64 = AtomicU64::new(0);
 
+/// Listener generation of the pump that last advanced [`PLAYING_EVENT_SEQ`], written just
+/// before the increment. A reconnect's rehydration window accepts a Playing event only when
+/// this matches the generation that opened the window: the pump gates events on the
+/// generation before applying them, but a pump preempted between that check and its
+/// increment could otherwise satisfy a window opened by a newer session.
+pub(crate) static PLAYING_EVENT_GENERATION: AtomicU64 = AtomicU64::new(0);
+
 /// Set while a `aural_playback_resume` is working, so only one runs at a time.
 ///
 /// Resuming is not instantaneous: `Spirc::play` only queues a command, then this export
 /// waits briefly for a `Playing` event. Swift `RustPlaybackEngine` then iterates
-/// `ResumeLoadPlan` targets through `aural_playback_load`. `PlaybackCoordinator`
+/// `ResumeLoadPlan` targets through `aural_playback_load` (reconnect rehydration issues the
+/// same targets inside `build_player_async`'s window). `PlaybackCoordinator`
 /// serializes that whole `execute(.resume)` so the app path does not stack play-then-load.
 /// This flag still covers overlapping C `aural_playback_resume` calls. `IS_PLAYING` does
 /// not cover the gap: it stays false until the first sequence actually produces audio.
@@ -120,6 +128,10 @@ pub(crate) struct ConnectionState {
     pub(crate) device_id: Option<String>,
     pub(crate) last_error: Option<String>,
     pub(crate) is_active_device: bool,
+    /// True only inside a reconnect's rehydration window: the session is connected and
+    /// activated, readiness is deliberately unpublished, and Swift should issue its
+    /// `ResumeLoadPlan` targets now. Cleared when readiness commits or on cleanup.
+    pub(crate) resume_pending: bool,
 }
 
 /// Whether this engine's device is the cluster's active member.
@@ -232,20 +244,6 @@ pub(crate) fn should_recover_after_cluster_end(
     listener_generation == current_generation && !teardown_in_progress
 }
 
-/// Which position a resume should seek to.
-///
-/// A point saved at deactivation outranks the live one, because the `Stopped` event that
-/// librespot sends on the way out has since reset the live position to zero. Zero means
-/// nothing was saved: either no deactivation is being recovered from, or playback was at
-/// the very start, and both want the live value.
-pub(crate) fn resume_position(saved_at_deactivation: u32, live: u32) -> u32 {
-    if saved_at_deactivation > 0 {
-        saved_at_deactivation
-    } else {
-        live
-    }
-}
-
 /// Whether this device is currently the active Spotify Connect device.
 pub(crate) fn is_active_device() -> bool {
     with_connection(|c| c.is_active_device)
@@ -326,9 +324,9 @@ pub(crate) static CURRENT_DURATION_MS: AtomicU32 = AtomicU32::new(0);
 // Current logical track URI - for UI identity and detecting same-track reconnects.
 // The playable AudioItem may carry a different URI after Spotify relinking.
 //
-// Session-scoped: `aural_playback_cleanup` drops it, because resume-load (Swift
-// `aural_playback_get_resume_track_uri` and reconnect `resume_via_load`) would otherwise
-// hand it to a load made by whichever account logged in next.
+// Session-scoped: `aural_playback_cleanup` drops it, because resume-load (Swift reads it
+// through `aural_playback_get_resume_track_uri` for user resume and reconnect rehydration
+// alike) would otherwise hand it to a load made by whichever account logged in next.
 pub(crate) static CURRENT_TRACK_URI: Lazy<Mutex<Option<String>>> = Lazy::new(|| Mutex::new(None));
 
 /// Stores the requested/context track identity exposed by librespot player events.
