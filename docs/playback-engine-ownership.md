@@ -27,6 +27,7 @@ in the [enforcement inventory](architecture-enforcement.md).
 | `RangedAudioFetcher` | Stage 1 building block (#208): ranged CDN download with a sparse downloaded-byte store, 429/403 handling, and read-ahead prefetch. Not yet wired into any playback path |
 | `OggVorbisDecoder` / `OggPageHeader` | Stage 1 of #201: a Swift wrapper over vendored stb_vorbis's pushdata API, plus a pure Ogg page scanner for later seeking. Not yet wired into playback — the audio-key/CDN/decrypt path and `AudioRenderer` still get PCM from `proxy_sink.rs` |
 | `OggSeeker` | Stage 1 of #201: pure time-to-byte-offset seek — bisects Ogg pages by granule position (`OggByteReader` is the seam a later slice adapts to the CDN fetcher/decryptor) so Spirc's millisecond seeks can restart Vorbis decode at the right page. Not yet wired into playback |
+| `AudioPlaybackSession` | Stage 1 of #201: pure reducer for the future `ShimPlayer` audio-command boundary. Turns forwarded `Load/Play/Pause/Seek/Stop/Preload` commands and decode-pipeline events into effects — command and generation-reset teardown (`.stop`/`.cancelPreload` for any live pipeline or held preload), preload-file-id reuse vs. cancellation, transport commands honored while still `.loading`, seek clamping, a once-per-load `timeToPreloadNext` threshold, and pipeline events scoped by `sessionGeneration`/`playRequestID` so a stale delivery can never resurrect a torn-down load. Not yet wired to any FFI; there is no `ShimPlayer`, audio-command callback, or `aural_playback_report_audio` yet |
 
 ## Rust crate by module
 
