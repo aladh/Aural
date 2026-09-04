@@ -461,8 +461,8 @@ pub(crate) async fn create_and_store_spirc(
 
     *SPIRC.lock().unwrap_or_else(|e| e.into_inner()) = Some(spirc_arc.clone());
     // Deliberately does not record success yet. Activation and, on a reconnect, the
-    // rehydrating load still have to run, and either can fail — `init_player_async` commits
-    // the whole set once, at the end, when the session is genuinely usable.
+    // rehydration window still have to run, and either can fail — `init_player_async`
+    // commits the whole set once, at the end, when the session is genuinely usable.
     //
     // Setting it here was subtly wrong in two ways. The activation that follows makes
     // librespot emit SessionConnected, whose handler publishes a snapshot; with the flags

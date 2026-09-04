@@ -196,20 +196,28 @@ pub extern "C" fn aural_playback_resume() -> i32 {
     ffi_command("aural_playback_resume", resume_playback)
 }
 
-/// Loads a context or track at a seek position. Used by Swift resume-load fallbacks.
+/// Loads a context or track at a seek position. Used by Swift resume-load fallbacks and, with
+/// a nonzero `rehydrating_generation`, by reconnect rehydration for that engine session.
 #[no_mangle]
 pub extern "C" fn aural_playback_load(
     uri: *const c_char,
     track_hint: *const c_char,
     position_ms: u32,
     from_context: bool,
+    rehydrating_generation: u64,
 ) -> i32 {
     ffi_command("aural_playback_load", || {
         let Some(uri) = (unsafe { c_string_arg(uri) }) else {
             return ERROR_GENERAL;
         };
         let track_hint = unsafe { c_string_arg(track_hint) };
-        load_at_position(uri, track_hint, position_ms, from_context)
+        load_at_position(
+            uri,
+            track_hint,
+            position_ms,
+            from_context,
+            rehydrating_generation,
+        )
     })
 }
 
@@ -357,8 +365,8 @@ pub(crate) fn cleanup_player_globals() {
     // an offset from the previous lifecycle, or another account's playback.
     RESUME_POSITION_MS.store(0, Ordering::SeqCst);
     // What that offset is an offset *into*, and the same argument applies with more at stake.
-    // `resume_via_load` loads `CURRENT_CONTEXT_URI` with `CURRENT_TRACK_URI` as its track
-    // hint, and nothing after a login rewrites them until playback establishes something new:
+    // Resume loads use `CURRENT_CONTEXT_URI` with `CURRENT_TRACK_URI` as the track hint,
+    // and nothing after a login rewrites them until playback establishes something new:
     // `update_current_context_uri` ignores empty values, and `set_current_track_uri` only runs
     // from player events. So pressing play as a freshly logged-in account reaches an activated
     // Spirc with no queue, `play()` produces no `Playing` event, and the fallback loads the
@@ -366,8 +374,8 @@ pub(crate) fn cleanup_player_globals() {
     // already been cleared. Reachable through the ordinary control path: with nobody active,
     // `sendTransportCommand` takes the Web API 404 and falls back to local
     // `aural_playback_resume` plus Swift `ResumeLoadPlan` loads from these sticky URIs
-    // (read through `aural_playback_get_resume_*`). Reconnect rehydration still reads
-    // them through `resume_via_load`.
+    // (read through `aural_playback_get_resume_*`). Reconnect rehydration issues the same
+    // Swift targets while `build_player_async` publishes `resume_pending`.
     //
     // Only a full cleanup clears them. The wake and reconnect paths run
     // `do_reconnect_cleanup`, which deliberately leaves playback state alone so the
@@ -390,10 +398,12 @@ pub(crate) fn cleanup_player_globals() {
         .unwrap_or_else(|e| e.into_inner()) = None;
     discard_retained_cluster_offers();
 
-    // Reset the connection snapshot: not ready, not connected, no device ID.
+    // Reset the connection snapshot: not ready, not connected, no device ID, no open
+    // rehydration window.
     with_connection(|c| {
         c.spirc_ready = false;
         c.session_connected = false;
+        c.resume_pending = false;
         c.device_id = None;
     });
 

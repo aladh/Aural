@@ -11,19 +11,26 @@ nonisolated struct PlaybackEngineResult: Equatable, Sendable {
     var requiresReconnect: Bool { rawValue == -2 || rawValue == -3 }
 }
 
-/// Play first; on a non-reconnect failure, try each resume-load target until one lands.
-nonisolated enum UserResumeLoadSequence {
+/// One ordered resume-load sequence for user resume and reconnect rehydration.
+///
+/// User resume plays first and, on a non-reconnect failure, tries each target until one
+/// lands. Reconnect rehydration passes no `play`: the engine has already activated and is
+/// holding readiness open, and inside that window a load returns as soon as it is queued, so
+/// the sequence stops at the first queued target exactly as the engine's own loop used to.
+/// A reconnect-required result ends the sequence either way. No targets is an ordinary
+/// failure; the engine's window then times out on its own.
+nonisolated enum ResumeLoadSequence {
     static func completing(
-        play: PlaybackEngineResult,
+        play: PlaybackEngineResult?,
         targets: [ResumeLoadPlan.Target],
         load: (ResumeLoadPlan.Target) -> PlaybackEngineResult
     ) -> PlaybackEngineResult {
-        if play.isOK || play.requiresReconnect { return play }
+        if let play, play.isOK || play.requiresReconnect { return play }
         for target in targets {
             let loaded = load(target)
             if loaded.isOK || loaded.requiresReconnect { return loaded }
         }
-        return play
+        return play ?? .error
     }
 }
 
@@ -32,6 +39,9 @@ nonisolated enum LocalPlaybackOperation: Sendable {
     case playTracks([String])
     case pause
     case resume(ResumeLoadPlan)
+    /// Engine reconnect published `resume_pending` for `sessionGeneration`; issue the plan's
+    /// loads without `play()`. The engine runs them only while that session and window last.
+    case rehydrate(ResumeLoadPlan, sessionGeneration: UInt64)
     case next
     case previous
     case seek(UInt32)
@@ -370,6 +380,23 @@ actor PlaybackCoordinator {
 
     func performLocal(_ operation: LocalPlaybackOperation) async -> PlaybackEngineResult {
         local.execute(operation)
+    }
+
+    /// Executes only if the operation is still wanted once this actor actually reaches it.
+    ///
+    /// A queued operation can wait behind another local command; by then the store may have
+    /// changed engine generation or the condition that requested it may have lapsed.
+    /// `isStillWanted` is evaluated on the MainActor immediately before execution and is an
+    /// early-out, not the guarantee: nothing serializes the hop back with `execute`, so
+    /// operations that must not run late also carry a token the engine enforces (see
+    /// `.rehydrate`). Returns nil when the operation was skipped.
+    func performLocalIfStillWanted(
+        _ operation: LocalPlaybackOperation,
+        isStillWanted: @MainActor @Sendable () -> Bool
+    ) async -> PlaybackEngineResult? {
+        if Task.isCancelled { return nil }
+        guard await isStillWanted() else { return nil }
+        return local.execute(operation)
     }
 
     /// Maps a local engine integer into a typed command outcome. Throws only if this task

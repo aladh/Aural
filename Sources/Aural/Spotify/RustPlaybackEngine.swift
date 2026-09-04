@@ -47,6 +47,10 @@ nonisolated final class RustPlaybackEngine: LocalPlaybackEngine, @unchecked Send
         case let .playTracks(tracks): engineResult(PlaybackCore.play(tracks: tracks))
         case .pause: engineResult(PlaybackCore.pause())
         case let .resume(plan): resume(plan)
+        case let .rehydrate(plan, sessionGeneration):
+            ResumeLoadSequence.completing(play: nil, targets: plan.targets()) {
+                engineResult(PlaybackCore.load($0, rehydratingSessionGeneration: sessionGeneration))
+            }
         case .next: engineResult(PlaybackCore.next())
         case .previous: engineResult(PlaybackCore.previous())
         case let .seek(milliseconds): engineResult(PlaybackCore.seek(to: milliseconds))
@@ -77,7 +81,7 @@ nonisolated final class RustPlaybackEngine: LocalPlaybackEngine, @unchecked Send
     /// Activate/`play()` first. On a non-reconnect failure, iterate Swift load targets.
     /// `PlaybackCoordinator` serializes this whole operation.
     private func resume(_ plan: ResumeLoadPlan) -> PlaybackEngineResult {
-        UserResumeLoadSequence.completing(
+        ResumeLoadSequence.completing(
             play: engineResult(PlaybackCore.resume()),
             targets: plan.targets()
         ) { engineResult(PlaybackCore.load($0)) }

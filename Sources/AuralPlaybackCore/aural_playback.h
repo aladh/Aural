@@ -88,18 +88,24 @@ AuralPlaybackResult aural_playback_play_uri(const char* uri_or_url, int32_t trac
 AuralPlaybackResult aural_playback_pause(void);
 
 /// Resumes playback: activate and `play()`. If no Playing event arrives, Swift issues
-/// seek-capable load fallbacks via `aural_playback_load`. Reconnect rehydration still
-/// loads from session globals inside the engine.
+/// seek-capable load fallbacks via `aural_playback_load`. Reconnect rehydration issues the
+/// same Swift targets while a connection snapshot reports `resume_pending`.
 AuralPlaybackResult aural_playback_resume(void);
 
-/// Loads a context or single track at `position_ms` and waits briefly for a Playing event.
+/// Loads a context or single track at `position_ms`.
+/// `rehydrating_generation == 0` is a user-resume load: it waits briefly for a Playing event.
+/// A nonzero value names the engine session generation being rehydrated after a reconnect:
+/// the engine runs the load only if that generation is current and its `resume_pending`
+/// window is still open, and returns 0 as soon as the load is queued (the window is the only
+/// Playing wait). Otherwise it returns an ordinary failure without touching the session.
 /// Empty `track_hint` is a valid context hint. `uri` must be non-empty.
 /// @param from_context true for a context URI, false for a single track URI.
 AuralPlaybackResult aural_playback_load(
     const char* uri,
     const char* _Nullable track_hint,
     uint32_t position_ms,
-    bool from_context
+    bool from_context,
+    uint64_t rehydrating_generation
 );
 
 /// Shuts down the Spirc connection and sends goodbye to other devices.
@@ -258,12 +264,17 @@ void aural_playback_register_devices_callback(DevicesCallback callback);
 
 /// Connection observation. `device_id` and `last_error` are valid only for the callback;
 /// Swift must copy them before returning. NULL means missing. Flags are 0 or 1.
+/// `resume_pending` is set only inside a reconnect's rehydration window: the session is
+/// connected and activated but `spirc_ready` is deliberately still 0, and Swift should
+/// issue its resume-load targets through `aural_playback_load` now. Readiness is published
+/// once a Playing event lands, a load reports a dead Spirc, or the window times out.
 typedef struct AuralConnectionSnapshot {
     uint64_t revision;
     uint64_t session_generation;
     uint8_t session_connected;
     uint8_t spirc_ready;
     uint8_t is_active_device;
+    uint8_t resume_pending;
     const char* _Nullable device_id;
     const char* _Nullable last_error;
 } AuralConnectionSnapshot;

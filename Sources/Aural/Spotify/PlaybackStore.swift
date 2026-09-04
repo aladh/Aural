@@ -47,6 +47,8 @@ nonisolated struct RustConnectionState: Sendable {
     let sessionConnected: Bool
     let spircReady: Bool
     let isActiveDevice: Bool
+    /// Engine reconnect is holding readiness open for Swift's resume-load targets.
+    let resumePending: Bool
     let lastError: String?
     let deviceID: String?
 }
@@ -109,6 +111,15 @@ final class PlaybackStore {
     @ObservationIgnored var hasStartedLifetimeEffects = false
     @ObservationIgnored var lastEngineEventSequence: UInt64 = 0
     @ObservationIgnored var engineGeneration: UInt64 = 0
+    /// Engine session generation whose reconnect rehydration Swift has already issued. The
+    /// engine republishes `resume_pending` on every snapshot inside its window; one load
+    /// sequence per rebuilt session is the contract.
+    @ObservationIgnored var rehydratedSessionGeneration: UInt64?
+    /// Whether the latest accepted connection snapshot still describes an open engine
+    /// rehydration window (`resumePending` with `spircReady` clear). Read again immediately
+    /// before a queued rehydration executes, so a window that closed while the coordinator
+    /// was busy does not get a late load.
+    @ObservationIgnored var engineRehydrationWindowOpen = false
     /// One immutable stamp for playback-scoped work. This projects the two existing
     /// lifecycle owners without becoming a third writable counter.
     var playbackLifetime: PlaybackLifetime {

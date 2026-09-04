@@ -127,6 +127,24 @@ replacement-disallow flags; Swift copies the struct in `PlaybackCore`.
 returns the same typed snapshot (freed with `aural_playback_free_queue_snapshot`) so
 bootstrap after a provisional empty `SetQueue` does not need JSON.
 
+### Eleventh slice
+
+Reconnect rehydration issues Swift `ResumeLoadPlan` targets. The engine no longer has a
+`ResumeLoadPlan` of its own: after a reconnect rebuilds and activates the session, it
+publishes one connection snapshot with `session_connected` set, `spirc_ready` still clear,
+and a new `resume_pending` flag, then holds readiness until a Playing event lands, a Swift
+load reports a dead Spirc, or a bounded window elapses. `PlaybackStore` answers by capturing
+the plan from the same sticky engine getters user resume uses and issuing
+`aural_playback_load` until one target queues, once per engine session generation. Inside
+the window a load returns as soon as Spirc queued it, so the window is the only Playing wait
+and a slow context load is never superseded by the single-track fallback. Each rehydration
+load names the engine session generation it belongs to, and the engine runs it only while
+that session is current and its window is open, so a load queued behind another command in
+Swift cannot land late. Session globals stay in the engine and are read, not mirrored; the engine keeps
+only a "is there anything to reload" check so an empty plan does not delay readiness.
+Readiness is still announced after rehydration, so Swift's Web API bootstrap continues to
+wait for the rehydrated state.
+
 ## Consequences
 
 - Upcoming-queue UI and `QueueService.acceptConnect` entries come from one Swift
@@ -146,9 +164,10 @@ bootstrap after a provisional empty `SetQueue` does not need JSON.
   `PlayerEvent` as that pair). Protocol `context_uri` is forwarded as playlist/album/artist
   identity on cluster snapshots. Local player-event snapshots send an empty context. The
   playback callback is a typed C snapshot, not JSON.
-- Resume-load target order for user resume comes from Swift `ResumeLoadPlan` issued through
-  `aural_playback_load`, using sticky resume-load URIs rather than presentation context.
-  Reconnect rehydration still loads from session globals in the engine.
+- Resume-load target order for user resume and reconnect rehydration comes from one Swift
+  `ResumeLoadPlan` issued through `aural_playback_load`, using sticky resume-load URIs rather
+  than presentation context. The engine signals a rehydration window with `resume_pending`
+  and holds readiness until it closes; it no longer builds a plan of its own.
 - Cluster apply and session reconnect remain in Rust until a later slice can forward
   protocol observations without duplicating protobuf ownership in Swift.
 - [ADR 001](ADR-001-playback-engine.md) is not superseded: the C leaf and librespot stay.
@@ -177,7 +196,20 @@ Rejected. Nothing read volume or restriction fields. Activity belongs next to th
 ### Keep resume-load target order only in Swift without a load caller
 
 Rejected in the fifth slice. This slice adds `aural_playback_load` so user resume can
-iterate Swift targets. Reconnect rehydration still uses the engine-side plan.
+iterate Swift targets. Reconnect rehydration moved onto the same targets in the eleventh
+slice.
+
+### Have the engine call back into Swift for reconnect targets
+
+Rejected in the eleventh slice. Returning a target list across a callback needs Swift-owned
+C allocations and a new export pair, and the loads would still run inside the engine. A
+one-bit `resume_pending` on the existing connection snapshot plus the existing
+`aural_playback_load` export lets Swift issue the loads itself with no new symbols.
+
+### Announce readiness first and let Swift rehydrate afterwards
+
+Rejected in the eleventh slice. Swift bootstraps from the Web API on readiness; announcing
+before the load lands reopens the stale-position window the single commit point closed.
 
 ### Widen `aural_playback_resume` with URIs and a seek position
 
