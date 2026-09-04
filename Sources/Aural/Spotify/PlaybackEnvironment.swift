@@ -77,14 +77,6 @@ extension LocalPlaybackEngine {
     func queueSnapshot() -> RustQueueState? { nil }
 }
 
-/// The AP audio-key request, kept separate from `LocalPlaybackEngine` so existing fakes
-/// (e.g. checks that stand in for the local engine) do not have to implement it.
-///
-/// Stage 1 scaffolding for #201/#208: nothing consumes this yet.
-nonisolated protocol AudioKeyProviding: Sendable {
-    func audioKey(trackGID: [UInt8], fileID: [UInt8]) -> Swift.Result<[UInt8], AudioKeyError>
-}
-
 nonisolated protocol RemotePlaybackClient: Sendable {
     func send(_ command: SpotifyConnectCommand, from sourceID: String, to targetID: String) async throws
     func trackMetadata(for uri: String) async throws -> SpotifyConnectTrackMetadata

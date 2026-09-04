@@ -2,7 +2,7 @@ import AuralDomain
 import AuralPlaybackCore
 import Foundation
 
-/// Failure returned by `PlaybackCore.audioKey`. Does not carry key bytes.
+/// Failure returned by the audio-key request below. Does not carry key bytes.
 nonisolated enum AudioKeyError: Error, Equatable {
     /// `trackGID` was not 16 bytes, or `fileID` was not 20 bytes.
     case invalidIdentifier
@@ -291,8 +291,9 @@ nonisolated enum PlaybackCore {
 
     /// Fetches the AES decryption key for one file over the existing AP session. Blocking;
     /// librespot times a single request out at 1500ms. Stage 1 scaffolding for #201/#208:
-    /// nothing consumes this yet — see `AudioKeyCache`, which callers should go through
-    /// instead of calling this directly, since Spotify throttles key requests.
+    /// nothing consumes this yet. Spotify throttles key requests, so the eventual consumer must
+    /// cache a successful key per file id and coalesce concurrent misses instead of calling
+    /// this repeatedly.
     ///
     /// - Parameters:
     ///   - trackGID: 16 raw bytes of the track's Spotify ID.
@@ -306,22 +307,24 @@ nonisolated enum PlaybackCore {
         }
 
         var keyOut = [UInt8](repeating: 0, count: 16)
-        let code = keyOut.withUnsafeMutableBufferPointer { keyPointer -> Result in
+        let result = keyOut.withUnsafeMutableBufferPointer { keyPointer -> Result in
             trackGID.withUnsafeBufferPointer { trackPointer in
                 fileID.withUnsafeBufferPointer { filePointer in
+                    // All three buffers are non-empty (lengths checked above), so the base
+                    // addresses are non-null as the header's `assume_nonnull` region requires.
                     aural_playback_audio_key(
-                        trackPointer.baseAddress,
-                        filePointer.baseAddress,
-                        keyPointer.baseAddress
+                        trackPointer.baseAddress!,
+                        filePointer.baseAddress!,
+                        keyPointer.baseAddress!
                     )
                 }
             }
         }
 
-        switch code.rawValue {
+        switch result.rawValue {
         case 0: return .success(keyOut)
         case -3: return .failure(.notConnected)
-        default: return .failure(.engineFailure(code.rawValue))
+        default: return .failure(.engineFailure(result.rawValue))
         }
     }
 

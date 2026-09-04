@@ -37,6 +37,7 @@ in the [enforcement inventory](architecture-enforcement.md).
 | `player_control.rs` | Adapter | Spirc play/pause/seek/shuffle/repeat/transfer/queue-add, plus FFI getters for sticky resume URIs |
 | `player_event_pump.rs` | Adapter | Local `PlayerEvent` → position and protocol playing/paused bits when this device is active |
 | `spirc_command_error.rs` | Adapter | Map librespot errors onto FFI codes Swift already understands |
+| `audio_key.rs` | Adapter | Stage 1 (#208) AP audio-key request over FFI. No caller yet; the consumer must cache successes per file id and coalesce concurrent misses |
 
 ### Planned owner per #201 stage
 
@@ -76,7 +77,8 @@ which Swift must keep distinct from an empty queue.
 Caching that snapshot in Rust is adapter convenience, not a second app-facing store.
 
 `aural_playback_audio_key` fetches one file's AES decryption key over the existing AP session;
-it is Stage 1 scaffolding for #201/#208 and nothing calls it yet.
+it is Stage 1 scaffolding for #201/#208 and nothing calls it yet. Spotify throttles key requests,
+so the eventual consumer must cache successes per file id and coalesce concurrent misses.
 
 ## Remaining Spotty-owned logic in Rust
 
