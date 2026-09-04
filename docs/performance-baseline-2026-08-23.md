@@ -28,7 +28,9 @@ queue, demand-loaded catalog, diagnostics, audio-boundary, quality-gate, and nat
 | Playing | Background | 20.80% | 262.39 MiB |
 
 These are conservative warm-state numbers captured after browsing Home, Search, playlist, album,
-artist, Settings, and the queue, so they include populated catalog and artwork caches. Closing the
+artist, Settings, and the queue, so they include populated catalog and artwork caches. The Settings
+scene was removed afterwards (PR #155), so this browse path cannot be reproduced exactly; a fresh
+baseline should substitute the current surfaces and record the commit under test. Closing the
 window kept the process available from the Dock and reduced, rather than increased, resident
 memory.
 
