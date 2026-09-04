@@ -234,7 +234,7 @@ public struct ConnectDevice: Identifiable, Equatable, Sendable, Decodable {
     }
 
     public func displayName(localDeviceID: String?) -> String {
-        if id == localDeviceID { return "\(name) (This Mac)" }
+        if id == localDeviceID { return "This Mac" }
         if isActive { return "\(name) (Playing)" }
         return name
     }

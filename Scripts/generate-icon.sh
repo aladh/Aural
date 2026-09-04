@@ -53,10 +53,6 @@ done
 
 SWIFT_MODULECACHE_PATH="$module_cache" \
 CLANG_MODULE_CACHE_PATH="$module_cache" \
-    xcrun swift "$project_root/Scripts/render-small-icons.swift" "$iconset_dir"
-
-SWIFT_MODULECACHE_PATH="$module_cache" \
-CLANG_MODULE_CACHE_PATH="$module_cache" \
     xcrun swift "$project_root/Scripts/assemble-icns.swift" "$iconset_dir" "$output_icon"
 
 verification_dir="$working_dir/Verification.iconset"

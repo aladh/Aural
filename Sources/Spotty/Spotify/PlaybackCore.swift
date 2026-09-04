@@ -140,7 +140,10 @@ nonisolated enum PlaybackCore {
     }
 
     static func initialize() -> Result {
-        spotty_playback_init_player(nil)
+        ConnectDeviceIdentity.current.withCString {
+            spotty_playback_set_device_name($0)
+        }
+        return spotty_playback_init_player(nil)
     }
 
     static func play(uri: String, trackIndex: Int32 = -1) -> Result {

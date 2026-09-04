@@ -13,5 +13,5 @@ The source artwork was generated with Codex's built-in image-generation tool fro
 > or imitation of Spotify's logo.
 
 Run `./Scripts/generate-icon.sh` from the repository root after changing the source PNG. The script
-generates `Spotty.icns`, renders the small Finder-specific representations, and verifies every ICNS
-representation survives a round trip.
+downsamples that exact artwork into every macOS icon representation, generates `Spotty.icns` with
+Finder-compatible legacy encodings, and verifies every representation survives a round trip.

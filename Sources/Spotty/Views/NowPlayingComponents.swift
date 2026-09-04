@@ -226,7 +226,6 @@ struct NowPlayingTimeControls: View {
     }
 
     private func deviceName(_ device: ConnectDevice) -> String {
-        if device.id == player.localDeviceID { return "\(device.name) (This Mac)" }
         if device.id == player.activeRemoteDevice?.id {
             return "\(device.name) (\(player.isPlaying ? "Playing" : "Paused"))"
         }
