@@ -173,6 +173,16 @@ final nonisolated class AudioRenderer: @unchecked Sendable {
         cursor.free
     }
 
+    /// Seconds of stereo audio still queued in the ring buffer, taken under `bufferLock`. The
+    /// decode pipeline polls this after the byte source is exhausted so it can hold `.endOfTrack`
+    /// until what is already buffered has actually played out, rather than racing Spirc's
+    /// auto-advance against the tail of the ring.
+    var bufferedSeconds: Double {
+        bufferLock.lock()
+        defer { bufferLock.unlock() }
+        return Double(cursor.available) / (Self.sampleRate * Double(Self.channelCount))
+    }
+
     // MARK: - Push Side (called from Rust player thread)
 
     /// Write PCM samples into the ring buffer.
