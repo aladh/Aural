@@ -1,5 +1,6 @@
 #!/bin/bash
 set -euo pipefail
+trap 'echo "report-size.sh: failed at line $LINENO" >&2' ERR
 
 # Reports release build size for the Stage 1 switchover comparison (#208, #37).
 #
@@ -92,7 +93,9 @@ symbol_count=""
 have_nm_tool=1
 
 if command -v nm >/dev/null 2>&1; then
-    symbol_count="$(nm -U "$archive_path" 2>/dev/null | wc -l | awk '{print $1}')"
+    # nm exits non-zero when any archive member lacks symbols; do not let pipefail
+    # turn that into a silent script abort.
+    symbol_count="$( (nm -U "$archive_path" 2>/dev/null || true) | wc -l | awk '{print $1}')"
 else
     have_nm_tool=0
 fi
