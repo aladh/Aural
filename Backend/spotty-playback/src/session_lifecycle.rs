@@ -114,6 +114,17 @@ pub(crate) fn ensure_private_credentials_dir(dir: &std::path::Path) -> Result<()
 pub(crate) fn migrate_previous_credentials_dir(
     current: &std::path::Path,
     previous: &std::path::Path,
+    allow_fresh_cache: bool,
+) -> Result<(), String> {
+    match move_previous_credentials_dir(current, previous) {
+        Err(_) if allow_fresh_cache => Ok(()),
+        result => result,
+    }
+}
+
+fn move_previous_credentials_dir(
+    current: &std::path::Path,
+    previous: &std::path::Path,
 ) -> Result<(), String> {
     if current.exists() || !previous.exists() {
         return Ok(());
@@ -129,6 +140,13 @@ pub(crate) fn migrate_previous_credentials_dir(
         let _ = std::fs::remove_dir(previous_parent);
     }
     Ok(())
+}
+
+pub(crate) fn retire_previous_credentials_dir(previous: &std::path::Path) {
+    clear_credentials_at(previous);
+    if let Some(previous_parent) = previous.parent() {
+        let _ = std::fs::remove_dir(previous_parent);
+    }
 }
 
 /// Resolves the live cache directory and removes it. Unavailable locations are success:
@@ -250,7 +268,7 @@ pub(crate) fn create_session(
     let cache_dir = credentials_cache_dir().map_err(|error| error.message().to_string())?;
     let previous_cache_dir =
         previous_credentials_cache_dir().map_err(|error| error.message().to_string())?;
-    migrate_previous_credentials_dir(&cache_dir, &previous_cache_dir)?;
+    migrate_previous_credentials_dir(&cache_dir, &previous_cache_dir, access_token.is_some())?;
     ensure_private_credentials_dir(&cache_dir)?;
     let cache = Cache::new(Some(cache_dir), None, None, None)
         .map_err(|_| CredentialsCacheError::Missing.message().to_string())?;
@@ -263,6 +281,9 @@ pub(crate) fn create_session(
             .credentials()
             .ok_or_else(|| "No streaming credentials: authorization required".to_string())?,
     };
+    // Once this launch has selected usable fresh or current credentials, the superseded
+    // cache must not remain as a second live account identity.
+    retire_previous_credentials_dir(&previous_cache_dir);
 
     let session = Session::new(session_config, Some(cache));
     Ok((session, credentials))

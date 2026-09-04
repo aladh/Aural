@@ -8,8 +8,8 @@ public struct PCMBufferCursor: Equatable, Sendable {
     public init(capacity: Int, readIndex: Int = 0, writeIndex: Int = 0) {
         precondition(capacity > 1)
         self.capacity = capacity
-        self.readIndex = readIndex % capacity
-        self.writeIndex = writeIndex % capacity
+        self.readIndex = Self.normalizedIndex(readIndex, capacity: capacity)
+        self.writeIndex = Self.normalizedIndex(writeIndex, capacity: capacity)
     }
 
     public var available: Int {
@@ -33,5 +33,10 @@ public struct PCMBufferCursor: Equatable, Sendable {
     public mutating func reset() {
         readIndex = 0
         writeIndex = 0
+    }
+
+    private static func normalizedIndex(_ index: Int, capacity: Int) -> Int {
+        let remainder = index % capacity
+        return remainder >= 0 ? remainder : remainder + capacity
     }
 }

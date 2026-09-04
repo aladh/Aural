@@ -140,9 +140,18 @@ func runSessionLifetimeChecks(_ check: CheckRunner) {
         )
         check.check(
             "a newer callback generation starts a fresh revision namespace",
-            watermark.accept(generation: 3, revision: 1, engineEpoch: 2)
+            watermark.accept(generation: 3, revision: 0, engineEpoch: 2)
         )
         check.equal("the new callback generation is recorded", watermark.generation, 3)
+        check.equal("the new generation accepts its initial zero revision", watermark.revision, 0)
+        check.check(
+            "a duplicate zero revision in the same generation is rejected",
+            !watermark.accept(generation: 3, revision: 0, engineEpoch: 2)
+        )
+        check.check(
+            "the new generation can advance after its zero revision",
+            watermark.accept(generation: 3, revision: 1, engineEpoch: 2)
+        )
         check.equal("the new generation accepts a restarted revision", watermark.revision, 1)
 
         watermark.reset()

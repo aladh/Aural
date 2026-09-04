@@ -456,7 +456,8 @@ fn credentials_cache_dir_uses_injected_home_without_tmp_fallback() {
 #[test]
 fn credentials_cache_dir_is_created_private() {
     use std::os::unix::fs::PermissionsExt;
-    let dir = std::env::temp_dir().join(format!("spotty-creds-mode-{}-private", std::process::id()));
+    let dir =
+        std::env::temp_dir().join(format!("spotty-creds-mode-{}-private", std::process::id()));
     let _ = std::fs::remove_dir_all(&dir);
     ensure_private_credentials_dir(&dir).expect("create private cache dir");
     let mode = std::fs::metadata(&dir)
@@ -469,6 +470,94 @@ fn credentials_cache_dir_is_created_private() {
         "credential cache must not be group- or world-accessible"
     );
     let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn previous_credentials_move_once_without_overwriting_current_state() {
+    let root = std::env::temp_dir().join(format!(
+        "spotty-credential-migration-{}",
+        std::process::id()
+    ));
+    let previous_parent = root.join("previous-product");
+    let previous = previous_parent.join("credentials");
+    let current = root.join("Spotty").join("credentials");
+    let _ = std::fs::remove_dir_all(&root);
+    std::fs::create_dir_all(&previous).expect("create previous fixture");
+    std::fs::write(previous.join("credentials.json"), b"synthetic-fixture")
+        .expect("write previous fixture");
+
+    migrate_previous_credentials_dir(&current, &previous, false)
+        .expect("migrate previous credentials");
+
+    assert_eq!(
+        std::fs::read(current.join("credentials.json")).expect("read migrated fixture"),
+        b"synthetic-fixture"
+    );
+    assert!(!previous.exists());
+    assert!(!previous_parent.exists());
+
+    std::fs::create_dir_all(&previous).expect("recreate previous fixture");
+    std::fs::write(previous.join("credentials.json"), b"stale-fixture")
+        .expect("write stale fixture");
+    migrate_previous_credentials_dir(&current, &previous, false).expect("keep current credentials");
+    assert_eq!(
+        std::fs::read(current.join("credentials.json")).expect("read current fixture"),
+        b"synthetic-fixture"
+    );
+    assert!(previous.exists());
+    let _ = std::fs::remove_dir_all(&root);
+}
+
+#[test]
+fn fresh_authorization_survives_a_failed_previous_credentials_move() {
+    let root = std::env::temp_dir().join(format!(
+        "spotty-credential-migration-failure-{}",
+        std::process::id()
+    ));
+    let previous = root.join("previous").join("credentials");
+    let blocked_parent = root.join("blocked-parent");
+    let current = blocked_parent.join("credentials");
+    let _ = std::fs::remove_dir_all(&root);
+    std::fs::create_dir_all(&previous).expect("create previous fixture");
+    std::fs::write(&blocked_parent, b"not-a-directory").expect("create blocked parent");
+
+    assert!(migrate_previous_credentials_dir(&current, &previous, true).is_ok());
+    assert!(migrate_previous_credentials_dir(&current, &previous, false).is_err());
+    assert!(
+        !current.exists(),
+        "a failed move must not mask a later migration"
+    );
+    assert!(
+        previous.exists(),
+        "a failed move must preserve previous credentials"
+    );
+    let _ = std::fs::remove_dir_all(&root);
+}
+
+#[test]
+fn selecting_current_credentials_retires_the_previous_cache() {
+    let root = std::env::temp_dir().join(format!(
+        "spotty-credential-retirement-{}",
+        std::process::id()
+    ));
+    let previous_parent = root.join("previous-product");
+    let previous = previous_parent.join("credentials");
+    let current = root.join("Spotty").join("credentials");
+    let _ = std::fs::remove_dir_all(&root);
+    std::fs::create_dir_all(&previous).expect("create previous fixture");
+    std::fs::create_dir_all(&current).expect("create current fixture");
+    std::fs::write(previous.join("credentials.json"), b"previous").expect("write previous fixture");
+    std::fs::write(current.join("credentials.json"), b"current").expect("write current fixture");
+
+    retire_previous_credentials_dir(&previous);
+
+    assert!(!previous.exists());
+    assert!(!previous_parent.exists());
+    assert_eq!(
+        std::fs::read(current.join("credentials.json")).expect("read current fixture"),
+        b"current"
+    );
+    let _ = std::fs::remove_dir_all(&root);
 }
 
 #[test]
@@ -640,7 +729,8 @@ fn exported_c_function_signatures_are_stable() {
     let _: extern "C" fn(*const c_char) -> i32 = spotty_playback_transfer_playback;
     let _: extern "C" fn(*const c_char) -> i32 = spotty_playback_add_to_queue;
     let _: extern "C" fn(*const c_char, i32) -> i32 = spotty_playback_play_uri;
-    let _: extern "C" fn(*const c_char, *const c_char, u32, bool, u64) -> i32 = spotty_playback_load;
+    let _: extern "C" fn(*const c_char, *const c_char, u32, bool, u64) -> i32 =
+        spotty_playback_load;
     let _: extern "C" fn(*const u8, *const u8, *mut u8) -> i32 = spotty_playback_audio_key;
     let _: extern "C" fn(u32) -> i32 = spotty_playback_seek;
     let _: extern "C" fn() -> u32 = spotty_playback_get_position_ms;
@@ -688,7 +778,10 @@ fn connection_snapshot_repr_c_layout_matches_header() {
         std::mem::offset_of!(SpottyConnectionSnapshot, resume_pending),
         19
     );
-    assert_eq!(std::mem::offset_of!(SpottyConnectionSnapshot, device_id), 24);
+    assert_eq!(
+        std::mem::offset_of!(SpottyConnectionSnapshot, device_id),
+        24
+    );
     assert_eq!(
         std::mem::offset_of!(SpottyConnectionSnapshot, last_error),
         32
@@ -792,8 +885,14 @@ fn playback_snapshot_repr_c_layout_matches_header() {
         std::mem::offset_of!(SpottyPlaybackSnapshot, session_generation),
         8
     );
-    assert_eq!(std::mem::offset_of!(SpottyPlaybackSnapshot, position_ms), 16);
-    assert_eq!(std::mem::offset_of!(SpottyPlaybackSnapshot, duration_ms), 24);
+    assert_eq!(
+        std::mem::offset_of!(SpottyPlaybackSnapshot, position_ms),
+        16
+    );
+    assert_eq!(
+        std::mem::offset_of!(SpottyPlaybackSnapshot, duration_ms),
+        24
+    );
     assert_eq!(
         std::mem::offset_of!(SpottyPlaybackSnapshot, timestamp_ms),
         32
@@ -810,7 +909,10 @@ fn playback_snapshot_repr_c_layout_matches_header() {
         44
     );
     assert_eq!(std::mem::offset_of!(SpottyPlaybackSnapshot, track_uri), 48);
-    assert_eq!(std::mem::offset_of!(SpottyPlaybackSnapshot, context_uri), 56);
+    assert_eq!(
+        std::mem::offset_of!(SpottyPlaybackSnapshot, context_uri),
+        56
+    );
 }
 
 #[test]
@@ -911,7 +1013,10 @@ fn devices_snapshot_repr_c_layout_matches_header() {
         16
     );
     assert_eq!(std::mem::offset_of!(SpottyDevicesSnapshot, devices), 24);
-    assert_eq!(std::mem::offset_of!(SpottyDevicesSnapshot, device_count), 32);
+    assert_eq!(
+        std::mem::offset_of!(SpottyDevicesSnapshot, device_count),
+        32
+    );
 }
 
 #[test]

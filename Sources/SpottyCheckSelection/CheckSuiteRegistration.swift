@@ -19,8 +19,12 @@ public enum CheckSuiteRegistration {
         guard let regex = try? NSRegularExpression(pattern: #"\bfunc (run[A-Za-z0-9]+Checks)\s*\("#) else {
             return []
         }
-        let range = NSRange(source.startIndex..., in: source)
-        return regex.matches(in: source, range: range).compactMap { match in
+        // Keep each UTF-16 source position intact so matches can still be converted against the
+        // original source, while preventing examples in prose or string fixtures from registering
+        // phantom suites.
+        let searchableSource = sourceWithCommentsAndStringsMasked(source)
+        let range = NSRange(searchableSource.startIndex..., in: searchableSource)
+        return regex.matches(in: searchableSource, range: range).compactMap { match in
             guard match.numberOfRanges > 1, let functionRange = Range(match.range(at: 1), in: source) else {
                 return nil
             }
@@ -89,6 +93,107 @@ public enum CheckSuiteRegistration {
         files.sort { $0.path < $1.path }
         return try files.map { try String(contentsOf: $0, encoding: .utf8) }
     }
+}
+
+private func sourceWithCommentsAndStringsMasked(_ source: String) -> String {
+    var units = Array(source.utf16)
+    var index = 0
+
+    func mask(_ offset: Int) {
+        if units[offset] != 10, units[offset] != 13 {
+            units[offset] = 32
+        }
+    }
+
+    func maskRange(_ start: Int, _ end: Int) {
+        guard start < end else {
+            return
+        }
+        for offset in start..<end {
+            mask(offset)
+        }
+    }
+
+    while index < units.count {
+        if units[index] == 47, index + 1 < units.count {
+            if units[index + 1] == 47 {
+                let start = index
+                index += 2
+                while index < units.count, units[index] != 10, units[index] != 13 {
+                    index += 1
+                }
+                maskRange(start, index)
+                continue
+            }
+
+            if units[index + 1] == 42 {
+                let start = index
+                var depth = 1
+                index += 2
+                while index < units.count, depth > 0 {
+                    if index + 1 < units.count, units[index] == 47, units[index + 1] == 42 {
+                        depth += 1
+                        index += 2
+                    } else if index + 1 < units.count, units[index] == 42, units[index + 1] == 47 {
+                        depth -= 1
+                        index += 2
+                    } else {
+                        index += 1
+                    }
+                }
+                maskRange(start, index)
+                continue
+            }
+        }
+
+        let hashCount: Int
+        let stringStart: Int
+        if units[index] == 35 {
+            var hashesEnd = index
+            while hashesEnd < units.count, units[hashesEnd] == 35 {
+                hashesEnd += 1
+            }
+            guard hashesEnd < units.count, units[hashesEnd] == 34 else {
+                index = hashesEnd
+                continue
+            }
+            hashCount = hashesEnd - index
+            stringStart = index
+            index = hashesEnd
+        } else if units[index] == 34 {
+            hashCount = 0
+            stringStart = index
+        } else {
+            index += 1
+            continue
+        }
+
+        let isMultiline = index + 2 < units.count && units[index + 1] == 34 && units[index + 2] == 34
+        let quoteCount = isMultiline ? 3 : 1
+        index += quoteCount
+
+        while index < units.count {
+            let hasClosingQuotes = (0..<quoteCount).allSatisfy { offset in
+                index + offset < units.count && units[index + offset] == 34
+            }
+            let hashesStart = index + quoteCount
+            let hasClosingHashes = (0..<hashCount).allSatisfy { offset in
+                hashesStart + offset < units.count && units[hashesStart + offset] == 35
+            }
+            if hasClosingQuotes, hasClosingHashes {
+                index = hashesStart + hashCount
+                break
+            }
+            if hashCount == 0, !isMultiline, units[index] == 92 {
+                index += min(2, units.count - index)
+            } else {
+                index += 1
+            }
+        }
+        maskRange(stringStart, index)
+    }
+
+    return String(decoding: units, as: UTF16.self)
 }
 
 private func kebabCase(_ identifier: String) -> String {

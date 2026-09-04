@@ -140,6 +140,24 @@ func runCheckSuiteSelectionChecks(_ check: CheckRunner, catalog: [String]) {
             CheckSuiteRegistration.suiteName(fromRunFunction: "runMediaDetailStoreChecks"),
             Optional("media-detail-store")
         )
+        let sourceWithPhantomDeclarations = [
+            "func runFirstRealChecks(_ check: CheckRunner) {}",
+            "// func runLineCommentChecks(_ check: CheckRunner) {}",
+            "// 🐈 func runUnicodeCommentChecks(_ check: CheckRunner) {}",
+            "/* func runBlockCommentChecks(_ check: CheckRunner) {} */",
+            "/* outer /* func runNestedCommentChecks(_ check: CheckRunner) {} */ */",
+            #"let quoted = "func runQuotedStringChecks(_ check: CheckRunner) {}""#,
+            "let multiline = \"\"\"",
+            "func runMultilineStringChecks(_ check: CheckRunner) {}",
+            "\"\"\"",
+            "let raw = #\"func runRawStringChecks(_ check: CheckRunner) {}\"#",
+            "func runLastRealChecks(_ check: CheckRunner) {}",
+        ].joined(separator: "\n")
+        check.equal(
+            "comments and strings do not register phantom suites",
+            CheckSuiteRegistration.runCheckFunctionNames(in: sourceWithPhantomDeclarations),
+            ["runFirstRealChecks", "runLastRealChecks"]
+        )
         check.equal(
             "an omitted run*Checks function is reported",
             CheckSuiteRegistration.namesMissingFromCatalog(

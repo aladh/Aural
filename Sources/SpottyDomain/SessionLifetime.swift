@@ -126,15 +126,17 @@ public struct ConnectQueueCallbackWatermark: Equatable, Sendable {
         engineEpoch: UInt64
     ) -> Bool {
         var next = self
+        var advancedGeneration = false
         if let generation {
             guard generation >= max(next.generation, engineEpoch) else { return false }
             if generation > next.generation {
+                advancedGeneration = true
                 next.generation = generation
                 next.revision = 0
             }
         }
         if let revision {
-            guard revision > next.revision else { return false }
+            guard revision > next.revision || advancedGeneration else { return false }
             next.revision = revision
         }
         self = next

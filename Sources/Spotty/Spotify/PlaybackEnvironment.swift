@@ -182,6 +182,8 @@ nonisolated final class UserDefaultsPlaybackPreferences: PlaybackPreferences, @u
         static let history = "playback.fewer-repeats.history"
     }
 
+    static let persistedKeys = [Key.shuffle, Key.remoteDevice, Key.history]
+
     private let defaults: UserDefaults
     private let lock = NSLock()
 

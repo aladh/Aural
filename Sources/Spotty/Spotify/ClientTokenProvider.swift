@@ -102,10 +102,10 @@ nonisolated protocol DeviceIdStoring: Sendable {
 /// Not a keychain item: it is an identifier, not a secret, and losing it costs nothing beyond
 /// looking like a fresh install.
 nonisolated struct UserDefaultsDeviceIdStore: DeviceIdStoring {
-    private static let key = "keymasterDeviceId"
+    static let storageKey = "keymasterDeviceId"
 
     func deviceId() -> String {
-        if let existing = UserDefaults.standard.string(forKey: Self.key),
+        if let existing = UserDefaults.standard.string(forKey: Self.storageKey),
             existing.count == 40,
             existing.allSatisfy(\.isHexDigit)
         {
@@ -113,7 +113,7 @@ nonisolated struct UserDefaultsDeviceIdStore: DeviceIdStoring {
         }
 
         let generated = Self.generate()
-        UserDefaults.standard.set(generated, forKey: Self.key)
+        UserDefaults.standard.set(generated, forKey: Self.storageKey)
         return generated
     }
 

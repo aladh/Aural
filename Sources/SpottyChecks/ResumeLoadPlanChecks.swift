@@ -42,6 +42,18 @@ func runResumeLoadPlanChecks(_ check: CheckRunner) {
         check.check("empty strings produce no load targets", empty.targets().isEmpty)
         check.equal("live position is kept when deactivation is zero", empty.positionMS, 12087)
 
+        let initializedWithEmptyContext = ResumeLoadPlan(
+            positionMS: 10,
+            contextURI: "",
+            trackURI: "spotify:track:hint"
+        )
+        check.nil_("the public initializer treats an empty context as missing", initializedWithEmptyContext.contextURI)
+        check.equal(
+            "an empty initialized context does not produce a context target",
+            initializedWithEmptyContext.targets(),
+            [.track(uri: "spotify:track:hint", positionMS: 10)]
+        )
+
         check.equal(
             "only a track loads that track",
             ResumeLoadPlan.capture(

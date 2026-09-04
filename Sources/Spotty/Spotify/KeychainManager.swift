@@ -31,6 +31,7 @@ nonisolated enum KeychainManager {
 
     private static let keymasterService = "dev.spotty.app.keymaster"
     private static let keymasterTokensKey = "keymaster_tokens"
+    private static let previousServiceRetiredKey = "keymaster.previous-service-retired.v1"
 
     /// Stored as one item rather than a key per field, which is how the Web API tokens were
     /// kept. The four values are only meaningful together — an access token paired with another
@@ -42,23 +43,55 @@ nonisolated enum KeychainManager {
             data: JSONEncoder().encode(tokens),
             service: keymasterService,
         )
-        delete(key: keymasterTokensKey, service: PreviousInstallationIdentity.keychainService)
+        retirePreviousKeymasterService()
     }
 
     static func loadKeymasterTokens() -> KeymasterTokens? {
-        if let data = load(key: keymasterTokensKey, service: keymasterService) {
-            return KeymasterStoredGrantCodec.decode(data, source: .secure)
-        }
-        guard
-            let data = load(
-                key: keymasterTokensKey,
-                service: PreviousInstallationIdentity.keychainService
-            ),
+        loadKeymasterTokensForMigration(
+            loadCurrent: { load(key: keymasterTokensKey, service: keymasterService) },
+            loadPrevious: {
+                load(
+                    key: keymasterTokensKey,
+                    service: PreviousInstallationIdentity.keychainService
+                )
+            },
+            saveCurrent: { tokens in
+                try save(
+                    key: keymasterTokensKey,
+                    data: JSONEncoder().encode(tokens),
+                    service: keymasterService
+                )
+            },
+            previousIsRetired: {
+                UserDefaults.standard.bool(forKey: previousServiceRetiredKey)
+            },
+            retirePrevious: retirePreviousKeymasterService
+        )
+    }
+
+    static func loadKeymasterTokensForMigration(
+        loadCurrent: () -> Data?,
+        loadPrevious: () -> Data?,
+        saveCurrent: (KeymasterTokens) throws -> Void,
+        previousIsRetired: () -> Bool,
+        retirePrevious: () -> Void
+    ) -> KeymasterTokens? {
+        if let data = loadCurrent() {
             let tokens = KeymasterStoredGrantCodec.decode(data, source: .secure)
-        else { return nil }
+            if tokens != nil {
+                retirePrevious()
+            }
+            return tokens
+        }
+        guard !previousIsRetired(), let data = loadPrevious() else { return nil }
+        guard let tokens = KeymasterStoredGrantCodec.decode(data, source: .secure) else {
+            retirePrevious()
+            return nil
+        }
 
         do {
-            try saveKeymasterTokens(tokens)
+            try saveCurrent(tokens)
+            retirePrevious()
         } catch {
             SpottyLog.authentication.error("Stored grant identity migration failed reason=secure-save")
         }
@@ -66,7 +99,14 @@ nonisolated enum KeychainManager {
     }
 
     static func clearKeymasterTokens() {
+        // Persist retirement before deleting the current grant so an interrupted Sign Out
+        // cannot fall back to a previous-service refresh token on the next launch.
+        retirePreviousKeymasterService()
         delete(key: keymasterTokensKey, service: keymasterService)
+    }
+
+    private static func retirePreviousKeymasterService() {
+        UserDefaults.standard.set(true, forKey: previousServiceRetiredKey)
         delete(key: keymasterTokensKey, service: PreviousInstallationIdentity.keychainService)
     }
 

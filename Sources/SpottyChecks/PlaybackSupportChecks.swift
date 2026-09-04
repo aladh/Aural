@@ -371,6 +371,10 @@ func runPlaybackSupportChecks(_ check: CheckRunner) {
         check.equal("an empty cursor has no available samples", cursor.available, 0)
         check.equal("one slot distinguishes full from empty", cursor.free, 7)
 
+        let normalized = PCMBufferCursor(capacity: 8, readIndex: -1, writeIndex: -9)
+        check.equal("a negative read index wraps into the ring", normalized.readIndex, 7)
+        check.equal("a negative write index wraps into the ring", normalized.writeIndex, 7)
+
         cursor.advanceWrite(by: 6)
         cursor.advanceRead(by: 5)
         cursor.advanceWrite(by: 1)

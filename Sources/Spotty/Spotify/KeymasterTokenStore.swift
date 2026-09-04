@@ -87,15 +87,15 @@ nonisolated struct KeymasterKeychainStore: KeymasterTokenStoring {
 
 /// Retired plaintext location used by older locally signed development builds.
 nonisolated struct KeymasterLegacyDefaultsStore: KeymasterLegacyTokenReading {
-    private let key = "keymaster.tokens.v1"
+    static let storageKey = "keymaster.tokens.v1"
 
     func load() -> KeymasterTokens? {
-        guard let data = UserDefaults.standard.data(forKey: key) else { return nil }
+        guard let data = UserDefaults.standard.data(forKey: Self.storageKey) else { return nil }
         return KeymasterStoredGrantCodec.decode(data, source: .legacy)
     }
 
     func clear() {
-        UserDefaults.standard.removeObject(forKey: key)
+        UserDefaults.standard.removeObject(forKey: Self.storageKey)
     }
 }
 

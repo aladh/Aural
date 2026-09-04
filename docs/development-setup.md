@@ -69,7 +69,7 @@ commands. Signing with an Apple Development identity can require the identity's 
 once; it must not require Spotty to reauthorize its stored Spotify credential after every rebuild.
 
 The first launch after the complete Spotty identity rename migrates the prior installation's
-Keychain grant, defaults, device identifier, scene state, playback preferences, and librespot
+Keychain grant, defaults, device identifier, playback preferences, and librespot
 credential cache. macOS may ask once for permission to read the prior Keychain item. Enter the
 login-keychain password and choose **Always Allow**. Later builds signed by the same Apple team must
 reuse the new authorization without prompting.

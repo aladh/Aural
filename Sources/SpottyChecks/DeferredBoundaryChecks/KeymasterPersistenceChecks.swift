@@ -28,6 +28,76 @@ func runKeymasterPersistenceChecks(_ check: CheckRunner) {
         check.nil_("superseded previous value is removed", previous.object(forKey: "preserved"))
     }
 
+    check.suite("Current Keychain grant retires the previous service") {
+        let current = persistenceGrant(access: "current", refresh: "current-refresh")
+        let previous = persistenceGrant(access: "previous", refresh: "previous-refresh")
+        let currentData = try! JSONEncoder().encode(current)
+        let previousData = try! JSONEncoder().encode(previous)
+        var previousLoadCount = 0
+        var currentSaveCount = 0
+        var retirementCount = 0
+
+        let loaded = KeychainManager.loadKeymasterTokensForMigration(
+            loadCurrent: { currentData },
+            loadPrevious: {
+                previousLoadCount += 1
+                return previousData
+            },
+            saveCurrent: { _ in currentSaveCount += 1 },
+            previousIsRetired: { false },
+            retirePrevious: { retirementCount += 1 }
+        )
+
+        check.equal("current grant wins", loaded?.refreshToken, "current-refresh")
+        check.equal("previous grant is not loaded", previousLoadCount, 0)
+        check.equal("current grant is not rewritten", currentSaveCount, 0)
+        check.equal("previous service is retired", retirementCount, 1)
+    }
+
+    check.suite("Previous Keychain retirement is durable and fail closed") {
+        let previous = persistenceGrant(access: "previous", refresh: "previous-refresh")
+        let previousData = try! JSONEncoder().encode(previous)
+        var previousLoadCount = 0
+        var retirementCount = 0
+
+        let retiredLoad = KeychainManager.loadKeymasterTokensForMigration(
+            loadCurrent: { nil },
+            loadPrevious: {
+                previousLoadCount += 1
+                return previousData
+            },
+            saveCurrent: { _ in },
+            previousIsRetired: { true },
+            retirePrevious: { retirementCount += 1 }
+        )
+        check.nil_("retired previous grant cannot return", retiredLoad)
+        check.equal("retired previous service is not read", previousLoadCount, 0)
+
+        let corruptLoad = KeychainManager.loadKeymasterTokensForMigration(
+            loadCurrent: { nil },
+            loadPrevious: { Data("not-json".utf8) },
+            saveCurrent: { _ in },
+            previousIsRetired: { false },
+            retirePrevious: { retirementCount += 1 }
+        )
+        check.nil_("corrupt previous grant fails closed", corruptLoad)
+        check.equal("corrupt previous service is retired", retirementCount, 1)
+
+        let failedSaveLoad = KeychainManager.loadKeymasterTokensForMigration(
+            loadCurrent: { nil },
+            loadPrevious: { previousData },
+            saveCurrent: { _ in throw KeychainError.saveFailed(-1) },
+            previousIsRetired: { false },
+            retirePrevious: { retirementCount += 1 }
+        )
+        check.equal(
+            "failed migration still returns the current-session grant",
+            failedSaveLoad?.refreshToken,
+            "previous-refresh"
+        )
+        check.equal("failed migration preserves the retry path", retirementCount, 1)
+    }
+
     check.suite("Corrupt stored-grant decoding stays sanitized") {
         let sentinel = "SPOTTY_PRIVACY_SENTINEL_stored-grant_9b2e"
         let payload = Data(
@@ -155,8 +225,9 @@ func runKeymasterPersistenceSourceContractChecks(_ check: CheckRunner) {
                 "production code has no UserDefaults save path for the grant",
                 !containsPersistenceToken(store, "UserDefaults.standard.set")
                     && !containsPersistenceToken(store, "legacyStore.save")
-                    && containsPersistenceToken(store, "UserDefaults.standard.data(forKey: key)")
-                    && containsPersistenceToken(store, "UserDefaults.standard.removeObject(forKey: key)")
+                    && containsPersistenceToken(store, "UserDefaults.standard.data(forKey: Self.storageKey)")
+                    && containsPersistenceToken(
+                        store, "UserDefaults.standard.removeObject(forKey: Self.storageKey)")
             )
             check.check(
                 "legacy plaintext is deleted without a load-time secure write",
@@ -181,6 +252,15 @@ func runKeymasterPersistenceSourceContractChecks(_ check: CheckRunner) {
                     && !containsPersistenceToken(keychain, "Shared keychain access group")
                     && containsPersistenceToken(keychain, "Self-signed development signatures are build-only")
                     && containsPersistenceToken(keychain, "requires an Apple-issued team signature")
+            )
+            check.check(
+                "previous-service retirement is durable rather than delete-only",
+                containsPersistenceToken(
+                    keychain,
+                    "UserDefaults.standard.set(true, forKey: previousServiceRetiredKey)"
+                )
+                    && containsPersistenceToken(keychain, "guard !previousIsRetired()")
+                    && containsPersistenceToken(keychain, "retirePreviousKeymasterService()")
             )
         }
     }

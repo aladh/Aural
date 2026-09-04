@@ -608,7 +608,10 @@ pub extern "C" fn spotty_playback_transfer_playback(to_device_id: *const c_char)
             return -1;
         };
 
-        debug!("spotty_playback_transfer_playback called: {}", to_device_str);
+        debug!(
+            "spotty_playback_transfer_playback called: {}",
+            to_device_str
+        );
 
         if let Err(e) = require_session_connected() {
             return e;

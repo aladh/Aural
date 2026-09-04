@@ -27,18 +27,11 @@ nonisolated enum PreviousInstallationIdentity {
         }
     }
 
-    private static let persistedDefaultsKeys = [
-        "keymaster.tokens.v1",
-        "keymasterDeviceId",
-        "playback.shuffle.fewer-repeats",
-        "playback.last-remote-device-id",
-        "playback.fewer-repeats.history",
-        "sidebarSelection",
-        "selectedMediaTitle",
-        "selectedMediaSubtitle",
-        "selectedMediaArtworkURL",
-        "showsPlaybackInspector",
-    ]
+    private static let persistedDefaultsKeys =
+        [
+            KeymasterLegacyDefaultsStore.storageKey,
+            UserDefaultsDeviceIdStore.storageKey,
+        ] + UserDefaultsPlaybackPreferences.persistedKeys
 
     private static func decode(_ encoded: String) -> String {
         guard

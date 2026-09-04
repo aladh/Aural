@@ -14,7 +14,7 @@ public struct ResumeLoadPlan: Equatable, Sendable {
 
     public init(positionMS: UInt32, contextURI: String?, trackURI: String?) {
         self.positionMS = positionMS
-        self.contextURI = contextURI
+        self.contextURI = Self.nonemptyURI(contextURI)
         self.trackURI = trackURI
     }
 
