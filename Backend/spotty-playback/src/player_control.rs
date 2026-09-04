@@ -579,6 +579,24 @@ pub extern "C" fn spotty_playback_set_initial_volume(volume: u16) {
     })
 }
 
+/// Sets the user-facing device name advertised to Spotify Connect.
+/// Must be called before player initialization to affect the next Spirc instance.
+#[no_mangle]
+pub extern "C" fn spotty_playback_set_device_name(device_name: *const c_char) {
+    ffi_void("spotty_playback_set_device_name", || {
+        let Some(device_name) = (unsafe { c_string_arg(device_name) }) else {
+            return;
+        };
+        let device_name = device_name.trim();
+        if device_name.is_empty() {
+            return;
+        }
+        *CONNECT_DEVICE_NAME_SETTING
+            .lock()
+            .unwrap_or_else(|e| e.into_inner()) = device_name.to_string();
+    })
+}
+
 /// Transfers playback from another device to this local player.
 /// Uses the native Spotify Connect protocol via Spirc.
 /// Returns 0 on success, -1 on error.

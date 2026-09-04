@@ -145,8 +145,9 @@ The following are reproducible, ignored outputs and may be deleted at any time:
 - `.DS_Store` and `.swiftpm/` — local tooling metadata.
 
 When changing the master app artwork in `Assets/SpottyIcon.png`, regenerate every standard macOS
-icon representation with `./Scripts/generate-icon.sh`. Commit both the source PNG and generated
-`Assets/Spotty.icns`.
+icon representation with `./Scripts/generate-icon.sh`. Every representation is derived from that
+same source image, including the small sizes used in the Dock and Finder. Commit both the source
+PNG and generated `Assets/Spotty.icns`.
 
 To recover from an uncertain local state, a fresh clone is the preferred reset. Do not copy build
 products or signing material from an older checkout. Cargo resolves the pinned librespot revision

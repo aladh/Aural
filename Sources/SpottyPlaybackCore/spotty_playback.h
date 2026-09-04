@@ -394,6 +394,13 @@ void spotty_playback_set_gapless(bool enabled);
 /// @param volume Initial volume level (0 = muted, 65535 = max)
 void spotty_playback_set_initial_volume(uint16_t volume);
 
+/// Sets the user-facing device name advertised to Spotify Connect.
+/// Must be called before spotty_playback_init_player() to take effect.
+/// The string is copied during this call.
+///
+/// @param device_name Non-empty UTF-8 display name
+void spotty_playback_set_device_name(const char* device_name);
+
 #pragma clang assume_nonnull end
 
 #ifdef __cplusplus

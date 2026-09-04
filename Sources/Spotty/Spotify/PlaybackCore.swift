@@ -356,6 +356,12 @@ nonisolated enum PlaybackCore {
         return queueState(from: UnsafePointer(pointer))
     }
 
+    static func configureDeviceIdentity() {
+        ConnectDeviceIdentity.current.withCString {
+            spotty_playback_set_device_name($0)
+        }
+    }
+
     static func configureHighQualityPlayback() {
         spotty_playback_set_bitrate(2)
         spotty_playback_set_gapless(true)

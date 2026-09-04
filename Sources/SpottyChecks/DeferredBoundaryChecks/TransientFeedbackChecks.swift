@@ -269,6 +269,24 @@ func runTransientFeedbackChecks(_ runner: CheckRunner) async {
         )
     }
 
+    runner.suite("Connect device identity") {
+        runner.equal(
+            "Computer Name is followed by the app name",
+            ConnectDeviceIdentity.advertisedName(computerName: "Studio Mac"),
+            "Studio Mac (Spotty)"
+        )
+        runner.equal(
+            "Computer Name is trimmed",
+            ConnectDeviceIdentity.advertisedName(computerName: "  Studio Mac\n"),
+            "Studio Mac (Spotty)"
+        )
+        runner.equal(
+            "missing Computer Name has a natural fallback",
+            ConnectDeviceIdentity.advertisedName(computerName: nil),
+            "Mac (Spotty)"
+        )
+    }
+
     await runner.suite("Transient feedback kinds, replacement, and dismissal") {
         let clock = UncooperativeParkedClock()
         let feedback = TransientFeedbackPresenter(clock: clock, duration: 4)

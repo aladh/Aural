@@ -2,8 +2,9 @@ use super::*;
 use crate::audio_key::spotty_playback_audio_key;
 
 #[test]
-fn connect_config_advertises_spotty_device_name() {
-    assert_eq!(create_connect_config().name, "Spotty");
+fn connect_config_advertises_configured_device_name() {
+    let name = "Studio Mac (Spotty)";
+    assert_eq!(create_connect_config(name).name, name);
 }
 
 // Recovery must start from transport evidence, not from Connect activity. These cover
@@ -859,6 +860,11 @@ fn exported_c_function_signatures() -> Vec<ExportedCFunctionSignature> {
         "SpottyPlaybackResult (uint32_t)"
     );
     signature!(
+        spotty_playback_set_device_name,
+        extern "C" fn(*const c_char),
+        "void (const char *)"
+    );
+    signature!(
         spotty_playback_set_bitrate,
         extern "C" fn(u8),
         "void (uint8_t)"
@@ -939,7 +945,7 @@ fn parse_abi_signature_fixture(fixture: &str) -> Vec<ExportedCFunctionSignature>
 #[test]
 fn exported_c_function_signatures_are_stable() {
     let signatures = exported_c_function_signatures();
-    assert_eq!(signatures.len(), 38);
+    assert_eq!(signatures.len(), 39);
 }
 
 /// The checked-in C fixture is compared to the header by `Scripts/check.sh`; this Rust-side

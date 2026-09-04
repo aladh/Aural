@@ -287,6 +287,7 @@ final class AccountStore {
         defer { SpottyLog.accountSignposter.endInterval("Engine initialization", interval) }
         guard isCurrent(generation: generation, epoch: epoch) else { return false }
         phase = .connecting
+        await coordinator.configureDeviceIdentity()
         await coordinator.configureHighQualityPlayback()
         guard isCurrent(generation: generation, epoch: epoch) else { return false }
         do {
