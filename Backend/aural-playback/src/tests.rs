@@ -1,4 +1,5 @@
 use super::*;
+use crate::audio_key::aural_playback_audio_key;
 
 #[test]
 fn connect_config_advertises_spotty_device_name() {

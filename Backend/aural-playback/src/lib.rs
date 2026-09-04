@@ -19,7 +19,6 @@ mod spirc_command_error;
 mod state;
 mod transport;
 
-pub(crate) use audio_key::*;
 pub(crate) use connect::*;
 pub(crate) use ffi::*;
 pub(crate) use lifecycle_serialization::*;
