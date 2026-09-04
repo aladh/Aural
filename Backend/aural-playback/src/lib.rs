@@ -17,6 +17,7 @@ mod session_lifecycle;
 mod spirc_command_error;
 mod state;
 mod transport;
+mod audio_shim;
 
 pub(crate) use connect::*;
 pub(crate) use ffi::*;
@@ -69,3 +70,5 @@ mod queue_tests;
 mod spirc_command_error_tests;
 #[cfg(test)]
 mod tests;
+#[cfg(test)]
+mod audio_shim_tests;

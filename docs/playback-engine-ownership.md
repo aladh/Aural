@@ -37,6 +37,7 @@ in the [enforcement inventory](architecture-enforcement.md).
 | `player_control.rs` | Adapter | Spirc play/pause/seek/shuffle/repeat/transfer/queue-add, plus FFI getters for sticky resume URIs |
 | `player_event_pump.rs` | Adapter | Local `PlayerEvent` → position and protocol playing/paused bits when this device is active |
 | `spirc_command_error.rs` | Adapter | Map librespot errors onto FFI codes Swift already understands |
+| `audio_shim.rs` | Rust-owned Stage 1 shim core, not yet wired | `ShimPlayer` stands in for `librespot_playback::player::Player`: play-request identity, file-format selection, and translating Swift's audio reports back into `PlayerEvent`s. No FFI, header, or Swift change lands with it; a later PR adds the `SpircPlayer` trait and C ABI that wire it into `state.rs`. |
 
 ### Planned owner per #201 stage
 
