@@ -32,6 +32,14 @@ struct KeymasterPersistenceTests {
         }
         #expect((try? await session.accessToken(now: Date(timeIntervalSince1970: 1_000))) == "rotated-at")
         #expect(secure.stored?.refreshToken == "rotated-adopted-rt")
+
+        let restoredSession = KeymasterSession(
+            store: secure,
+            refresher: { _ in throw KeymasterAuthError.tokenExchangeFailed(500) },
+            cookieCleanup: {}
+        )
+        #expect((try? await restoredSession.accessToken()) == "rotated-at")
+
         await session.clear()
         #expect(secure.stored == nil)
     }
