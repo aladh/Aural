@@ -98,82 +98,135 @@ public struct AudioReport: Sendable, Equatable {
     }
 }
 
-/// A track identity the session is loading, holding, or has cached ahead of time.
-/// `durationMs` starts nil unless the caller already knew it, and is filled in once a
-/// `.durationKnown` pipeline event arrives.
-public struct LoadedTrack: Sendable, Equatable {
-    public let playRequestID: UInt64
-    public let trackURI: String
-    public let fileID: [UInt8]
-    public let format: UInt8
-    public var durationMs: UInt32?
-
-    public init(
-        playRequestID: UInt64,
-        trackURI: String,
-        fileID: [UInt8],
-        format: UInt8,
-        durationMs: UInt32? = nil
-    ) {
-        self.playRequestID = playRequestID
-        self.trackURI = trackURI
-        self.fileID = fileID
-        self.format = format
-        self.durationMs = durationMs
-    }
-}
-
-/// Decode-pipeline facts the audio path reports inward, distinct from the outward
-/// `AudioReport` the session emits toward Rust. Position throttling (reporting at most
-/// every 200 ms) is the caller's job; every `.position` that reaches `apply(pipelineEvent:)`
-/// produces a report.
-public enum PipelineEvent: Equatable, Sendable {
-    case playing
-    case paused
-    case position(UInt32)
-    case seeked(UInt32)
-    case endOfTrack
-    case failed(String)
-    case stopped
-    case durationKnown(UInt32)
-}
-
-/// A side effect the reducer asks its caller to perform. The reducer never performs I/O
-/// itself; it only decides what should happen and hands back a description of it.
-public enum Effect: Equatable, Sendable {
-    /// Start the audio-key/CDN/decrypt/decode pipeline for `LoadedTrack`. `reusingPreload`
-    /// is true when the file was already sitting in `preloaded`, so the caller can skip
-    /// re-fetching and reuse the work already in flight or completed for it.
-    case beginLoad(LoadedTrack, startPlaying: Bool, positionMs: UInt32, reusingPreload: Bool)
-    /// Start decoding a track ahead of time without disturbing current playback.
-    case beginPreload(LoadedTrack)
-    case play
-    case pause
-    case seek(positionMs: UInt32)
-    case stop
-    case report(AudioReport)
-    /// The command's `sessionGeneration` was older than the session's; nothing else happens.
-    case ignoreStale(AudioCommand)
-}
-
 /// Pure reducer for the Stage 1 audio path (#208): turns Rust's forwarded Spirc commands
 /// and the decode pipeline's own events into effects, with no I/O of its own.
 ///
 /// `AudioPlaybackSession` is the Swift-owned in-between of ADR-004: Rust still owns Spirc
 /// and the protocol row, but what a `Load`/`Play`/`Pause`/`Seek`/`Stop`/`Preload` command
 /// actually *does* — including staleness, preload reuse, and the preload-ahead threshold —
-/// is decided here, not in the C leaf.
+/// is decided here, not in the C leaf. Rules:
+///
+/// - A command older than `sessionGeneration` is stale: `[.ignoreStale]`, no other change.
+/// - A command newer than `sessionGeneration` means a rebuild happened without this reducer
+///   hearing about it directly. It adopts the new generation, tears down anything live
+///   first (`.stop` if a pipeline was running, `.cancelPreload` if a preload was held), then
+///   applies the command against the reset state.
+/// - `load` replaces `current`. Whenever a pipeline is already live (`.loading`, `.ready`,
+///   or `.playing`) a `.stop` effect is emitted first. A file id matching `preloaded` is
+///   reused (`beginLoad(reusingPreload: true)`) instead of fetched from scratch, and that
+///   preload slot is consumed, not cancelled.
+/// - `preload` decodes ahead of time without touching `phase`/`current`. Overwriting an
+///   existing `preloaded` (a different file id) cancels the old one first.
+/// - `play`/`pause`/`seek` reach the pipeline once a track is loaded, including while it is
+///   still `.loading` — the pipeline honors them before its first `.playing`/`.paused`
+///   report, and `phase` does not jump ahead of what has actually been confirmed. They are
+///   no-ops from `idle`/`stopped`, and `play`/`pause` are no-ops when already in the phase
+///   they ask for.
+/// - `seek` clamps its target to the known duration.
+/// - `stop` from `idle` or `stopped` is a no-op; otherwise it drops `current` and moves to
+///   `stopped`.
+/// - A pipeline event is scoped by `PipelineEventDelivery`'s `sessionGeneration` and
+///   `playRequestID`. Every pipeline event is ignored while nothing is loaded
+///   (`current == nil`). Once something is loaded, a delivery whose ids do not match
+///   `current` names a pipeline the session has already superseded or torn down, and
+///   produces `[.ignoreStalePipelineEvent]` instead of being applied — so a late
+///   `.endOfTrack` from an abandoned load can never report `playRequestID` 0 or move an
+///   already-`.stopped` session back to `.idle`.
+/// - `.timeToPreloadNext` is reported exactly once per load, the first time a `.position`
+///   arrives with 30s or less of known duration remaining.
+/// - `.endOfTrack` reports and resets to `idle`. `.failed` reports `.unavailable` and moves
+///   to `stopped`: an unplayable file is not recoverable by retrying the same load.
 public struct AudioPlaybackSession: Sendable, Equatable {
     /// Where the currently loaded track stands. `loading` covers the window between
     /// `beginLoad` and the first `.playing`/`.paused` pipeline event; `ready` is loaded and
-    /// paused; `stopped` is a deliberate stop (as opposed to `idle`, which is "never loaded
-    /// anything for this generation").
+    /// paused (there is no non-paused `ready`: playing has its own phase); `stopped` is a
+    /// deliberate stop (as opposed to `idle`, which is "never loaded anything for this
+    /// generation").
     public enum Phase: Sendable, Equatable {
         case idle
         case loading(playRequestID: UInt64)
-        case ready(playRequestID: UInt64, paused: Bool)
+        case ready(playRequestID: UInt64)
         case playing(playRequestID: UInt64)
         case stopped
+    }
+
+    /// A track identity the session is loading, holding, or has cached ahead of time.
+    /// `durationMs` starts nil unless the caller already knew it, and is filled in once a
+    /// `.durationKnown` pipeline event arrives.
+    public struct LoadedTrack: Sendable, Equatable {
+        public let playRequestID: UInt64
+        public let trackURI: String
+        public let fileID: [UInt8]
+        public let format: UInt8
+        public var durationMs: UInt32?
+
+        public init(
+            playRequestID: UInt64,
+            trackURI: String,
+            fileID: [UInt8],
+            format: UInt8,
+            durationMs: UInt32? = nil
+        ) {
+            self.playRequestID = playRequestID
+            self.trackURI = trackURI
+            self.fileID = fileID
+            self.format = format
+            self.durationMs = durationMs
+        }
+    }
+
+    /// Decode-pipeline facts the audio path reports inward, distinct from the outward
+    /// `AudioReport` the session emits toward Rust. Position throttling (reporting at most
+    /// every 200 ms) is the caller's job; every `.position` that reaches
+    /// `apply(pipelineEvent:)` produces a report. The failure reason is not modelled here:
+    /// it is not part of the outward `.unavailable` report, so the caller logs it directly.
+    public enum PipelineEvent: Equatable, Sendable {
+        case playing
+        case paused
+        case position(UInt32)
+        case seeked(UInt32)
+        case endOfTrack
+        case failed
+        case stopped
+        case durationKnown(UInt32)
+    }
+
+    /// One pipeline event, scoped to the load it claims to be about. `apply(pipelineEvent:)`
+    /// checks `sessionGeneration`/`playRequestID` against `current` before applying `event`.
+    public struct PipelineEventDelivery: Sendable, Equatable {
+        public let sessionGeneration: UInt64
+        public let playRequestID: UInt64
+        public let event: PipelineEvent
+
+        public init(sessionGeneration: UInt64, playRequestID: UInt64, event: PipelineEvent) {
+            self.sessionGeneration = sessionGeneration
+            self.playRequestID = playRequestID
+            self.event = event
+        }
+    }
+
+    /// A side effect the reducer asks its caller to perform. The reducer never performs I/O
+    /// itself; it only decides what should happen and hands back a description of it.
+    public enum Effect: Equatable, Sendable {
+        /// Start the audio-key/CDN/decrypt/decode pipeline for `LoadedTrack`.
+        /// `reusingPreload` is true when the file was already sitting in `preloaded`, so the
+        /// caller can skip re-fetching and reuse the work already in flight or completed.
+        case beginLoad(LoadedTrack, startPlaying: Bool, positionMs: UInt32, reusingPreload: Bool)
+        /// Start decoding a track ahead of time without disturbing current playback.
+        case beginPreload(LoadedTrack)
+        /// A previously preloaded track (identified by its own `playRequestID`) is being
+        /// abandoned — overwritten by another preload, or dropped by a generation reset —
+        /// before the pipeline was ever asked to begin it.
+        case cancelPreload(playRequestID: UInt64)
+        case play
+        case pause
+        case seek(positionMs: UInt32)
+        case stop
+        case report(AudioReport)
+        /// The command's `sessionGeneration` was older than the session's; nothing else happens.
+        case ignoreStale(AudioCommand)
+        /// The pipeline event's ids did not match `current`; nothing else happens.
+        case ignoreStalePipelineEvent(PipelineEventDelivery)
     }
 
     public private(set) var phase: Phase
@@ -201,25 +254,34 @@ public struct AudioPlaybackSession: Sendable, Equatable {
     // MARK: - Commands
 
     /// Applies one forwarded Spirc command, returning the effects the caller must perform.
-    ///
-    /// A command older than `sessionGeneration` is stale and produces `[.ignoreStale]`
-    /// with no other change: the session that issued it no longer exists. A command newer
-    /// than `sessionGeneration` means a session rebuild happened without this reducer
-    /// hearing about it directly; the session adopts the new generation and drops
-    /// `current`/`preloaded` before applying the command, since neither can be trusted to
-    /// still describe anything the new session cares about.
+    /// See the rules on `AudioPlaybackSession` for staleness, generation-reset teardown, and
+    /// per-`Kind` behavior.
     public mutating func apply(_ command: AudioCommand) -> [Effect] {
         if command.sessionGeneration < sessionGeneration {
             return [.ignoreStale(command)]
         }
+
+        var teardown: [Effect] = []
         if command.sessionGeneration > sessionGeneration {
             sessionGeneration = command.sessionGeneration
+            switch phase {
+            case .idle, .stopped:
+                break
+            default:
+                teardown.append(.stop)
+            }
+            if let cancel = cancelExistingPreload() {
+                teardown.append(cancel)
+            }
             phase = .idle
             current = nil
-            preloaded = nil
             positionMs = 0
             timeToPreloadReported = false
         }
+        return teardown + applyKnownGeneration(command)
+    }
+
+    private mutating func applyKnownGeneration(_ command: AudioCommand) -> [Effect] {
         switch command.kind {
         case .load:
             return applyLoad(command)
@@ -236,15 +298,19 @@ public struct AudioPlaybackSession: Sendable, Equatable {
         }
     }
 
-    /// A `load` replaces whatever is current. If a track was actively `.playing`, a `.stop`
-    /// effect is emitted first so the caller tears down the old pipeline before starting the
-    /// new one. When the requested file id matches `preloaded`, the caller can reuse that
-    /// work instead of fetching from scratch — the `beginLoad` effect still fires (a fresh
-    /// `playRequestID` needs its own load bookkeeping) but carries `reusingPreload: true`,
-    /// and the consumed `preloaded` slot is cleared.
+    /// A `load` replaces whatever is current. Whenever a pipeline is already live
+    /// (`.loading`, `.ready`, or `.playing`), a `.stop` effect is emitted first so the caller
+    /// tears down the old pipeline before starting the new one. When the requested file id
+    /// matches `preloaded`, the caller can reuse that work instead of fetching from scratch
+    /// — the `beginLoad` effect still fires (a fresh `playRequestID` needs its own load
+    /// bookkeeping) but carries `reusingPreload: true`, and the consumed `preloaded` slot is
+    /// cleared without a `.cancelPreload` (it is being used, not abandoned).
     private mutating func applyLoad(_ command: AudioCommand) -> [Effect] {
         var effects: [Effect] = []
-        if case .playing = phase {
+        switch phase {
+        case .idle, .stopped:
+            break
+        default:
             effects.append(.stop)
         }
 
@@ -277,8 +343,13 @@ public struct AudioPlaybackSession: Sendable, Equatable {
     }
 
     /// A `preload` decodes a track ahead of time without touching `phase` or `current`:
-    /// whatever is playing keeps playing. The result replaces any previous `preloaded`.
+    /// whatever is playing keeps playing. An existing `preloaded` for a different file is
+    /// cancelled first.
     private mutating func applyPreload(_ command: AudioCommand) -> [Effect] {
+        var effects: [Effect] = []
+        if let cancel = cancelExistingPreload() {
+            effects.append(cancel)
+        }
         let track = LoadedTrack(
             playRequestID: command.playRequestID,
             trackURI: command.trackURI,
@@ -287,32 +358,47 @@ public struct AudioPlaybackSession: Sendable, Equatable {
             durationMs: command.durationMs > 0 ? command.durationMs : nil
         )
         preloaded = track
-        return [.beginPreload(track)]
+        effects.append(.beginPreload(track))
+        return effects
     }
 
-    /// `play` only does something once a load has reported itself paused-and-ready; from
-    /// `idle`, `loading`, `stopped`, or while already `playing` it is a no-op, since there is
-    /// either nothing to start or nothing left to do.
+    /// `play` reaches the pipeline once a track is loaded. From `.loading` the effect is
+    /// still emitted for the pipeline to honor before its first `.playing`/`.paused` report
+    /// — `phase` does not jump ahead of what has actually been confirmed. From `.ready` it
+    /// moves to `.playing` directly. A no-op from `idle`/`stopped`/already-`.playing`.
     private mutating func applyPlay() -> [Effect] {
-        guard case .ready(let requestID, paused: true) = phase else { return [] }
-        phase = .playing(playRequestID: requestID)
-        return [.play]
+        switch phase {
+        case .ready(let requestID):
+            phase = .playing(playRequestID: requestID)
+            return [.play]
+        case .loading:
+            return [.play]
+        default:
+            return []
+        }
     }
 
-    /// `pause` only does something while actively `playing`; otherwise a no-op.
+    /// `pause` reaches the pipeline once a track is loaded, including while still `.loading`
+    /// (see `applyPlay`). From `.playing` it moves to `.ready`. A no-op otherwise.
     private mutating func applyPause() -> [Effect] {
-        guard case .playing(let requestID) = phase else { return [] }
-        phase = .ready(playRequestID: requestID, paused: true)
-        return [.pause]
+        switch phase {
+        case .playing(let requestID):
+            phase = .ready(playRequestID: requestID)
+            return [.pause]
+        case .loading:
+            return [.pause]
+        default:
+            return []
+        }
     }
 
-    /// `seek` only does something once a track is loaded (`ready` or `playing`); from
-    /// `idle`, `loading`, or `stopped` it is a no-op. The target position is clamped to the
-    /// known duration so a stale or out-of-range seek cannot ask the decoder to seek past
-    /// the end of the file.
+    /// `seek` reaches the pipeline once a track is loaded (`.ready`, `.playing`, or still
+    /// `.loading`); from `idle`/`stopped` it is a no-op. The target position is clamped to
+    /// the known duration so a stale or out-of-range seek cannot ask the decoder to seek
+    /// past the end of the file.
     private mutating func applySeek(_ command: AudioCommand) -> [Effect] {
         switch phase {
-        case .ready, .playing:
+        case .ready, .playing, .loading:
             let clamped = clamp(command.positionMs)
             positionMs = clamped
             return [.seek(positionMs: clamped)]
@@ -341,27 +427,41 @@ public struct AudioPlaybackSession: Sendable, Equatable {
         return min(target, duration)
     }
 
+    /// Cancels and clears any preload slot, returning the effect to tell the caller so, or
+    /// `nil` when nothing was preloaded.
+    private mutating func cancelExistingPreload() -> Effect? {
+        guard let old = preloaded else { return nil }
+        preloaded = nil
+        return .cancelPreload(playRequestID: old.playRequestID)
+    }
+
     // MARK: - Pipeline events
 
-    /// Applies one fact from the decode pipeline, returning the reports the caller must
-    /// send back to Rust. `.playing`/`.paused` move `phase` to match what the pipeline says
-    /// is actually happening; both are no-ops if nothing is currently loaded (a pipeline
-    /// event arriving after the load it belongs to was superseded).
+    /// Applies one pipeline event, scoped by `delivery`'s `sessionGeneration` and
+    /// `playRequestID`. Every pipeline event is ignored while nothing is loaded
+    /// (`current == nil`): there is nothing left for it to describe. Once something is
+    /// loaded, a delivery whose ids do not match `current` names a pipeline the session has
+    /// already superseded or torn down, and produces `[.ignoreStalePipelineEvent]` instead
+    /// of being applied — so a late `.endOfTrack` from an abandoned load can never report
+    /// `playRequestID` 0 or move an already-`.stopped` session back to `.idle`.
     ///
     /// `.failed` reports `.unavailable` and moves to `stopped`: an unplayable file is not
     /// recoverable by retrying the same load. `.endOfTrack` reports `.endOfTrack` and moves
     /// to `idle`, clearing `current` and the position, since the caller (Spirc, via Rust)
     /// owns advancing to whatever comes next.
-    public mutating func apply(pipelineEvent event: PipelineEvent) -> [Effect] {
-        switch event {
+    public mutating func apply(pipelineEvent delivery: PipelineEventDelivery) -> [Effect] {
+        guard let current else { return [] }
+        guard delivery.sessionGeneration == sessionGeneration, delivery.playRequestID == current.playRequestID else {
+            return [.ignoreStalePipelineEvent(delivery)]
+        }
+
+        switch delivery.event {
         case .playing:
-            guard let current else { return [] }
             phase = .playing(playRequestID: current.playRequestID)
             return [report(.playing)]
 
         case .paused:
-            guard let current else { return [] }
-            phase = .ready(playRequestID: current.playRequestID, paused: true)
+            phase = .ready(playRequestID: current.playRequestID)
             return [report(.paused)]
 
         case .position(let ms):
@@ -377,9 +477,9 @@ public struct AudioPlaybackSession: Sendable, Equatable {
             return [report(.seeked, positionMsOverride: ms)]
 
         case .endOfTrack:
-            let effect = report(.endOfTrack, positionMsOverride: current?.durationMs ?? positionMs)
+            let effect = report(.endOfTrack, positionMsOverride: current.durationMs ?? positionMs)
             phase = .idle
-            current = nil
+            self.current = nil
             positionMs = 0
             timeToPreloadReported = false
             return [effect]
@@ -387,17 +487,17 @@ public struct AudioPlaybackSession: Sendable, Equatable {
         case .failed:
             let effect = report(.unavailable)
             phase = .stopped
-            current = nil
+            self.current = nil
             return [effect]
 
         case .stopped:
             let effect = report(.stopped)
             phase = .stopped
-            current = nil
+            self.current = nil
             return [effect]
 
         case .durationKnown(let ms):
-            current?.durationMs = ms
+            self.current?.durationMs = ms
             return [report(.duration, durationMsOverride: ms)]
         }
     }
