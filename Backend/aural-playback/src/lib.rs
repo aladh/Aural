@@ -6,6 +6,7 @@
 //! runtime contract.
 
 mod audio_key;
+mod audio_shim;
 mod connect;
 mod ffi;
 mod lifecycle_serialization;
@@ -58,6 +59,8 @@ pub(crate) use std::time::{Duration, SystemTime, UNIX_EPOCH};
 pub(crate) use tokio::runtime::Runtime;
 pub(crate) use tokio::sync::mpsc;
 
+#[cfg(test)]
+mod audio_shim_tests;
 #[cfg(test)]
 mod connect_cluster_apply_tests;
 #[cfg(test)]

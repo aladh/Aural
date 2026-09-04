@@ -46,6 +46,7 @@ in the [enforcement inventory](architecture-enforcement.md).
 | `spirc_command_error.rs` | Adapter | Map librespot errors onto FFI codes Swift already understands |
 | `Backend/vendor/librespot-connect` | Vendored third-party, patched | librespot's `connect` crate pinned to the same rev as the git dependencies, patched so `Spirc::new` takes `Arc<dyn SpircPlayer>` instead of the concrete `Arc<Player>`. See its `PATCHES.md` for the exact diff. This is the seam Stage 1 needs to drive playback through a Swift-owned player without forking `Spirc`/`SpircTask`. |
 | `audio_key.rs` | Adapter | Stage 1 (#208) AP audio-key request over FFI. No caller yet; the consumer must cache successes per file id and coalesce concurrent misses |
+| `audio_shim.rs` | Rust-owned Stage 1 shim core, not yet wired | `ShimPlayer` stands in for `librespot_playback::player::Player`: play-request identity, file-format selection, and translating Swift's audio reports back into `PlayerEvent`s. No FFI, header, or Swift change lands with it; a later PR implements the vendored `SpircPlayer` trait for it and wires it into `state.rs`. |
 
 ### Planned owner per #201 stage
 
