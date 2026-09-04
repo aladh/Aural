@@ -31,8 +31,10 @@ func runSpotifyEncryptedVorbisChecks(_ check: CheckRunner) async {
             check.equal("byte source length is the encrypted file length", total, ciphertext.count)
 
             let captureStart = SpotifyTrackByteSource.oggStartOffset
-            let oggPrefix = try await source.readRange(offset: captureStart, length: min(64, ogg.count))
-            check.equal("ranged decrypt at 0xa7 is the Ogg fixture prefix", oggPrefix, ogg.prefix(oggPrefix.count))
+            let requestedPrefix = min(64, ogg.count)
+            let oggPrefix = try await source.readRange(offset: captureStart, length: requestedPrefix)
+            check.equal("ranged decrypt at 0xa7 returns the requested length", oggPrefix.count, requestedPrefix)
+            check.equal("ranged decrypt at 0xa7 is the Ogg fixture prefix", oggPrefix, ogg.prefix(requestedPrefix))
 
             let midOffset = captureStart + 17
             let midLength = 48
