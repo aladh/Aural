@@ -54,14 +54,13 @@ private struct FixturePage {
 /// Builds a synthetic Ogg stream: some leading non-Ogg bytes (as in the real Spotify layout,
 /// where "OggS" first appears at byte 0xa7), then `headerPageCount` Vorbis header pages (granule
 /// 0, single small segment each), then `audioPageCount` audio pages with a monotonically
-/// increasing granule position, single-segment bodies under 255 bytes so no lacing continuation
-/// is needed. The first audio page carries granule 0 too (a legitimate case: its packet does not
-/// complete within the page), which is what makes "target 0" land on it rather than on the last
-/// header page — both are tied at granule 0, and the first audio page is the later of the two in
-/// stream order. `unknownGranuleAudioIndices` marks a run of audio pages, in the right (later)
-/// half of the stream, whose packet does not complete on that page either — an unknown (-1)
-/// granule with the continuation flag set — so a bisection probe landing in that run has to walk
-/// forward to the next known-granule page rather than mistake it for a resolvable one.
+/// increasing granule position. Ordinary audio pages use one segment under 255 bytes so the
+/// packet completes on that page. `unknownGranuleAudioIndices` marks a contiguous run of audio
+/// pages in the right (later) half of the stream whose packet does *not* complete: each of those
+/// pages carries granule -1 and a `255` lacing value. The first page of that run leaves the
+/// continuation flag clear; every later page in the run, and the known-granule page that
+/// completes the packet, sets it. A bisection probe landing in the run must walk forward to the
+/// next known-granule page rather than mistake an unknown page for a resolvable one.
 private func buildSyntheticStream(
     leadingJunk: Int = 100,
     headerPageCount: Int = 3,
@@ -76,8 +75,16 @@ private func buildSyntheticStream(
         withUnsafeBytes(of: value.littleEndian) { Data($0) }
     }
 
-    func appendPage(to data: inout Data, granule: UInt64?, bodySize: Int, sequence: UInt32, flags: UInt8) -> Int {
+    func appendPage(
+        to data: inout Data,
+        granule: UInt64?,
+        bodySize: Int,
+        sequence: UInt32,
+        flags: UInt8,
+        continuedPacket: Bool
+    ) -> Int {
         let offset = data.count
+        let segmentSize = continuedPacket ? 255 : bodySize
         data.append(Data("OggS".utf8))
         data.append(0)  // version
         data.append(flags)
@@ -85,9 +92,9 @@ private func buildSyntheticStream(
         data.append(littleEndianBytes(UInt32(1)))  // serial number: one logical stream
         data.append(littleEndianBytes(sequence))
         data.append(littleEndianBytes(UInt32(0)))  // checksum: unverified by OggPageHeader.parse
-        data.append(1)  // segment count: one segment, no lacing continuation
-        data.append(UInt8(bodySize))
-        data.append(Data(repeating: 0x41, count: bodySize))
+        data.append(1)  // one segment
+        data.append(UInt8(segmentSize))
+        data.append(Data(repeating: 0x41, count: segmentSize))
         return offset
     }
 
@@ -97,19 +104,40 @@ private func buildSyntheticStream(
     var headerPages: [FixturePage] = []
     for i in 0..<headerPageCount {
         let flags: UInt8 = i == 0 ? 0x02 : 0  // first header page is beginning-of-stream
-        let offset = appendPage(to: &data, granule: 0, bodySize: 4, sequence: sequence, flags: flags)
+        let offset = appendPage(
+            to: &data,
+            granule: 0,
+            bodySize: 4,
+            sequence: sequence,
+            flags: flags,
+            continuedPacket: false
+        )
         headerPages.append(FixturePage(offset: offset, granule: 0))
         sequence += 1
     }
+
+    let firstUnknownIndex = unknownGranuleAudioIndices.min()
+    let lastUnknownIndex = unknownGranuleAudioIndices.max()
 
     var audioPages: [FixturePage] = []
     for i in 0..<audioPageCount {
         let isUnknown = unknownGranuleAudioIndices.contains(i)
         let granule: UInt64? = isUnknown ? nil : UInt64(i) * granuleStep
-        let bodySize = 100 + (i % 10) * 10  // varying, always well under 255
+        let bodySize = 100 + (i % 10) * 10  // varying, always well under 255 when the packet completes
         var flags: UInt8 = i == audioPageCount - 1 ? 0x04 : 0  // last page is end-of-stream
-        if isUnknown { flags |= 0x01 }  // continuation: the packet spanning this page doesn't end here
-        let offset = appendPage(to: &data, granule: granule, bodySize: bodySize, sequence: sequence, flags: flags)
+        // Continuation is set on every page after the first of an incomplete packet, including
+        // the known-granule page that finishes it. The first unknown page starts that packet.
+        if let firstUnknownIndex, let lastUnknownIndex, i > firstUnknownIndex, i <= lastUnknownIndex + 1 {
+            flags |= 0x01
+        }
+        let offset = appendPage(
+            to: &data,
+            granule: granule,
+            bodySize: bodySize,
+            sequence: sequence,
+            flags: flags,
+            continuedPacket: isUnknown
+        )
         audioPages.append(FixturePage(offset: offset, granule: granule))
         sequence += 1
     }
@@ -193,6 +221,32 @@ struct OggSeekTests {
             // range for informative, and never nudge its search bounds by a single byte into a
             // page's payload.
             let unknownRunFixture = buildSyntheticStream(unknownGranuleAudioIndices: [150, 151, 152, 153, 154])
+            let unknownRun = 150...154
+            for index in unknownRun {
+                let page = unknownRunFixture.audioPages[index]
+                #expect((page.granule) == nil, "audio page \(index) carries an unknown granule")
+                guard let header = OggPageHeader.parse(unknownRunFixture.data, at: page.offset) else {
+                    #expect((false) == true, "audio page \(index) of the unknown-run fixture parses")
+                    return
+                }
+                #expect((header.granulePosition) == (-1), "audio page \(index) granule is -1 on the wire")
+                #expect((header.segmentTable) == ([255]), "audio page \(index) lacing continues the packet")
+                #expect(
+                    (header.isContinuation) == (index != unknownRun.lowerBound),
+                    "continuation is clear on the first unknown page and set on the rest")
+            }
+            let completingPage = unknownRunFixture.audioPages[155]
+            guard let completingHeader = OggPageHeader.parse(unknownRunFixture.data, at: completingPage.offset)
+            else {
+                #expect((false) == true, "audio page 155 of the unknown-run fixture parses")
+                return
+            }
+            #expect((completingPage.granule != nil) == true, "audio page 155 completes the continued packet")
+            #expect((completingHeader.isContinuation) == true, "the completing page continues the prior packet")
+            #expect(
+                (completingHeader.segmentTable.contains { $0 < 255 }) == true,
+                "the completing page's lacing finishes the packet")
+
             let lastKnownBeforeRun = unknownRunFixture.audioPages[149]
             guard let lastKnownBeforeRunGranule = lastKnownBeforeRun.granule,
                 let firstKnownAfterRunGranule = unknownRunFixture.audioPages[155].granule

@@ -35,7 +35,7 @@ in the [enforcement inventory](architecture-enforcement.md).
 | `SpotifyTrackByteSource` / `SpotifyAudioSourceProvider` | The decrypted byte source behind one track (`DecodeByteSource` + read-ahead + whole-file download for the `TimeToPreloadNext` gate), and the audio-key/storage-resolve/fetcher assembly that builds it. The key is cached per file id and never retried in a loop |
 | `StorageResolveClient` | The signed spclient `storage-resolve` request; decoding and CDN-URL expiry policy stay pure in `StorageResolveResponse`/`CDNURLExpiry` |
 | `AudioPipelineEvent` / `AudioPipelineFailure` | The one decode-pipeline event type both `VorbisDecodePipeline` and `AudioPlaybackSession` use. Failures are a closed set, never a stringified error, so a signed CDN URL cannot reach logs, the UI, or Connect |
-| `SwiftAudioPathSwitch` | Debug-only, default-off gate for the whole Swift audio path (`SpottySwiftAudioPath`). Registering the audio-command callback is what selects `ShimPlayer` over librespot's `Player`, so leaving it off keeps `main` on the shipped `proxy_sink` path |
+| `SwiftAudioPathSwitch` | Debug-only, default-off gate for the whole Swift audio path (`SpottySwiftAudioPath`). Registering the audio-command callback is what selects `ShimPlayer` over librespot's `Player`, so leaving it off keeps `main` on the shipped `proxy_sink` path. Slice 3c of #208 is on `main`; the remaining Stage 1 gate is the [live spike](product-and-acceptance-contract.md#stage-1-swift-audio-path-spike-208) |
 
 ## Rust crate by module
 
@@ -60,8 +60,11 @@ in the [enforcement inventory](architecture-enforcement.md).
 ### Planned owner per #201 stage
 
 - Stage 1 (audio path): audio-key request, CDN fetch, decrypt, and Vorbis decode move to Swift
-  and feed `AudioRenderer`; `proxy_sink.rs` and the PCM callback retire. The #159 spike decides
-  go/no-go.
+  and feed `AudioRenderer`; `proxy_sink.rs` and the PCM callback retire after a recorded go.
+  Offline slices through 3c (building blocks, stb_vorbis pipeline, `SpircPlayer`, `ShimPlayer`,
+  default-off Swift path) plus the synthetic Vorbis fixture and decrypt-then-decode check are on
+  `main`. The remaining gate is the [live spike](product-and-acceptance-contract.md#stage-1-swift-audio-path-spike-208);
+  #159 records go/no-go.
 - Stage 2 (session): AP resolve, handshake, login, and credential cache move to Swift;
   `session_lifecycle.rs` and `lifecycle_serialization.rs` shrink to what Spirc still needs.
 - Stage 3 (Spirc): dealer, cluster, transfer, and `set_queue` move to Swift once synthetic,

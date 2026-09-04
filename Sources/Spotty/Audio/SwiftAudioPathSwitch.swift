@@ -5,8 +5,9 @@
 //  Whether this launch runs the Stage 1 Swift audio path (#208) or the shipped `proxy_sink` one.
 //
 //  Debug-only and default off, so `main` stays playable through librespot's own decoder until
-//  the live spike on the personal machine passes. Release builds cannot turn it on at all: the
-//  switch is not a user setting, it is a spike gate.
+//  the live spike on the personal machine records go. Release builds cannot turn it on at all: the
+//  switch is not a user setting, it is a spike gate. The spike procedure lives in the product
+//  contract (`Stage 1 Swift audio path spike`).
 //
 //  Turning it on:
 //    defaults write dev.spotty.app SpottySwiftAudioPath -bool YES

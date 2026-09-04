@@ -194,5 +194,43 @@ Only when the user has explicitly allowed playback for the current test:
 5. Treat transfer, queue mutation, shuffle/repeat changes, sleep/wake, and output-device changes as
    separately scoped mutations; do not bundle them into a basic playback check.
 
+### Stage 1 Swift audio path spike (#208)
+
+The remaining Stage 1 gate is a **Debug-only** live spike of the Swift audio path (`ShimPlayer` +
+CDN fetch, AES-CTR decrypt, Vorbis decode into `AudioRenderer`). Release builds cannot enable it.
+`main` stays on the shipped `proxy_sink` path until this spike records go or no-go in #208 and
+#159. Do not delete `proxy_sink`, the PCM data/control callbacks, `SoftMixer`, or `set_gapless`
+until a go is recorded.
+
+The switch is `SpottySwiftAudioPath` (`SwiftAudioPathSwitch`). It is not a Settings scene control.
+
+Enable for one Debug launch (bundle id `dev.spotty.app`):
+
+```bash
+defaults write dev.spotty.app SpottySwiftAudioPath -bool YES
+```
+
+or pass `-SpottySwiftAudioPath YES` on the process arguments. After the spike:
+
+```bash
+defaults delete dev.spotty.app SpottySwiftAudioPath
+```
+
+Follow [Explicit playback test](#explicit-playback-test) (identify the active Connect device, local
+volume at zero, named short track, restore pause). Then, on this Mac only:
+
+1. Play one track end to end through Spotty as the active Connect device.
+2. Seek, pause, and resume on that track.
+3. Confirm Spirc auto-advance into the next queue item at end of track.
+4. Confirm position on a second Spotify Connect device while this Mac owns playback.
+5. Note any storage-resolve 403/re-resolve, audio-key failure, or decode/format refusal without
+   capturing tokens, CDN URLs, or account identifiers.
+
+**Go:** the five steps hold and the path is fit to replace `proxy_sink`. Record that in #208 and
+#159; a follow-up PR performs the deletion list and re-measures size/RAM (#37, #215 baseline).
+
+**No-go:** leave the switch off; record the failure mode in #208 and #159 without account-derived
+payloads. Keep the shipped decoder.
+
 Handle test data and artifacts according to [PRIVACY.md](../PRIVACY.md) and
 [SECURITY.md](../SECURITY.md).
