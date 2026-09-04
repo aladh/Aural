@@ -19,7 +19,7 @@ in the [enforcement inventory](architecture-enforcement.md).
 | `ConnectDeviceProjection` | Device-list activity, display sort, empty-type fallback |
 | `ConnectionSnapshotProjection` | Connection session phase, empty-device-id fallback |
 | `PlaybackSnapshotProjection` | Engine playback transport, empty-URI identity, timestamp correction |
-| `ResumeLoadPlan` | Resume-load target order from sticky resume-load URIs, for user resume and reconnect rehydration. `PlaybackStore` captures those URIs through the engine getters; `RustPlaybackEngine` iterates targets through `aural_playback_load`. The engine signals a reconnect window with `resume_pending` and holds readiness until Swift's loads land or the window times out |
+| `ResumeLoadPlan` | Resume-load target order from sticky resume-load URIs, for user resume and reconnect rehydration. `PlaybackStore` captures those URIs through the engine getters; `RustPlaybackEngine` iterates targets through `aural_playback_load`. The engine signals a reconnect window with `resume_pending` and holds readiness until a Swift load lands, a load reports `ERROR_NEEDS_REINIT` (dead Spirc, which ends the wait for that window and triggers a rebuild), or the window times out |
 | Catalog, OAuth, shuffle policy, HTTP retry | Unchanged; never belonged in Rust |
 
 ## Rust crate by module
@@ -45,8 +45,10 @@ in the [enforcement inventory](architecture-enforcement.md).
   go/no-go.
 - Stage 2 (session): AP resolve, handshake, login, and credential cache move to Swift;
   `session_lifecycle.rs` and `lifecycle_serialization.rs` shrink to what Spirc still needs.
-- Stage 3 (Spirc): dealer, cluster, transfer, and `set_queue` move to Swift once recorded fixtures
-  exist; the remaining modules, the C ABI, and `Backend/` retire.
+- Stage 3 (Spirc): dealer, cluster, transfer, and `set_queue` move to Swift once synthetic,
+  non-account-derived protocol fixtures for transfer, remote pause, `set_queue`, and cluster
+  bootstrap exist (test-only; never captured account payloads, per the root `AGENTS.md`); the
+  remaining modules, the C ABI, and `Backend/` retire.
 
 Each stage lands as its own issue and re-measures the baseline below.
 
@@ -69,6 +71,8 @@ presentation.
 
 `aural_playback_get_queue_snapshot` returns the last cluster queue (freed with
 `aural_playback_free_queue_snapshot`) so Swift can recover after a provisional empty `SetQueue`.
+It returns null when no cluster snapshot has been received yet; null means "not told anything",
+which Swift must keep distinct from an empty queue.
 Caching that snapshot in Rust is adapter convenience, not a second app-facing store.
 
 ## Remaining Spotty-owned logic in Rust

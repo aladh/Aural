@@ -45,7 +45,10 @@ The live boundary is [playback engine ownership](playback-engine-ownership.md).
 
 ## Consequences
 
-- One adapter file and one C header are the whole review surface for foreign-boundary changes.
+- The foreign-boundary review surface is the C header, `PlaybackCore.swift` and
+  `RustPlaybackEngine`, the Rust `extern "C"` exports (`ffi.rs`, `player_control.rs`,
+  `queue.rs`, `transport.rs`), and the paired ABI-parity and layout checks. A change to any one
+  of them is reviewed against the others.
 - librespot updates are protocol migrations, not routine dependency bumps.
 - Any staged replacement must keep the boundary narrow while responsibility moves across it.
 

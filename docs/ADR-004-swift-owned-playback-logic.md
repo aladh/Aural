@@ -30,8 +30,8 @@ at risk, so application policy moves to Swift one owner at a time.
 All four observation callbacks (connection, playback, device list, queue) cross FFI as typed C
 snapshots. Presentation and resume/rehydration policy are Swift-owned; the engine forwards
 protocol rows and flags and holds readiness open behind `resume_pending` while Swift's reconnect
-loads run. The live classification of each Rust module, the FFI surface, and the planned owner per
-#201 stage live in [playback engine ownership](playback-engine-ownership.md). ADR 001 is not
+loads run. The live classification of each Rust module, the FFI surface, and the planned owner
+per #201 stage live in [playback engine ownership](playback-engine-ownership.md). ADR 001 is not
 superseded: the boundary rule applies to whatever remains in the leaf.
 
 ## Options considered
