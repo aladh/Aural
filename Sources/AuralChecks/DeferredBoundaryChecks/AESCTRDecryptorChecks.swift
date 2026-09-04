@@ -82,6 +82,25 @@ func runAESCTRDecryptorChecks(_ check: CheckRunner) {
         }
     }
 
+    check.suite("stateless decrypt(key:iv:offset:data:) matches the streaming path") {
+        let key = hex("202122232425262728292a2b2c2d2e2f")
+        let buffer = lcgBuffer(count: 512)
+        let offset: UInt64 = 137
+
+        guard let streaming = try? AESCTRDecryptor(key: key) else {
+            check.check("streaming decryptor constructs", false)
+            return
+        }
+        do {
+            try streaming.seek(toByteOffset: offset)
+            let streamed = try streaming.decrypt(Data(buffer[Int(offset)...]))
+            let oneShot = try AESCTRDecryptor.decrypt(key: key, offset: offset, data: Data(buffer[Int(offset)...]))
+            check.equal("one-shot decrypt matches the streaming decryptor at a non-zero offset", oneShot, streamed)
+        } catch {
+            check.check("stateless decrypt did not throw: \(error)", false)
+        }
+    }
+
     check.suite("counter carry arithmetic") {
         let allFF = [UInt8](repeating: 0xFF, count: 16)
         check.equal(
@@ -109,6 +128,8 @@ func runAESCTRDecryptorChecks(_ check: CheckRunner) {
             AESCTRDecryptor.counter(iv: zero, block: 1 << 32),
             expectedFromShift32
         )
+
+        check.equal("empty iv returns unchanged rather than trapping", AESCTRDecryptor.counter(iv: [], block: 1), [])
     }
 }
 

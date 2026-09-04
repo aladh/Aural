@@ -22,6 +22,12 @@ public enum AESCTRError: Error, Sendable {
 /// cipher, decrypting an arbitrary byte range only requires advancing the counter to the right
 /// block and discarding the leftover keystream bytes within that block — `seek(toByteOffset:)`
 /// does exactly that, which is what makes ranged CDN fetches (`RangedAudioFetcher`) useful.
+///
+/// Not `Sendable`: an instance wraps a single mutable `CCCryptorRef` with no internal
+/// synchronization, so it must be owned and used by a single thread (in practice, the decode
+/// thread that reads and decrypts a track's audio) for its whole lifetime. A caller that only
+/// needs a one-off decrypt without holding onto a decryptor should use the stateless
+/// `decrypt(key:iv:offset:data:)` instead.
 public final class AESCTRDecryptor {
     /// The IV Spotify uses for every encrypted file, taken from librespot.
     public static let spotifyIV: [UInt8] = [
@@ -106,10 +112,26 @@ public final class AESCTRDecryptor {
         return output
     }
 
+    /// Decrypts `data` (the plaintext starting at `offset` bytes into the file) in one call,
+    /// without the caller holding a decryptor across calls: creates one, seeks to `offset`,
+    /// decrypts, and releases it. Equivalent to, but simpler than, constructing an
+    /// `AESCTRDecryptor` and calling `seek(toByteOffset:)` then `decrypt(_:)` for a caller that
+    /// has no reason to keep the decryptor around afterward (a one-off range, a check).
+    public static func decrypt(key: [UInt8], iv: [UInt8] = spotifyIV, offset: UInt64, data: Data) throws -> Data {
+        let decryptor = try AESCTRDecryptor(key: key, iv: iv)
+        try decryptor.seek(toByteOffset: offset)
+        return try decryptor.decrypt(data)
+    }
+
     /// The 128-bit big-endian CTR counter for `block`: `iv` treated as a big-endian integer,
     /// plus `block`, carrying across all 16 bytes. Kept as a pure, independently checkable
     /// helper because the carry arithmetic is the one genuinely fiddly part of this file.
+    ///
+    /// Returns `iv` unchanged (rather than trapping) when it is empty — callers are expected to
+    /// pass an already-validated 16-byte IV (see `init`'s `invalidIVLength` check); this just
+    /// keeps the helper itself from crashing on a malformed input during, say, a check.
     public static func counter(iv: [UInt8], block: UInt64) -> [UInt8] {
+        guard !iv.isEmpty else { return iv }
         var counter = iv
         var carry = block
         var index = counter.count - 1
@@ -122,11 +144,13 @@ public final class AESCTRDecryptor {
         return counter
     }
 
+    /// Creates a new cryptor at `counter` and only then swaps it into `cryptor`, releasing
+    /// whatever was there before. Building the replacement before touching the existing one
+    /// means a failed create (a bad status from `CCCryptorCreateWithMode`) leaves the existing
+    /// cryptor — and whatever position it was at — untouched and still usable, instead of
+    /// leaving `cryptor` nil after a failed `seek`.
     private static func createCryptor(counter: [UInt8], key: [UInt8], into cryptor: inout CCCryptorRef?) throws {
-        if let existing = cryptor {
-            CCCryptorRelease(existing)
-            cryptor = nil
-        }
+        var replacement: CCCryptorRef?
         let status = CCCryptorCreateWithMode(
             CCOperation(kCCEncrypt),
             CCMode(kCCModeCTR),
@@ -139,8 +163,12 @@ public final class AESCTRDecryptor {
             0,
             0,
             CCModeOptions(kCCModeOptionCTR_BE),
-            &cryptor
+            &replacement
         )
         guard status == kCCSuccess else { throw AESCTRError.cryptorCreationFailed(status) }
+        if let existing = cryptor {
+            CCCryptorRelease(existing)
+        }
+        cryptor = replacement
     }
 }

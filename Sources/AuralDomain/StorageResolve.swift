@@ -29,27 +29,20 @@ public struct StorageResolveResponse: Sendable, Equatable {
 
     /// Decodes field 1 (varint result), repeated field 2 (CDN URL strings), and field 4
     /// (file ID bytes). Unknown fields are skipped, matching `ProtobufReader`'s general policy.
-    public init?(protobuf data: Data) {
-        let fields = ProtobufReader.fields(in: data)
+    /// Never fails: a message with none of these fields simply decodes to all-nil/empty.
+    public init(protobuf data: Data) {
+        if let raw = ProtobufReader.firstVarint(field: 1, in: data), let raw = Int(exactly: raw) {
+            result = Result(rawValue: raw)
+        } else {
+            result = nil
+        }
 
-        let result = fields.lazy.compactMap { field -> Result? in
-            guard field.number == 1, let raw = field.varintValue else { return nil }
-            return Result(rawValue: Int(raw))
-        }.first
-
-        let cdnURLs = fields.compactMap { field -> String? in
+        cdnURLs = ProtobufReader.fields(in: data).compactMap { field -> String? in
             guard field.number == 2, let payload = field.bytesPayload else { return nil }
             return String(data: payload, encoding: .utf8)
         }
 
-        let fileID = fields.lazy.compactMap { field -> Data? in
-            guard field.number == 4 else { return nil }
-            return field.bytesPayload
-        }.first
-
-        self.result = result
-        self.cdnURLs = cdnURLs
-        self.fileID = fileID
+        fileID = ProtobufReader.firstBytes(field: 4, in: data)
     }
 }
 
@@ -62,43 +55,31 @@ public enum CDNURLExpiry {
     /// that is about to expire is not handed to a request that will still be in flight then.
     public static let margin: TimeInterval = 300
 
-    /// The Unix-seconds expiry encoded in `url`'s query string, or `nil` if it cannot be parsed
-    /// (host not recognized, expected query item missing, or its value not an integer prefix).
+    /// The Unix-seconds expiry encoded in `url`'s query string, or `nil` if it cannot be parsed.
+    ///
+    /// Mirrors librespot's `MaybeExpiringUrls`, which tries the same four query conventions on
+    /// every URL regardless of which CDN host it names, in this order: `verify=<digits>-...`,
+    /// `__token__=...exp=<digits>...`, `Expires=<digits>~...`, and finally (as a catch-all)
+    /// whichever query item comes first, if its key starts with `<digits>_`.
     public static func expiry(of url: URL) -> Date? {
-        guard let host = url.host else { return nil }
         let items = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems ?? []
 
         func value(_ name: String) -> String? {
             items.first { $0.name == name }?.value
         }
 
-        if host.contains("spotifycdn.com") {
-            if let verify = value("verify"), let seconds = leadingInteger(verify, before: "-") {
-                return Date(timeIntervalSince1970: seconds)
-            }
-            if let expires = value("Expires"), let seconds = leadingInteger(expires, before: "~") {
-                return Date(timeIntervalSince1970: seconds)
-            }
-            return nil
-        }
-
-        if host.contains("akamaized.net") {
-            guard let token = value("__token__"),
-                let expRange = token.range(of: "exp=")
-            else { return nil }
-            let afterExp = token[expRange.upperBound...]
-            let digits = afterExp.prefix { $0.isNumber }
-            guard let seconds = TimeInterval(digits) else { return nil }
+        if let verify = value("verify"), let seconds = leadingInteger(verify, before: "-") {
             return Date(timeIntervalSince1970: seconds)
         }
-
-        if host.contains("scdn.co") {
-            guard let firstKey = items.first?.name,
-                let seconds = leadingInteger(firstKey, before: "_")
-            else { return nil }
+        if let seconds = tokenExpiry(value("__token__")) {
             return Date(timeIntervalSince1970: seconds)
         }
-
+        if let expires = value("Expires"), let seconds = leadingInteger(expires, before: "~") {
+            return Date(timeIntervalSince1970: seconds)
+        }
+        if let firstKey = items.first?.name, let seconds = leadingInteger(firstKey, before: "_") {
+            return Date(timeIntervalSince1970: seconds)
+        }
         return nil
     }
 
@@ -117,6 +98,15 @@ public enum CDNURLExpiry {
         let head = value[value.startIndex..<(value.firstIndex(of: separator) ?? value.endIndex)]
         let digits = head.prefix { $0.isNumber }
         guard !digits.isEmpty else { return nil }
+        return TimeInterval(digits)
+    }
+
+    /// The `exp=<digits>` expiry seconds inside a `__token__` query value, as used by both
+    /// Akamai's and Spotify's own CDN token format. `nil` if `token` is nil or has no `exp=`.
+    private static func tokenExpiry(_ token: String?) -> TimeInterval? {
+        guard let token, let expRange = token.range(of: "exp=") else { return nil }
+        let afterExp = token[expRange.upperBound...]
+        let digits = afterExp.prefix { $0.isNumber }
         return TimeInterval(digits)
     }
 }
