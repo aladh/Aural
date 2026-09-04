@@ -86,5 +86,6 @@ Command and other store-level asynchronous work keeps `PlaybackEffectRegistry` a
 Reducer-driven generic effects and The Composable Architecture were evaluated and rejected in
 [ADR 003](ADR-003-playback-command-effects.md). Reducer acceptance normally gates follow-ups. A
 rejected transport finish may report success only when a same-lifetime authoritative snapshot
-already reconciled the pending expected transport; stale, superseded, teardown, epoch-invalidated,
+already reconciled the pending expected transport, and a reconnect-required engine failure still
+rebuilds the connection in that case; stale, superseded, teardown, epoch-invalidated,
 and non-transport results stay inert.

@@ -247,14 +247,14 @@ func runSessionLifetimeChecks(_ check: CheckRunner) {
             .reportSuccess
         )
         check.equal(
-            "a matching snapshot then late coordinator failure still reports success",
-            followUp(finishAccepted: false, succeeded: false, reconnect: true),
+            "already-reconciled transport success with an ordinary failure reports success",
+            followUp(finishAccepted: false, succeeded: false, reconnect: false),
             .reportSuccess
         )
         check.equal(
-            "already-reconciled transport success does not reconnect",
+            "already-reconciled transport success with a reconnect-required failure keeps presentation and reconnects",
             followUp(finishAccepted: false, succeeded: false, reconnect: true),
-            .reportSuccess
+            .reconnectAfterReconciledSuccess
         )
         check.equal(
             "a non-transport kind with no pending command stays inert",
@@ -287,13 +287,28 @@ func runSessionLifetimeChecks(_ check: CheckRunner) {
             .inert
         )
         check.equal(
-            "a confirmed play target still reports success after a late failure",
+            "a confirmed play target still reports success after an ordinary late failure",
+            followUp(
+                finishAccepted: true,
+                succeeded: false,
+                reconnect: false,
+                resolution: .confirmed
+            ),
+            .reportSuccess
+        )
+        check.equal(
+            "a confirmed play target keeps presentation but reconnects after a reconnect-required failure",
             followUp(
                 finishAccepted: true,
                 succeeded: false,
                 reconnect: true,
                 resolution: .confirmed
             ),
+            .reconnectAfterReconciledSuccess
+        )
+        check.equal(
+            "a confirmed command that succeeded never reconnects",
+            followUp(finishAccepted: false, succeeded: true, reconnect: true, resolution: .confirmed),
             .reportSuccess
         )
         check.equal(
@@ -328,11 +343,11 @@ func runSessionLifetimeChecks(_ check: CheckRunner) {
             .inert
         )
         check.equal(
-            "a confirmed transfer still reports success after a late failure",
+            "a confirmed transfer still reports success after an ordinary late failure",
             followUp(
                 finishAccepted: true,
                 succeeded: false,
-                reconnect: true,
+                reconnect: false,
                 kind: .transfer,
                 resolution: .confirmed
             ),
@@ -350,11 +365,11 @@ func runSessionLifetimeChecks(_ check: CheckRunner) {
             .inert
         )
         check.equal(
-            "a confirmed play still reports success while a later pause is pending",
+            "a confirmed play still reports success (ordinary failure) while a later pause is pending",
             followUp(
                 finishAccepted: true,
                 succeeded: false,
-                reconnect: true,
+                reconnect: false,
                 pending: other,
                 resolution: .confirmed
             ),
@@ -397,22 +412,22 @@ func runSessionLifetimeChecks(_ check: CheckRunner) {
             .reportFailure(reconnect: true)
         )
         check.equal(
-            "a confirmed shuffle still reports success after a late failure",
+            "a confirmed shuffle still reports success after an ordinary late failure",
             followUp(
                 finishAccepted: true,
                 succeeded: false,
-                reconnect: true,
+                reconnect: false,
                 kind: .options,
                 resolution: .confirmed
             ),
             .reportSuccess
         )
         check.equal(
-            "a confirmed shuffle still reports success while a later options command is pending",
+            "a confirmed shuffle still reports success (ordinary failure) while a later options command is pending",
             followUp(
                 finishAccepted: true,
                 succeeded: false,
-                reconnect: true,
+                reconnect: false,
                 kind: .options,
                 pending: other,
                 resolution: .confirmed

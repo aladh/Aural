@@ -432,7 +432,10 @@ actor PlaybackCoordinator {
         local.disconnect()
     }
     func forceReconnect() async -> Int32 {
-        local.forceReconnect()
+        // A replaced or account-cancelled recovery task must not reach the engine once it
+        // finally gets its turn on this actor.
+        guard !Task.isCancelled else { return PlaybackEngineResult.error.rawValue }
+        return local.forceReconnect()
     }
 
     func performRemote(
