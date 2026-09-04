@@ -28,6 +28,8 @@ void spotty_playback_free_string(char* _Nullable s);
 //                                             (call spotty_playback_init_player with NULL)
 //   SpottyPlaybackResultSessionNotConnected  (-3) = session not connected (command rejected,
 //                                             wait for session to connect)
+//   SpottyPlaybackResultCredentialsRejected  (-4) = cached streaming credentials rejected during
+//                                             initialization; authorize streaming again
 //
 // On SpottyPlaybackResultSessionDisconnected, the Spirc channel has closed (e.g., due
 // to idle timeout). Call spotty_playback_init_player() with NULL so it reconnects from the
@@ -35,11 +37,17 @@ void spotty_playback_free_string(char* _Nullable s);
 //
 // On SpottyPlaybackResultSessionNotConnected, the session is not yet connected. Wait
 // for the connection-state callback before retrying the command.
+//
+// SpottyPlaybackResultCredentialsRejected is returned only by initialization after Spotify
+// definitively rejects the cached streaming credentials. It is terminal for those credentials:
+// retain the separate Web API grant, ask the account owner for explicit authorization, and do not
+// retry initialization automatically with the same cache.
 typedef enum __attribute__((enum_extensibility(open))) SpottyPlaybackResult : int32_t {
     SpottyPlaybackResultOk = 0,
     SpottyPlaybackResultError = -1,
     SpottyPlaybackResultSessionDisconnected = -2,
     SpottyPlaybackResultSessionNotConnected = -3,
+    SpottyPlaybackResultCredentialsRejected = -4,
 } SpottyPlaybackResult;
 
 // ============================================================================
@@ -140,7 +148,8 @@ char* _Nullable spotty_playback_get_resume_context_uri(void);
 char* _Nullable spotty_playback_get_resume_track_uri(void);
 
 /// One Connect metadata pair. Pointers are valid only for the callback or until
-/// `spotty_playback_free_queue_snapshot`. NULL means missing.
+/// `spotty_playback_free_queue_snapshot`. NULL means missing; outbound empty strings and
+/// strings containing an interior NUL are also delivered as NULL.
 typedef struct SpottyStringPair {
     const char* _Nullable key;
     const char* _Nullable value;
@@ -154,7 +163,8 @@ typedef struct SpottyRestriction {
 } SpottyRestriction;
 
 /// Unfiltered Connect queue row. String and nested pointers are valid only for the
-/// callback or until `spotty_playback_free_queue_snapshot`. NULL means missing.
+/// callback or until `spotty_playback_free_queue_snapshot`. NULL means missing; outbound empty
+/// strings and strings containing an interior NUL are also delivered as NULL.
 typedef struct SpottyProtocolQueueTrack {
     const char* _Nullable uri;
     const char* _Nullable uid;
@@ -175,7 +185,8 @@ typedef struct SpottyProtocolQueueTrack {
 
 /// Queue observation. Pointers are valid only for the callback or until
 /// `spotty_playback_free_queue_snapshot`. NULL `next_tracks`/`prev_tracks` with count 0
-/// is an empty list. A missing current track is three NULL track fields.
+/// is an empty list. A missing current track is three NULL track fields. Outbound empty strings
+/// and strings containing an interior NUL are delivered as NULL.
 typedef struct SpottyQueueSnapshot {
     uint64_t revision;
     uint64_t session_generation;
@@ -199,7 +210,10 @@ typedef void (*QueueCallback)(const SpottyQueueSnapshot* snapshot);
 void spotty_playback_register_queue_callback(QueueCallback callback);
 
 /// Playback observation. `track_uri` and `context_uri` are valid only for the callback;
-/// Swift must copy them before returning. NULL means missing. Flags are 0 or 1.
+/// Swift must copy them before returning. NULL means missing; outbound empty strings and
+/// strings containing an interior NUL are also delivered as NULL. Flags are 0 or 1.
+/// `is_active_device` is the protocol active-member fact captured with this observation;
+/// it is independent of the arrival order of the connection callback.
 typedef struct SpottyPlaybackSnapshot {
     uint64_t revision;
     uint64_t session_generation;
@@ -211,6 +225,7 @@ typedef struct SpottyPlaybackSnapshot {
     uint8_t shuffle;
     uint8_t repeat_track;
     uint8_t repeat_context;
+    uint8_t is_active_device;
     const char* _Nullable track_uri;
     const char* _Nullable context_uri;
 } SpottyPlaybackSnapshot;
@@ -238,7 +253,8 @@ SpottyQueueSnapshot* _Nullable spotty_playback_get_queue_snapshot(void);
 /// Frees a queue snapshot allocated by `spotty_playback_get_queue_snapshot`. Tolerates NULL.
 void spotty_playback_free_queue_snapshot(SpottyQueueSnapshot* _Nullable snapshot);
 
-/// One cluster member. String pointers are valid only for the callback. NULL means missing.
+/// One cluster member. String pointers are valid only for the callback. NULL means missing;
+/// outbound empty strings and strings containing an interior NUL are also delivered as NULL.
 typedef struct SpottyProtocolDevice {
     const char* _Nullable id;
     const char* _Nullable name;
@@ -263,7 +279,10 @@ typedef void (*DevicesCallback)(const SpottyDevicesSnapshot* snapshot);
 void spotty_playback_register_devices_callback(DevicesCallback callback);
 
 /// Connection observation. `device_id` and `last_error` are valid only for the callback;
-/// Swift must copy them before returning. NULL means missing. Flags are 0 or 1.
+/// Swift must copy them before returning. NULL means missing; outbound empty strings and
+/// strings containing an interior NUL are also delivered as NULL. Flags are 0 or 1.
+/// `credentials_rejected` is a typed, definitive streaming-credential rejection. It takes
+/// precedence over generic reconnect errors; it does not revoke the independent Keymaster grant.
 /// `resume_pending` is set only inside a reconnect's rehydration window: the session is
 /// connected and activated but `spirc_ready` is deliberately still 0, and Swift should
 /// issue its resume-load targets through `spotty_playback_load` now. Readiness is published
@@ -275,6 +294,7 @@ typedef struct SpottyConnectionSnapshot {
     uint8_t spirc_ready;
     uint8_t is_active_device;
     uint8_t resume_pending;
+    uint8_t credentials_rejected;
     const char* _Nullable device_id;
     const char* _Nullable last_error;
 } SpottyConnectionSnapshot;
@@ -317,89 +337,6 @@ void spotty_playback_register_audio_data_callback(AudioDataCallback callback);
 void spotty_playback_register_audio_control_callback(AudioControlCallback callback);
 
 // ============================================================================
-// Swift-owned audio path (Stage 1 of #201, #208)
-// ============================================================================
-//
-// Debug-only and default off. When Swift registers an audio-command callback *before*
-// spotty_playback_init_player, the engine builds a ShimPlayer instead of librespot's own
-// Player: Spirc's Load/Play/Pause/Seek/Stop/Preload are forwarded to Swift as
-// SpottyAudioCommand snapshots, and Swift reports playback back through
-// spotty_playback_report_audio. With no callback registered the engine keeps decoding
-// in-process and delivering PCM through AudioDataCallback above, unchanged.
-
-/// What a SpottyAudioCommand asks the Swift audio path to do. Values match librespot's
-/// Spirc-facing player operations and Swift's own AudioCommand.Kind raw values.
-typedef enum __attribute__((enum_extensibility(open))) SpottyAudioCommandKind : uint8_t {
-    SpottyAudioCommandKindLoad = 0,
-    SpottyAudioCommandKindPlay = 1,
-    SpottyAudioCommandKindPause = 2,
-    SpottyAudioCommandKindSeek = 3,
-    SpottyAudioCommandKindStop = 4,
-    SpottyAudioCommandKindPreload = 5,
-} SpottyAudioCommandKind;
-
-/// What a report carries back about a load's progress. Values match Swift's AudioReportKind.
-typedef enum __attribute__((enum_extensibility(open))) SpottyAudioReportKind : uint8_t {
-    SpottyAudioReportKindPlaying = 0,
-    SpottyAudioReportKindPaused = 1,
-    SpottyAudioReportKindPosition = 2,
-    SpottyAudioReportKindSeeked = 3,
-    SpottyAudioReportKindPositionCorrection = 4,
-    SpottyAudioReportKindEndOfTrack = 5,
-    SpottyAudioReportKindUnavailable = 6,
-    SpottyAudioReportKindStopped = 7,
-    SpottyAudioReportKindTimeToPreloadNext = 8,
-    SpottyAudioReportKindDuration = 9,
-} SpottyAudioReportKind;
-
-/// One forwarded Spirc command. `track_uri` is valid only for the callback; Swift must copy it
-/// before returning, and NULL means missing. `track_gid` (16 bytes), `file_id` (20 bytes),
-/// `audio_format`, `duration_ms` and `start_playing` carry meaningful values only for Load and
-/// Preload; the transport kinds leave them zeroed, except `position_ms`, which Seek uses.
-///
-/// `session_generation` names the engine session this command belongs to, and
-/// `play_request_id` the one load attempt. Both must be stamped back onto every report for
-/// that load, so the engine can reject a report from a session or a load it has abandoned.
-typedef struct SpottyAudioCommand {
-    uint64_t session_generation;
-    uint64_t play_request_id;
-    const char* _Nullable track_uri;
-    uint32_t position_ms;
-    uint32_t duration_ms;
-    uint8_t track_gid[16];
-    uint8_t file_id[20];
-    SpottyAudioCommandKind kind;
-    uint8_t audio_format;
-    uint8_t start_playing;
-} SpottyAudioCommand;
-
-/// Callback function type for forwarded Spirc audio commands.
-/// Called from the engine's Tokio runtime, never the main thread; must be thread-safe.
-/// May call back into spotty_playback_report_audio synchronously.
-typedef void (*AudioCommandCallback)(const SpottyAudioCommand* command);
-
-/// Registers the Swift audio path's command sink, and by doing so selects it.
-///
-/// Registering before spotty_playback_init_player makes the session build a ShimPlayer; leaving
-/// it unregistered keeps the in-process librespot Player and its PCM callbacks. Registering
-/// after a session is up affects only the next rebuild.
-void spotty_playback_register_audio_command_callback(AudioCommandCallback callback);
-
-/// Reports one playback fact from the Swift audio path back to Spirc.
-///
-/// `position_ms` is meaningful for Playing/Paused/Position/Seeked/PositionCorrection and
-/// TimeToPreloadNext; `duration_ms` only for Duration. Returns SpottyPlaybackResultOk when the
-/// report was applied and SpottyPlaybackResultError when it was rejected: no ShimPlayer is
-/// running, `kind` is not a known SpottyAudioReportKind, or the report names a session
-/// generation or play request the engine has already abandoned.
-SpottyPlaybackResult spotty_playback_report_audio(
-    uint64_t session_generation,
-    uint64_t play_request_id,
-    SpottyAudioReportKind kind,
-    uint32_t position_ms,
-    uint32_t duration_ms
-);
-
 /// Skips to the next track in the queue.
 SpottyPlaybackResult spotty_playback_next(void);
 
@@ -429,22 +366,6 @@ SpottyPlaybackResult spotty_playback_transfer_to_local(void);
 ///
 /// @param to_device_id The target device ID to transfer playback to
 SpottyPlaybackResult spotty_playback_transfer_playback(const char* to_device_id);
-
-/// Fetches the AES decryption key for one file over the existing AP session. Blocking;
-/// librespot times a single request out at 1500ms. Stage 1 scaffolding for #201/#208:
-/// nothing calls this yet.
-///
-/// Spotify throttles key requests, so the caller must cache a successful result per file id
-/// rather than re-requesting it on every playback attempt.
-///
-/// @param track_gid 16 raw bytes of the track's Spotify ID.
-/// @param file_id 20 raw bytes of the file ID (the specific encoded file being played).
-/// @param key_out Must point to 16 writable bytes; receives the raw AES key on success.
-SpottyPlaybackResult spotty_playback_audio_key(
-    const uint8_t* track_gid,
-    const uint8_t* file_id,
-    uint8_t* key_out
-);
 
 /// Adds a URI to the Connect queue.
 ///

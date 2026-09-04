@@ -434,7 +434,9 @@ struct AuthCookieCleanupTests {
 private final class MemoryKeymasterStore: KeymasterTokenStoring, @unchecked Sendable {
     var stored: KeymasterTokens?
 
-    func load() -> KeymasterTokens? { stored }
+    func loadResult() -> KeymasterGrantLoadResult {
+        stored.map(KeymasterGrantLoadResult.found) ?? .absent
+    }
 
     func save(_ tokens: KeymasterTokens) throws {
         stored = tokens

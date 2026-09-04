@@ -20,6 +20,10 @@ final class AccountStore {
             onPhaseChange?(phase)
         }
     }
+    /// A credential-rejected engine session must be replaced by a fresh browser authorization.
+    /// Keeping this separate from `phase` lets ordinary transport failures reconnect with the
+    /// current grant while making the explicit reauthentication path durable until it succeeds.
+    private(set) var requiresReauthentication = false
     /// Sole writable account-epoch owner. `PlaybackStore.accountEpoch` projects this value;
     /// `PlaybackState.accountEpoch` is reducer-owned accepted snapshot state, not a second
     /// imperative counter.
@@ -32,6 +36,7 @@ final class AccountStore {
     @ObservationIgnored private var teardown = SessionTeardownCoalescer()
     @ObservationIgnored private var teardownTask: Task<SessionTeardownIntent, Never>?
     @ObservationIgnored var onPhaseChange: ((PlaybackSessionPhase) -> Void)?
+    @ObservationIgnored var onReauthenticationChange: ((Bool) -> Void)?
     @ObservationIgnored var onReady: (() -> Void)?
 
     init(environment: PlaybackEnvironment, coordinator: PlaybackCoordinator) {
@@ -52,6 +57,14 @@ final class AccountStore {
         _ = startConnection(interactive: true)
     }
 
+    /// Starts a browser authorization explicitly. The existing grant stays in place until the
+    /// new exchange and its persistence have completed successfully.
+    func reauthorize() {
+        guard !teardown.isActive, phase != .ready, connectionTask == nil else { return }
+        setRequiresReauthentication(true)
+        _ = startConnection(interactive: true)
+    }
+
     func cancelConnect() {
         guard phase == .authorizing else { return }
         connectionGeneration &+= 1
@@ -65,9 +78,10 @@ final class AccountStore {
     }
 
     func handleGrantRevocation() async {
+        setRequiresReauthentication(true)
         await endSession(
             clearGrant: false,
-            finalPhase: .failed("Your Spotify session expired. Sign in again.")
+            finalPhase: .failed(ConnectionSnapshotProjection.credentialsRejectedMessage)
         )
     }
 
@@ -76,6 +90,14 @@ final class AccountStore {
         if let session {
             phase = session
         }
+    }
+
+    /// Marks the accepted engine outcome as requiring a fresh authorization. The caller owns the
+    /// asynchronous engine teardown; this synchronous marker makes a subsequent explicit Connect
+    /// action choose the interactive path even if the old grant remains valid for Web APIs.
+    func markCredentialRejection() {
+        guard !teardown.isActive else { return }
+        setRequiresReauthentication(true)
     }
 
     func endSession(clearGrant: Bool, finalPhase: PlaybackSessionPhase) async {
@@ -134,6 +156,7 @@ final class AccountStore {
         let resolved = applied.merging(desired)
         if resolved.clearGrant && !applied.clearGrant {
             await environment.account.clear()
+            setRequiresReauthentication(false)
         }
         phase = resolved.finalPhase
         return resolved
@@ -147,12 +170,17 @@ final class AccountStore {
         defer { SpottyLog.accountSignposter.endInterval("Teardown", interval) }
         if let staleConnectionTask { await staleConnectionTask.value }
 
+        if requiresReauthentication, !initialIntent.clearGrant {
+            await environment.account.markReauthenticationRequired()
+        }
+
         _ = await coordinator.shutdownEngine()
         await coordinator.cleanupEngine()
         await coordinator.clearStreamingCredentials()
         var resolved = teardown.intent ?? initialIntent
         if resolved.clearGrant {
             await environment.account.clear()
+            setRequiresReauthentication(false)
             resolved = teardown.intent ?? resolved
         }
 
@@ -218,29 +246,60 @@ final class AccountStore {
     }
 
     private func runConnection(interactive: Bool, generation: UInt64, epoch: UInt64) async {
-        let hasGrant = await environment.account.hasGrant()
+        let grantState = await environment.account.grantState()
+        let persistedReauthentication = await environment.account.reauthenticationRequired()
         guard isCurrent(generation: generation, epoch: epoch) else { return }
+        if persistedReauthentication {
+            setRequiresReauthentication(true)
+        }
 
-        if hasGrant {
-            await restoreGrant(generation: generation, epoch: epoch)
-        } else if interactive {
+        if interactive, grantState != .available || requiresReauthentication {
             await performInteractiveConnect(generation: generation, epoch: epoch)
-        } else {
+            return
+        }
+
+        switch grantState {
+        case .available:
+            guard !requiresReauthentication else {
+                phase = .failed(ConnectionSnapshotProjection.credentialsRejectedMessage)
+                return
+            }
+            await restoreGrant(generation: generation, epoch: epoch)
+        case .absent:
             phase = .signedOut
+        case .denied:
+            phase = .failed("Spotty cannot access its saved Spotify session. Allow Keychain access and try again.")
+        case .failed:
+            phase = .failed("Spotty could not read its saved Spotify session. Try again or sign in again.")
         }
     }
 
     private func restoreGrant(generation: UInt64, epoch: UInt64) async {
-        if await initializePlayer(generation: generation, epoch: epoch, reportFailure: false) {
+        switch await initializePlayer(generation: generation, epoch: epoch, reportFailure: false) {
+        case .ready, .credentialsRejected:
             return
+        case .failed:
+            break
         }
         guard isCurrent(generation: generation, epoch: epoch) else { return }
+        guard !requiresReauthentication else {
+            phase = .failed(ConnectionSnapshotProjection.credentialsRejectedMessage)
+            return
+        }
 
         do {
             let token = try await environment.account.accessToken()
             guard isCurrent(generation: generation, epoch: epoch) else { return }
+            guard !requiresReauthentication else {
+                phase = .failed(ConnectionSnapshotProjection.credentialsRejectedMessage)
+                return
+            }
             let code = await coordinator.authorizeStreaming(with: token)
             guard isCurrent(generation: generation, epoch: epoch) else { return }
+            guard !requiresReauthentication else {
+                phase = .failed(ConnectionSnapshotProjection.credentialsRejectedMessage)
+                return
+            }
             guard code == 0 else {
                 phase = .failed(LiveSpotifyError.streamingAuthorization(code).localizedDescription)
                 return
@@ -261,12 +320,19 @@ final class AccountStore {
         do {
             let tokens = try await environment.account.authorizeInteractively()
             guard isCurrent(generation: generation, epoch: epoch) else { return }
+            // The OAuth response is now accepted. From this commit point onward cancellation is
+            // owned by the session teardown path, which drains persistence before clearing it.
+            phase = .connecting
             try await environment.account.adopt(tokens)
             guard isCurrent(generation: generation, epoch: epoch) else { return }
-            phase = .connecting
+            setRequiresReauthentication(false)
 
             let code = await coordinator.authorizeStreaming(with: tokens.accessToken)
             guard isCurrent(generation: generation, epoch: epoch) else { return }
+            guard !requiresReauthentication else {
+                phase = .failed(ConnectionSnapshotProjection.credentialsRejectedMessage)
+                return
+            }
             guard code == 0 else { throw LiveSpotifyError.streamingAuthorization(code) }
             _ = await initializePlayer(generation: generation, epoch: epoch, reportFailure: true)
         } catch is CancellationError {
@@ -282,37 +348,65 @@ final class AccountStore {
         generation: UInt64,
         epoch: UInt64,
         reportFailure: Bool
-    ) async -> Bool {
+    ) async -> PlayerInitializationOutcome {
         let interval = SpottyLog.accountSignposter.beginInterval("Engine initialization")
         defer { SpottyLog.accountSignposter.endInterval("Engine initialization", interval) }
-        guard isCurrent(generation: generation, epoch: epoch) else { return false }
+        guard isCurrent(generation: generation, epoch: epoch) else { return .failed }
+        guard !requiresReauthentication else {
+            phase = .failed(ConnectionSnapshotProjection.credentialsRejectedMessage)
+            return .credentialsRejected
+        }
         phase = .connecting
         await coordinator.configureHighQualityPlayback()
-        guard isCurrent(generation: generation, epoch: epoch) else { return false }
+        guard isCurrent(generation: generation, epoch: epoch) else { return .failed }
+        guard !requiresReauthentication else {
+            phase = .failed(ConnectionSnapshotProjection.credentialsRejectedMessage)
+            return .credentialsRejected
+        }
         do {
             try environment.audioOutput.prepareForPlayback()
         } catch {
-            guard isCurrent(generation: generation, epoch: epoch) else { return false }
+            guard isCurrent(generation: generation, epoch: epoch) else { return .failed }
             SpottyLog.audio.error("Audio output preparation failed")
             phase = .failed(error.localizedDescription)
-            return false
+            return .failed
         }
         let result = await coordinator.initializeEngine()
-        guard isCurrent(generation: generation, epoch: epoch) else { return false }
+        guard isCurrent(generation: generation, epoch: epoch) else { return .failed }
+
+        if result.isCredentialsRejected || requiresReauthentication {
+            setRequiresReauthentication(true)
+            await environment.account.markReauthenticationRequired()
+            guard isCurrent(generation: generation, epoch: epoch) else { return .credentialsRejected }
+            phase = .failed(ConnectionSnapshotProjection.credentialsRejectedMessage)
+            return .credentialsRejected
+        }
 
         if result.isOK {
             phase = .ready
             onReady?()
-            return true
+            return .ready
         }
         if reportFailure {
             phase = .failed("Spotty Connect could not start (\(result.rawValue))")
         }
-        return false
+        return .failed
+    }
+
+    private enum PlayerInitializationOutcome {
+        case ready
+        case failed
+        case credentialsRejected
     }
 
     private func isCurrent(generation: UInt64, epoch: UInt64) -> Bool {
         !Task.isCancelled && connectionGeneration == generation && self.epoch == epoch
+    }
+
+    private func setRequiresReauthentication(_ required: Bool) {
+        guard requiresReauthentication != required else { return }
+        requiresReauthentication = required
+        onReauthenticationChange?(required)
     }
 }
 

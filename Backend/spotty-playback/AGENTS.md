@@ -1,8 +1,8 @@
 # Rust playback leaf agent guidance
 
-This crate is the contained librespot protocol, Connect, streaming, decoding, recovery, and C-ABI
-leaf. Read [ADR 001](../../docs/ADR-001-playback-engine.md),
-[ADR 004](../../docs/ADR-004-swift-owned-playback-logic.md), and
+This crate is the contained Rust/librespot protocol, Connect, streaming, decoding, recovery, and
+C-ABI leaf. Read [ADR 001](../../docs/ADR-001-playback-engine.md),
+[ADR 005](../../docs/ADR-005-retain-librespot.md), and
 [playback engine ownership](../../docs/playback-engine-ownership.md) before moving responsibility
 across the Swift/Rust boundary.
 
@@ -26,10 +26,10 @@ across the Swift/Rust boundary.
   Presentation and resume plans stay in Swift. Preserve the reconnect readiness hold and the
   intentionally empty context on local `PlayerEvent` snapshots; follow
   [playback engine ownership](../../docs/playback-engine-ownership.md) when changing these boundaries.
+- The pinned Rust/librespot engine is the sole production playback implementation. Keep decoded PCM
+  on `proxy_sink` and do not reintroduce a parallel audio/protocol path, debug selector, Swift
+  decoder, or player-injection seam.
 - Keep the checked-in C header, exported symbol set, signatures, ownership, allocation, and callback
   lifetime aligned.
 - Treat librespot changes as protocol migrations. Preserve the ownership classification instead of
   opportunistically expanding the Rust leaf.
-- `librespot-connect` is vendored under `Backend/vendor/librespot-connect` with a small patch (see
-  its `PATCHES.md`) so `Spirc::new` takes `Arc<dyn SpircPlayer>` instead of the concrete `Player`;
-  keep the patch minimal and re-diff it against upstream when the pinned rev moves.

@@ -1,145 +1,16 @@
 use crate::*;
 
+#[path = "credentials_cache.rs"]
+mod credentials_cache;
+pub(crate) use credentials_cache::*;
+
+#[path = "session_construction.rs"]
+mod session_construction;
+pub(crate) use session_construction::*;
+
 /// Whether the run that started at `started_generation` has been superseded.
 pub(crate) fn run_is_superseded(started_generation: u64, current_generation: u64) -> bool {
     started_generation != current_generation
-}
-
-/// Why the streaming credential cache cannot be opened.
-///
-/// Variants carry no filesystem path so public logs stay sanitized.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum CredentialsCacheError {
-    /// `HOME` is unset or empty.
-    Missing,
-    /// `HOME` is not an absolute location, so it cannot be an app container path.
-    Relative,
-    /// `HOME` is a shared temporary root such as `/tmp` or `/private/tmp`.
-    SharedTemporary,
-}
-
-impl CredentialsCacheError {
-    pub(crate) fn message(self) -> &'static str {
-        "Streaming credential cache is unavailable"
-    }
-}
-
-/// Resolves the cache directory from an injected `HOME`.
-///
-/// Path selection is pure: callers pass a value rather than mutating the process
-/// environment, so checks do not touch the developer's real home or race on `HOME`.
-pub(crate) fn credentials_cache_dir_from_home(
-    home: Option<&std::path::Path>,
-) -> Result<std::path::PathBuf, CredentialsCacheError> {
-    credentials_cache_dir_from_home_named(home, "Spotty")
-}
-
-fn credentials_cache_dir_from_home_named(
-    home: Option<&std::path::Path>,
-    product_directory_name: &str,
-) -> Result<std::path::PathBuf, CredentialsCacheError> {
-    let home = home
-        .filter(|path| !path.as_os_str().is_empty())
-        .ok_or(CredentialsCacheError::Missing)?;
-    if !home.is_absolute() {
-        return Err(CredentialsCacheError::Relative);
-    }
-    let home = lexically_normalized_absolute(home).ok_or(CredentialsCacheError::SharedTemporary)?;
-    if is_shared_temporary_home(&home) {
-        return Err(CredentialsCacheError::SharedTemporary);
-    }
-    Ok(home
-        .join("Library")
-        .join("Application Support")
-        .join(product_directory_name)
-        .join("credentials"))
-}
-
-fn retired_credentials_cache_dir() -> Result<std::path::PathBuf, CredentialsCacheError> {
-    let home = std::env::var_os("HOME").map(std::path::PathBuf::from);
-    credentials_cache_dir_from_home_named(home.as_deref(), "Aural")
-}
-
-/// Collapse `.` and refuse `..` without touching the filesystem or following symlinks.
-fn lexically_normalized_absolute(home: &std::path::Path) -> Option<std::path::PathBuf> {
-    let mut normalized = std::path::PathBuf::new();
-    for component in home.components() {
-        match component {
-            std::path::Component::CurDir => {}
-            std::path::Component::ParentDir => return None,
-            other => normalized.push(other),
-        }
-    }
-    Some(normalized)
-}
-
-/// Shared world-writable temp roots, including the macOS `/tmp` → `/private/tmp` pair.
-/// Comparison is lexical so path selection stays pure and does not follow symlinks.
-fn is_shared_temporary_home(home: &std::path::Path) -> bool {
-    const ROOTS: &[&str] = &["/tmp", "/private/tmp", "/var/tmp", "/private/var/tmp"];
-    ROOTS.iter().any(|root| {
-        let root = std::path::Path::new(root);
-        home == root || home.starts_with(root)
-    })
-}
-
-/// Where librespot persists the AP credentials produced by the streaming grant.
-///
-/// Under the sandbox `HOME` is already the app container, so this stays inside it.
-/// Missing, relative, or shared-temporary `HOME` fails closed: it must not fall back to `/tmp`.
-pub(crate) fn credentials_cache_dir() -> Result<std::path::PathBuf, CredentialsCacheError> {
-    let home = std::env::var_os("HOME").map(std::path::PathBuf::from);
-    credentials_cache_dir_from_home(home.as_deref())
-}
-
-/// Creates `dir` and restricts it to the current user when the platform allows.
-pub(crate) fn ensure_private_credentials_dir(dir: &std::path::Path) -> Result<(), String> {
-    std::fs::create_dir_all(dir)
-        .map_err(|_| CredentialsCacheError::Missing.message().to_string())?;
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        std::fs::set_permissions(dir, std::fs::Permissions::from_mode(0o700))
-            .map_err(|_| CredentialsCacheError::Missing.message().to_string())?;
-    }
-    Ok(())
-}
-
-/// Resolves the live cache directory and removes it. Unavailable locations are success:
-/// there is no app-owned cache to clear, and the C ABI remains a void cleanup.
-pub(crate) fn clear_resolved_credentials() {
-    match credentials_cache_dir() {
-        Ok(dir) => clear_credentials_at(&dir),
-        Err(_) => debug!("Streaming credential cache unavailable; nothing to clear"),
-    }
-    clear_retired_credentials_cache();
-}
-
-fn clear_retired_credentials_cache() {
-    let Ok(dir) = retired_credentials_cache_dir() else {
-        return;
-    };
-    clear_retired_credentials_at(&dir);
-}
-
-pub(crate) fn clear_retired_credentials_at(dir: &std::path::Path) {
-    clear_credentials_at(dir);
-    if let Some(parent) = dir.parent() {
-        let _ = std::fs::remove_dir(parent);
-    }
-}
-
-/// Removes cached credentials from `dir`, treating "not there" as success.
-///
-/// Takes the directory rather than reading `credentials_cache_dir()` so it can be tested
-/// against a temporary one: `cargo test` runs unsandboxed, where that path resolves to the
-/// developer's real credentials.
-pub(crate) fn clear_credentials_at(dir: &std::path::Path) {
-    match std::fs::remove_dir_all(dir) {
-        Ok(()) => debug!("Cleared streaming credentials"),
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
-        Err(e) => debug!("Could not remove streaming credentials: {}", e),
-    }
 }
 
 /// Removes the cached streaming credentials. Called on logout, after the session teardown,
@@ -180,35 +51,51 @@ pub extern "C" fn spotty_playback_authorize_streaming(access_token: *const c_cha
         debug!("Streaming authorization: token received, connecting");
 
         // Connect once so librespot writes the AP credentials into the cache. Every init after
-        // this connects from that cache with no token at all.
-        let result = match block_on_export(async {
-            let device_id = format!("spotty_{}", std::process::id());
-            let (session, credentials) = create_session(&device_id, Some(&token))?;
-            session
-                .connect(credentials, true)
-                .await
-                .map_err(|e| format!("Connect failed: {:?}", e))?;
-            clear_retired_credentials_cache();
-            session.shutdown();
-            Ok::<(), String>(())
+        // this connects from that cache with no token at all. Serialize this cache write with
+        // reconnect and cleanup so a late rejection cannot remove a newer grant.
+        let result: Result<(), i32> = match block_on_export(async {
+            with_lifecycle_lock(async {
+                // Do not start a credential write after logout has already won. This check and
+                // the post-connect check remain inside the lifecycle lock, so another grant
+                // cannot replace the cache between validation and a compensating clear.
+                if run_is_superseded(started_generation, LOGOUT_GENERATION.load(Ordering::SeqCst)) {
+                    return Err(-2);
+                }
+
+                let device_id = format!("spotty_{}", std::process::id());
+                let (session, credentials) = match create_session(&device_id, Some(&token)) {
+                    Ok(value) => value,
+                    Err(_) => return Err(-1),
+                };
+                let mut session_guard = SessionShutdownGuard::new(session.clone());
+                let connect_result = session.connect(credentials, true).await;
+                // A failed or cancelled connect still owns AP/channel state until it is
+                // explicitly invalidated. Do this before the local Session is dropped.
+                session.shutdown();
+                session_guard.disarm();
+                if let Err(error) = connect_result {
+                    let failure = classify_initialization_error(&error);
+                    debug!("Streaming authorization connect failed ({:?})", failure);
+                    return Err(-1);
+                }
+
+                if run_is_superseded(started_generation, LOGOUT_GENERATION.load(Ordering::SeqCst)) {
+                    debug!("Streaming authorization superseded; removing its credentials");
+                    clear_resolved_credentials();
+                    return Err(-2);
+                }
+
+                clear_retired_credentials_cache();
+                Ok(())
+            })
+            .await
         }) {
             Ok(result) => result,
             Err(code) => return code,
         };
 
-        if let Err(e) = result {
-            debug!("Streaming authorization connect error: {}", e);
-            return -1;
-        }
-
-        // Rechecked *after* the write, not before: librespot persists from inside
-        // Session::connect, so a logout landing mid-connect would wipe the cache and this run
-        // would then recreate it behind logout's back. Against LOGOUT_GENERATION, not the
-        // session one: an ordinary rebuild during the browser wait is not a supersession.
-        if run_is_superseded(started_generation, LOGOUT_GENERATION.load(Ordering::SeqCst)) {
-            debug!("Streaming authorization superseded; removing the credentials it wrote");
-            clear_resolved_credentials();
-            return -2;
+        if let Err(code) = result {
+            return code;
         }
 
         debug!("Streaming authorization complete");
@@ -268,7 +155,7 @@ pub(crate) const SESSION_HEALTH_CHECK_INTERVAL: Duration = Duration::from_secs(6
 /// Cost is one sleeping task per generation, waking once a minute to read a few flags
 /// (`Session::is_invalid` is a lock read of a `bool`). It exits when its generation is
 /// superseded, so it dies with the session it belongs to rather than accumulating.
-pub(crate) fn spawn_session_health_check(generation: u64) {
+pub(crate) fn spawn_session_health_check(generation: u64) -> JoinHandle<()> {
     RUNTIME.spawn(async move {
         loop {
             tokio::time::sleep(SESSION_HEALTH_CHECK_INTERVAL).await;
@@ -306,7 +193,7 @@ pub(crate) fn spawn_session_health_check(generation: u64) {
                 return;
             }
         }
-    });
+    })
 }
 
 /// Spawns the reconnection loop task.
@@ -315,10 +202,23 @@ pub(crate) fn spawn_reconnection_loop(intent: RecoveryIntent) {
     // Capture the generation at trigger time, before the task is scheduled. A rebuild
     // that lands between here and the first poll would otherwise be adopted as "the
     // thing being recovered" and torn down on attempt 0.
-    let Some(start) = start_reconnect_loop(intent, SESSION_GENERATION.load(Ordering::SeqCst))
-    else {
+    spawn_reconnection_loop_for_generation(intent, SESSION_GENERATION.load(Ordering::SeqCst));
+}
+
+/// Spawns recovery for a generation captured by the event that requested it.
+///
+/// A player event releases its short mutation gate before delivering callbacks and starting
+/// recovery. Passing the listener generation through this boundary prevents a replacement that
+/// lands in that gap from being adopted as the thing the stale event should rebuild.
+pub(crate) fn spawn_reconnection_loop_for_generation(
+    intent: RecoveryIntent,
+    recovering_generation: u64,
+) {
+    let Some(Some(start)) = with_current_generation_mutation(recovering_generation, || {
+        start_reconnect_loop(intent, recovering_generation)
+    }) else {
         debug!(
-            "[WAKE +{}ms] Reconnection already in progress, skipping",
+            "[WAKE +{}ms] Reconnection skipped: generation superseded or already in progress",
             elapsed_since_wake_ms()
         );
         return;
@@ -395,9 +295,8 @@ pub(crate) fn spawn_reconnection_loop(intent: RecoveryIntent) {
             // the streaming grant, which is the only login path this reconnection flow
             // performs (the initial connect in `create_session` may still use a token), so a
             // Swift token round-trip adds latency without changing the outcome of a network
-            // outage. Credentials rejected server-side are a different failure: this loop
-            // does not detect them yet, and the bounded credential-rejected exit is tracked
-            // in https://github.com/aladh/Spotty/issues/181.
+            // outage. A definitive credential rejection is classified at Spirc construction and
+            // exits this loop after invalidating only the cached streaming credential.
 
             // One recovery strategy: tear everything down and rebuild Session, Player,
             // Mixer and Spirc as a single generation, then restore the captured intent.
@@ -412,12 +311,26 @@ pub(crate) fn spawn_reconnection_loop(intent: RecoveryIntent) {
             //
             // Cleanup and build share the lifecycle lock with a final generation
             // revalidation so a queued stale reconnect cannot tear down a newer session.
-            match run_reconnect_unit(
+            match run_reconnect_unit_async(
                 recovering_generation,
                 || SESSION_GENERATION.load(Ordering::SeqCst),
                 teardown_in_progress,
                 do_reconnect_cleanup,
-                init_player_async(None, intent.was_active, intent.should_resume()),
+                async {
+                    let result =
+                        build_player_async(None, intent.was_active, intent.should_resume()).await;
+                    // Capture the attempt and publish its failure while this lifecycle unit still
+                    // owns the lock. A later build must not supply our generation or receive our error.
+                    let generation = LAST_BUILD_GENERATION.load(Ordering::SeqCst);
+                    if result == Err(InitializationFailure::Transient)
+                        && listener_may_act(generation, SESSION_GENERATION.load(Ordering::SeqCst))
+                        && !teardown_in_progress()
+                    {
+                        with_connection(|c| c.last_error = Some("Reconnect failed".to_string()));
+                        notify_connection_state_change();
+                    }
+                    (generation, result)
+                },
             )
             .await
             {
@@ -430,7 +343,7 @@ pub(crate) fn spawn_reconnection_loop(intent: RecoveryIntent) {
                     RECONNECTING.store(false, Ordering::SeqCst);
                     return;
                 }
-                ReconnectUnitOutcome::Ran(Ok(_)) => {
+                ReconnectUnitOutcome::Ran((_, Ok(_))) => {
                     debug!(
                         "[WAKE +{}ms] Reconnect successful on attempt {}",
                         elapsed_since_wake_ms(),
@@ -439,14 +352,22 @@ pub(crate) fn spawn_reconnection_loop(intent: RecoveryIntent) {
                     RECONNECTING.store(false, Ordering::SeqCst);
                     return;
                 }
-                ReconnectUnitOutcome::Ran(Err(e)) => {
+                ReconnectUnitOutcome::Ran((attempt_generation, Err(e))) => {
                     debug!(
                         "[WAKE +{}ms] Reconnect attempt {} failed: {}",
                         elapsed_since_wake_ms(),
                         attempt_number,
                         e
                     );
-                    // Adopt the generation this attempt created. init_player_async bumps it
+                    if e == InitializationFailure::CredentialsRejected {
+                        // A definitive rejection is terminal for this cached AP credential.
+                        // `build_player_async` publishes the typed snapshot only after checking
+                        // this attempt's generation; the reconnect owner must then stop rather
+                        // than feeding the same unusable credential through the backoff forever.
+                        RECONNECTING.store(false, Ordering::SeqCst);
+                        return;
+                    }
+                    // Adopt the generation this attempt created. build_player_async bumps it
                     // before it can fail, so leaving the old value here would make the next
                     // iteration mistake our own rebuild for someone else's and abandon.
                     //
@@ -455,9 +376,7 @@ pub(crate) fn spawn_reconnection_loop(intent: RecoveryIntent) {
                     // adopting *that* would have the loop rebuild over a session belonging
                     // to another account. Reading our own value leaves the next iteration's
                     // supersede check to notice and abandon, which is the right outcome.
-                    recovering_generation = LAST_BUILD_GENERATION.load(Ordering::SeqCst);
-                    with_connection(|c| c.last_error = Some(format!("Reconnect failed: {}", e)));
-                    notify_connection_state_change();
+                    recovering_generation = attempt_generation;
                 }
             }
         }
@@ -517,47 +436,16 @@ pub extern "C" fn spotty_playback_force_reconnect() -> i32 {
 /// Performs full cleanup for reconnection.
 /// Clears Session, Spirc, Player, and Mixer because Player is tightly coupled
 /// to the Session's ChannelManager for decryption key requests.
-pub(crate) fn do_reconnect_cleanup() {
+pub(crate) async fn do_reconnect_cleanup() {
     debug!("do_reconnect_cleanup: full cleanup for reconnection");
     let _store = enter_store_section();
-
-    // Signal event listener to stop
-    if let Some(tx) = PLAYER_EVENT_TX
-        .lock()
-        .unwrap_or_else(|e| e.into_inner())
-        .take()
-    {
-        let _ = tx.send(());
-    }
-
-    // Shutdown Spirc first - this terminates the spirc_task and closes the dealer,
-    // which will cause the cluster listener stream to end. Without this, old tasks
-    // remain alive holding references to Session/Player until the server closes the connection.
-    shutdown_spirc("do_reconnect_cleanup");
-
-    // Now clear Spirc reference
-    *SPIRC.lock().unwrap_or_else(|e| e.into_inner()) = None;
+    teardown_engine_resources("do_reconnect_cleanup").await;
     with_connection(|c| c.spirc_ready = false);
-
-    // Clear Player - must be recreated with new Session. Tell Swift first: dropping the
-    // Player does not run Sink::stop, so the renderer would otherwise keep believing it is
-    // rendering and skip resetting its real-time throttle on the next start.
-    proxy_sink::ProxySink::notify_player_gone();
-    *PLAYER.lock().unwrap_or_else(|e| e.into_inner()) = None;
-    // Dropped alongside the player it aliases, so a late `spotty_playback_report_audio` from a
-    // Swift pipeline that has not been torn down yet finds nothing to report to.
-    *SHIM_PLAYER.lock().unwrap_or_else(|e| e.into_inner()) = None;
-
-    // Clear Mixer
-    *MIXER.lock().unwrap_or_else(|e| e.into_inner()) = None;
-
-    // Clear Session
-    *SESSION.lock().unwrap_or_else(|e| e.into_inner()) = None;
-
-    // Clear device ID (will be regenerated) and reset session connection state
     with_connection(|c| {
         c.device_id = None;
         c.session_connected = false;
+        c.credentials_rejected = false;
+        c.resume_pending = false;
     });
 
     debug!("do_reconnect_cleanup complete");
@@ -611,7 +499,7 @@ pub extern "C" fn spotty_playback_init_player(access_token: *const c_char) -> i3
             // session while this call waited for the lock.
             match run_serialized_init(
                 session_is_present,
-                init_player_async(token_str.as_deref(), false, false),
+                build_player_async(token_str.as_deref(), false, false),
             )
             .await
             {
@@ -629,311 +517,10 @@ pub extern "C" fn spotty_playback_init_player(access_token: *const c_char) -> i3
 
         match result {
             Ok(_) => 0,
-            Err(_e) => {
-                debug!("Player init error: {}", _e);
-                -1
+            Err(failure) => {
+                debug!("Player init error: {}", failure);
+                initialization_failure_code(failure)
             }
         }
     })
-}
-
-/// Builds the player this session's `Spirc` drives, and stores it globally.
-///
-/// Two shapes, one choice, made once per build: when Swift has registered an audio-command
-/// callback (`spotty_playback_register_audio_command_callback`), the Stage 1 Swift audio path is
-/// in use and this builds a [`ShimPlayer`], which forwards `Load/Play/Pause/Seek/Stop/Preload`
-/// to Swift and turns Swift's reports back into `PlayerEvent`s. Otherwise it builds librespot's
-/// own `Player`, which decodes in-process and hands PCM to Swift through `proxy_sink.rs`. Nothing
-/// downstream cares which: `Spirc` and `player_event_pump.rs` both take `Arc<dyn SpircPlayer>`.
-///
-/// `generation` stamps every `AudioCommand` the shim sends, so a report arriving from a Swift
-/// pipeline that belongs to a session already replaced is rejected rather than applied.
-/// The shim constructor lives next to `FfiAudioCommandSink` in `audio_command_sink.rs`.
-pub(crate) fn create_new_player(session: &Session, generation: u64) -> Arc<dyn SpircPlayer> {
-    if swift_audio_path_enabled() {
-        return create_shim_player(session, generation);
-    }
-    create_librespot_player(session)
-}
-
-/// Builds librespot's own Player, decoding in-process and delivering PCM through `proxy_sink.rs`.
-fn create_librespot_player(session: &Session) -> Arc<dyn SpircPlayer> {
-    let (bitrate, bitrate_kbps) = match BITRATE_SETTING.load(Ordering::SeqCst) {
-        0 => (Bitrate::Bitrate96, 96),
-        2 => (Bitrate::Bitrate320, 320),
-        _ => (Bitrate::Bitrate160, 160),
-    };
-    let gapless = GAPLESS_SETTING.load(Ordering::SeqCst);
-
-    debug!(
-        "Player initialized: bitrate={}kbps, gapless={}",
-        bitrate_kbps, gapless
-    );
-
-    let player_config = PlayerConfig {
-        bitrate,
-        gapless,
-        position_update_interval: Some(Duration::from_millis(200)),
-        ..PlayerConfig::default()
-    };
-    let audio_format = AudioFormat::default();
-
-    // Use ProxySink - a persistent audio output that survives across Player instances.
-    // This enables seamless audio during session reconnection.
-    //
-    // NoOpVolume: do NOT attenuate samples here. Volume is applied at the output
-    // (AVSampleBufferAudioRenderer.volume in Swift) so changes take effect
-    // immediately instead of after the ~2s of already-decoded PCM drains. The
-    // SoftMixer still tracks the logical volume for Spotify Connect reporting; it
-    // just no longer feeds the player's sample gain.
-    let player = Player::new(
-        player_config,
-        session.clone(),
-        Box::new(NoOpVolume),
-        move || mk_proxy_sink(None, audio_format),
-    );
-
-    // Store player globally
-    let player: Arc<dyn SpircPlayer> = player;
-    *PLAYER.lock().unwrap_or_else(|e| e.into_inner()) = Some(Arc::clone(&player));
-
-    player
-}
-
-/// Builds a session, and clears anything it left behind if a teardown began while it ran.
-///
-/// Must run while the caller holds the lifecycle lock. `build_player_async` stores Session,
-/// Player, Mixer and Spirc in the globals well before it can decide whether it is still wanted,
-/// so every error path after those stores would leak them. Normally the next reconnect attempt
-/// tidies up on its way in — but during a logout there is no next attempt: the loop sees the
-/// teardown flag and exits, leaving a live session for an account that is gone.
-pub(crate) async fn init_player_async(
-    access_token: Option<&str>,
-    activate_after_connect: bool,
-    resume_after_connect: bool,
-) -> Result<(), String> {
-    let result =
-        build_player_async(access_token, activate_after_connect, resume_after_connect).await;
-
-    if result.is_err() && teardown_in_progress() {
-        debug!("Initialization failed during teardown — clearing what it left behind");
-        do_reconnect_cleanup();
-    }
-
-    result
-}
-
-/// Builds a complete, settled session and publishes its readiness exactly once, at the end.
-///
-/// The ordering matters. Readiness used to be published the moment Spirc existed, while
-/// activation and the rehydrating load still had to run — so Swift, which reacts to that
-/// publication by bootstrapping from the Web API, fetched and applied a server snapshot
-/// that Rust then immediately overwrote. That was visible as the playback position jumping
-/// forward to a stale value and back. Publishing readiness once, when nothing further is
-/// pending, removes the window rather than racing it.
-///
-/// The rehydrating load itself is Swift's. When local playback is being recovered, this
-/// function publishes one snapshot with `session_connected` set, `spirc_ready` still clear,
-/// and `resume_pending` set; Swift answers by issuing its `ResumeLoadPlan` targets through
-/// `spotty_playback_load`, and this function holds readiness until a Playing event lands,
-/// a load reports a dead Spirc, or [`REHYDRATION_WINDOW`] elapses. Target order and
-/// capture stay in one place (Swift); the engine keeps only the session globals the plan
-/// reads through the existing getters.
-pub(crate) async fn build_player_async(
-    access_token: Option<&str>,
-    activate_after_connect: bool,
-    resume_after_connect: bool,
-) -> Result<(), String> {
-    let current_generation = tokio::task::spawn_blocking(invalidate_cluster_generation)
-        .await
-        .map_err(|e| format!("cluster generation invalidation: {e}"))?;
-    LAST_BUILD_GENERATION.store(current_generation, Ordering::SeqCst);
-    debug!(
-        "[WAKE +{}ms] init_player_async starting, generation={}",
-        elapsed_since_wake_ms(),
-        current_generation
-    );
-
-    let device_id = format!("spotty_playback_{}", std::process::id());
-    with_connection(|c| c.device_id = Some(device_id.clone()));
-
-    let (session, credentials) = create_session(&device_id, access_token)?;
-    let _store = enter_store_section();
-
-    // Create new mixer
-    let mixer_config = MixerConfig::default();
-    let mixer: Arc<SoftMixer> =
-        Arc::new(SoftMixer::open(mixer_config).map_err(|e| format!("Mixer error: {}", e))?);
-    *MIXER.lock().unwrap_or_else(|e| e.into_inner()) = Some(Arc::clone(&mixer));
-
-    // Create new player - must be created with the new session because Player is
-    // tightly coupled to Session's ChannelManager for decryption key requests
-    let player = create_new_player(&session, current_generation);
-    let event_stop_tx = start_player_event_pump(Arc::clone(&player), current_generation);
-
-    *SESSION.lock().unwrap_or_else(|e| e.into_inner()) = Some(session.clone());
-    *PLAYER_EVENT_TX.lock().unwrap_or_else(|e| e.into_inner()) = Some(event_stop_tx);
-
-    spawn_cluster_listener(&session, current_generation)?;
-    spawn_initial_cluster_fetch(&session, current_generation);
-    spawn_session_health_check(current_generation);
-
-    match create_and_store_spirc(&session, &credentials, player, mixer).await {
-        Ok(spirc) => {
-            clear_retired_credentials_cache();
-
-            // Passive startup by default: do not take over the active device on launch.
-            // Re-activate only when reconnecting from a previously-active local session.
-            //
-            // Recorded, not published — the single notify at the end of this function
-            // covers it. set_active_device would publish here, before the rehydration
-            // below, reopening the window this ordering exists to close.
-            if activate_after_connect {
-                match spirc.activate() {
-                    Ok(_) => {
-                        store_active_device(true);
-                    }
-                    Err(e) => debug!("Auto-activation failed: {:?}", e),
-                }
-            } else {
-                store_active_device(false);
-            }
-
-            // Rehydrate before announcing readiness. The rebuilt Player has no track
-            // loaded, and nothing else will load one: Spirc coming up and the device
-            // becoming active only make it *available* to play, not playing. Without this
-            // the session returns healthy and silent while Swift still shows the pre-outage
-            // position, because IS_PLAYING and the position anchor survive the rebuild.
-            //
-            // The load comes from Swift. Publishing `resume_pending` with `spirc_ready`
-            // still clear tells `PlaybackStore` to issue its `ResumeLoadPlan` targets now;
-            // `session_connected` must already be true for those loads to pass
-            // `require_session_connected`. Inside this window `load_at_position` returns as
-            // soon as Spirc queued the load, so Swift stops at the first queued target (as
-            // `resume_via_load` did) and the wait below is the only Playing wait. Swift's
-            // session phase stays non-ready until the commit below, so its Web API bootstrap
-            // still waits for the rehydrated state.
-            //
-            // This used to arm a five-second window waiting for a Paused event, on the
-            // assumption that the track would load itself via transfer(None) — nothing in
-            // this path ever called transfer(None), so the event never came.
-            if resume_after_connect {
-                if has_resume_identity() {
-                    let seq_before = open_rehydration_window(current_generation);
-                    with_connection(|c| {
-                        c.session_connected = true;
-                        c.resume_pending = true;
-                        c.last_error = None;
-                    });
-                    notify_connection_state_change();
-
-                    let outcome = wait_for_rehydration(seq_before, REHYDRATION_WINDOW).await;
-                    with_connection(|c| c.resume_pending = false);
-                    debug!(
-                        "[WAKE +{}ms] Rehydrate after reconnect: {:?}",
-                        elapsed_since_wake_ms(),
-                        outcome
-                    );
-
-                    match outcome {
-                        RehydrationOutcome::NeedsReinit => {
-                            // Closed command channel: this Spirc is already dead, so the
-                            // session can never play. Success is committed below, after
-                            // this point, so the connection state still reads not ready;
-                            // the reconnect loop treats the error as another attempt.
-                            with_connection(|c| c.session_connected = false);
-                            return Err(
-                                "Rehydration failed: Spirc command channel closed".to_string()
-                            );
-                        }
-                        RehydrationOutcome::TimedOut => {
-                            // `Spirc::load` only queues a command, so an accepted load may
-                            // still land after this. Waiting kept Swift's Web API bootstrap
-                            // out of the gap; a timeout is not fatal.
-                            debug!(
-                                "[WAKE +{}ms] Rehydrate: nothing landed within {:?}, publishing anyway",
-                                elapsed_since_wake_ms(),
-                                REHYDRATION_WINDOW
-                            );
-                        }
-                        RehydrationOutcome::Playing => {}
-                    }
-                } else {
-                    // Nothing to resume — no saved context or track URI. Reachable when an
-                    // outage lands between a play command and the player events that record
-                    // what is playing. The session itself is fine, so failing here would
-                    // make every later attempt fail identically, forever.
-                    debug!(
-                        "[WAKE +{}ms] Rehydrate: nothing to resume",
-                        elapsed_since_wake_ms()
-                    );
-                }
-            }
-
-            // Committing late means this can be reached after something else took over —
-            // spotty_playback_cleanup on logout, a manual retry, or sleep, any of which can land
-            // during the rehydration wait above. Writing success then would resurrect a
-            // dead session as healthy and stop the health check from recovering it.
-            let superseded = !listener_may_act(
-                current_generation,
-                SESSION_GENERATION.load(Ordering::SeqCst),
-            );
-            let tearing_down = teardown_in_progress();
-
-            if superseded || tearing_down {
-                // Returning an error is not enough on the teardown path. This attempt has
-                // already stored its Session, Player and Spirc in the globals, so refusing
-                // to publish leaves them live and connected — on logout that means the
-                // account stays announced on Spotify Connect, which is exactly what the
-                // shutdown was for. Teardown is unambiguous: nothing newer is coming, so
-                // clear what this attempt built.
-                //
-                // A supersede on its own is the opposite case — a newer generation owns the
-                // globals by now, and tearing them down would destroy its work, not ours.
-                // Only teardown may clear globals. Teardown outranks a moved counter:
-                // `init_player_async` clears both teardown flags as it starts, so a flag
-                // that is set now means no newer generation began after it.
-                if tearing_down {
-                    debug!(
-                        "Generation {} finished during teardown — clearing what it built",
-                        current_generation
-                    );
-                    // Through the handle this attempt holds, not the global one. A cleanup
-                    // that landed between storing the Spirc and reaching here has already
-                    // nilled the global, so `do_reconnect_cleanup` would find nothing to
-                    // stop — while this Spirc's task stays alive holding the session, which
-                    // is precisely the thing that must not survive a logout.
-                    let _ = spirc.shutdown();
-                    do_reconnect_cleanup();
-                }
-
-                return Err(format!(
-                    "Initialization for generation {} was superseded before it completed",
-                    current_generation
-                ));
-            }
-
-            // Single commit-and-publish point: session up, device activated, playback
-            // rehydrated. Recording success only here means a failure anywhere above
-            // leaves the previous disconnected state untouched, and no snapshot in
-            // between can announce a session that cannot yet play.
-            with_connection(|c| {
-                c.spirc_ready = true;
-                c.session_connected = true;
-                c.resume_pending = false;
-                c.last_error = None;
-            });
-            notify_connection_state_change();
-        }
-        Err(e) => {
-            // No fallback: every Spotty control goes through Spirc, so a bare connected
-            // Session is not a usable player. This used to call session.connect() and
-            // return Ok, which reported success while leaving Swift with a player whose
-            // every command would fail - and because initializeIfNeeded then refused to
-            // retry, that state was permanent.
-            return Err(format!("Spirc initialization failed: {}", e));
-        }
-    }
-
-    Ok(())
 }

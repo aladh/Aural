@@ -2,16 +2,6 @@ import SpottyDomain
 import SpottyPlaybackCore
 import Foundation
 
-/// Failure returned by the audio-key request below. Does not carry key bytes.
-nonisolated enum AudioKeyError: Error, Equatable {
-    /// `trackGID` was not 16 bytes, or `fileID` was not 20 bytes.
-    case invalidIdentifier
-    /// The AP session is not connected; the caller should wait and retry.
-    case notConnected
-    /// Any other engine failure (timeout, AES key error), carrying the raw result code.
-    case engineFailure(Int32)
-}
-
 /// The complete Swift-facing boundary to Spotty's embedded playback engine.
 ///
 /// The application is native SwiftUI, and all catalog, authentication, state, and rendering
@@ -26,52 +16,6 @@ nonisolated enum PlaybackCore {
 
     static func registerAudioControlCallback(_ callback: AudioControlCallback) {
         spotty_playback_register_audio_control_callback(callback)
-    }
-
-    /// Registers Swift's audio-command sink, and by doing so selects the Stage 1 Swift audio
-    /// path: the engine builds a `ShimPlayer` on its next init instead of librespot's `Player`.
-    /// Leaving it unregistered keeps the shipped `proxy_sink` PCM path untouched.
-    static func registerAudioCommandCallback(_ callback: AudioCommandCallback) {
-        spotty_playback_register_audio_command_callback(callback)
-    }
-
-    /// The typed audio command a callback received, or nil for a null snapshot. Copies every
-    /// pointer: the C snapshot is valid only for the callback.
-    static func audioCommand(from pointer: UnsafePointer<SpottyAudioCommand>?) -> AudioCommand? {
-        guard let pointer else { return nil }
-        let command = pointer.pointee
-        guard let kind = AudioCommand.Kind(rawValue: command.kind.rawValue) else { return nil }
-        return AudioCommand(
-            sessionGeneration: command.session_generation,
-            playRequestID: command.play_request_id,
-            kind: kind,
-            trackURI: optionalCString(command.track_uri) ?? "",
-            trackGID: withUnsafeBytes(of: command.track_gid) { Array($0) },
-            fileID: withUnsafeBytes(of: command.file_id) { Array($0) },
-            audioFormat: command.audio_format,
-            positionMs: command.position_ms,
-            startPlaying: command.start_playing != 0,
-            durationMs: command.duration_ms
-        )
-    }
-
-    /// Reports one playback fact from the Swift audio path. The engine rejects a report whose
-    /// `sessionGeneration`/`playRequestID` no longer names what it believes is loaded, which is
-    /// an ordinary outcome (a superseded load), not an error worth surfacing.
-    @discardableResult
-    static func reportAudio(_ report: AudioReport) -> Result {
-        // The imported C enum is open, so the raw-value initializer is failable even though
-        // `AudioReportKind` is a closed Swift set whose values match the header.
-        guard let kind = SpottyAudioReportKind(rawValue: report.kind.rawValue) else {
-            return .error
-        }
-        return spotty_playback_report_audio(
-            report.sessionGeneration,
-            report.playRequestID,
-            kind,
-            report.positionMs,
-            report.durationMs
-        )
     }
 
     static func registerPlaybackStateCallback(_ callback: PlaybackStateCallback) {
@@ -95,7 +39,8 @@ nonisolated enum PlaybackCore {
             timestampMS: snapshot.timestamp_ms,
             shuffle: snapshot.shuffle != 0,
             repeatTrack: snapshot.repeat_track != 0,
-            repeatContext: snapshot.repeat_context != 0
+            repeatContext: snapshot.repeat_context != 0,
+            isActiveDevice: snapshot.is_active_device != 0
         )
     }
 
@@ -147,7 +92,8 @@ nonisolated enum PlaybackCore {
             isActiveDevice: snapshot.is_active_device != 0,
             resumePending: snapshot.resume_pending != 0,
             lastError: optionalCString(snapshot.last_error),
-            deviceID: optionalCString(snapshot.device_id)
+            deviceID: optionalCString(snapshot.device_id),
+            credentialsRejected: snapshot.credentials_rejected != 0
         )
     }
 
@@ -336,45 +282,6 @@ nonisolated enum PlaybackCore {
     ) -> R {
         guard let string else { return body(nil) }
         return string.withCString { body($0) }
-    }
-
-    /// Fetches the AES decryption key for one file over the existing AP session. Blocking;
-    /// librespot times a single request out at 1500ms. Stage 1 scaffolding for #201/#208:
-    /// nothing consumes this yet. Spotify throttles key requests, so the eventual consumer must
-    /// cache a successful key per file id and coalesce concurrent misses instead of calling
-    /// this repeatedly.
-    ///
-    /// - Parameters:
-    ///   - trackGID: 16 raw bytes of the track's Spotify ID.
-    ///   - fileID: 20 raw bytes of the file ID (the specific encoded file being played).
-    nonisolated static func audioKey(
-        trackGID: [UInt8],
-        fileID: [UInt8]
-    ) -> Swift.Result<[UInt8], AudioKeyError> {
-        guard trackGID.count == 16, fileID.count == 20 else {
-            return .failure(.invalidIdentifier)
-        }
-
-        var keyOut = [UInt8](repeating: 0, count: 16)
-        let result = keyOut.withUnsafeMutableBufferPointer { keyPointer -> Result in
-            trackGID.withUnsafeBufferPointer { trackPointer in
-                fileID.withUnsafeBufferPointer { filePointer in
-                    // All three buffers are non-empty (lengths checked above), so the base
-                    // addresses are non-null as the header's `assume_nonnull` region requires.
-                    spotty_playback_audio_key(
-                        trackPointer.baseAddress!,
-                        filePointer.baseAddress!,
-                        keyPointer.baseAddress!
-                    )
-                }
-            }
-        }
-
-        switch result.rawValue {
-        case 0: return .success(keyOut)
-        case -3: return .failure(.notConnected)
-        default: return .failure(.engineFailure(result.rawValue))
-        }
     }
 
     static func next() -> Result { spotty_playback_next() }

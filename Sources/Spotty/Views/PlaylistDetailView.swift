@@ -53,7 +53,7 @@ struct PlaylistDetailView: View {
                     systemImage: "wifi.exclamationmark",
                     description: Text(playback.statusText)
                 )
-                Button("Reconnect") { playback.connect() }
+                Button(playback.connectionActionTitle) { playback.connect() }
                     .buttonStyle(.borderedProminent)
             }
             .frame(maxWidth: .infinity, minHeight: 240)

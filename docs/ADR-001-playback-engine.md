@@ -1,9 +1,8 @@
 # ADR 001: Playback engine boundary
 
-Status: accepted on 2026-08-18.
-
-Under staged review per #201. The decision below stands until a later record supersedes it;
-the replacement stages and their gates live in [playback engine ownership](playback-engine-ownership.md).
+Status: accepted on 2026-08-18. The later retained-engine decision is recorded in
+[ADR 005](ADR-005-retain-librespot.md); the contained boundary and application-ownership principles
+below remain accepted.
 
 ## Context
 
@@ -46,9 +45,9 @@ The live boundary is [playback engine ownership](playback-engine-ownership.md).
   `queue.rs`, `transport.rs`), and the paired ABI-parity and layout checks. A change to any one
   of them is reviewed against the others.
 - librespot updates are protocol migrations, not routine dependency bumps.
-- Any staged replacement must keep the boundary narrow while responsibility moves across it.
+- Changes in ownership must keep the boundary narrow and follow ADR 005.
 
 ## Revisit trigger
 
-A supported macOS playback SDK, a measured WKWebView experiment that improves reliability and
-total resource use without adding user setup, or a passed gate in the staged review named above.
+A supported macOS playback SDK or measured evidence that a different engine improves reliability
+and total resource use enough to justify revisiting ADR 005.

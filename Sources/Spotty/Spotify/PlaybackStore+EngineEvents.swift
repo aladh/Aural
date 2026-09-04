@@ -75,6 +75,10 @@ extension PlaybackStore {
         guard !isTearingDown else { return }
         let isInitialSnapshot = !hasReceivedPlaybackSnapshot
         let previousTrackURI = trackURI
+        // This fact belongs to the same Connect player observation as the transport and
+        // identity below. Reading the store's owner here would make projection depend on
+        // callback arrival order.
+        let snapshotIsActiveDevice = state.isActiveDevice
         let snapshot = PlaybackSnapshotProjection.snapshot(
             isPlaying: state.isPlaying,
             isPaused: state.isPaused,
@@ -88,7 +92,7 @@ extension PlaybackStore {
             repeatTrack: state.repeatTrack,
             previousRepeat: self.state.options.repeatFlags,
             isInitialSnapshot: isInitialSnapshot,
-            isActiveDevice: isActiveDevice,
+            isActiveDevice: snapshotIsActiveDevice,
             receivedAt: receivedAt
         )
         let accepted = send(
@@ -110,7 +114,7 @@ extension PlaybackStore {
         // A later cluster update can start Spotty remotely. Count that transition, but never turn
         // the initial account snapshot into fresh listening history merely because the app opened.
         if !isInitialSnapshot,
-            isActiveDevice,
+            snapshotIsActiveDevice,
             snapshot.transport == .playing,
             let trackURI = snapshot.trackURI,
             trackURI != previousTrackURI
@@ -329,6 +333,7 @@ extension PlaybackStore {
         let session = ConnectionSnapshotProjection.sessionPhase(
             connected: state.sessionConnected,
             spircReady: state.spircReady,
+            credentialsRejected: state.credentialsRejected,
             lastError: state.lastError
         )
         let accepted = send(
@@ -345,6 +350,28 @@ extension PlaybackStore {
         )
         guard accepted else { return }
         accountStore.receiveEngineConnection(session)
+        guard !state.credentialsRejected else {
+            // The snapshot was accepted for this engine/account generation. Keep the independent
+            // Keymaster grant, discard only the streaming credential held by the engine, and make
+            // reauthorization an explicit user action.
+            accountStore.markCredentialRejection()
+            engineRehydrationWindowOpen = false
+            let lifetime = playbackLifetime
+            effects.replace(
+                .credentialRejection,
+                with: Task { [weak self] in
+                    guard let self,
+                        self.playbackLifetime == lifetime,
+                        !self.isTearingDown
+                    else { return }
+                    await self.endSession(
+                        clearGrant: false,
+                        finalPhase: .failed(ConnectionSnapshotProjection.credentialsRejectedMessage)
+                    )
+                }
+            )
+            return
+        }
         engineRehydrationWindowOpen = state.resumePending && !state.spircReady
         rehydrateIfEngineIsWaiting(state)
     }

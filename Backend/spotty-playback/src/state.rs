@@ -1,43 +1,26 @@
 use crate::*;
 use std::collections::HashMap;
 
-// Player state.
-//
-// `Arc<dyn SpircPlayer>` rather than `Arc<Player>`: Stage 1 of #201 lets the process run either
-// librespot's own `Player` (PCM through `proxy_sink.rs`) or the Swift-owned `ShimPlayer`, chosen
-// once per build in `create_new_player`. Everything that reaches for the player through this
-// global only ever calls trait methods.
-pub(crate) static PLAYER: Lazy<Mutex<Option<Arc<dyn SpircPlayer>>>> =
-    Lazy::new(|| Mutex::new(None));
+// Player state. The retained engine has one production player implementation: librespot's own
+// `Player`, which decodes in-process and delivers bounded PCM through `proxy_sink`.
+pub(crate) static PLAYER: Lazy<Mutex<Option<Arc<Player>>>> = Lazy::new(|| Mutex::new(None));
 
-/// The `ShimPlayer` behind [`PLAYER`], when the Swift audio path is the one in use.
+/// Join handles for every task created for the current engine generation.
 ///
-/// Kept separately because `spotty_playback_report_audio` needs `ShimPlayer::report`, which is not
-/// part of `SpircPlayer` (Spirc never reports playback inward — Swift does). `None` whenever
-/// librespot's own `Player` is running, which is what makes a report arriving on the old path a
-/// rejected no-op rather than a panic.
-pub(crate) static SHIM_PLAYER: Lazy<Mutex<Option<Arc<ShimPlayer>>>> =
+/// Keeping the handles together makes teardown an owned operation: a failed build can cancel all
+/// work it started, and a normal generation replacement can await the old tasks before dropping
+/// the objects they retain. The vector is taken before cancellation, so no task is ever awaited
+/// while holding the global registry lock.
+pub(crate) static ENGINE_TASKS: Lazy<Mutex<Option<Vec<JoinHandle<()>>>>> =
     Lazy::new(|| Mutex::new(None));
-
-/// The current `ShimPlayer` as a clone, or `None`.
-///
-/// Handed out as a clone, never behind the guard: `report` broadcasts player events, and no
-/// engine lock may be held across work that can re-enter. Same rule as [`current_spirc`].
-pub(crate) fn current_shim_player() -> Option<Arc<ShimPlayer>> {
-    SHIM_PLAYER
-        .lock()
-        .unwrap_or_else(|e| e.into_inner())
-        .clone()
-}
-
-/// The player as a clone, or `None`. Never call a player method through the guard: with the
-/// Swift audio path in use those methods enter Swift, which may call straight back into Rust.
-pub(crate) fn current_player() -> Option<Arc<dyn SpircPlayer>> {
-    PLAYER.lock().unwrap_or_else(|e| e.into_inner()).clone()
-}
 pub(crate) static SESSION: Lazy<Mutex<Option<Session>>> = Lazy::new(|| Mutex::new(None));
 pub(crate) static MIXER: Lazy<Mutex<Option<Arc<SoftMixer>>>> = Lazy::new(|| Mutex::new(None));
 pub(crate) static SPIRC: Lazy<Mutex<Option<Arc<Spirc>>>> = Lazy::new(|| Mutex::new(None));
+
+/// Returns the current concrete librespot Player without holding its registry lock.
+pub(crate) fn current_player() -> Option<Arc<Player>> {
+    PLAYER.lock().unwrap_or_else(|e| e.into_inner()).clone()
+}
 /// Local playing flag. `true` only after `PlayerEvent::Playing`. `Spirc::load`
 /// `Ok` means the command was queued, not that audio started, so the play
 /// commands must not store `true` here: `resume_playback` returns success
@@ -117,10 +100,6 @@ pub(crate) struct ControlCallbacks {
     pub(crate) playback_state: Mutex<Option<PlaybackSnapshotCallback>>,
     pub(crate) devices: Mutex<Option<DevicesSnapshotCallback>>,
     pub(crate) connection_state: Mutex<Option<ConnectionSnapshotCallback>>,
-    /// Swift's audio-command sink for the Stage 1 audio path (#208). Registering it before
-    /// `spotty_playback_init_player` is also the switch that selects `ShimPlayer` over librespot's
-    /// `Player`; see `create_new_player`.
-    pub(crate) audio_command: Mutex<Option<AudioCommandCallback>>,
 }
 
 pub(crate) static CONTROL_CALLBACKS: Lazy<ControlCallbacks> = Lazy::new(ControlCallbacks::default);
@@ -165,6 +144,24 @@ pub(crate) fn stamped_snapshot<T>(build: impl FnOnce(SnapshotStamp) -> T) -> T {
         session_generation: SESSION_GENERATION.load(Ordering::SeqCst),
     })
 }
+
+/// Builds a snapshot revision for an explicitly owned engine generation.
+///
+/// Most publishers observe the current generation at the point they assemble their payload.
+/// A generation-scoped event publisher may have to release its short mutation gate before it
+/// enters Swift, though; using this helper keeps that callback stamped with the generation whose
+/// state produced it instead of whichever generation happened to be current at delivery time.
+pub(crate) fn stamped_snapshot_for_generation<T>(
+    session_generation: u64,
+    build: impl FnOnce(SnapshotStamp) -> T,
+) -> T {
+    let mut revision = SNAPSHOT_REVISION.lock().unwrap_or_else(|e| e.into_inner());
+    *revision = revision.saturating_add(1);
+    build(SnapshotStamp {
+        revision: *revision,
+        session_generation,
+    })
+}
 pub(crate) static SHUFFLE_STATE: AtomicBool = AtomicBool::new(false);
 pub(crate) static REPEAT_TRACK_STATE: AtomicBool = AtomicBool::new(false);
 pub(crate) static REPEAT_CONTEXT_STATE: AtomicBool = AtomicBool::new(false);
@@ -194,11 +191,30 @@ pub(crate) struct ConnectionState {
     pub(crate) spirc_ready: bool,
     pub(crate) device_id: Option<String>,
     pub(crate) last_error: Option<String>,
+    /// The cached AP credential was definitively rejected by Spotify. This is a typed
+    /// connection outcome; it is kept separate from the sanitized human-readable status so
+    /// Swift can offer reauthentication without parsing an upstream error string.
+    pub(crate) credentials_rejected: bool,
     pub(crate) is_active_device: bool,
     /// True only inside a reconnect's rehydration window: the session is connected and
     /// activated, readiness is deliberately unpublished, and Swift should issue its
     /// `ResumeLoadPlan` targets now. Cleared when readiness commits or on cleanup.
     pub(crate) resume_pending: bool,
+}
+
+/// Records a definitive credential rejection and publishes it as a typed connection outcome.
+///
+/// `last_error` remains a stable, privacy-safe category. It never contains the upstream error,
+/// access token, or any response payload. A newer generation clears the flag when it begins.
+pub(crate) fn mark_credentials_rejected() {
+    with_connection(|c| {
+        c.session_connected = false;
+        c.spirc_ready = false;
+        c.resume_pending = false;
+        c.credentials_rejected = true;
+        c.last_error = Some("Spotify credentials rejected".to_string());
+    });
+    notify_connection_state_change();
 }
 
 /// Whether this engine's device is the cluster's active member.
@@ -261,7 +277,7 @@ impl RecoveryIntent {
 ///
 /// Invalidity alone is not a sufficient trigger. `Session::is_invalid` is only set by
 /// `shutdown()`, so a session that was created but never managed to connect — exactly what
-/// a failed `init_player_async` leaves behind — reports itself valid forever. The state
+/// a failed `build_player_async` leaves behind — reports itself valid forever. The state
 /// that actually needs rescuing is "not connected and nobody is recovering", however it was
 /// reached: a session that died, or one that never came up.
 ///
@@ -326,7 +342,7 @@ pub(crate) fn set_active_device(active: bool) {
 /// Records activity without publishing, returning whether it changed.
 ///
 /// For callers that are mid-transition and will publish once when they are done —
-/// `init_player_async` still has to rehydrate after activating, and publishing in between
+/// `build_player_async` still has to rehydrate after activating, and publishing in between
 /// is what let Swift bootstrap against a half-built session.
 pub(crate) fn store_active_device(active: bool) -> bool {
     let changed = with_connection(|c| {
@@ -429,7 +445,7 @@ pub(crate) fn elapsed_since_wake_ms() -> u64 {
     now.saturating_sub(wake_ts)
 }
 
-// Generation counter for reconnection. Bumped once per rebuild, in init_player_async, and
+// Generation counter for reconnection. Bumped once per rebuild, in build_player_async, and
 // captured by every listener that rebuild creates. A listener whose captured generation no
 // longer matches belongs to a session that has already been replaced, and must not act.
 //
@@ -440,6 +456,37 @@ pub(crate) fn elapsed_since_wake_ms() -> u64 {
 // check unreachable. Now that a rebuild replaces the listener along with its session, the
 // listener captures the value directly and the check does what it claims.
 pub(crate) static SESSION_GENERATION: AtomicU64 = AtomicU64::new(0);
+
+/// Serializes short, synchronous mutations against the generation invalidation point.
+///
+/// The async lifecycle mutex cannot be used by player callbacks or synchronous FFI commands:
+/// lifecycle initialization deliberately holds it while waiting for rehydration. This gate is
+/// therefore intentionally small and synchronous. Callers must finish all state reads/writes or
+/// command-channel sends inside the closure, then invoke callbacks after it returns. No foreign
+/// callback may run while this mutex is held.
+static GENERATION_MUTATION_GATE: Lazy<Mutex<()>> = Lazy::new(|| Mutex::new(()));
+
+/// Runs one generation-owned synchronous operation while invalidation is excluded.
+pub(crate) fn with_generation_mutation<T>(work: impl FnOnce() -> T) -> T {
+    let _gate = GENERATION_MUTATION_GATE
+        .lock()
+        .unwrap_or_else(|error| error.into_inner());
+    work()
+}
+
+/// Runs `work` only while `generation` still owns the engine mutation point.
+///
+/// The generation check and the closure are protected by the same gate used by
+/// [`invalidate_cluster_generation`]. This closes the check-then-act window for event state
+/// writes and rehydration command sends without holding an async lifecycle lock.
+pub(crate) fn with_current_generation_mutation<T>(
+    generation: u64,
+    work: impl FnOnce() -> T,
+) -> Option<T> {
+    with_generation_mutation(|| {
+        listener_may_act(generation, SESSION_GENERATION.load(Ordering::SeqCst)).then(work)
+    })
+}
 /// Bumped only when the account itself goes away — logout, or app termination. Distinct from
 /// `SESSION_GENERATION`, which moves on every ordinary rebuild: cleanup and
 /// `build_player_async` both advance it, so a long-running streaming grant waiting on a

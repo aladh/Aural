@@ -2,7 +2,7 @@
 set -euo pipefail
 trap 'echo "report-size.sh: failed at line $LINENO" >&2' ERR
 
-# Reports release build size for the Stage 1 switchover comparison (#208, #37).
+# Reports release build size for measured resource comparisons (#37).
 #
 # Prints a Markdown table with the app binary size, the Rust static archive size,
 # per-segment totals for the binary, and the archive's exported symbol count.

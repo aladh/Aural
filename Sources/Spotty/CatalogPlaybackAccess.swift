@@ -19,9 +19,17 @@ struct CatalogPlaybackAccess {
     var isPlaying: Bool { player.isPlaying }
     var currentTrackURI: String { player.trackURI }
     var statusText: String { player.statusText }
+    var requiresReauthentication: Bool { player.requiresReauthentication }
+    var connectionActionTitle: String {
+        requiresReauthentication ? "Sign In Again" : "Connect Spotify"
+    }
 
     func connect() {
-        player.connect()
+        if requiresReauthentication {
+            player.reauthorize()
+        } else {
+            player.connect()
+        }
     }
 
     func playURI(_ uri: String) {

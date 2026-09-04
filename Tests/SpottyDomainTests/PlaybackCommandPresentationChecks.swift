@@ -345,8 +345,8 @@ struct PlaybackCommandPresentationTests {
                 )
             )
             #expect(
-                (mismatchedSeek.timing) == (priorSeekTiming),
-                "a rejected seek after a lagging snapshot still rolls back")
+                (mismatchedSeek.timing) == (laggingTiming),
+                "a rejected seek after a lagging snapshot restores its latest authoritative timing")
 
             var matchingSeek = PlaybackState(
                 accountEpoch: 1,

@@ -81,7 +81,7 @@ jobs:
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: Backend/lib/libspotty_playback.a
-          key: macos-playback-archive-${{ runner.arch }}-${{ env.RUST_TOOLCHAIN_KEY }}-${{ hashFiles('rust-toolchain.toml', 'Backend/spotty-playback/Cargo.toml', 'Backend/spotty-playback/Cargo.lock', 'Backend/spotty-playback/build.sh', 'Backend/spotty-playback/src/**', 'Backend/vendor/librespot-connect/**') }}
+          key: macos-playback-archive-${{ runner.arch }}-${{ env.RUST_TOOLCHAIN_KEY }}-${{ hashFiles('rust-toolchain.toml', 'Backend/spotty-playback/Cargo.toml', 'Backend/spotty-playback/Cargo.lock', 'Backend/spotty-playback/build.sh', 'Backend/spotty-playback/src/**') }}
 
       - name: Refresh cached playback archive timestamp
         run: |
@@ -134,7 +134,7 @@ jobs:
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: Backend/lib/libspotty_playback.a
-          key: macos-playback-archive-${{ runner.arch }}-${{ env.RUST_TOOLCHAIN_KEY }}-${{ hashFiles('rust-toolchain.toml', 'Backend/spotty-playback/Cargo.toml', 'Backend/spotty-playback/Cargo.lock', 'Backend/spotty-playback/build.sh', 'Backend/spotty-playback/src/**', 'Backend/vendor/librespot-connect/**') }}
+          key: macos-playback-archive-${{ runner.arch }}-${{ env.RUST_TOOLCHAIN_KEY }}-${{ hashFiles('rust-toolchain.toml', 'Backend/spotty-playback/Cargo.toml', 'Backend/spotty-playback/Cargo.lock', 'Backend/spotty-playback/build.sh', 'Backend/spotty-playback/src/**') }}
 
       - name: Cache Rust dependencies and build products
         if: steps.playback-archive.outputs.cache-hit != 'true'

@@ -133,7 +133,13 @@ pub(crate) enum RehydrationOutcome {
 /// Opens a rehydration window for `generation`: records the owner, clears the reinit flag,
 /// and returns the playing-event sequence to wait past. Call before publishing
 /// `resume_pending` to Swift.
+#[cfg(test)]
 pub(crate) fn open_rehydration_window(generation: u64) -> u64 {
+    with_generation_mutation(|| open_rehydration_window_locked(generation))
+}
+
+/// Opens a rehydration window while the caller already owns the generation mutation gate.
+pub(crate) fn open_rehydration_window_locked(generation: u64) -> u64 {
     REHYDRATION_WINDOW_GENERATION.store(generation, Ordering::SeqCst);
     REHYDRATION_NEEDS_REINIT.store(false, Ordering::SeqCst);
     playing_event_stamp().sequence
@@ -153,6 +159,11 @@ pub(crate) fn rehydration_load_is_current(generation: u64) -> bool {
 /// generation other than the open window's owner is stale and is ignored here (its caller
 /// still sees `ERROR_NEEDS_REINIT`).
 pub(crate) fn note_load_needs_reinit(load_generation: u64) {
+    with_generation_mutation(|| note_load_needs_reinit_locked(load_generation));
+}
+
+/// Records a closed-channel result while the caller already owns the generation mutation gate.
+fn note_load_needs_reinit_locked(load_generation: u64) {
     if REHYDRATION_WINDOW_GENERATION.load(Ordering::SeqCst) == load_generation {
         REHYDRATION_NEEDS_REINIT.store(true, Ordering::SeqCst);
     }
@@ -200,10 +211,7 @@ pub(crate) fn ensure_active_for_playback(spirc: &Arc<Spirc>) -> Result<(), i32> 
                 debug!("Activate succeeded");
                 set_active_device(true);
             }
-            Err(_e) => {
-                debug!("Activate failed: {:?}", _e);
-                return Err(-1);
-            }
+            Err(error) => return Err(spirc_error("Activate", &error)),
         }
     }
     Ok(())
@@ -285,12 +293,18 @@ pub(crate) fn load_at_position(
     }
     // Stamped before the Spirc handle is taken, so a closed channel found below is attributed
     // to the generation this load actually ran against.
-    let load_generation = SESSION_GENERATION.load(Ordering::SeqCst);
+    let load_generation = if rehydrating {
+        rehydrating_generation
+    } else {
+        SESSION_GENERATION.load(Ordering::SeqCst)
+    };
     let Some(spirc) = current_spirc("Load") else {
         return ERROR_GENERAL;
     };
-    if let Err(e) = ensure_active_for_playback(&spirc) {
-        return e;
+    if !rehydrating {
+        if let Err(e) = ensure_active_for_playback(&spirc) {
+            return e;
+        }
     }
     let target = if from_context {
         ResumeLoadTarget::Context {
@@ -302,7 +316,41 @@ pub(crate) fn load_at_position(
         ResumeLoadTarget::Track { uri, position_ms }
     };
     let seq_before = playing_event_stamp().sequence;
-    match issue_load_target(&spirc, target) {
+    let issue_result = if rehydrating {
+        // `ensure_active_for_playback` above may have re-entered Swift and allowed teardown to
+        // start. Revalidate generation/window ownership and the concrete Spirc immediately before
+        // sending the command. The short synchronous gate excludes the generation invalidation
+        // point for the send itself; it never spans a callback or an await.
+        let Some(result) = with_current_generation_mutation(rehydrating_generation, || {
+            if !rehydration_load_is_current(rehydrating_generation) {
+                return Err(ERROR_GENERAL);
+            }
+            let Some(current_spirc) = current_spirc("Load") else {
+                return Err(ERROR_GENERAL);
+            };
+            if !Arc::ptr_eq(&spirc, &current_spirc) {
+                return Err(ERROR_GENERAL);
+            }
+            if !is_active_device() {
+                return Err(ERROR_NOT_CONNECTED);
+            }
+            let result = issue_load_target(&spirc, target);
+            if result == Some(ERROR_NEEDS_REINIT) {
+                note_load_needs_reinit_locked(load_generation);
+            }
+            Ok(result)
+        }) else {
+            return ERROR_GENERAL;
+        };
+        match result {
+            Ok(result) => result,
+            Err(error) => return error,
+        }
+    } else {
+        issue_load_target(&spirc, target)
+    };
+
+    match issue_result {
         Some(0) => {
             if rehydrating {
                 debug!("Rehydration load queued; the reconnect window waits for Playing");
@@ -316,7 +364,9 @@ pub(crate) fn load_at_position(
         Some(ERROR_NEEDS_REINIT) => {
             // Reported to the caller as usual, and also to a reconnect that may be holding
             // readiness open for this very load: its Spirc is already dead.
-            note_load_needs_reinit(load_generation);
+            if !rehydrating {
+                note_load_needs_reinit(load_generation);
+            }
             ERROR_NEEDS_REINIT
         }
         Some(code) => code,

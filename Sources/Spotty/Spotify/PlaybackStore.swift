@@ -21,6 +21,39 @@ nonisolated struct RustPlaybackState: Sendable {
     let shuffle: Bool
     let repeatTrack: Bool
     let repeatContext: Bool
+    /// Active-member fact captured with the same Connect player observation.
+    /// The initializer defaults this for synthetic callers that predate the wire field.
+    let isActiveDevice: Bool
+
+    init(
+        revision: UInt64,
+        sessionGeneration: UInt64,
+        isPlaying: Bool,
+        isPaused: Bool,
+        trackURI: String,
+        contextURI: String,
+        positionMS: Int64,
+        durationMS: Int64,
+        timestampMS: Int64,
+        shuffle: Bool,
+        repeatTrack: Bool,
+        repeatContext: Bool,
+        isActiveDevice: Bool = false
+    ) {
+        self.revision = revision
+        self.sessionGeneration = sessionGeneration
+        self.isPlaying = isPlaying
+        self.isPaused = isPaused
+        self.trackURI = trackURI
+        self.contextURI = contextURI
+        self.positionMS = positionMS
+        self.durationMS = durationMS
+        self.timestampMS = timestampMS
+        self.shuffle = shuffle
+        self.repeatTrack = repeatTrack
+        self.repeatContext = repeatContext
+        self.isActiveDevice = isActiveDevice
+    }
 }
 
 nonisolated struct RustQueueState: Sendable {
@@ -51,6 +84,31 @@ nonisolated struct RustConnectionState: Sendable {
     let resumePending: Bool
     let lastError: String?
     let deviceID: String?
+    /// Definitive streaming-credential rejection, distinct from generic reconnect failure.
+    /// The initializer defaults this for synthetic callers that predate the wire field.
+    let credentialsRejected: Bool
+
+    init(
+        revision: UInt64,
+        sessionGeneration: UInt64,
+        sessionConnected: Bool,
+        spircReady: Bool,
+        isActiveDevice: Bool,
+        resumePending: Bool,
+        lastError: String?,
+        deviceID: String?,
+        credentialsRejected: Bool = false
+    ) {
+        self.revision = revision
+        self.sessionGeneration = sessionGeneration
+        self.sessionConnected = sessionConnected
+        self.spircReady = spircReady
+        self.isActiveDevice = isActiveDevice
+        self.resumePending = resumePending
+        self.lastError = lastError
+        self.deviceID = deviceID
+        self.credentialsRejected = credentialsRejected
+    }
 }
 
 nonisolated struct RustDevicesState: Sendable {
@@ -76,6 +134,10 @@ final class PlaybackStore {
 
     private(set) var state = PlaybackState(accountEpoch: 1)
 
+    /// A typed engine credential rejection keeps the independent Keymaster grant intact while
+    /// making the next account action an explicit browser reauthorization.
+    private(set) var requiresReauthentication = false
+
     /// Catalog state lives in its own observable store; views that only draw
     /// catalog data can depend on it without observing playback at all.
     let catalog: CatalogStore
@@ -98,11 +160,9 @@ final class PlaybackStore {
     /// but must not be counted as something the listener just played in this Spotty session.
     @ObservationIgnored var hasReceivedPlaybackSnapshot = false
     @ObservationIgnored let effects = PlaybackEffectRegistry()
-    /// True between `endSession` starting and the next `initializePlayer`. Backend events
-    /// are delivered as detached tasks, so one queued just before a logout can land after
-    /// the presentation was cleared; without this gate it would mark a signed-out
-    /// account's playback state `.ready` again.
-    @ObservationIgnored var isTearingDown = false
+    /// Observable while session teardown is active so native commands update their availability.
+    /// The same gate rejects queued engine events while the old session is being cleared.
+    var isTearingDown = false
     @ObservationIgnored var teardown = SessionTeardownCoalescer()
     @ObservationIgnored var teardownTask: Task<Void, Never>?
     @ObservationIgnored var terminationGate = PlaybackTerminationGate()
@@ -178,6 +238,10 @@ final class PlaybackStore {
                 isAvailable: phase == .ready
             )
             self.send(.session(phase), source: .account)
+        }
+        accountStore.onReauthenticationChange = { [weak self] required in
+            guard let self else { return }
+            self.requiresReauthentication = required
         }
         accountStore.onReady = { [weak self] in
             guard let self else { return }

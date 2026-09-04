@@ -11,6 +11,13 @@ fn dropped_unbounded_command_receiver_maps_to_needs_reinit() {
     let err = librespot_core::Error::from(send_error);
 
     assert_eq!(err.kind, ErrorKind::Internal);
+    // Exercise the same shared result wrapper used by load/play/activation call paths, rather
+    // than only testing the classifier in isolation. A closed command receiver is the retained
+    // engine's deterministic reinitialization signal.
+    assert_eq!(
+        spirc_error("closed-command-fixture", &err),
+        ERROR_NEEDS_REINIT
+    );
     assert_eq!(classify_spirc_command_error(&err), ERROR_NEEDS_REINIT);
 }
 
@@ -19,6 +26,29 @@ fn add_to_queue_invalid_argument_maps_to_general() {
     let err = librespot_core::Error::invalid_argument("uri");
 
     assert_eq!(err.kind, ErrorKind::InvalidArgument);
+    assert_eq!(classify_spirc_command_error(&err), ERROR_GENERAL);
+}
+
+#[test]
+fn initialization_failure_codes_keep_credentials_rejection_terminal() {
+    assert_eq!(
+        initialization_failure_code(InitializationFailure::CredentialsRejected),
+        ERROR_CREDENTIALS_REJECTED
+    );
+    assert_eq!(
+        initialization_failure_code(InitializationFailure::Transient),
+        ERROR_GENERAL
+    );
+
+    // A command-side PermissionDenied result has no captured initialization generation. Keep it
+    // ordinary; only the initialization transaction may publish the terminal result safely.
+    let err = librespot_core::Error::permission_denied(std::io::Error::other(
+        "Login failed with reason: Bad credentials",
+    ));
+    assert_eq!(
+        classify_spirc_command_failure(&err),
+        SpircCommandFailure::CredentialRejected
+    );
     assert_eq!(classify_spirc_command_error(&err), ERROR_GENERAL);
 }
 

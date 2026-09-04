@@ -39,7 +39,9 @@ Run the complete non-playback quality gate:
 
 The first run downloads the exact Rust toolchain and locked Cargo dependencies, compiles the
 contained Rust/librespot backend, generates `Backend/lib/libspotty_playback.a`, builds the Swift
-products, and runs all deterministic checks. No Spotify sign-in or playback occurs.
+products, and runs all deterministic checks. The pinned Rust/librespot engine is the sole production
+playback implementation; no alternate audio path or local switch is required. No Spotify sign-in or
+playback occurs.
 
 For authenticated development, sign in to Xcode with an Apple Account and select its free Personal
 Team; paid Apple Developer Program membership is not required for local personal use. Create an

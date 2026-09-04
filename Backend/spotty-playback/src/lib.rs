@@ -5,10 +5,8 @@
 //! Connect, queue, transport, and player-event-pump responsibilities without changing that
 //! runtime contract.
 
-mod audio_command_sink;
-mod audio_key;
-mod audio_shim;
 mod connect;
+mod engine_resources;
 mod ffi;
 mod lifecycle_serialization;
 mod player_control;
@@ -21,9 +19,8 @@ mod spirc_command_error;
 mod state;
 mod transport;
 
-pub(crate) use audio_command_sink::*;
-pub(crate) use audio_shim::*;
 pub(crate) use connect::*;
+pub(crate) use engine_resources::*;
 pub(crate) use ffi::*;
 pub(crate) use lifecycle_serialization::*;
 pub(crate) use player_control::*;
@@ -38,7 +35,7 @@ pub(crate) use transport::*;
 
 pub(crate) use futures_util::StreamExt;
 pub(crate) use librespot_connect::{
-    ConnectConfig, LoadRequest, LoadRequestOptions, PlayingTrack, Spirc, SpircPlayer,
+    ConnectConfig, LoadRequest, LoadRequestOptions, PlayingTrack, Spirc,
 };
 pub(crate) use librespot_core::cache::Cache;
 pub(crate) use librespot_core::config::DeviceType;
@@ -61,11 +58,8 @@ pub(crate) use std::sync::{Arc, Condvar, Mutex};
 pub(crate) use std::time::{Duration, SystemTime, UNIX_EPOCH};
 pub(crate) use tokio::runtime::Runtime;
 pub(crate) use tokio::sync::mpsc;
+pub(crate) use tokio::task::JoinHandle;
 
-#[cfg(test)]
-mod audio_command_sink_tests;
-#[cfg(test)]
-mod audio_shim_tests;
 #[cfg(test)]
 mod connect_cluster_apply_tests;
 #[cfg(test)]
@@ -74,6 +68,8 @@ mod lifecycle_serialization_tests;
 mod queue_snapshot_tests;
 #[cfg(test)]
 mod queue_tests;
+#[cfg(test)]
+mod retained_lifecycle_tests;
 #[cfg(test)]
 mod spirc_command_error_tests;
 #[cfg(test)]

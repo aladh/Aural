@@ -383,6 +383,15 @@ struct PlaybackCommandFailureTests {
             case let .failure(failure):
                 #expect((failure) == (.reconnectRequired), "session not connected is reconnect-required")
             }
+            let credentialsRejected = PlaybackEngineResult(rawValue: -4)
+            #expect(credentialsRejected.isCredentialsRejected, "credential rejection is typed")
+            #expect(!credentialsRejected.requiresReconnect, "credential rejection does not reconnect")
+            switch PlaybackCommandFailure.from(engineResult: credentialsRejected) {
+            case .success:
+                #expect((false) == true, "credential rejection is not command success")
+            case let .failure(failure):
+                #expect((failure) == (.unavailable), "credential rejection is init-only")
+            }
             switch PlaybackCommandFailure.from(engineResult: PlaybackEngineResult(rawValue: -99)) {
             case .success:
                 #expect((false) == true, "an unrecognized engine code is unavailable")

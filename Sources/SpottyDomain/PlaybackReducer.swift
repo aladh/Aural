@@ -58,7 +58,12 @@ public enum PlaybackReducer {
                 candidate.playbackContextURI = snapshot.contextURI
                 supersedeOptimisticPlayTargetIfNeeded(incomingURI: incomingURI, in: &candidate)
                 let previousURI = candidate.currentTrack?.uri
-                reconcileSeekTiming(snapshot.timing, incomingTrackURI: incomingURI, in: &candidate)
+                reconcileSeekTiming(
+                    snapshot.timing,
+                    incomingTrackURI: incomingURI,
+                    recordsAuthoritativeSample: true,
+                    in: &candidate
+                )
                 if let uri = incomingURI {
                     if candidate.currentTrack?.uri != uri {
                         candidate.currentTrack = CurrentTrack(uri: uri)
@@ -174,6 +179,7 @@ public enum PlaybackReducer {
                 expectedTiming: command.expectedTiming,
                 rollbackTiming: command.rollbackTiming
                     ?? (command.expectedTiming == nil && command.expectedTrack == nil ? nil : candidate.timing),
+                latestAuthoritativeTiming: nil,
                 expectedTrack: command.expectedTrack,
                 rollbackPresentation: command.rollbackPresentation
                     ?? (command.expectedTrack == nil
@@ -229,7 +235,9 @@ public enum PlaybackReducer {
                         if let rollback = pair.value.rollbackTransport {
                             candidate.transport = rollback
                         }
-                        if let rollback = pair.value.rollbackTiming {
+                        if pair.key == .seek, let latest = pair.value.latestAuthoritativeTiming {
+                            candidate.timing = latest
+                        } else if let rollback = pair.value.rollbackTiming {
                             candidate.timing = rollback
                         }
                     }
@@ -543,9 +551,15 @@ public enum PlaybackReducer {
     /// Holds optimistic seek timing until an incoming sample is at the expected millisecond
     /// position on the same track. A different track or empty URI supersedes the old seek and
     /// adopts the incoming timing so rollback cannot attach the previous track's position.
+    /// While the optimistic value is held, retain each accepted same-track authoritative engine
+    /// sample for a rejected seek. Its `anchoredAt` remains the engine's original timestamp.
+    /// `recordsAuthoritativeSample` is set only for atomic `.enginePlayback` snapshots. A
+    /// `.timing` refresh is a separately awaited user-sourced getter result without track identity
+    /// or a playback revision, so it must not become rollback evidence for this seek.
     private static func reconcileSeekTiming(
         _ timing: PlaybackTiming,
         incomingTrackURI: String?,
+        recordsAuthoritativeSample: Bool = false,
         in state: inout PlaybackState
     ) {
         let incomingURI = playbackTrackURI(incomingTrackURI)
@@ -560,6 +574,11 @@ public enum PlaybackReducer {
             let expected = pending.expectedTiming,
             !matchesExpectedSeekPosition(timing, expected)
         {
+            if recordsAuthoritativeSample {
+                var updated = pending
+                updated.latestAuthoritativeTiming = timing
+                state.pendingCommands[.seek] = updated
+            }
             state.timing = expected
         } else {
             state.timing = timing

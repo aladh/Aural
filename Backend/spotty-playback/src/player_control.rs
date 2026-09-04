@@ -6,6 +6,9 @@ pub(crate) const ERROR_GENERAL: i32 = -1;
 pub(crate) const ERROR_NEEDS_REINIT: i32 = -2;
 /// Session is not yet connected; the caller should wait for readiness.
 pub(crate) const ERROR_NOT_CONNECTED: i32 = -3;
+/// The cached streaming credentials were definitively rejected during initialization.
+/// The account must authorize streaming again; this is not a reconnectable transport failure.
+pub(crate) const ERROR_CREDENTIALS_REJECTED: i32 = -4;
 
 /// Helper to check if session is connected. Returns ERROR_NOT_CONNECTED if not.
 ///
@@ -90,10 +93,7 @@ pub extern "C" fn spotty_playback_play_tracks(track_uris_json: *const c_char) ->
                 set_active_device(true);
                 0
             }
-            Err(_e) => {
-                debug!("Play tracks error: Spirc.load() failed: {:?}", _e);
-                -1
-            }
+            Err(_e) => spirc_error("Play tracks", &_e),
         }
     })
 }
@@ -174,10 +174,7 @@ pub extern "C" fn spotty_playback_play_uri(uri_or_url: *const c_char, track_inde
                 set_active_device(true);
                 0
             }
-            Err(_e) => {
-                debug!("Play error: Spirc.load() failed: {:?}", _e);
-                -1
-            }
+            Err(_e) => spirc_error("Play", &_e),
         }
     })
 }
@@ -297,6 +294,14 @@ pub extern "C" fn spotty_playback_cleanup() {
     ffi_void("spotty_playback_cleanup", || {
         debug!("spotty_playback_cleanup called - clearing all state");
 
+        // A callback from a Tokio worker cannot safely re-enter the process runtime. Refuse
+        // before touching the generation: the old objects remain installed and can finish under
+        // their owner, rather than leaving an invalidated but still-live generation behind.
+        if refuse_if_nested_runtime().is_err() {
+            debug!("spotty_playback_cleanup: refusing nested-runtime cleanup");
+            return;
+        }
+
         // Wait for an in-flight apply_cluster, then bump generation under the same gate
         // lock so mapping cannot begin for the outgoing session. A popped-not-yet-mapping
         // item is not waited on; begin_cluster_mapping re-checks after that gap.
@@ -310,16 +315,15 @@ pub extern "C" fn spotty_playback_cleanup() {
 
         match block_on_export(async {
             with_lifecycle_lock(async {
-                let _store = enter_store_section();
-                cleanup_player_globals();
+                cleanup_player_globals().await;
             })
             .await;
         }) {
             Ok(()) => {}
             Err(_) => {
-                // Nested `block_on` cannot take `LIFECYCLE`. Unlocked writes would race an
-                // in-flight build. Generation is already invalidated above; Swift does not
-                // call cleanup from a Tokio worker.
+                // The refusal above normally handles this. Keep this guard for a runtime
+                // transition between the check and `block_on_export`; no unlocked writes are
+                // safe while an in-flight build owns the lifecycle lock.
                 debug!("spotty_playback_cleanup: refusing nested-runtime cleanup");
             }
         }
@@ -329,32 +333,9 @@ pub extern "C" fn spotty_playback_cleanup() {
 /// Clears engine globals and session-scoped playback identity.
 ///
 /// Callers that write these stores must already hold the lifecycle lock.
-pub(crate) fn cleanup_player_globals() {
-    // Signal event listener to stop
-    if let Some(tx) = PLAYER_EVENT_TX
-        .lock()
-        .unwrap_or_else(|e| e.into_inner())
-        .take()
-    {
-        let _ = tx.send(());
-    }
-
-    // Shutdown Spirc first - this terminates the spirc_task and closes the dealer
-    shutdown_spirc("spotty_playback_cleanup");
-
-    // Now clear Spirc reference
-    *SPIRC.lock().unwrap_or_else(|e| e.into_inner()) = None;
-    // Clear player (see do_reconnect_cleanup for why Swift is told first)
-    proxy_sink::ProxySink::notify_player_gone();
-    *PLAYER.lock().unwrap_or_else(|e| e.into_inner()) = None;
-    // Dropped with the player it aliases; see do_reconnect_cleanup.
-    *SHIM_PLAYER.lock().unwrap_or_else(|e| e.into_inner()) = None;
-
-    // Clear mixer
-    *MIXER.lock().unwrap_or_else(|e| e.into_inner()) = None;
-
-    // Clear session
-    *SESSION.lock().unwrap_or_else(|e| e.into_inner()) = None;
+pub(crate) async fn cleanup_player_globals() {
+    let _store = enter_store_section();
+    teardown_engine_resources("spotty_playback_cleanup").await;
 
     // Reset state flags
     IS_PLAYING.store(false, Ordering::SeqCst);
@@ -407,6 +388,8 @@ pub(crate) fn cleanup_player_globals() {
         c.session_connected = false;
         c.resume_pending = false;
         c.device_id = None;
+        c.credentials_rejected = false;
+        c.last_error = None;
     });
 
     // Notify connection state change

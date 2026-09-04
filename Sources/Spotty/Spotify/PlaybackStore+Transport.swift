@@ -186,12 +186,18 @@ extension PlaybackStore {
         guard isConnected, showsPauseControl, isActiveDevice else { return }
         let epoch = accountEpoch
         let capturedEngineEpoch = engineGeneration
+        let capturedTrackURI = state.currentTrack?.uri
         effects.replace(
             .positionRefresh,
             with: Task { [weak self] in
                 guard let self else { return }
                 let position = await self.coordinator.positionMilliseconds()
                 guard !Task.isCancelled, !self.isTearingDown, self.isConnected else { return }
+                // The engine getter is awaited independently of its playback snapshot. A track
+                // transition can therefore land while it is suspended; never attribute the old
+                // track's position to the newly current track. Epochs alone only protect the
+                // account and engine lifetime, not the track identity.
+                guard self.state.currentTrack?.uri == capturedTrackURI else { return }
                 _ = self.setTiming(
                     position: TimeInterval(position) / 1_000,
                     accountEpoch: epoch,

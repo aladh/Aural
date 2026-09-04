@@ -1026,4 +1026,94 @@ struct PlaybackEventOutcomeTests {
             await player.shutdownForTermination()
         }
     }
+
+    @Test
+    @MainActor
+    func testPlaybackActiveRoleIsIndependentOfConnectionCallbackOrder() async {
+        let receivedAt = Date(timeIntervalSince1970: 1_800_000_000)
+        let connection = RustConnectionState(
+            revision: 1,
+            sessionGeneration: 0,
+            sessionConnected: true,
+            spircReady: true,
+            isActiveDevice: true,
+            resumePending: false,
+            lastError: nil,
+            deviceID: "mac"
+        )
+        let playback = RustPlaybackState(
+            revision: 2,
+            sessionGeneration: 0,
+            isPlaying: true,
+            isPaused: false,
+            trackURI: "spotify:track:order-independent",
+            contextURI: "",
+            positionMS: 1_000,
+            durationMS: 180_000,
+            timestampMS: 0,
+            shuffle: false,
+            repeatTrack: false,
+            repeatContext: false,
+            isActiveDevice: true
+        )
+
+        let connectionFirst = playbackStore(outcomeEnvironment(remote: ImmediateMetadataRemote()))
+        connectionFirst.receive(connection, revision: 1, receivedAt: receivedAt)
+        connectionFirst.receive(playback, revision: 2, receivedAt: receivedAt)
+
+        let playbackFirst = playbackStore(outcomeEnvironment(remote: ImmediateMetadataRemote()))
+        playbackFirst.receive(playback, revision: 2, receivedAt: receivedAt)
+        playbackFirst.receive(connection, revision: 1, receivedAt: receivedAt)
+
+        #expect(
+            connectionFirst.state.transport == playbackFirst.state.transport,
+            "same active playback observation projects the same transport in either callback order"
+        )
+        #expect(
+            connectionFirst.state.transport == .paused,
+            "the initial local observation remains conservatively paused"
+        )
+        #expect(
+            connectionFirst.state.currentTrack?.uri == playbackFirst.state.currentTrack?.uri,
+            "same playback observation projects the same track identity in either callback order"
+        )
+
+        await connectionFirst.shutdownForTermination()
+        await playbackFirst.shutdownForTermination()
+    }
+
+    @Test
+    @MainActor
+    func testPositionRefreshCannotCrossTrackTransition() async {
+        let engine = GatedPositionEngine()
+        let player = playbackStore(
+            outcomeEnvironment(local: engine, remote: ImmediateMetadataRemote())
+        )
+        seedReadyLocalPlayback(player, uri: "spotify:track:old")
+
+        player.refreshPosition()
+        #expect((await waitUntil { engine.hasStarted }) == true, "position refresh starts")
+        let positionRefresh = player.effects.settlement(of: .positionRefresh)
+
+        #expect(
+            (player.send(
+                .currentTrack(CurrentTrack(uri: "spotify:track:new")),
+                source: .user
+            )) == true,
+            "the new track is accepted while the getter is suspended"
+        )
+        #expect((player.state.currentTrack?.uri) == ("spotify:track:new"), "the new track is current")
+        #expect((player.state.timing.position) == (5), "the track transition keeps its existing timing")
+
+        engine.release()
+        await awaitCapturedEffect(
+            positionRefresh,
+            registered: "track-scoped position refresh is registered before completion"
+        )
+        #expect(
+            (player.state.timing.position) == (5),
+            "a position sampled for the old track cannot overwrite the new track"
+        )
+        await player.shutdownForTermination()
+    }
 }
