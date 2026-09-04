@@ -34,6 +34,7 @@ enum BoundaryChecksMain {
             RegisteredCheckSuite(name: "track-attribute") { runTrackAttributeChecks($0) },
             RegisteredCheckSuite(name: "media-selection") { runMediaSelectionChecks($0) },
             RegisteredCheckSuite(name: "resume-load-sequence") { runResumeLoadSequenceChecks($0) },
+            RegisteredCheckSuite(name: "audio-key-cache") { runAudioKeyCacheChecks($0) },
             RegisteredCheckSuite(name: "fixture-contract") { runFixtureContractChecks($0) },
             RegisteredCheckSuite(name: "engine-payload-contract") { runEnginePayloadContractChecks($0) },
             RegisteredCheckSuite(name: "pcm-write-space") { runPCMWriteSpaceChecks($0) },

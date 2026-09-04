@@ -2,6 +2,16 @@ import AuralDomain
 import AuralPlaybackCore
 import Foundation
 
+/// Failure returned by `PlaybackCore.audioKey`. Does not carry key bytes.
+nonisolated enum AudioKeyError: Error, Equatable {
+    /// `trackGID` was not 16 bytes, or `fileID` was not 20 bytes.
+    case invalidIdentifier
+    /// The AP session is not connected; the caller should wait and retry.
+    case notConnected
+    /// Any other engine failure (timeout, AES key error), carrying the raw result code.
+    case engineFailure(Int32)
+}
+
 /// The complete Swift-facing boundary to Aural's embedded playback engine.
 ///
 /// The application is native SwiftUI, and all catalog, authentication, state, and rendering
@@ -277,6 +287,42 @@ nonisolated enum PlaybackCore {
     ) -> R {
         guard let string else { return body(nil) }
         return string.withCString { body($0) }
+    }
+
+    /// Fetches the AES decryption key for one file over the existing AP session. Blocking;
+    /// librespot times a single request out at 1500ms. Stage 1 scaffolding for #201/#208:
+    /// nothing consumes this yet — see `AudioKeyCache`, which callers should go through
+    /// instead of calling this directly, since Spotify throttles key requests.
+    ///
+    /// - Parameters:
+    ///   - trackGID: 16 raw bytes of the track's Spotify ID.
+    ///   - fileID: 20 raw bytes of the file ID (the specific encoded file being played).
+    nonisolated static func audioKey(
+        trackGID: [UInt8],
+        fileID: [UInt8]
+    ) -> Swift.Result<[UInt8], AudioKeyError> {
+        guard trackGID.count == 16, fileID.count == 20 else {
+            return .failure(.invalidIdentifier)
+        }
+
+        var keyOut = [UInt8](repeating: 0, count: 16)
+        let code = keyOut.withUnsafeMutableBufferPointer { keyPointer -> Int32 in
+            trackGID.withUnsafeBufferPointer { trackPointer in
+                fileID.withUnsafeBufferPointer { filePointer in
+                    aural_playback_audio_key(
+                        trackPointer.baseAddress,
+                        filePointer.baseAddress,
+                        keyPointer.baseAddress
+                    )
+                }
+            }
+        }
+
+        switch code {
+        case 0: return .success(keyOut)
+        case -3: return .failure(.notConnected)
+        default: return .failure(.engineFailure(code))
+        }
     }
 
     static func next() -> Result { aural_playback_next() }

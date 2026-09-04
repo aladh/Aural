@@ -5,6 +5,7 @@
 //! Connect, queue, transport, and player-event-pump responsibilities without changing that
 //! runtime contract.
 
+mod audio_key;
 mod connect;
 mod ffi;
 mod lifecycle_serialization;
@@ -18,6 +19,7 @@ mod spirc_command_error;
 mod state;
 mod transport;
 
+pub(crate) use audio_key::*;
 pub(crate) use connect::*;
 pub(crate) use ffi::*;
 pub(crate) use lifecycle_serialization::*;

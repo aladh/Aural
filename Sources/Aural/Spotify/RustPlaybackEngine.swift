@@ -24,7 +24,7 @@ nonisolated struct RustPlaybackEventEnvelope: Sendable {
 /// The C ABI exposes process-global callbacks, so an instance-per-view abstraction would be
 /// dishonest. This adapter makes the process lifetime explicit, registers once, and fans typed
 /// events into AsyncStreams without retaining a controller or using unsafe mutable globals.
-nonisolated final class RustPlaybackEngine: LocalPlaybackEngine, @unchecked Sendable {
+nonisolated final class RustPlaybackEngine: LocalPlaybackEngine, AudioKeyProviding, @unchecked Sendable {
     static let shared = RustPlaybackEngine()
 
     private let lock = NSLock()
@@ -77,6 +77,10 @@ nonisolated final class RustPlaybackEngine: LocalPlaybackEngine, @unchecked Send
         engineResult(PlaybackCore.disconnect())
     }
     func forceReconnect() -> Int32 { PlaybackCore.forceReconnect() }
+
+    func audioKey(trackGID: [UInt8], fileID: [UInt8]) -> Swift.Result<[UInt8], AudioKeyError> {
+        PlaybackCore.audioKey(trackGID: trackGID, fileID: fileID)
+    }
 
     /// Activate/`play()` first. On a non-reconnect failure, iterate Swift load targets.
     /// `PlaybackCoordinator` serializes this whole operation.

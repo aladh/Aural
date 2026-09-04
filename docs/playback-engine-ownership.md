@@ -40,6 +40,9 @@ in the [enforcement inventory](architecture-enforcement.md).
 
 ## JSON / FFI surface
 
+`aural_playback_audio_key` fetches one file's AES decryption key over the existing AP
+session; it is Stage 1 scaffolding for #201/#208 and nothing calls it yet.
+
 Control observations for connection, playback, devices, and queue are typed C snapshots
 with `revision` and `session_generation`. Connection observations use
 `AuralConnectionSnapshot` with session flags, `device_id`, and `last_error`. Playback

@@ -567,6 +567,43 @@ fn control_snapshot_stamps_are_monotonic_and_session_scoped() {
     assert_eq!(second.session_generation, expected_generation);
 }
 
+#[test]
+fn audio_key_null_pointers_are_rejected() {
+    let track_gid = [0u8; 16];
+    let file_id = [0u8; 20];
+    let mut key_out = [0u8; 16];
+
+    assert_eq!(
+        aural_playback_audio_key(std::ptr::null(), file_id.as_ptr(), key_out.as_mut_ptr()),
+        ERROR_GENERAL
+    );
+    assert_eq!(
+        aural_playback_audio_key(track_gid.as_ptr(), std::ptr::null(), key_out.as_mut_ptr()),
+        ERROR_GENERAL
+    );
+    assert_eq!(
+        aural_playback_audio_key(track_gid.as_ptr(), file_id.as_ptr(), std::ptr::null_mut()),
+        ERROR_GENERAL
+    );
+}
+
+#[test]
+fn audio_key_with_no_session_is_not_connected() {
+    let _guard = lock_global_state();
+    let track_gid = [0u8; 16];
+    let file_id = [0u8; 20];
+    let mut key_out = [0u8; 16];
+
+    // No session has been built in this test binary, so the connection guard must reject
+    // the request before any key bytes are touched.
+    with_connection(|c| c.session_connected = false);
+
+    assert_eq!(
+        aural_playback_audio_key(track_gid.as_ptr(), file_id.as_ptr(), key_out.as_mut_ptr()),
+        ERROR_NOT_CONNECTED
+    );
+}
+
 /// Compile-time ABI contract. The release archive is also checked with `nm`; these assignments
 /// make signature drift fail in the fast Rust test suite before reaching the linker check.
 ///
@@ -603,6 +640,7 @@ fn exported_c_function_signatures_are_stable() {
     let _: extern "C" fn(*const c_char) -> i32 = aural_playback_add_to_queue;
     let _: extern "C" fn(*const c_char, i32) -> i32 = aural_playback_play_uri;
     let _: extern "C" fn(*const c_char, *const c_char, u32, bool, u64) -> i32 = aural_playback_load;
+    let _: extern "C" fn(*const u8, *const u8, *mut u8) -> i32 = aural_playback_audio_key;
     let _: extern "C" fn(u32) -> i32 = aural_playback_seek;
     let _: extern "C" fn() -> u32 = aural_playback_get_position_ms;
     let _: extern "C" fn() -> u32 = aural_playback_get_resume_position_ms;
