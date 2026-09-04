@@ -98,10 +98,11 @@ private func checkPreloadReuse(_ check: CheckRunner) {
         command(playRequestID: 101, kind: .preload, trackURI: "spotify:track:two", fileID: fileB)
     )
     check.notNil("the preloaded track is held", session.preloaded)
-    check.check("beginPreload is emitted", preload.contains { effect in
-        if case .beginPreload = effect { return true }
-        return false
-    })
+    let emitsBeginPreload = preload.contains { effect in
+      if case .beginPreload = effect { return true }
+      return false
+    }
+    check.check("beginPreload is emitted", emitsBeginPreload)
 
     let load = command(
         playRequestID: 102, kind: .load, trackURI: "spotify:track:two", fileID: fileB, startPlaying: true
