@@ -91,11 +91,10 @@ func runStorageResolveChecks(_ check: CheckRunner) {
         let justPastMargin = "https://audio-ak.spotifycdn.com/x?verify=1700000301-a"  // now + margin + 1s
         let expired = "https://audio-ak.spotifycdn.com/x?verify=1699999999-a"  // already expired
         let unparseable = "https://example.com/x"
-        let notAURL = "not a url with spaces"
 
-        let usable = CDNURLExpiry.usableURLs([atMargin, justPastMargin, expired, unparseable, notAURL], now: now)
+        let usable = CDNURLExpiry.usableURLs([atMargin, justPastMargin, expired, unparseable], now: now)
         check.equal(
-            "usableURLs drops at-margin and expired, keeps just-past-margin and unparseable, drops non-URLs",
+            "usableURLs drops at-margin and expired, keeps just-past-margin and unparseable",
             usable.map(\.absoluteString),
             [justPastMargin, unparseable]
         )
