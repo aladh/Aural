@@ -7,7 +7,7 @@ func runRangedAudioFetcherChecks(_ check: CheckRunner) async {
         let url = URL(string: "https://audio-ak.spotifycdn.com/audio/fixture")!
 
         let openTransport = ScriptedRangedTransport(steps: [
-            .response(status: 206, headers: ["Content-Range": "bytes 0-9/40"], body: bytes(0..<10)),
+            .response(status: 206, headers: ["Content-Range": "bytes 0-9/40"], body: bytes(0..<10))
         ])
         let opened = try? await RangedAudioFetcher(url: url, transport: openTransport).open()
         check.equal("open() returns the total length parsed from Content-Range", opened, 40)
@@ -15,7 +15,7 @@ func runRangedAudioFetcherChecks(_ check: CheckRunner) async {
         check.equal("open() requests from byte 0", openTransport.requestedRanges.first?.lowerBound, 0)
 
         let readWithinTransport = ScriptedRangedTransport(steps: [
-            .response(status: 206, headers: ["Content-Range": "bytes 0-9/40"], body: bytes(0..<10)),
+            .response(status: 206, headers: ["Content-Range": "bytes 0-9/40"], body: bytes(0..<10))
         ])
         let readWithinFetcher = RangedAudioFetcher(url: url, transport: readWithinTransport)
         _ = try? await readWithinFetcher.open()

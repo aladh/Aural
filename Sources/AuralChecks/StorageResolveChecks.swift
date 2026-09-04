@@ -13,7 +13,7 @@ func runStorageResolveChecks(_ check: CheckRunner) {
         cdn.string(field: 2, "https://audio-ak.spotifycdn.com/a")
         cdn.string(field: 2, "https://audio-ak.spotifycdn.com/b")
         cdn.bytes(field: 4, Data([0x01, 0x02, 0x03, 0x04]))
-        cdn.varint(field: 99, 42) // unknown field: must be skipped, not misread as a known one.
+        cdn.varint(field: 99, 42)  // unknown field: must be skipped, not misread as a known one.
 
         if let decoded = StorageResolveResponse(protobuf: cdn.data) {
             check.equal("cdn result decodes", decoded.result, .cdn)
@@ -87,9 +87,9 @@ func runStorageResolveChecks(_ check: CheckRunner) {
         check.nil_("missing query item is unparseable", CDNURLExpiry.expiry(of: missingQueryItem))
 
         let now = Date(timeIntervalSince1970: 1_700_000_000)
-        let atMargin = "https://audio-ak.spotifycdn.com/x?verify=1700000300-a" // now + margin exactly
-        let justPastMargin = "https://audio-ak.spotifycdn.com/x?verify=1700000301-a" // now + margin + 1s
-        let expired = "https://audio-ak.spotifycdn.com/x?verify=1699999999-a" // already expired
+        let atMargin = "https://audio-ak.spotifycdn.com/x?verify=1700000300-a"  // now + margin exactly
+        let justPastMargin = "https://audio-ak.spotifycdn.com/x?verify=1700000301-a"  // now + margin + 1s
+        let expired = "https://audio-ak.spotifycdn.com/x?verify=1699999999-a"  // already expired
         let unparseable = "https://example.com/x"
         let notAURL = "not a url with spaces"
 
