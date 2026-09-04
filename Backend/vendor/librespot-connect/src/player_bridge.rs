@@ -6,7 +6,7 @@
 
 use crate::{
     core::SpotifyUri,
-    playback::player::{Player, PlayerEventChannel},
+    playback::player::{Player, PlayerEventChannel, QueueTrack},
 };
 
 /// The player operations `SpircTask` calls. Implemented for librespot's own `Player` below;
@@ -48,6 +48,14 @@ pub trait SpircPlayer: Send + Sync {
     fn emit_repeat_changed_event(&self, context: bool, track: bool);
     /// Reports an `AutoPlayChanged` event.
     fn emit_auto_play_changed_event(&self, auto_play: bool);
+    /// Reports a `SetQueueEvent` describing the current, next, and previous tracks.
+    fn emit_set_queue_event(
+        &self,
+        context_uri: String,
+        current_track: Option<QueueTrack>,
+        next_tracks: Vec<QueueTrack>,
+        prev_tracks: Vec<QueueTrack>,
+    );
 }
 
 impl SpircPlayer for Player {
@@ -121,5 +129,15 @@ impl SpircPlayer for Player {
 
     fn emit_auto_play_changed_event(&self, auto_play: bool) {
         Player::emit_auto_play_changed_event(self, auto_play)
+    }
+
+    fn emit_set_queue_event(
+        &self,
+        context_uri: String,
+        current_track: Option<QueueTrack>,
+        next_tracks: Vec<QueueTrack>,
+        prev_tracks: Vec<QueueTrack>,
+    ) {
+        Player::emit_set_queue_event(self, context_uri, current_track, next_tracks, prev_tracks)
     }
 }
