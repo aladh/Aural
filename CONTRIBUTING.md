@@ -58,9 +58,9 @@ or initiate playback.
 After changing a generated ABI declaration, run `./Scripts/generate-c-header.sh` and commit the
 result with the Rust change. `./Scripts/generate-c-header.sh --check` verifies reproducibility without
 modifying the header. Install the version listed in the [setup guide](docs/development-setup.md#fresh-clone),
-or set `SPOTTY_CBINDGEN` to that executable's path. The wrapper checks the version and never installs
-tools; CI installs the pin explicitly. Generation does not replace the C/Rust layout, signature,
-ownership, or callback-lifetime checks.
+or set `SPOTTY_CBINDGEN` to that executable's path. The wrapper checks the version and pilot export
+scope and never installs tools; CI installs the pin explicitly. Generation does not replace the
+C/Rust layout, signature, ownership, or callback-lifetime checks.
 
 The pilot generates `spotty_playback_register_connection_state_callback` and its snapshot from
 `Backend/spotty-playback/cbindgen.toml`; the other 37 exports remain in the umbrella header. The config
