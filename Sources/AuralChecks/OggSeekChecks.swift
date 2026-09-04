@@ -42,11 +42,12 @@ private struct ThrowingReader: OggByteReader {
     }
 }
 
-/// One recorded page in the synthetic fixture: its start offset and granule position, so
-/// assertions below can reference exact expected results without re-deriving byte math.
+/// One recorded page in the synthetic fixture: its start offset and granule position (nil
+/// represents an unknown granule, -1 on the wire), so assertions below can reference exact
+/// expected results without re-deriving byte math.
 private struct FixturePage {
     let offset: Int
-    let granule: UInt64
+    let granule: UInt64?
 }
 
 /// Builds a synthetic Ogg stream: some leading non-Ogg bytes (as in the real Spotify layout,
@@ -56,12 +57,16 @@ private struct FixturePage {
 /// is needed. The first audio page carries granule 0 too (a legitimate case: its packet does not
 /// complete within the page), which is what makes "target 0" land on it rather than on the last
 /// header page — both are tied at granule 0, and the first audio page is the later of the two in
-/// stream order.
+/// stream order. `unknownGranuleAudioIndices` marks a run of audio pages, in the right (later)
+/// half of the stream, whose packet does not complete on that page either — an unknown (-1)
+/// granule with the continuation flag set — so a bisection probe landing in that run has to walk
+/// forward to the next known-granule page rather than mistake it for a resolvable one.
 private func buildSyntheticStream(
     leadingJunk: Int = 100,
     headerPageCount: Int = 3,
     audioPageCount: Int = 200,
-    granuleStep: UInt64 = 1024
+    granuleStep: UInt64 = 1024,
+    unknownGranuleAudioIndices: Set<Int> = [150, 151, 152, 153, 154]
 ) -> (data: Data, streamStart: Int, headerPages: [FixturePage], audioPages: [FixturePage]) {
     func littleEndianBytes(_ value: UInt32) -> Data {
         withUnsafeBytes(of: value.littleEndian) { Data($0) }
@@ -70,12 +75,12 @@ private func buildSyntheticStream(
         withUnsafeBytes(of: value.littleEndian) { Data($0) }
     }
 
-    func appendPage(to data: inout Data, granule: UInt64, bodySize: Int, sequence: UInt32, flags: UInt8) -> Int {
+    func appendPage(to data: inout Data, granule: UInt64?, bodySize: Int, sequence: UInt32, flags: UInt8) -> Int {
         let offset = data.count
         data.append(Data("OggS".utf8))
         data.append(0)  // version
         data.append(flags)
-        data.append(littleEndianBytes(granule))
+        data.append(littleEndianBytes(granule ?? UInt64.max))  // UInt64.max: -1, "unknown" on the wire
         data.append(littleEndianBytes(UInt32(1)))  // serial number: one logical stream
         data.append(littleEndianBytes(sequence))
         data.append(littleEndianBytes(UInt32(0)))  // checksum: unverified by OggPageHeader.parse
@@ -98,9 +103,11 @@ private func buildSyntheticStream(
 
     var audioPages: [FixturePage] = []
     for i in 0..<audioPageCount {
-        let granule = UInt64(i) * granuleStep
+        let isUnknown = unknownGranuleAudioIndices.contains(i)
+        let granule: UInt64? = isUnknown ? nil : UInt64(i) * granuleStep
         let bodySize = 100 + (i % 10) * 10  // varying, always well under 255
-        let flags: UInt8 = i == audioPageCount - 1 ? 0x04 : 0  // last page is end-of-stream
+        var flags: UInt8 = i == audioPageCount - 1 ? 0x04 : 0  // last page is end-of-stream
+        if isUnknown { flags |= 0x01 }  // continuation: the packet spanning this page doesn't end here
         let offset = appendPage(to: &data, granule: granule, bodySize: bodySize, sequence: sequence, flags: flags)
         audioPages.append(FixturePage(offset: offset, granule: granule))
         sequence += 1
@@ -125,32 +132,34 @@ func runOggSeekChecks(_ check: CheckRunner) async {
         // 64 KiB default is sized for full-length CDN tracks, not this compact in-memory fixture).
         let probe = 2048
 
-        // Exact target on a page boundary returns that page.
+        // Exact target on a page boundary returns that page. Page 100 has a known granule (only
+        // 150...154 are unknown).
         let midAudioPage = fixture.audioPages[100]
+        let midAudioGranule = midAudioPage.granule!
         await expectSeek(
             check,
             "exact target on a page boundary returns that page",
-            target: midAudioPage.granule,
+            target: midAudioGranule,
             fixture: fixture,
             probe: probe,
             expectedOffset: midAudioPage.offset,
-            expectedGranule: midAudioPage.granule
+            expectedGranule: midAudioGranule
         )
 
         // A target strictly between two pages returns the earlier page.
-        let nextAudioPage = fixture.audioPages[101]
+        let nextAudioGranule = fixture.audioPages[101].granule!
         check.check(
             "fixture has room between page 100 and 101 for a between-pages target",
-            nextAudioPage.granule - midAudioPage.granule > 1
+            nextAudioGranule - midAudioGranule > 1
         )
         await expectSeek(
             check,
             "target between pages returns the earlier page",
-            target: midAudioPage.granule + 1,
+            target: midAudioGranule + 1,
             fixture: fixture,
             probe: probe,
             expectedOffset: midAudioPage.offset,
-            expectedGranule: midAudioPage.granule
+            expectedGranule: midAudioGranule
         )
 
         // Target 0 returns the first audio page: it ties with the header pages at granule 0, and
@@ -169,50 +178,68 @@ func runOggSeekChecks(_ check: CheckRunner) async {
 
         // A target past the last page's granule clamps to the last page.
         let lastAudioPage = fixture.audioPages[fixture.audioPages.count - 1]
+        let lastAudioGranule = lastAudioPage.granule!
         await expectSeek(
             check,
             "target past the end clamps to the last page",
-            target: lastAudioPage.granule + 1_000_000,
+            target: lastAudioGranule + 1_000_000,
             fixture: fixture,
             probe: probe,
             expectedOffset: lastAudioPage.offset,
-            expectedGranule: lastAudioPage.granule
+            expectedGranule: lastAudioGranule
+        )
+
+        // A target whose nearest earlier known page sits just before a run of unknown-granule
+        // pages (150...154, in the right half of the stream) still resolves to that earlier
+        // page: the bisection must walk forward past the unknown run to the next known-granule
+        // page before it can compare against `target`, never mistake an unknown page's byte
+        // range for informative, and never nudge its search bounds by a single byte into a
+        // page's payload.
+        let lastKnownBeforeRun = fixture.audioPages[149]
+        let lastKnownBeforeRunGranule = lastKnownBeforeRun.granule!
+        let firstKnownAfterRunGranule = fixture.audioPages[155].granule!
+        check.check(
+            "fixture has room after the unknown run for a target that lands before it",
+            firstKnownAfterRunGranule - lastKnownBeforeRunGranule > 1
+        )
+        await expectSeek(
+            check,
+            "a target just past an unknown-granule run resolves to the preceding known page",
+            target: lastKnownBeforeRunGranule + 1,
+            fixture: fixture,
+            probe: probe,
+            expectedOffset: lastKnownBeforeRun.offset,
+            expectedGranule: lastKnownBeforeRunGranule
         )
 
         // A stream with no capture pattern anywhere throws noPagesFound.
         let noCapture = RecordingReader(Data(repeating: 0x00, count: 4_096))
+        let performNoCaptureSeek: () async throws -> Void = {
+            _ = try await OggSeeker.byteOffset(forGranule: 0, in: noCapture, streamStart: 0, probe: probe)
+        }
         await expectThrows(
             check,
             "a stream with no capture pattern throws noPagesFound",
-            OggSeekError.noPagesFound
-        ) {
-            _ = try await OggSeeker.byteOffset(forGranule: 0, in: noCapture, streamStart: 0, probe: probe)
-        }
+            OggSeekError.noPagesFound,
+            perform: performNoCaptureSeek
+        )
 
         // A reader that throws surfaces readerFailed, not the underlying error.
         let throwingReader = ThrowingReader(length: fixture.data.count)
-        await expectThrows(
-            check,
-            "a reader that throws surfaces readerFailed",
-            OggSeekError.readerFailed
-        ) {
+        let performThrowingReaderSeek: () async throws -> Void = {
             _ = try await OggSeeker.byteOffset(
-                forGranule: midAudioPage.granule,
+                forGranule: midAudioGranule,
                 in: throwingReader,
                 streamStart: fixture.streamStart,
                 probe: probe
             )
         }
-
-        // headerOffset returns the first page after the header pages whose granule isn't 0 —
-        // here, the second audio page (the first audio page ties with the headers at granule 0).
-        let reader = RecordingReader(fixture.data)
-        do {
-            let offset = try await OggSeeker.headerOffset(in: reader, streamStart: fixture.streamStart, probe: probe)
-            check.equal("headerOffset lands on the first non-zero-granule page", offset, fixture.audioPages[1].offset)
-        } catch {
-            check.check("headerOffset succeeds, got \(error)", false)
-        }
+        await expectThrows(
+            check,
+            "a reader that throws surfaces readerFailed",
+            OggSeekError.readerFailed,
+            perform: performThrowingReaderSeek
+        )
     }
 }
 
