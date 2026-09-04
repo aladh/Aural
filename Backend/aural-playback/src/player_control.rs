@@ -196,20 +196,22 @@ pub extern "C" fn aural_playback_resume() -> i32 {
     ffi_command("aural_playback_resume", resume_playback)
 }
 
-/// Loads a context or track at a seek position. Used by Swift resume-load fallbacks.
+/// Loads a context or track at a seek position. Used by Swift resume-load fallbacks and, with
+/// a nonzero `rehydrating_generation`, by reconnect rehydration for that engine session.
 #[no_mangle]
 pub extern "C" fn aural_playback_load(
     uri: *const c_char,
     track_hint: *const c_char,
     position_ms: u32,
     from_context: bool,
+    rehydrating_generation: u64,
 ) -> i32 {
     ffi_command("aural_playback_load", || {
         let Some(uri) = (unsafe { c_string_arg(uri) }) else {
             return ERROR_GENERAL;
         };
         let track_hint = unsafe { c_string_arg(track_hint) };
-        load_at_position(uri, track_hint, position_ms, from_context)
+        load_at_position(uri, track_hint, position_ms, from_context, rehydrating_generation)
     })
 }
 

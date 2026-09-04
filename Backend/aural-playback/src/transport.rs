@@ -139,13 +139,14 @@ pub(crate) fn open_rehydration_window(generation: u64) -> u64 {
     PLAYING_EVENT_SEQ.load(Ordering::SeqCst)
 }
 
-/// Whether a load stamped with `load_generation` belongs to the rehydration window that is
-/// open right now. Both conditions matter: `resume_pending` says a window is open, and the
-/// generation says this load ran against the session that opened it rather than an older
-/// clone of the Spirc handle.
-pub(crate) fn rehydration_window_accepts(load_generation: u64) -> bool {
-    with_connection(|c| c.resume_pending)
-        && REHYDRATION_WINDOW_GENERATION.load(Ordering::SeqCst) == load_generation
+/// Whether a rehydration load naming `generation` may run right now: that generation is the
+/// current session, and its rehydration window is still open. Evaluated in the engine, on the
+/// calling thread, immediately before the load, so Swift's own pre-checks are an early-out
+/// rather than the guarantee.
+pub(crate) fn rehydration_load_is_current(generation: u64) -> bool {
+    SESSION_GENERATION.load(Ordering::SeqCst) == generation
+        && REHYDRATION_WINDOW_GENERATION.load(Ordering::SeqCst) == generation
+        && with_connection(|c| c.resume_pending)
 }
 
 /// Records a closed-channel load result for the window it belongs to. A load stamped with a
@@ -241,11 +242,17 @@ pub(crate) fn issue_load_target(spirc: &Spirc, target: ResumeLoadTarget) -> Opti
 }
 
 /// One seek-capable load for Swift `ResumeLoadPlan` targets, for user resume and for
-/// reconnect rehydration alike. For user resume each target is given the resume-load playing
-/// timeout, and a timeout lets Swift try the next fallback. Inside an open rehydration
-/// window the load returns `0` as soon as Spirc queued it: the reconnect's window is the one
-/// Playing wait, and a queued context load must not be superseded by a single-track fallback
-/// merely because a cold session took longer than the per-target timeout to start.
+/// reconnect rehydration alike.
+///
+/// `rehydrating_generation == 0` is a user-resume load: each target is given the resume-load
+/// playing timeout, and a timeout lets Swift try the next fallback. A nonzero value names the
+/// engine session generation Swift is rehydrating. The engine is the enforcement point for
+/// that token: the load runs only if that generation is current and its rehydration window
+/// is still open, so a rehydration queued behind another command in Swift cannot land in a
+/// later session or after the window closed. A rehydration load returns `0` as soon as Spirc
+/// queued it: the reconnect's window is the one Playing wait, and a queued context load must
+/// not be superseded by a single-track fallback merely because a cold session took longer
+/// than the per-target timeout to start.
 ///
 /// `Spirc::load` only hands the command to a channel, so `Ok` means "queued", not
 /// "accepted", and `SpircTask` drops `Load` while its connect state is inactive. Activity is
@@ -258,8 +265,17 @@ pub(crate) fn load_at_position(
     track_hint: Option<String>,
     position_ms: u32,
     from_context: bool,
+    rehydrating_generation: u64,
 ) -> i32 {
     if uri.is_empty() {
+        return ERROR_GENERAL;
+    }
+    let rehydrating = rehydrating_generation != 0;
+    if rehydrating && !rehydration_load_is_current(rehydrating_generation) {
+        debug!(
+            "Rehydration load for generation {} declined: window closed or session moved on",
+            rehydrating_generation
+        );
         return ERROR_GENERAL;
     }
     if let Err(e) = require_session_connected() {
@@ -286,7 +302,7 @@ pub(crate) fn load_at_position(
     let seq_before = PLAYING_EVENT_SEQ.load(Ordering::SeqCst);
     match issue_load_target(&spirc, target) {
         Some(0) => {
-            if rehydration_window_accepts(load_generation) {
+            if rehydrating {
                 debug!("Rehydration load queued; the reconnect window waits for Playing");
                 0
             } else if wait_for_playing_event(seq_before, RESUME_LOAD_PLAYING_TIMEOUT) {

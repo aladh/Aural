@@ -39,8 +39,9 @@ nonisolated enum LocalPlaybackOperation: Sendable {
     case playTracks([String])
     case pause
     case resume(ResumeLoadPlan)
-    /// Engine reconnect published `resume_pending`; issue the plan's loads without `play()`.
-    case rehydrate(ResumeLoadPlan)
+    /// Engine reconnect published `resume_pending` for `sessionGeneration`; issue the plan's
+    /// loads without `play()`. The engine runs them only while that session and window last.
+    case rehydrate(ResumeLoadPlan, sessionGeneration: UInt64)
     case next
     case previous
     case seek(UInt32)
@@ -385,8 +386,10 @@ actor PlaybackCoordinator {
     ///
     /// A queued operation can wait behind another local command; by then the store may have
     /// changed engine generation or the condition that requested it may have lapsed.
-    /// `isStillWanted` is evaluated on the MainActor immediately before execution. Returns
-    /// nil when the operation was skipped.
+    /// `isStillWanted` is evaluated on the MainActor immediately before execution and is an
+    /// early-out, not the guarantee: nothing serializes the hop back with `execute`, so
+    /// operations that must not run late also carry a token the engine enforces (see
+    /// `.rehydrate`). Returns nil when the operation was skipped.
     func performLocalIfStillWanted(
         _ operation: LocalPlaybackOperation,
         isStillWanted: @MainActor @Sendable () -> Bool

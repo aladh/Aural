@@ -147,13 +147,43 @@ fn a_paused_local_player_is_not_resumed() {
 #[test]
 fn load_at_position_rejects_an_empty_uri_before_session_checks() {
     assert_eq!(
-        load_at_position(String::new(), None, 0, false),
+        load_at_position(String::new(), None, 0, false, 0),
         ERROR_GENERAL
     );
     assert_eq!(
-        load_at_position(String::new(), Some("spotify:track:x".into()), 10, true),
+        load_at_position(String::new(), Some("spotify:track:x".into()), 10, true, 0),
         ERROR_GENERAL
     );
+}
+
+#[test]
+fn a_rehydration_load_runs_only_for_the_current_generation_with_an_open_window() {
+    let _guard = lock_global_state();
+    let previous_generation = SESSION_GENERATION.load(Ordering::SeqCst);
+    let previous_pending = with_connection(|c| std::mem::replace(&mut c.resume_pending, false));
+
+    SESSION_GENERATION.store(11, Ordering::SeqCst);
+    let _ = open_rehydration_window(11);
+    assert!(!rehydration_load_is_current(11), "window is not open until published");
+
+    with_connection(|c| c.resume_pending = true);
+    assert!(rehydration_load_is_current(11));
+    assert!(!rehydration_load_is_current(10), "a load for an older session is stale");
+
+    SESSION_GENERATION.store(12, Ordering::SeqCst);
+    assert!(
+        !rehydration_load_is_current(11),
+        "a newer session supersedes the window even while the flag is set"
+    );
+    // Declined in the engine before any session lookup, so a queued Swift rehydration
+    // cannot land in a later session.
+    assert_eq!(
+        load_at_position("spotify:track:x".into(), None, 0, false, 11),
+        ERROR_GENERAL
+    );
+
+    with_connection(|c| c.resume_pending = previous_pending);
+    SESSION_GENERATION.store(previous_generation, Ordering::SeqCst);
 }
 
 fn take_owned_c_string(ptr: *mut std::os::raw::c_char) -> Option<String> {
@@ -271,27 +301,6 @@ fn rehydration_window_reports_playing_reinit_or_timeout() {
 #[test]
 fn connection_state_starts_without_an_open_rehydration_window() {
     assert!(!ConnectionState::default().resume_pending);
-}
-
-#[test]
-fn a_load_belongs_to_the_window_only_while_it_is_open_for_its_generation() {
-    let _guard = lock_global_state();
-    let previous = with_connection(|c| std::mem::replace(&mut c.resume_pending, false));
-    let _ = open_rehydration_window(9);
-
-    assert!(
-        !rehydration_window_accepts(9),
-        "no window is open until resume_pending is published"
-    );
-
-    with_connection(|c| c.resume_pending = true);
-    assert!(rehydration_window_accepts(9));
-    assert!(
-        !rehydration_window_accepts(8),
-        "a load stamped with an older generation is not this window's"
-    );
-
-    with_connection(|c| c.resume_pending = previous);
 }
 
 #[test]
@@ -587,7 +596,8 @@ fn exported_c_function_signatures_are_stable() {
     let _: extern "C" fn(*const c_char) -> i32 = aural_playback_transfer_playback;
     let _: extern "C" fn(*const c_char) -> i32 = aural_playback_add_to_queue;
     let _: extern "C" fn(*const c_char, i32) -> i32 = aural_playback_play_uri;
-    let _: extern "C" fn(*const c_char, *const c_char, u32, bool) -> i32 = aural_playback_load;
+    let _: extern "C" fn(*const c_char, *const c_char, u32, bool, u64) -> i32 =
+        aural_playback_load;
     let _: extern "C" fn(u32) -> i32 = aural_playback_seek;
     let _: extern "C" fn() -> u32 = aural_playback_get_position_ms;
     let _: extern "C" fn() -> u32 = aural_playback_get_resume_position_ms;

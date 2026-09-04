@@ -356,9 +356,10 @@ extension PlaybackStore {
     /// so the session phase stays non-ready (no Web API bootstrap) while this runs. The plan
     /// comes from the same sticky engine getters as user resume; nothing is mirrored here.
     /// One sequence per engine session generation: the engine republishes the flag on every
-    /// snapshot inside its window. The coordinator re-checks the lifetime and the window
-    /// immediately before executing, because the operation may queue behind another local
-    /// command while the engine moves on.
+    /// snapshot inside its window. The operation may queue behind another local command while
+    /// the engine moves on, so it carries the session generation and the engine itself declines
+    /// a load whose session or window is gone; the coordinator's MainActor re-check is only an
+    /// early-out.
     private func rehydrateIfEngineIsWaiting(_ state: RustConnectionState) {
         guard engineRehydrationWindowOpen,
             rehydratedSessionGeneration != state.sessionGeneration
@@ -370,7 +371,9 @@ extension PlaybackStore {
             .reconnectRehydration,
             with: Task { [weak self] in
                 guard let self, self.playbackLifetime == lifetime else { return }
-                let result = await self.coordinator.performLocalIfStillWanted(.rehydrate(plan)) {
+                let operation = LocalPlaybackOperation.rehydrate(
+                    plan, sessionGeneration: state.sessionGeneration)
+                let result = await self.coordinator.performLocalIfStillWanted(operation) {
                     [weak self] in
                     guard let self else { return false }
                     return self.playbackLifetime == lifetime && self.engineRehydrationWindowOpen

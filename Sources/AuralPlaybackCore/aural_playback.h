@@ -92,16 +92,20 @@ AuralPlaybackResult aural_playback_pause(void);
 /// same Swift targets while a connection snapshot reports `resume_pending`.
 AuralPlaybackResult aural_playback_resume(void);
 
-/// Loads a context or single track at `position_ms` and waits briefly for a Playing event.
-/// While a connection snapshot reports `resume_pending`, the call returns 0 as soon as the
-/// load is queued and the engine's rehydration window is the only Playing wait.
+/// Loads a context or single track at `position_ms`.
+/// `rehydrating_generation == 0` is a user-resume load: it waits briefly for a Playing event.
+/// A nonzero value names the engine session generation being rehydrated after a reconnect:
+/// the engine runs the load only if that generation is current and its `resume_pending`
+/// window is still open, and returns 0 as soon as the load is queued (the window is the only
+/// Playing wait). Otherwise it returns an ordinary failure without touching the session.
 /// Empty `track_hint` is a valid context hint. `uri` must be non-empty.
 /// @param from_context true for a context URI, false for a single track URI.
 AuralPlaybackResult aural_playback_load(
     const char* uri,
     const char* _Nullable track_hint,
     uint32_t position_ms,
-    bool from_context
+    bool from_context,
+    uint64_t rehydrating_generation
 );
 
 /// Shuts down the Spirc connection and sends goodbye to other devices.

@@ -241,7 +241,14 @@ private final class WorkflowEngine: LocalPlaybackEngine, @unchecked Sendable {
 
     var rehydrations: [ResumeLoadPlan] {
         operations.compactMap { operation in
-            if case let .rehydrate(plan) = operation { return plan }
+            if case let .rehydrate(plan, _) = operation { return plan }
+            return nil
+        }
+    }
+
+    var rehydratedGenerations: [UInt64] {
+        operations.compactMap { operation in
+            if case let .rehydrate(_, generation) = operation { return generation }
             return nil
         }
     }
@@ -1027,6 +1034,11 @@ func runWorkflowChecks(_ runner: CheckRunner) async {
             "rehydration captures the sticky engine identity, not presentation",
             engine.rehydrations.first,
             expectedPlan
+        )
+        runner.equal(
+            "rehydration names the engine session it belongs to",
+            engine.rehydratedGenerations,
+            [1]
         )
 
         await player.effects.settlement(of: .reconnectRehydration)?.wait()

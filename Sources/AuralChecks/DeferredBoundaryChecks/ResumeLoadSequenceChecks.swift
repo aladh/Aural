@@ -4,6 +4,7 @@ import Foundation
 
 /// `ResumeLoadSequence` policy for both callers. Store-level capture and the reconnect
 /// trigger live in the command-failure and workflow suites.
+@MainActor
 func runResumeLoadSequenceChecks(_ runner: CheckRunner) {
     let context = ResumeLoadPlan.Target.context(
         uri: "spotify:playlist:ctx",

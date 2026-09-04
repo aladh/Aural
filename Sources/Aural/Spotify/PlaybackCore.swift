@@ -160,7 +160,13 @@ nonisolated enum PlaybackCore {
         takeOwnedString(aural_playback_get_resume_track_uri())
     }
 
-    static func load(_ target: ResumeLoadPlan.Target) -> Result {
+    /// `rehydratingSessionGeneration == 0` is a user-resume load. A nonzero value names the
+    /// engine session a reconnect rehydration belongs to; the engine declines the load if that
+    /// session is no longer current or its window has closed.
+    static func load(
+        _ target: ResumeLoadPlan.Target,
+        rehydratingSessionGeneration: UInt64 = 0
+    ) -> Result {
         switch target {
         case let .context(uri, trackHint, positionMS):
             uri.withCString { uriPointer in
@@ -169,13 +175,14 @@ nonisolated enum PlaybackCore {
                         uriPointer,
                         hintPointer,
                         positionMS,
-                        true
+                        true,
+                        rehydratingSessionGeneration
                     )
                 }
             }
         case let .track(uri, positionMS):
             uri.withCString { uriPointer in
-                aural_playback_load(uriPointer, nil, positionMS, false)
+                aural_playback_load(uriPointer, nil, positionMS, false, rehydratingSessionGeneration)
             }
         }
     }
