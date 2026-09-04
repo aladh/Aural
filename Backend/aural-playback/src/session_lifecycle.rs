@@ -365,7 +365,8 @@ pub(crate) fn spawn_reconnection_loop(intent: RecoveryIntent) {
             notify_connection_state_change();
 
             // No token is fetched here. A rebuild connects from the AP credentials cached by
-            // the streaming grant, which is the only login path this crate performs, so a
+            // the streaming grant, which is the only login path this reconnection flow
+            // performs (the initial connect in `create_session` may still use a token), so a
             // Swift token round-trip adds latency without changing the outcome of a network
             // outage. Credentials rejected server-side are a different failure: this loop
             // does not detect them yet, and the bounded credential-rejected exit is tracked
