@@ -7,7 +7,7 @@ trap 'echo "report-size.sh: failed at line $LINENO" >&2' ERR
 # Prints a Markdown table with the app binary size, the Rust static archive size,
 # per-segment totals for the binary, and the archive's exported symbol count.
 # Appends the table to $GITHUB_STEP_SUMMARY when set, and always prints it to
-# stdout. Also writes a machine-readable size-report.json next to the products.
+# stdout. Also writes a machine-readable size-report.json under --out-dir.
 #
 # Usage:
 #   Scripts/report-size.sh [--binary PATH] [--archive PATH] [--out-dir DIR]
@@ -15,13 +15,13 @@ trap 'echo "report-size.sh: failed at line $LINENO" >&2' ERR
 # Defaults match Scripts/compile-release-aural.sh's release layout:
 #   --binary   <repo>/.build/release/Aural
 #   --archive  <repo>/Backend/lib/libaural_playback.a
-#   --out-dir  <repo>
+#   --out-dir  <repo>/.build (ignored by git)
 
 project_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
 binary_path="$project_root/.build/release/Aural"
 archive_path="$project_root/Backend/lib/libaural_playback.a"
-out_dir="$project_root"
+out_dir="$project_root/.build"
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -43,6 +43,19 @@ while [[ $# -gt 0 ]]; do
             ;;
     esac
 done
+
+if [[ ! -f "$binary_path" ]]; then
+    # SwiftPM does not always create the `.build/release` convenience symlink (compile-
+    # release-aural.sh resolves the real path via `swift build --show-bin-path`, which can
+    # land under a platform-triple directory such as `.build/arm64-apple-macosx/release`).
+    # Fall back to searching for it there before giving up.
+    for candidate in "$project_root"/.build/*/release/Aural; do
+        if [[ -f "$candidate" ]]; then
+            binary_path="$candidate"
+            break
+        fi
+    done
+fi
 
 if [[ ! -f "$binary_path" ]]; then
     echo "report-size.sh: binary not found at $binary_path" >&2
@@ -93,9 +106,13 @@ symbol_count=""
 have_nm_tool=1
 
 if command -v nm >/dev/null 2>&1; then
-    # nm exits non-zero when any archive member lacks symbols; do not let pipefail
-    # turn that into a silent script abort.
-    symbol_count="$( (nm -U "$archive_path" 2>/dev/null || true) | wc -l | awk '{print $1}')"
+    # Same form as Scripts/check.sh: Apple nm can exit non-zero on Rust objects, and
+    # pipefail must not turn that into a script abort. -gU = global, defined only.
+    # Count only symbol lines; nm also prints one "lib.a(member.o):" header per member.
+    symbol_count="$( (nm -gU "$archive_path" 2>/dev/null || true) | grep -Ec '^[0-9a-f]+ [A-Za-z] ' || true)"
+    if [[ -z "$symbol_count" || "$symbol_count" == "0" ]]; then
+        have_nm_tool=0
+    fi
 else
     have_nm_tool=0
 fi
@@ -117,7 +134,7 @@ render_table() {
     if [[ "$have_nm_tool" -eq 1 ]]; then
         echo "| Archive exported symbols | ${symbol_count} |"
     else
-        echo "| Archive exported symbols | unavailable (\`nm\` tool missing) |"
+        echo "| Archive exported symbols | unavailable (\`nm\` missing or reported no symbols) |"
     fi
 }
 
