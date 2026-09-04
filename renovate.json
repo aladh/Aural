@@ -6,7 +6,7 @@
     ":maintainLockFilesWeekly"
   ],
   "timezone": "America/Toronto",
-  "schedule": ["before 6am on monday"],
+  "schedule": ["* * * * 0,6"],
   "dependencyDashboard": true,
   "labels": ["dependencies"],
   "prConcurrentLimit": 3,
