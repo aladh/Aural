@@ -126,14 +126,6 @@ struct PlaylistDetailView: View {
         return "\(count) \(count == 1 ? "song" : "songs")"
     }
 
-    private var ownerText: String? {
-        let owner = item.subtitle.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !owner.isEmpty, owner.caseInsensitiveCompare(item.kind.rawValue) != .orderedSame else {
-            return nil
-        }
-        return owner
-    }
-
     private var totalDuration: TimeInterval {
         store.tracks.reduce(0) { total, track in
             total + TimeInterval(roundedCatalogDurationSeconds(track.duration))
@@ -141,15 +133,8 @@ struct PlaylistDetailView: View {
     }
 
     private var playlistMetadataText: String? {
-        var values = [String]()
-        if let ownerText {
-            values.append(ownerText)
-        }
-        if showsPlaylistMetadata {
-            values.append(songCountText)
-            values.append(formatPlaylistDuration(totalDuration))
-        }
-        return values.isEmpty ? nil : values.joined(separator: " · ")
+        guard showsPlaylistMetadata else { return nil }
+        return [songCountText, formatPlaylistDuration(totalDuration)].joined(separator: " · ")
     }
 
 }

@@ -123,11 +123,12 @@ struct VisualStyleContractTests {
                         "playlist details use the shared styled header and a separate action strip")
                     #expect(
                         (playlistDetail.contains("store.description")
-                            && playlistDetail.contains("ownerText")
                             && playlistDetail.contains("songCountText")
                             && playlistDetail.contains("formatPlaylistDuration(totalDuration)")
-                            && playlistDetail.contains("item.subtitle")) == true,
-                        "playlist metadata stays truthful and duration is explicit")
+                            && playlistDetail.contains("guard showsPlaylistMetadata else { return nil }")
+                            && !playlistDetail.contains("ownerText")
+                            && detailHeader.contains("[item.subtitle, detail, itemCount ?? \"\"]")) == true,
+                        "playlist owner is shown once and authoritative count and duration stay explicit")
                     #expect(
                         (playlistDetail.contains("variant: .playlist")
                             && table.contains("let initialSortOrder = variant.initialSortOrder")
