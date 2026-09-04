@@ -9,13 +9,7 @@ import Foundation
 @MainActor
 func runSpotifyEncryptedVorbisChecks(_ check: CheckRunner) async {
     await check.suite("Spotify encrypted Vorbis fixture") {
-        let ogg: Data
-        do {
-            ogg = try boundaryFixture(named: "tone-44100-stereo", extension: "ogg")
-        } catch {
-            check.check("tone-44100-stereo.ogg fixture absent (#209); encrypted decode check skipped", true)
-            return
-        }
+        guard let ogg = bundledToneFixture(check) else { return }
 
         let key = testFileKey
         let plaintext = syntheticSpotifyAudioFile(ogg: ogg)
