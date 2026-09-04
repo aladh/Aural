@@ -46,6 +46,7 @@ private func emptyBufferThrowsNeedMoreData() -> Bool {
 /// the PR description for the exact ffmpeg invocation), never an account-derived file, so it is
 /// deliberately not committed by this change; until someone adds it on a machine with an encoder,
 /// this records one passing "skipped" check instead of failing the gate.
+@MainActor
 private func runFixtureDecodeCheck(_ check: CheckRunner) {
     let data: Data
     do {
