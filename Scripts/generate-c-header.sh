@@ -7,6 +7,7 @@ config_path="$crate_root/cbindgen.toml"
 generated_header="$project_root/Sources/SpottyPlaybackCore/include/spotty_playback_generated.h"
 abi_signature_fixture="$crate_root/abi-signatures.txt"
 required_cbindgen_version="0.29.4"
+source "$project_root/Scripts/abi-signature-fixture.sh"
 
 mode="write"
 if (( $# > 1 )); then
@@ -51,36 +52,10 @@ fi
 temporary_header="$(mktemp /tmp/spotty-cbindgen-header.XXXXXX)"
 temporary_ast="$(mktemp /tmp/spotty-cbindgen-ast.XXXXXX)"
 temporary_fixture_symbols="$(mktemp /tmp/spotty-cbindgen-fixture-symbols.XXXXXX)"
-temporary_fixture_symbols_sorted="$(mktemp /tmp/spotty-cbindgen-fixture-symbols-sorted.XXXXXX)"
 temporary_header_symbols="$(mktemp /tmp/spotty-cbindgen-header-symbols.XXXXXX)"
-temporary_header_symbols_sorted="$(mktemp /tmp/spotty-cbindgen-header-symbols-sorted.XXXXXX)"
-trap 'rm -f "$temporary_header" "$temporary_ast" "$temporary_fixture_symbols" "$temporary_fixture_symbols_sorted" "$temporary_header_symbols" "$temporary_header_symbols_sorted"' EXIT
+trap 'rm -f "$temporary_header" "$temporary_ast" "$temporary_fixture_symbols" "$temporary_header_symbols"' EXIT
 
-if [[ ! -f "$abi_signature_fixture" ]]; then
-    print -u2 "The C ABI signature fixture is missing: $abi_signature_fixture"
-    exit 1
-fi
-if ! awk -F'|' '
-    /^[[:space:]]*$/ || /^[[:space:]]*#/ { next }
-    NF != 2 ||
-    $1 !~ /^spotty_playback_[a-z0-9_]+$/ ||
-    $2 !~ /^[[:alnum:]_ *]+ \([[:alnum:]_ *,]*\)$/ {
-        exit 1
-    }
-    { print $1 }
-' "$abi_signature_fixture" > "$temporary_fixture_symbols"; then
-    print -u2 "The C ABI signature fixture contains malformed rows: $abi_signature_fixture"
-    exit 1
-fi
-if [[ ! -s "$temporary_fixture_symbols" ]]; then
-    print -u2 "The C ABI signature fixture contains no exported functions: $abi_signature_fixture"
-    exit 1
-fi
-sort "$temporary_fixture_symbols" > "$temporary_fixture_symbols_sorted"
-duplicate_fixture_symbols="$(uniq -d "$temporary_fixture_symbols_sorted")"
-if [[ -n "$duplicate_fixture_symbols" ]]; then
-    print -u2 "The C ABI signature fixture contains duplicate export names:"
-    print -u2 "$duplicate_fixture_symbols"
+if ! spotty_abi_fixture_symbols "$abi_signature_fixture" > "$temporary_fixture_symbols"; then
     exit 1
 fi
 
@@ -111,8 +86,7 @@ if ! "$clang_bin" \
 fi
 sed -nE "s/.*FunctionDecl .* (spotty_playback_[a-z0-9_]+) '([^']+)'$/\\1/p" \
     "$temporary_ast" > "$temporary_header_symbols"
-sort "$temporary_header_symbols" > "$temporary_header_symbols_sorted"
-if ! diff -u "$temporary_fixture_symbols_sorted" "$temporary_header_symbols_sorted"; then
+if ! diff -u "$temporary_fixture_symbols" <(sort "$temporary_header_symbols"); then
     print -u2 "Generated cbindgen exports differ from the C ABI signature fixture"
     exit 1
 fi
@@ -120,8 +94,7 @@ fi
 if [[ "$mode" == "write" ]]; then
     mv "$temporary_header" "$generated_header"
     chmod 644 "$generated_header"
-    rm -f "$temporary_ast" "$temporary_fixture_symbols" "$temporary_fixture_symbols_sorted" \
-        "$temporary_header_symbols" "$temporary_header_symbols_sorted"
+    rm -f "$temporary_ast" "$temporary_fixture_symbols" "$temporary_header_symbols"
     trap - EXIT
     print "Generated $generated_header"
     exit 0

@@ -5,6 +5,7 @@ project_root="${0:A:h:h}"
 build_configuration="${SPOTTY_BUILD_CONFIGURATION:-debug}"
 check_scope="${SPOTTY_CHECK_SCOPE:-full}"
 source "$project_root/Scripts/swiftpm-env.sh"
+source "$project_root/Scripts/abi-signature-fixture.sh"
 
 case "$build_configuration" in
     debug|release) ;;
@@ -94,37 +95,12 @@ header_symbol_declarations="$(mktemp /tmp/spotty-header-symbol-declarations.XXXX
 library_symbols="$(mktemp /tmp/spotty-library-symbols.XXXXXX)"
 consumed_symbols="$(mktemp /tmp/spotty-consumed-symbols.XXXXXX)"
 fixture_symbols="$(mktemp /tmp/spotty-fixture-symbols.XXXXXX)"
-fixture_symbols_sorted="$(mktemp /tmp/spotty-fixture-symbols-sorted.XXXXXX)"
 abi_check_source="$(mktemp /tmp/spotty-abi-check-source.XXXXXX)"
 header_ast="$(mktemp /tmp/spotty-header-ast.XXXXXX)"
-trap 'rm -f "$header_symbols" "$header_symbol_declarations" "$library_symbols" "$consumed_symbols" "$fixture_symbols" "$fixture_symbols_sorted" "$abi_check_source" "$header_ast"' EXIT
+trap 'rm -f "$header_symbols" "$header_symbol_declarations" "$library_symbols" "$consumed_symbols" "$fixture_symbols" "$abi_check_source" "$header_ast"' EXIT
 
 abi_signature_fixture="$project_root/Backend/spotty-playback/abi-signatures.txt"
-if [[ ! -f "$abi_signature_fixture" ]]; then
-    print -u2 "The C ABI signature fixture is missing: $abi_signature_fixture"
-    exit 1
-fi
-if ! awk -F'|' '
-    /^[[:space:]]*$/ || /^[[:space:]]*#/ { next }
-    NF != 2 ||
-    $1 !~ /^spotty_playback_[a-z0-9_]+$/ ||
-    $2 !~ /^[[:alnum:]_ *]+ \([[:alnum:]_ *,]*\)$/ {
-        exit 1
-    }
-    { print $1 }
-' "$abi_signature_fixture" > "$fixture_symbols"; then
-    print -u2 "The C ABI signature fixture contains malformed rows: $abi_signature_fixture"
-    exit 1
-fi
-if [[ ! -s "$fixture_symbols" ]]; then
-    print -u2 "The C ABI signature fixture contains no exported functions: $abi_signature_fixture"
-    exit 1
-fi
-sort "$fixture_symbols" > "$fixture_symbols_sorted"
-duplicate_fixture_symbols="$(uniq -d "$fixture_symbols_sorted")"
-if [[ -n "$duplicate_fixture_symbols" ]]; then
-    print -u2 "The C ABI signature fixture contains duplicate export names:"
-    print -u2 "$duplicate_fixture_symbols"
+if ! spotty_abi_fixture_symbols "$abi_signature_fixture" > "$fixture_symbols"; then
     exit 1
 fi
 
@@ -159,7 +135,7 @@ fi
 
 # The checked-in fixture names must match the parsed header exactly. Keep this as a separate set
 # proof so a compiler assertion generator cannot silently omit a fixture row.
-if ! diff -u "$fixture_symbols_sorted" "$header_symbols"; then
+if ! diff -u "$fixture_symbols" "$header_symbols"; then
     print -u2 "The C header exports differ from the C ABI signature fixture names"
     exit 1
 fi
