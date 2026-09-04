@@ -40,19 +40,11 @@ private func emptyBufferThrowsNeedMoreData() -> Bool {
 }
 
 /// Feeds `Fixtures/tone-44100-stereo.ogg` through the decoder in 4 KiB slices and checks it
-/// against the file's own Ogg page framing. The fixture must be a synthetic generated tone (see
-/// the PR description for the exact ffmpeg invocation), never an account-derived file, so it is
-/// deliberately not committed by this change; until someone adds it on a machine with an encoder,
-/// this records one passing "skipped" check instead of failing the gate.
+/// against the file's own Ogg page framing. The fixture is a one-second synthetic 440 Hz tone
+/// (44.1 kHz stereo, libvorbis), never account-derived.
 @MainActor
 private func runFixtureDecodeCheck() {
-    let data: Data
-    do {
-        data = try boundaryFixture(named: "tone-44100-stereo", extension: "ogg")
-    } catch {
-        #expect((true) == true, "tone-44100-stereo.ogg fixture absent; decode check skipped")
-        return
-    }
+    guard let data = bundledToneFixture() else { return }
 
     let decoder = OggVorbisDecoder()
 

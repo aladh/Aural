@@ -120,9 +120,3 @@ MIT-licensed Spotifly commits `35991ac25a04aa14f8839d88f46129da6c6b59c0` and
 `9c7d75615fc093bdcbdb29adbce3fed38c531852` plus the locked crates in `Cargo.lock`.
 
 See [LICENSE](LICENSE), [NOTICE](NOTICE), and [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
-
-## Agent-first maintenance
-
-Spotty is developed, reviewed, tested, and maintained exclusively by autonomous coding agents; the
-repository does not rely on a human contribution or review path. Repository instructions begin in
-[AGENTS.md](AGENTS.md).
