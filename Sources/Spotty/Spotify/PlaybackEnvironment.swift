@@ -139,15 +139,25 @@ extension SpotifyWebPlayerAPI: WebQueueClient {}
 nonisolated protocol AccountSession: Sendable {
     func authorizeInteractively() async throws -> KeymasterTokens
     func hasGrant() async -> Bool
+    func grantState() async -> KeymasterGrantState
     func accessToken() async throws -> String
     func adopt(_ tokens: KeymasterTokens) async throws
     func clear() async
     func revocations() -> AsyncStream<Void>
 }
 
+extension AccountSession {
+    /// Older injected accounts can still answer the coarse question; the live session preserves
+    /// denied and failed secure-store reads through its typed state.
+    func grantState() async -> KeymasterGrantState {
+        await hasGrant() ? .available : .absent
+    }
+}
+
 nonisolated struct LiveAccountSession: AccountSession {
     func authorizeInteractively() async throws -> KeymasterTokens { try await KeymasterAuth.authorize() }
     func hasGrant() async -> Bool { await KeymasterSession.shared.hasGrant }
+    func grantState() async -> KeymasterGrantState { await KeymasterSession.shared.retryGrantState() }
     func accessToken() async throws -> String { try await KeymasterSession.shared.accessToken() }
     func adopt(_ tokens: KeymasterTokens) async throws { try await KeymasterSession.shared.adopt(tokens) }
     func clear() async { await KeymasterSession.shared.clear() }

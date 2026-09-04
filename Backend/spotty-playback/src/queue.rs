@@ -1,7 +1,7 @@
 use crate::*;
 use std::collections::HashMap;
 
-pub(crate) fn send_playback_state(player_state: &PlayerState) {
+pub(crate) fn send_playback_state(player_state: &PlayerState, is_active_device: bool) {
     debug!("send_playback_state called");
 
     // Log context URI - this is the "active playlist/album/artist" being played from
@@ -44,6 +44,10 @@ pub(crate) fn send_playback_state(player_state: &PlayerState) {
                 shuffle,
                 repeat_track,
                 repeat_context,
+                // This role bit was derived from the same cluster observation by the caller.
+                // Keeping it inside the stamped payload means Swift never has to pair this
+                // playback row with a separately arriving connection callback.
+                is_active_device,
                 timestamp_ms: player_state.timestamp,
             },
         )
@@ -87,6 +91,7 @@ pub(crate) fn send_local_playback_state(is_playing: bool, position_ms: u32) {
     // Get duration from local state
     let duration_ms = CURRENT_DURATION_MS.load(Ordering::SeqCst);
     let (shuffle, repeat_track, repeat_context) = current_playback_options();
+    let local_is_active_device = is_active_device();
 
     let (stamp, observation) = stamped_snapshot(|stamp| {
         (
@@ -105,6 +110,7 @@ pub(crate) fn send_local_playback_state(is_playing: bool, position_ms: u32) {
                 shuffle,
                 repeat_track,
                 repeat_context,
+                is_active_device: local_is_active_device,
                 timestamp_ms: current_timestamp_ms() as i64,
             },
         )

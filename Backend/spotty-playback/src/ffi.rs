@@ -101,6 +101,7 @@ pub struct SpottyConnectionSnapshot {
     pub spirc_ready: u8,
     pub is_active_device: u8,
     pub resume_pending: u8,
+    pub credentials_rejected: u8,
     pub device_id: *const c_char,
     pub last_error: *const c_char,
 }
@@ -121,6 +122,7 @@ pub(crate) fn send_connection_snapshot(
         spirc_ready: u8::from(state.spirc_ready),
         is_active_device: u8::from(state.is_active_device),
         resume_pending: u8::from(state.resume_pending),
+        credentials_rejected: u8::from(state.credentials_rejected),
         device_id: device_id
             .as_ref()
             .map(|value| value.as_ptr())
@@ -145,6 +147,7 @@ pub(crate) struct PlaybackObservation {
     pub shuffle: bool,
     pub repeat_track: bool,
     pub repeat_context: bool,
+    pub is_active_device: bool,
     pub timestamp_ms: i64,
 }
 
@@ -160,6 +163,7 @@ pub struct SpottyPlaybackSnapshot {
     pub shuffle: u8,
     pub repeat_track: u8,
     pub repeat_context: u8,
+    pub is_active_device: u8,
     pub track_uri: *const c_char,
     pub context_uri: *const c_char,
 }
@@ -184,6 +188,7 @@ pub(crate) fn send_playback_snapshot(
         shuffle: u8::from(observation.shuffle),
         repeat_track: u8::from(observation.repeat_track),
         repeat_context: u8::from(observation.repeat_context),
+        is_active_device: u8::from(observation.is_active_device),
         track_uri: track_uri
             .as_ref()
             .map(|value| value.as_ptr())
@@ -283,9 +288,16 @@ pub(crate) fn current_spirc(what: &str) -> Option<Arc<Spirc>> {
 ///
 /// A closed command channel is reported separately (`ERROR_NEEDS_REINIT`) because Swift
 /// responds to it by rebuilding the player rather than by surfacing a failure. The recovery
-/// code comes from [`classify_spirc_command_error`]; the `Debug` formatting here is log-only.
+/// code comes from [`classify_spirc_command_error`]. The log contains only the stable
+/// classification; the upstream error can carry private response details and must not cross
+/// this boundary through `Debug` formatting.
 pub(crate) fn spirc_error(what: &str, err: &librespot_core::Error) -> i32 {
-    debug!("{} error: {:?}", what, err);
+    let category = match classify_spirc_command_failure(err) {
+        SpircCommandFailure::CredentialRejected => "credential_rejected",
+        SpircCommandFailure::NeedsReinit => "needs_reinit",
+        SpircCommandFailure::Ordinary => "ordinary",
+    };
+    debug!("{} error: {}", what, category);
     classify_spirc_command_error(err)
 }
 
@@ -301,19 +313,6 @@ pub(crate) fn spirc_command(
     match command(&spirc) {
         Ok(()) => 0,
         Err(e) => spirc_error(what, &e),
-    }
-}
-
-/// Shuts down the Spirc instance if it exists.
-/// This terminates the spirc_task and closes the dealer connection.
-pub(crate) fn shutdown_spirc(context: &str) {
-    let spirc_guard = SPIRC.lock().unwrap_or_else(|e| e.into_inner());
-    if let Some(spirc) = spirc_guard.as_ref() {
-        if let Err(e) = spirc.shutdown() {
-            debug!("{}: spirc.shutdown() failed: {:?}", context, e);
-        } else {
-            debug!("{}: spirc.shutdown() succeeded", context);
-        }
     }
 }
 

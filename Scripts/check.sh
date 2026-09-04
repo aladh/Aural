@@ -66,7 +66,6 @@ playback_header="$project_root/Sources/SpottyPlaybackCore/include/spotty_playbac
 stale_backend_input=""
 if [[ -f "$backend_lib" ]]; then
     stale_backend_input="$(find "$project_root/Backend/spotty-playback/src" \
-        "$project_root/Backend/vendor/librespot-connect" \
         "$project_root/rust-toolchain.toml" \
         "$project_root/Backend/spotty-playback/Cargo.toml" \
         "$project_root/Backend/spotty-playback/Cargo.lock" \
@@ -370,7 +369,7 @@ rust_job="$(sed -n '/^  rust:/,/^  checks:/p' "$ci_workflow")"
 checks_job="$(sed -n '/^  checks:/,/^  release:/p' "$ci_workflow")"
 release_job="$(sed -n '/^  release:/,/^  gate:/p' "$ci_workflow")"
 gate_job="$(sed -n '/^  gate:/,$p' "$ci_workflow")"
-playback_cache_key='key: macos-playback-archive-${{ runner.arch }}-${{ env.RUST_TOOLCHAIN_KEY }}-${{ hashFiles('\''rust-toolchain.toml'\'', '\''Backend/spotty-playback/Cargo.toml'\'', '\''Backend/spotty-playback/Cargo.lock'\'', '\''Backend/spotty-playback/build.sh'\'', '\''Backend/spotty-playback/src/**'\'', '\''Backend/vendor/librespot-connect/**'\'') }}'
+playback_cache_key='key: macos-playback-archive-${{ runner.arch }}-${{ env.RUST_TOOLCHAIN_KEY }}-${{ hashFiles('\''rust-toolchain.toml'\'', '\''Backend/spotty-playback/Cargo.toml'\'', '\''Backend/spotty-playback/Cargo.lock'\'', '\''Backend/spotty-playback/build.sh'\'', '\''Backend/spotty-playback/src/**'\'') }}'
 rust_cache_key='key: macos-rust-debug-${{ runner.arch }}-${{ hashFiles('\''rust-toolchain.toml'\'', '\''Backend/spotty-playback/Cargo.lock'\'') }}'
 debug_cache_key='key: macos-swiftpm-debug-${{ runner.os }}-${{ runner.arch }}-${{ env.SWIFT_TOOLCHAIN_KEY }}-${{ hashFiles('\''Package.swift'\'', '\''Package.resolved'\'') }}-${{ github.sha }}'
 release_cache_key='key: macos-swiftpm-release-${{ runner.os }}-${{ runner.arch }}-${{ env.SWIFT_TOOLCHAIN_KEY }}-${{ hashFiles('\''Package.swift'\'', '\''Package.resolved'\'') }}-${{ github.sha }}'

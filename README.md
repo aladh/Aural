@@ -13,9 +13,10 @@
 > authorization flow may violate Spotify's terms.
 
 Spotty is a native macOS music client for Spotify Premium. It is meant to feel like a focused Mac
-app: SwiftUI and AppKit for the interface, AVFoundation for audio output, and a contained
-Rust/librespot backend for Spotify Connect, streaming, and decoding. There is no WebView or
-Chromium runtime.
+app: SwiftUI and AppKit for the interface, AVFoundation for audio output, and a contained,
+pinned Rust/librespot backend as the sole engine for the private Spotify session, Connect,
+streaming, decryption, and decoding. Decoded PCM crosses the narrow adapter into AVFoundation.
+There is no WebView or Chromium runtime.
 
 Spotty's visual direction uses a Spotify-familiar hierarchy in a fixed dark appearance—a near-black
 canvas, library-forward sidebar, artwork-led media headers, dense track tables, right-side queue

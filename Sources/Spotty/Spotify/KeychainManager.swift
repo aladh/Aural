@@ -30,10 +30,25 @@ nonisolated enum KeychainManager {
         )
     }
 
-    static func loadKeymasterTokens() -> KeymasterTokens? {
-        clearRetiredKeymasterTokens()
-        guard let data = load(key: keymasterTokensKey, service: keymasterService) else { return nil }
-        return KeymasterStoredGrantCodec.decode(data)
+    /// Reads the current grant without collapsing an unavailable keychain into an absent grant.
+    ///
+    /// Only `errSecItemNotFound` means that no grant exists. Access failures deliberately leave
+    /// the retired item alone: a denied read must not perform an unrelated cleanup mutation while
+    /// the secure store is unavailable.
+    static func loadKeymasterTokens() -> KeychainReadResult {
+        switch load(key: keymasterTokensKey, service: keymasterService) {
+        case let .found(data):
+            guard let tokens = KeymasterStoredGrantCodec.decode(data) else { return .failed }
+            clearRetiredKeymasterTokens()
+            return .found(tokens)
+        case .absent:
+            clearRetiredKeymasterTokens()
+            return .absent
+        case .denied:
+            return .denied
+        case .failed:
+            return .failed
+        }
     }
 
     static func clearKeymasterTokens() {
@@ -76,7 +91,7 @@ nonisolated enum KeychainManager {
         }
     }
 
-    private static func load(key: String, service: String) -> Data? {
+    private static func load(key: String, service: String) -> RawKeychainReadResult {
         var query = makeQuery(key: key, service: service)
         query[kSecReturnData as String] = true
         query[kSecMatchLimit as String] = kSecMatchLimitOne
@@ -84,11 +99,32 @@ nonisolated enum KeychainManager {
         var result: AnyObject?
         let status = SecItemCopyMatching(query as CFDictionary, &result)
 
-        guard status == errSecSuccess else {
-            return nil
+        switch status {
+        case errSecSuccess:
+            guard let data = result as? Data else {
+                SpottyLog.authentication.error(
+                    "Keychain read failed category=failed status=unexpected-data"
+                )
+                return .failed
+            }
+            return .found(data)
+        case errSecItemNotFound:
+            return .absent
+        case errSecInteractionNotAllowed,
+            errSecAuthFailed,
+            errSecUserCanceled,
+            errSecNotAvailable,
+            errSecMissingEntitlement:
+            SpottyLog.authentication.error(
+                "Keychain read failed category=denied status=\(status, privacy: .public)"
+            )
+            return .denied
+        default:
+            SpottyLog.authentication.error(
+                "Keychain read failed category=failed status=\(status, privacy: .public)"
+            )
+            return .failed
         }
-
-        return result as? Data
     }
 
     private static func delete(key: String, service: String) {
@@ -122,8 +158,25 @@ nonisolated enum KeychainManager {
     }
 }
 
+/// A typed keychain read. Returning `nil` for every non-success status would make a locked,
+/// denied, or unavailable keychain look exactly like a first launch and could overwrite a valid
+/// grant after an access prompt fails.
+nonisolated enum KeychainReadResult: Equatable, Sendable {
+    case found(KeymasterTokens)
+    case absent
+    case denied
+    case failed
+}
+
+private nonisolated enum RawKeychainReadResult {
+    case found(Data)
+    case absent
+    case denied
+    case failed
+}
+
 /// Errors that can occur during keychain operations
-enum KeychainError: Error, LocalizedError {
+nonisolated enum KeychainError: Error, LocalizedError, Equatable, Sendable {
     case saveFailed(OSStatus)
 
     var errorDescription: String? {

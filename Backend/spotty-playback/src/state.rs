@@ -1,43 +1,26 @@
 use crate::*;
 use std::collections::HashMap;
 
-// Player state.
-//
-// `Arc<dyn SpircPlayer>` rather than `Arc<Player>`: Stage 1 of #201 lets the process run either
-// librespot's own `Player` (PCM through `proxy_sink.rs`) or the Swift-owned `ShimPlayer`, chosen
-// once per build in `create_new_player`. Everything that reaches for the player through this
-// global only ever calls trait methods.
-pub(crate) static PLAYER: Lazy<Mutex<Option<Arc<dyn SpircPlayer>>>> =
-    Lazy::new(|| Mutex::new(None));
+// Player state. The retained engine has one production player implementation: librespot's own
+// `Player`, which decodes in-process and delivers bounded PCM through `proxy_sink`.
+pub(crate) static PLAYER: Lazy<Mutex<Option<Arc<Player>>>> = Lazy::new(|| Mutex::new(None));
 
-/// The `ShimPlayer` behind [`PLAYER`], when the Swift audio path is the one in use.
+/// Join handles for every task created for the current engine generation.
 ///
-/// Kept separately because `spotty_playback_report_audio` needs `ShimPlayer::report`, which is not
-/// part of `SpircPlayer` (Spirc never reports playback inward — Swift does). `None` whenever
-/// librespot's own `Player` is running, which is what makes a report arriving on the old path a
-/// rejected no-op rather than a panic.
-pub(crate) static SHIM_PLAYER: Lazy<Mutex<Option<Arc<ShimPlayer>>>> =
+/// Keeping the handles together makes teardown an owned operation: a failed build can cancel all
+/// work it started, and a normal generation replacement can await the old tasks before dropping
+/// the objects they retain. The vector is taken before cancellation, so no task is ever awaited
+/// while holding the global registry lock.
+pub(crate) static ENGINE_TASKS: Lazy<Mutex<Option<Vec<JoinHandle<()>>>>> =
     Lazy::new(|| Mutex::new(None));
-
-/// The current `ShimPlayer` as a clone, or `None`.
-///
-/// Handed out as a clone, never behind the guard: `report` broadcasts player events, and no
-/// engine lock may be held across work that can re-enter. Same rule as [`current_spirc`].
-pub(crate) fn current_shim_player() -> Option<Arc<ShimPlayer>> {
-    SHIM_PLAYER
-        .lock()
-        .unwrap_or_else(|e| e.into_inner())
-        .clone()
-}
-
-/// The player as a clone, or `None`. Never call a player method through the guard: with the
-/// Swift audio path in use those methods enter Swift, which may call straight back into Rust.
-pub(crate) fn current_player() -> Option<Arc<dyn SpircPlayer>> {
-    PLAYER.lock().unwrap_or_else(|e| e.into_inner()).clone()
-}
 pub(crate) static SESSION: Lazy<Mutex<Option<Session>>> = Lazy::new(|| Mutex::new(None));
 pub(crate) static MIXER: Lazy<Mutex<Option<Arc<SoftMixer>>>> = Lazy::new(|| Mutex::new(None));
 pub(crate) static SPIRC: Lazy<Mutex<Option<Arc<Spirc>>>> = Lazy::new(|| Mutex::new(None));
+
+/// Returns the current concrete librespot Player without holding its registry lock.
+pub(crate) fn current_player() -> Option<Arc<Player>> {
+    PLAYER.lock().unwrap_or_else(|e| e.into_inner()).clone()
+}
 /// Local playing flag. `true` only after `PlayerEvent::Playing`. `Spirc::load`
 /// `Ok` means the command was queued, not that audio started, so the play
 /// commands must not store `true` here: `resume_playback` returns success
@@ -117,10 +100,6 @@ pub(crate) struct ControlCallbacks {
     pub(crate) playback_state: Mutex<Option<PlaybackSnapshotCallback>>,
     pub(crate) devices: Mutex<Option<DevicesSnapshotCallback>>,
     pub(crate) connection_state: Mutex<Option<ConnectionSnapshotCallback>>,
-    /// Swift's audio-command sink for the Stage 1 audio path (#208). Registering it before
-    /// `spotty_playback_init_player` is also the switch that selects `ShimPlayer` over librespot's
-    /// `Player`; see `create_new_player`.
-    pub(crate) audio_command: Mutex<Option<AudioCommandCallback>>,
 }
 
 pub(crate) static CONTROL_CALLBACKS: Lazy<ControlCallbacks> = Lazy::new(ControlCallbacks::default);
@@ -194,11 +173,30 @@ pub(crate) struct ConnectionState {
     pub(crate) spirc_ready: bool,
     pub(crate) device_id: Option<String>,
     pub(crate) last_error: Option<String>,
+    /// The cached AP credential was definitively rejected by Spotify. This is a typed
+    /// connection outcome; it is kept separate from the sanitized human-readable status so
+    /// Swift can offer reauthentication without parsing an upstream error string.
+    pub(crate) credentials_rejected: bool,
     pub(crate) is_active_device: bool,
     /// True only inside a reconnect's rehydration window: the session is connected and
     /// activated, readiness is deliberately unpublished, and Swift should issue its
     /// `ResumeLoadPlan` targets now. Cleared when readiness commits or on cleanup.
     pub(crate) resume_pending: bool,
+}
+
+/// Records a definitive credential rejection and publishes it as a typed connection outcome.
+///
+/// `last_error` remains a stable, privacy-safe category. It never contains the upstream error,
+/// access token, or any response payload. A newer generation clears the flag when it begins.
+pub(crate) fn mark_credentials_rejected() {
+    with_connection(|c| {
+        c.session_connected = false;
+        c.spirc_ready = false;
+        c.resume_pending = false;
+        c.credentials_rejected = true;
+        c.last_error = Some("Spotify credentials rejected".to_string());
+    });
+    notify_connection_state_change();
 }
 
 /// Whether this engine's device is the cluster's active member.

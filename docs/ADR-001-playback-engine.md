@@ -1,6 +1,11 @@
 # ADR 001: Playback engine boundary
 
-Status: accepted on 2026-08-18.
+Status: accepted on 2026-08-18. The later retained-engine decision is recorded in
+[ADR 005](ADR-005-retain-librespot.md); the contained boundary and application-ownership principles
+below remain accepted.
+
+Historical review note: the `#201` staged-review language and replacement stages below describe the
+former migration path. They are preserved for history and are not current guidance.
 
 Under staged review per #201. The decision below stands until a later record supersedes it;
 the replacement stages and their gates live in [playback engine ownership](playback-engine-ownership.md).

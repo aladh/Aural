@@ -83,6 +83,7 @@ where
 
 /// Revalidates with [`reconnect_may_proceed`], then optionally runs cleanup and build
 /// as one serialized unit. `build` is not polled on abandon.
+#[cfg(test)]
 pub(crate) async fn run_reconnect_unit<C, B, T>(
     recovering_generation: u64,
     current_generation: impl Fn() -> u64,
@@ -94,6 +95,33 @@ where
     C: FnOnce(),
     B: Future<Output = T>,
 {
+    run_reconnect_unit_async(
+        recovering_generation,
+        current_generation,
+        teardown_in_progress,
+        || async { cleanup() },
+        build,
+    )
+    .await
+}
+
+/// Revalidates, drains the old generation, and builds under one lifecycle lock.
+///
+/// Resource teardown owns Tokio task handles and must await them after cancellation. Keeping the
+/// cleanup future inside the same lifecycle lock makes cleanup and the following build one
+/// operation. Tests with synchronous cleanup use a thin wrapper around this same owner.
+pub(crate) async fn run_reconnect_unit_async<C, CF, B, T>(
+    recovering_generation: u64,
+    current_generation: impl Fn() -> u64,
+    teardown_in_progress: impl Fn() -> bool,
+    cleanup: C,
+    build: B,
+) -> ReconnectUnitOutcome<T>
+where
+    C: FnOnce() -> CF,
+    CF: Future<Output = ()>,
+    B: Future<Output = T>,
+{
     let _guard = acquire_lifecycle().await;
     if !reconnect_may_proceed(
         recovering_generation,
@@ -102,7 +130,7 @@ where
     ) {
         return ReconnectUnitOutcome::Abandoned;
     }
-    cleanup();
+    cleanup().await;
     ReconnectUnitOutcome::Ran(build.await)
 }
 
@@ -110,14 +138,12 @@ where
 ///
 /// Nested on one thread is allowed (reconnect cleanup then build). Two threads at once is
 /// the interleaving this lock exists to prevent.
-pub(crate) struct StoreSectionGuard {
-    _private: (),
-}
+pub(crate) struct StoreSectionGuard;
 
 pub(crate) fn enter_store_section() -> StoreSectionGuard {
     #[cfg(test)]
     store_section::enter();
-    StoreSectionGuard { _private: () }
+    StoreSectionGuard
 }
 
 impl Drop for StoreSectionGuard {

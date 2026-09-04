@@ -22,7 +22,7 @@ struct SearchView: View {
                     icon: "person.crop.circle.badge.plus",
                     title: "Connect Spotify",
                     message: "Connect your Spotify Premium account to search its track catalog.",
-                    actionTitle: "Connect Spotify",
+                    actionTitle: playback.connectionActionTitle,
                     actionSystemImage: "link"
                 ) {
                     playback.connect()
@@ -156,7 +156,7 @@ struct LibraryView: View {
                             icon: "person.crop.circle.badge.plus",
                             title: "Connect Spotify",
                             message: "Your Spotify library will appear here after you connect.",
-                            actionTitle: "Connect Spotify",
+                            actionTitle: playback.connectionActionTitle,
                             actionSystemImage: "link"
                         ) {
                             playback.connect()
@@ -243,7 +243,7 @@ struct TrackCollectionView: View {
                         icon: "person.crop.circle.badge.plus",
                         title: "Connect Spotify",
                         message: "Your Spotify tracks will appear after you connect.",
-                        actionTitle: "Connect Spotify",
+                        actionTitle: playback.connectionActionTitle,
                         actionSystemImage: "link"
                     ) {
                         playback.connect()

@@ -25,7 +25,7 @@ struct HomeView: View {
                         icon: "music.note.house",
                         title: "Your music will appear here",
                         message: "Connect a Spotify Premium account to load Home and your library.",
-                        actionTitle: "Connect Spotify",
+                        actionTitle: playback.connectionActionTitle,
                         actionSystemImage: "link"
                     ) {
                         playback.connect()

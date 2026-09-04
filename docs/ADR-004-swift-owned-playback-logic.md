@@ -1,6 +1,10 @@
 # ADR 004: Move Spotty-owned playback logic into Swift incrementally
 
-Status: accepted on 2026-09-02. Revisit is gated by #201.
+Status: superseded on 2026-09-04 by [ADR 005](ADR-005-retain-librespot.md).
+
+Supersession note: this record preserves the historical incremental-migration decision and its
+ownership principles. Its `#201` gate and migration commitment are no longer active; ADR 005 is the
+current retained-engine decision.
 
 ## Context
 

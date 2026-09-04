@@ -97,6 +97,18 @@ fn cluster_generation_current(generation: u64) -> bool {
     listener_may_act(generation, SESSION_GENERATION.load(Ordering::SeqCst))
 }
 
+fn wait_for_cluster_mapping_idle_locked(
+    mut gate: std::sync::MutexGuard<'static, ClusterApplyGate>,
+) -> std::sync::MutexGuard<'static, ClusterApplyGate> {
+    let current = std::thread::current().id();
+    while gate.mapping && gate.mapping_thread != Some(current) {
+        gate = CLUSTER_APPLY_CV
+            .wait(gate)
+            .unwrap_or_else(|e| e.into_inner());
+    }
+    gate
+}
+
 /// Waits until no [`apply_cluster`] is running on another thread, then advances
 /// `SESSION_GENERATION` and drops pending offers while still holding the gate lock.
 ///
@@ -105,13 +117,7 @@ fn cluster_generation_current(generation: u64) -> bool {
 /// the lock; Swift delivery and `await` never hold it. Same-thread mapping (callback →
 /// cleanup) does not wait for itself.
 pub(crate) fn invalidate_cluster_generation() -> u64 {
-    let mut gate = lock_cluster_apply();
-    let current = std::thread::current().id();
-    while gate.mapping && gate.mapping_thread != Some(current) {
-        gate = CLUSTER_APPLY_CV
-            .wait(gate)
-            .unwrap_or_else(|e| e.into_inner());
-    }
+    let mut gate = wait_for_cluster_mapping_idle_locked(lock_cluster_apply());
     let invalidated = SESSION_GENERATION.fetch_add(1, Ordering::SeqCst) + 1;
     gate.pending.clear();
     gate.pushed_generation = None;
@@ -121,13 +127,7 @@ pub(crate) fn invalidate_cluster_generation() -> u64 {
 /// Wait-only helper for tests that need to observe idle without bumping.
 #[cfg(test)]
 pub(crate) fn wait_for_cluster_mapping_idle() {
-    let mut gate = lock_cluster_apply();
-    let current = std::thread::current().id();
-    while gate.mapping && gate.mapping_thread != Some(current) {
-        gate = CLUSTER_APPLY_CV
-            .wait(gate)
-            .unwrap_or_else(|e| e.into_inner());
-    }
+    let _gate = wait_for_cluster_mapping_idle_locked(lock_cluster_apply());
 }
 
 struct ClusterMappingGuard;
@@ -169,25 +169,26 @@ pub(crate) fn discard_retained_cluster_offers() {
 /// the bootstrap already won an apply, a later push still applies after it. Callers must not
 /// hold this function's lock — there is none across `apply_cluster` or any `await`.
 pub(crate) fn offer_cluster(origin: ClusterOrigin, generation: u64, cluster: Cluster) {
-    offer_cluster_after_decide(origin, generation, cluster, || {});
+    let claimed = enqueue_cluster_offer_default(origin, generation, cluster);
+    if claimed {
+        drain_offered_clusters();
+    }
 }
 
 /// `after_decide` runs after enqueue-or-discard and before this thread applies or returns.
 /// Tests use it to force decide/apply interleaving. It must not wait on this drain completing
 /// if it also offers another cluster from the same thread.
+#[cfg(test)]
 pub(crate) fn offer_cluster_after_decide(
     origin: ClusterOrigin,
     generation: u64,
     cluster: Cluster,
     after_decide: impl FnOnce(),
 ) {
-    #[cfg(test)]
-    {
-        enqueue_cluster_offer(origin, generation, cluster, after_decide, None);
-    }
-    #[cfg(not(test))]
-    {
-        enqueue_cluster_offer(origin, generation, cluster, after_decide);
+    let claimed = enqueue_cluster_offer(origin, generation, cluster, None);
+    after_decide();
+    if claimed {
+        drain_offered_clusters();
     }
 }
 
@@ -201,17 +202,29 @@ pub(crate) fn offer_cluster_with_hooks(
     after_decide: impl FnOnce(),
     after_pop: Option<Arc<dyn Fn() + Send + Sync>>,
 ) {
-    enqueue_cluster_offer(origin, generation, cluster, after_decide, after_pop);
+    let claimed = enqueue_cluster_offer(origin, generation, cluster, after_pop);
+    after_decide();
+    if claimed {
+        drain_offered_clusters();
+    }
+}
+
+fn enqueue_cluster_offer_default(origin: ClusterOrigin, generation: u64, cluster: Cluster) -> bool {
+    #[cfg(test)]
+    {
+        enqueue_cluster_offer(origin, generation, cluster, None)
+    }
+    #[cfg(not(test))]
+    enqueue_cluster_offer(origin, generation, cluster)
 }
 
 fn enqueue_cluster_offer(
     origin: ClusterOrigin,
     generation: u64,
     cluster: Cluster,
-    after_decide: impl FnOnce(),
     #[cfg(test)] after_pop: Option<Arc<dyn Fn() + Send + Sync>>,
-) {
-    let claimed = {
+) -> bool {
+    {
         let mut gate = lock_cluster_apply();
         let current_generation = SESSION_GENERATION.load(Ordering::SeqCst);
         let pushed_in_this_generation = gate.pushed_generation == Some(generation);
@@ -226,9 +239,7 @@ fn enqueue_cluster_offer(
                     "Cluster offer discarded (origin={:?}, generation={}, current={})",
                     origin, generation, current_generation
                 );
-                drop(gate);
-                after_decide();
-                return;
+                false
             }
             ClusterOfferDecision::Enqueue { mark_pushed } => {
                 if mark_pushed {
@@ -248,11 +259,6 @@ fn enqueue_cluster_offer(
                 claimed
             }
         }
-    };
-
-    after_decide();
-    if claimed {
-        drain_offered_clusters();
     }
 }
 
@@ -443,16 +449,20 @@ pub(crate) fn configured_connect_device_name() -> Option<String> {
         .clone()
 }
 
-/// Creates Spirc, spawns its background task, and stores it globally.
-/// Returns the Spirc Arc for activation by the caller.
-pub(crate) async fn create_and_store_spirc(
+/// Creates Spirc and starts its background task.
+///
+/// The returned objects are deliberately local to the initialization transaction. The caller
+/// publishes the `Spirc` and task handle together with the Session, Player, Mixer, and listener
+/// handles only after every required constructor has succeeded. Keeping this function free of
+/// global stores means a failed `Spirc::new` cannot leave a half-built generation reachable by
+/// commands or teardown.
+pub(crate) async fn create_spirc(
     session: &Session,
     credentials: &librespot_core::authentication::Credentials,
-    player: Arc<dyn SpircPlayer>,
+    player: Arc<Player>,
     mixer: Arc<SoftMixer>,
-) -> Result<Arc<Spirc>, String> {
-    let device_name = configured_connect_device_name()
-        .ok_or_else(|| "Connect device identity was not configured".to_string())?;
+) -> Result<(Arc<Spirc>, JoinHandle<()>), InitializationFailure> {
+    let device_name = configured_connect_device_name().ok_or(InitializationFailure::Transient)?;
     let connect_config = create_connect_config(&device_name);
 
     let (spirc, spirc_task) = Spirc::new(
@@ -463,31 +473,17 @@ pub(crate) async fn create_and_store_spirc(
         mixer as Arc<dyn Mixer>,
     )
     .await
-    .map_err(|e| format!("Spirc init failed: {:?}", e))?;
+    .map_err(|error| classify_initialization_error(&error))?;
 
     let spirc_arc = Arc::new(spirc);
-    RUNTIME.spawn(spirc_task);
-
-    *SPIRC.lock().unwrap_or_else(|e| e.into_inner()) = Some(spirc_arc.clone());
-    // Deliberately does not record success yet. Activation and, on a reconnect, the
-    // rehydration window still have to run, and either can fail — `init_player_async`
-    // commits the whole set once, at the end, when the session is genuinely usable.
-    //
-    // Setting it here was subtly wrong in two ways. The activation that follows makes
-    // librespot emit SessionConnected, whose handler publishes a snapshot; with the flags
-    // already true that snapshot announced readiness before playback resumed. And a later
-    // failure could only clear the booleans, leaving a fresh connected-since timestamp and
-    // a reset attempt counter in the disconnected snapshot that followed.
+    let spirc_task = RUNTIME.spawn(spirc_task);
 
     debug!(
-        "[WAKE +{}ms] Spirc ready - connected to Spotify Connect",
+        "[WAKE +{}ms] Spirc constructed for pending generation",
         elapsed_since_wake_ms()
     );
 
-    // Small delay to let librespot's initial cluster processing complete
-    tokio::time::sleep(Duration::from_millis(200)).await;
-
-    Ok(spirc_arc)
+    Ok((spirc_arc, spirc_task))
 }
 
 /// Asks for the cluster once, because subscribing to it is not enough to be told what it is.
@@ -504,7 +500,8 @@ pub(crate) async fn create_and_store_spirc(
 /// second playback device: librespot already registered the real one under its own id, and
 /// re-PUTing that id with a partial state would disturb its registration rather than ask a
 /// question.
-pub(crate) fn spawn_initial_cluster_fetch(session: &Session, generation: u64) {
+/// The returned handle belongs to the session generation and must be retained until teardown.
+pub(crate) fn spawn_initial_cluster_fetch(session: &Session, generation: u64) -> JoinHandle<()> {
     let session = session.clone();
 
     RUNTIME.spawn(async move {
@@ -553,7 +550,7 @@ pub(crate) fn spawn_initial_cluster_fetch(session: &Session, generation: u64) {
             }
             Err(e) => debug!("Initial cluster fetch failed: {}", e),
         }
-    });
+    })
 }
 
 /// Registers a hidden connect-state member and returns the cluster the service answers with.
@@ -613,10 +610,9 @@ pub(crate) fn apply_cluster(generation: u64, cluster: Cluster) {
     if !cluster_generation_current(generation) {
         return;
     }
-    set_active_device(is_active_in_cluster(
-        &cluster.active_device_id,
-        current_device_id().as_deref(),
-    ));
+    let is_active_device =
+        is_active_in_cluster(&cluster.active_device_id, current_device_id().as_deref());
+    set_active_device(is_active_device);
     if !cluster_generation_current(generation) {
         return;
     }
@@ -626,7 +622,7 @@ pub(crate) fn apply_cluster(generation: u64, cluster: Cluster) {
         if !cluster_generation_current(generation) {
             return;
         }
-        send_playback_state(&player_state);
+        send_playback_state(&player_state, is_active_device);
         if !cluster_generation_current(generation) {
             return;
         }
@@ -635,10 +631,14 @@ pub(crate) fn apply_cluster(generation: u64, cluster: Cluster) {
 }
 
 /// Subscribes to cluster updates on the session's dealer and spawns a task to process them.
+/// The returned handle belongs to the session generation and must be retained until teardown.
 ///
 /// When the stream ends, the Spirc it belonged to is gone, so this triggers reconnection —
 /// but only for the current generation, and only outside an intentional teardown.
-pub(crate) fn spawn_cluster_listener(session: &Session, generation: u64) -> Result<(), String> {
+pub(crate) fn spawn_cluster_listener(
+    session: &Session,
+    generation: u64,
+) -> Result<JoinHandle<()>, String> {
     let queue_stream = session
         .dealer()
         .listen_for(
@@ -647,7 +647,7 @@ pub(crate) fn spawn_cluster_listener(session: &Session, generation: u64) -> Resu
         )
         .map_err(|e| format!("Failed to subscribe to cluster updates: {}", e))?;
 
-    RUNTIME.spawn(async move {
+    let task = RUNTIME.spawn(async move {
         debug!("Cluster listener started (generation={})", generation);
         let mut stream = queue_stream;
         while let Some(msg_result) = stream.next().await {
@@ -687,5 +687,5 @@ pub(crate) fn spawn_cluster_listener(session: &Session, generation: u64) -> Resu
         spawn_reconnection_loop(intent);
     });
 
-    Ok(())
+    Ok(task)
 }

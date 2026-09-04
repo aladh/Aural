@@ -157,6 +157,46 @@ struct PlaybackSnapshotProjectionTests {
             )
             #expect((firstLocal.transport) == (.paused), "first-local snapshot() presents paused")
             #expect((firstLocal.timing.position) == (40), "first-local snapshot() does not interpolate position")
+
+            // The active role is carried by the playback observation itself. A connection
+            // callback arriving before or after that row must therefore leave its projection
+            // unchanged.
+            let playbackBeforeConnection = PlaybackSnapshotProjection.snapshot(
+                isPlaying: true,
+                isPaused: false,
+                trackURI: "spotify:track:now",
+                contextURI: "spotify:playlist:ctx",
+                positionMilliseconds: 40_000,
+                durationMilliseconds: 200_000,
+                timestampMilliseconds: 1_005_000,
+                shuffle: true,
+                repeatContext: true,
+                repeatTrack: false,
+                previousRepeat: RepeatFlags(context: false, track: false),
+                isInitialSnapshot: false,
+                isActiveDevice: true,
+                receivedAt: receivedAt
+            )
+            let playbackAfterConnection = PlaybackSnapshotProjection.snapshot(
+                isPlaying: true,
+                isPaused: false,
+                trackURI: "spotify:track:now",
+                contextURI: "spotify:playlist:ctx",
+                positionMilliseconds: 40_000,
+                durationMilliseconds: 200_000,
+                timestampMilliseconds: 1_005_000,
+                shuffle: true,
+                repeatContext: true,
+                repeatTrack: false,
+                previousRepeat: RepeatFlags(context: false, track: false),
+                isInitialSnapshot: false,
+                isActiveDevice: true,
+                receivedAt: receivedAt
+            )
+            #expect(
+                playbackBeforeConnection == playbackAfterConnection,
+                "playback projection does not depend on connection callback order"
+            )
         }
     }
 }

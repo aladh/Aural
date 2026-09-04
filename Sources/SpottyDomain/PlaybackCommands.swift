@@ -16,6 +16,10 @@ public struct PendingPlaybackCommand: Equatable, Sendable {
     public let rollbackTransport: PlaybackTransportState?
     public let expectedTiming: PlaybackTiming?
     public let rollbackTiming: PlaybackTiming?
+    /// Most recent same-track authoritative engine timing received while a seek is held.
+    /// The optimistic presentation remains in `PlaybackState.timing` until confirmation, but a
+    /// rejected seek must restore this newer engine sample instead of the pre-command fallback.
+    public var latestAuthoritativeTiming: PlaybackTiming?
     /// Concrete play target when the caller already knows the track to present.
     public let expectedTrack: CurrentTrack?
     /// Exact presentation captured at `commandStarted` for a known play target.
@@ -41,6 +45,7 @@ public struct PendingPlaybackCommand: Equatable, Sendable {
         rollbackTransport: PlaybackTransportState? = nil,
         expectedTiming: PlaybackTiming? = nil,
         rollbackTiming: PlaybackTiming? = nil,
+        latestAuthoritativeTiming: PlaybackTiming? = nil,
         expectedTrack: CurrentTrack? = nil,
         rollbackPresentation: PlaybackPresentationSnapshot? = nil,
         expectedShuffle: Bool? = nil,
@@ -57,6 +62,7 @@ public struct PendingPlaybackCommand: Equatable, Sendable {
         self.rollbackTransport = rollbackTransport
         self.expectedTiming = expectedTiming
         self.rollbackTiming = rollbackTiming
+        self.latestAuthoritativeTiming = latestAuthoritativeTiming
         self.expectedTrack = expectedTrack
         self.rollbackPresentation = rollbackPresentation
         self.expectedShuffle = expectedShuffle

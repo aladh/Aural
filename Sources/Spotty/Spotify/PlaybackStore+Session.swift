@@ -25,6 +25,11 @@ extension PlaybackStore {
         accountStore.connect()
     }
 
+    func reauthorize() {
+        guard !isTearingDown else { return }
+        accountStore.reauthorize()
+    }
+
     func cancelConnect() {
         accountStore.cancelConnect()
     }
@@ -34,9 +39,10 @@ extension PlaybackStore {
     }
 
     func handleGrantRevocation() async {
+        accountStore.markCredentialRejection()
         await endSession(
             clearGrant: false,
-            finalPhase: .failed("Your Spotify session expired. Sign in again.")
+            finalPhase: .failed(ConnectionSnapshotProjection.credentialsRejectedMessage)
         )
     }
 

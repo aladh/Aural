@@ -200,10 +200,7 @@ pub(crate) fn ensure_active_for_playback(spirc: &Arc<Spirc>) -> Result<(), i32> 
                 debug!("Activate succeeded");
                 set_active_device(true);
             }
-            Err(_e) => {
-                debug!("Activate failed: {:?}", _e);
-                return Err(-1);
-            }
+            Err(error) => return Err(spirc_error("Activate", &error)),
         }
     }
     Ok(())

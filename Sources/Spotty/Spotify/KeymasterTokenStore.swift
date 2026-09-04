@@ -6,6 +6,31 @@
 //
 
 import Foundation
+import Dispatch
+
+/// The four outcomes that matter to account restoration. A Keychain denial or service failure is
+/// deliberately distinct from a genuine missing item so restore cannot silently replace a stored
+/// grant after an access problem.
+nonisolated enum KeymasterGrantLoadResult: Equatable, Sendable {
+    case found(KeymasterTokens)
+    case absent
+    case denied
+    case failed
+
+    var tokens: KeymasterTokens? {
+        guard case let .found(tokens) = self else { return nil }
+        return tokens
+    }
+}
+
+/// Short account-facing state used by the connection workflow. It has no credential payload or
+/// storage status text, which keeps the UI and logs independent of Keychain implementation details.
+nonisolated enum KeymasterGrantState: Equatable, Sendable {
+    case available
+    case absent
+    case denied
+    case failed
+}
 
 /// Storage for the keymaster tokens.
 ///
@@ -14,7 +39,7 @@ import Foundation
 /// the stored one) is a property of the *sequence* of refreshes, and a test that cannot
 /// observe what was written cannot check it.
 nonisolated protocol KeymasterTokenStoring: Sendable {
-    func load() -> KeymasterTokens?
+    func loadResult() -> KeymasterGrantLoadResult
     func save(_ tokens: KeymasterTokens) throws
     func clear()
 }
@@ -23,6 +48,9 @@ nonisolated protocol KeymasterTokenStoring: Sendable {
 /// they must never include a token, username, payload, account id, or request data.
 enum KeymasterGrantPersistenceDiagnostics {
     static let unreadableGrant = "Stored grant is unreadable source=secure"
+    static let deniedGrant = "Stored grant access denied source=secure"
+    static let failedGrant = "Stored grant read failed source=secure"
+    static let saveFailed = "Stored grant save failed source=secure"
 }
 
 enum KeymasterStoredGrantCodec {
@@ -42,14 +70,37 @@ enum KeymasterStoredGrantCodec {
 nonisolated struct KeymasterKeychainStore: KeymasterTokenStoring {
     private static let retiredDefaultsKey = "keymaster.tokens.v1"
 
-    func load() -> KeymasterTokens? {
-        clearRetiredPlaintextGrant()
-        return KeychainManager.loadKeymasterTokens()
+    func loadResult() -> KeymasterGrantLoadResult {
+        switch KeychainManager.loadKeymasterTokens() {
+        case let .found(tokens):
+            clearRetiredPlaintextGrant()
+            return .found(tokens)
+        case .absent:
+            clearRetiredPlaintextGrant()
+            return .absent
+        case .denied:
+            SpottyLog.authentication.error(
+                "\(KeymasterGrantPersistenceDiagnostics.deniedGrant, privacy: .public)"
+            )
+            return .denied
+        case .failed:
+            SpottyLog.authentication.error(
+                "\(KeymasterGrantPersistenceDiagnostics.failedGrant, privacy: .public)"
+            )
+            return .failed
+        }
     }
 
     func save(_ tokens: KeymasterTokens) throws {
         clearRetiredPlaintextGrant()
-        try KeychainManager.saveKeymasterTokens(tokens)
+        do {
+            try KeychainManager.saveKeymasterTokens(tokens)
+        } catch {
+            SpottyLog.authentication.error(
+                "\(KeymasterGrantPersistenceDiagnostics.saveFailed, privacy: .public)"
+            )
+            throw error
+        }
     }
 
     func clear() {
@@ -59,5 +110,96 @@ nonisolated struct KeymasterKeychainStore: KeymasterTokenStoring {
 
     private func clearRetiredPlaintextGrant() {
         UserDefaults.standard.removeObject(forKey: Self.retiredDefaultsKey)
+    }
+}
+
+/// A completion receipt is created before the operation is submitted. This lets the session
+/// submit work synchronously on its actor, preserving save/clear order even when the actor later
+/// suspends while awaiting the result.
+final class KeymasterPersistenceReceipt<Value: Sendable>: @unchecked Sendable {
+    private let lock = NSLock()
+    private var resolvedValue: Value?
+    private var isResolved = false
+    private var waiters: [CheckedContinuation<Value, Never>] = []
+
+    func resolve(_ value: Value) {
+        let continuations: [CheckedContinuation<Value, Never>]
+        lock.lock()
+        guard !isResolved else {
+            lock.unlock()
+            return
+        }
+        isResolved = true
+        resolvedValue = value
+        continuations = waiters
+        waiters.removeAll(keepingCapacity: false)
+        lock.unlock()
+        for continuation in continuations {
+            continuation.resume(returning: value)
+        }
+    }
+
+    func value() async -> Value {
+        await withCheckedContinuation { continuation in
+            lock.lock()
+            if isResolved, let resolvedValue {
+                lock.unlock()
+                continuation.resume(returning: resolvedValue)
+            } else {
+                waiters.append(continuation)
+                lock.unlock()
+            }
+        }
+    }
+}
+
+/// Owns the blocking persistence calls away from `KeymasterSession`'s token actor. The serial
+/// queue is an explicitly owned bounded lane; synchronous submit methods establish operation
+/// order before the token actor suspends waiting for each receipt.
+final class KeymasterPersistenceWorker: @unchecked Sendable {
+    private let queue: DispatchQueue
+    private let store: any KeymasterTokenStoring
+
+    init(store: any KeymasterTokenStoring) {
+        queue = DispatchQueue(
+            label: "dev.spotty.keymaster.persistence",
+            qos: .utility,
+            attributes: [],
+            autoreleaseFrequency: .workItem,
+            target: nil
+        )
+        self.store = store
+    }
+
+    /// Submission is synchronous so the caller's actor establishes the queue order before its
+    /// next suspension. Waiting is separate and happens through the returned receipt.
+    func submitLoad() -> KeymasterPersistenceReceipt<KeymasterGrantLoadResult> {
+        let receipt = KeymasterPersistenceReceipt<KeymasterGrantLoadResult>()
+        queue.async { [store] in
+            receipt.resolve(store.loadResult())
+        }
+        return receipt
+    }
+
+    func submitSave(_ tokens: KeymasterTokens) -> KeymasterPersistenceReceipt<Result<Void, any Error>> {
+        let receipt = KeymasterPersistenceReceipt<Result<Void, any Error>>()
+        queue.async { [store] in
+            do {
+                try store.save(tokens)
+                receipt.resolve(.success(()))
+            } catch {
+                receipt.resolve(.failure(error))
+            }
+        }
+        return receipt
+    }
+
+    func submitClear() -> KeymasterPersistenceReceipt<Void> {
+        let receipt = KeymasterPersistenceReceipt<Void>()
+        queue.async { [store] in
+            store.clear()
+            receipt.resolve(())
+        }
+        return receipt
     }
 }

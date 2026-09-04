@@ -35,22 +35,23 @@ pub(crate) fn resume_position_to_save_on_deactivation(live_position_ms: u32) -> 
     (live_position_ms > 0).then_some(live_position_ms)
 }
 
-/// Starts the player-event listener for `generation` and returns the stop sender.
+/// Starts the player-event listener for `generation` and returns its stop sender and task.
 ///
-/// The caller stores the sender in [`PLAYER_EVENT_TX`]. Teardown takes it and signals stop
-/// before dropping the Player. This listener belongs to `generation` for its whole life: a
+/// The caller stores the sender in [`PLAYER_EVENT_TX`] and owns the returned task with the rest
+/// of the generation's handles. Teardown takes the sender and signals stop before awaiting the
+/// task and dropping the Player. This listener belongs to `generation` for its whole life: a
 /// rebuild replaces the listener along with the session, so the captured value never has to
 /// change underneath it. A Player clone is held until the task exits so the event channel
-/// does not close while the pump is still running.
+/// does not close while the pump is still running. The caller subscribes before constructing
+/// Spirc, then starts this consumer after publication so early initialization events are buffered.
 pub(crate) fn start_player_event_pump(
-    player: Arc<dyn SpircPlayer>,
+    player: Arc<Player>,
+    mut event_channel: mpsc::UnboundedReceiver<PlayerEvent>,
     generation: u64,
-) -> mpsc::UnboundedSender<()> {
-    // Opt in to SetQueue events along with the rest of the player stream.
-    let mut event_channel = player.get_player_event_channel();
+) -> (mpsc::UnboundedSender<()>, JoinHandle<()>) {
     let (tx, mut rx) = mpsc::unbounded_channel::<()>();
     let player_keepalive = Arc::clone(&player);
-    RUNTIME.spawn(async move {
+    let task = RUNTIME.spawn(async move {
         loop {
             tokio::select! {
                 _ = rx.recv() => {
@@ -82,7 +83,7 @@ pub(crate) fn start_player_event_pump(
         }
         drop(player_keepalive);
     });
-    tx
+    (tx, task)
 }
 
 fn apply_player_event(event: PlayerEvent, event_listener_generation: u64) {

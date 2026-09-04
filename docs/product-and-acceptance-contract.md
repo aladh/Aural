@@ -45,6 +45,10 @@ measured baselines belong in [playback engine ownership](playback-engine-ownersh
 
 ## Playback presentation and ownership
 
+- The pinned Rust/librespot engine is the sole production implementation for the Spotify session,
+  Connect, streaming, decryption, decoding, and playback protocol. Swift owns application policy
+  and presentation; decoded PCM crosses the narrow playback adapter into the native AVFoundation
+  renderer.
 - Spotty mirrors the active Spotify Connect device automatically, including a device owned by a
   different computer. The now-playing title, artist, artwork, position, play/pause state, queue,
   and available controls must follow that owner without requiring a manual refresh.
@@ -96,10 +100,9 @@ measured baselines belong in [playback engine ownership](playback-engine-ownersh
   account-epoch-invalidated in-flight removals also leave the visible queue intact, without
   transient feedback.
 - Local-owner removal is disabled: librespot `Spirc` at the pinned revision exposes `add_to_queue`
-  only, and inbound `SetQueue` is not a public local command. The follow-up is a tested Spirc
-  replacement export (or proven same-device HTTP `set_queue`), not a second owner. Add to Queue
-  remains available for local and remote owners, including multiple selected tracks in visible
-  order.
+  only, and inbound `SetQueue` is not a public local command. Any future support must remain within
+  the retained engine boundary and pass focused checks. Add to Queue remains available for local
+  and remote owners, including multiple selected tracks in visible order.
 
 ## Playlist behavior
 

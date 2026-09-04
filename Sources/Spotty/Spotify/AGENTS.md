@@ -4,6 +4,10 @@ This directory owns account/auth, catalog, Connect, playback state/effects, queu
 boundaries. Read the relevant ADRs and the
 [product contract](../../../docs/product-and-acceptance-contract.md).
 
+The pinned Rust/librespot engine is the sole production owner of session, Connect, streaming,
+decryption, and decoding. Keep the existing PCM path through the adapter and do not add a parallel
+audio or protocol implementation.
+
 ## State, effects, and dependencies
 
 - `SpottyDomain.PlaybackState` is the single atomic presentation snapshot and `PlaybackReducer` its
@@ -42,6 +46,6 @@ boundaries. Read the relevant ADRs and the
   engine session generation and the readiness hold; do not widen `spotty_playback_resume`.
 - Keep read-only catalog access separate from playlist mutation. Writes use `PlaylistMutating` and
   `PlaylistMutationController`; Pathfinder mutation DTOs do not enter views.
-- PCM goes directly from the engine adapter to `AudioRenderer`, never observable UI state. Keep
-  callbacks bounded and never block the Rust callback thread.
+- PCM goes directly from the retained engine adapter to `AudioRenderer`, never observable UI state.
+  Keep callbacks bounded and never block the Rust callback thread.
 - Never log tokens, cookies, redirects, raw payloads, or private identifiers.

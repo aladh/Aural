@@ -30,9 +30,8 @@ SOFTWARE.
 ## librespot
 
 The Rust bridge links upstream [librespot](https://github.com/librespot-org/librespot), pinned to
-commit `9c7d75615fc093bdcbdb29adbce3fed38c531852`. librespot is MIT licensed. Its `connect` crate
-is vendored under `Backend/vendor/librespot-connect` with a small patch (see that directory's
-`PATCHES.md`); it carries the same license and copyright below.
+commit `9c7d75615fc093bdcbdb29adbce3fed38c531852`, including its unmodified `connect` crate.
+librespot is MIT licensed and carries the copyright below.
 
 Copyright (c) 2015 Paul Lietar
 

@@ -16,6 +16,7 @@ enum PlaybackEffectID: Hashable {
     case commandError
     case engineRecovery
     case reconnectRehydration
+    case credentialRejection
     case command(UUID)
     case queueCommand(UUID)
 

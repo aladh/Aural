@@ -11,6 +11,13 @@ fn dropped_unbounded_command_receiver_maps_to_needs_reinit() {
     let err = librespot_core::Error::from(send_error);
 
     assert_eq!(err.kind, ErrorKind::Internal);
+    // Exercise the same shared result wrapper used by load/play/activation call paths, rather
+    // than only testing the classifier in isolation. A closed command receiver is the retained
+    // engine's deterministic reinitialization signal.
+    assert_eq!(
+        spirc_error("closed-command-fixture", &err),
+        ERROR_NEEDS_REINIT
+    );
     assert_eq!(classify_spirc_command_error(&err), ERROR_NEEDS_REINIT);
 }
 

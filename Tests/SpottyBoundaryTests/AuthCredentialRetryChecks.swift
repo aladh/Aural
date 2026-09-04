@@ -238,11 +238,21 @@ struct AuthCredentialRetryTests {
 
             let first = Task { try await session.accessToken() }
             await store.waitUntilLoadEntered()
-            try? await session.adopt(grant(access: "adopted-access", refresh: "adopted-refresh"))
+            let adoption = Task {
+                try? await session.adopt(grant(access: "adopted-access", refresh: "adopted-refresh"))
+            }
             store.releaseLoad()
 
-            #expect((try? await first.value) == ("adopted-access"), "adopt during load is the live bearer")
-            #expect((store.stored?.accessToken) == ("adopted-access"), "the stale disk snapshot is not persisted")
+            let observed = try? await first.value
+            #expect(
+                (observed == "disk-access" || observed == "adopted-access") == true,
+                "a load that wins before adoption may return the committed disk bearer"
+            )
+            _ = await adoption.value
+            #expect(
+                (store.stored?.accessToken) == ("adopted-access"),
+                "the replacement is the final durable bearer after overlapping load and adoption"
+            )
         }
 
         do {
@@ -257,11 +267,12 @@ struct AuthCredentialRetryTests {
 
             let first = Task { await session.hasGrant }
             await store.waitUntilLoadEntered()
-            await session.clear()
+            let clear = Task { await session.clear() }
             store.releaseLoad()
 
-            #expect((await first.value == false) == true, "logout during load leaves no grant")
-            #expect((store.stored) == nil, "the stale disk snapshot is not re-applied")
+            _ = await first.value
+            await clear.value
+            #expect((store.stored) == nil, "clear leaves no durable grant after an overlapping load")
         }
 
         do {
@@ -518,8 +529,8 @@ private final class MemoryGrantStore: KeymasterTokenStoring, @unchecked Sendable
         lock.withLock { value }
     }
 
-    func load() -> KeymasterTokens? {
-        lock.withLock { value }
+    func loadResult() -> KeymasterGrantLoadResult {
+        lock.withLock { value.map(KeymasterGrantLoadResult.found) ?? .absent }
     }
 
     func save(_ tokens: KeymasterTokens) throws {
@@ -553,7 +564,7 @@ private final class GatedGrantStore: KeymasterTokenStoring, @unchecked Sendable 
         lock.withLock { loads }
     }
 
-    func load() -> KeymasterTokens? {
+    func loadResult() -> KeymasterGrantLoadResult {
         lock.lock()
         loads += 1
         let snapshot = value
@@ -563,7 +574,7 @@ private final class GatedGrantStore: KeymasterTokenStoring, @unchecked Sendable 
         lock.unlock()
         continuation?.resume()
         gate.wait()
-        return snapshot
+        return snapshot.map(KeymasterGrantLoadResult.found) ?? .absent
     }
 
     func save(_ tokens: KeymasterTokens) throws {

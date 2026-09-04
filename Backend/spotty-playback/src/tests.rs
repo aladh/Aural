@@ -1,5 +1,4 @@
 use super::*;
-use crate::audio_key::spotty_playback_audio_key;
 
 #[test]
 fn connect_config_advertises_configured_device_name() {
@@ -607,43 +606,6 @@ fn control_snapshot_stamps_are_monotonic_and_session_scoped() {
     assert_eq!(second.session_generation, expected_generation);
 }
 
-#[test]
-fn audio_key_null_pointers_are_rejected() {
-    let track_gid = [0u8; 16];
-    let file_id = [0u8; 20];
-    let mut key_out = [0u8; 16];
-
-    assert_eq!(
-        spotty_playback_audio_key(std::ptr::null(), file_id.as_ptr(), key_out.as_mut_ptr()),
-        ERROR_GENERAL
-    );
-    assert_eq!(
-        spotty_playback_audio_key(track_gid.as_ptr(), std::ptr::null(), key_out.as_mut_ptr()),
-        ERROR_GENERAL
-    );
-    assert_eq!(
-        spotty_playback_audio_key(track_gid.as_ptr(), file_id.as_ptr(), std::ptr::null_mut()),
-        ERROR_GENERAL
-    );
-}
-
-#[test]
-fn audio_key_with_no_session_is_not_connected() {
-    let _guard = lock_global_state();
-    let track_gid = [0u8; 16];
-    let file_id = [0u8; 20];
-    let mut key_out = [0u8; 16];
-
-    // No session has been built in this test binary, so the connection guard must reject
-    // the request before any key bytes are touched.
-    with_connection(|c| c.session_connected = false);
-
-    assert_eq!(
-        spotty_playback_audio_key(track_gid.as_ptr(), file_id.as_ptr(), key_out.as_mut_ptr()),
-        ERROR_NOT_CONNECTED
-    );
-}
-
 /// The checked-in C fixture uses Clang's canonical function-type spelling. Keep each row paired
 /// with a Rust assignment here: a changed Rust `extern "C"` definition fails to compile, while
 /// `Scripts/check.sh` compares these C spellings to the parsed header before linking the archive.
@@ -669,11 +631,6 @@ fn exported_c_function_signatures() -> Vec<ExportedCFunctionSignature> {
         spotty_playback_add_to_queue,
         extern "C" fn(*const c_char) -> i32,
         "SpottyPlaybackResult (const char *)"
-    );
-    signature!(
-        spotty_playback_audio_key,
-        extern "C" fn(*const u8, *const u8, *mut u8) -> i32,
-        "SpottyPlaybackResult (const uint8_t *, const uint8_t *, uint8_t *)"
     );
     signature!(
         spotty_playback_authorize_streaming,
@@ -767,11 +724,6 @@ fn exported_c_function_signatures() -> Vec<ExportedCFunctionSignature> {
         "SpottyPlaybackResult (void)"
     );
     signature!(
-        spotty_playback_register_audio_command_callback,
-        extern "C" fn(AudioCommandCallback),
-        "void (AudioCommandCallback)"
-    );
-    signature!(
         spotty_playback_register_audio_control_callback,
         extern "C" fn(extern "C" fn(u8)),
         "void (AudioControlCallback)"
@@ -800,11 +752,6 @@ fn exported_c_function_signatures() -> Vec<ExportedCFunctionSignature> {
         spotty_playback_register_queue_callback,
         extern "C" fn(QueueSnapshotCallback),
         "void (QueueCallback)"
-    );
-    signature!(
-        spotty_playback_report_audio,
-        extern "C" fn(u64, u64, u8, u32, u32) -> i32,
-        "SpottyPlaybackResult (uint64_t, uint64_t, SpottyAudioReportKind, uint32_t, uint32_t)"
     );
     signature!(
         spotty_playback_resume,
@@ -902,7 +849,7 @@ fn parse_abi_signature_fixture(fixture: &str) -> Vec<ExportedCFunctionSignature>
 #[test]
 fn exported_c_function_signatures_are_stable() {
     let signatures = exported_c_function_signatures();
-    assert_eq!(signatures.len(), 41);
+    assert_eq!(signatures.len(), 38);
 }
 
 /// The checked-in C fixture is compared to the header by `Scripts/check.sh`; this Rust-side
@@ -916,59 +863,379 @@ fn exported_c_function_signatures_match_fixture() {
     );
 }
 
-/// `SpottyAudioCommand` must match the header's struct byte for byte: the whole Stage 1 audio
-/// path reads its fields straight out of this snapshot on the Swift side.
+/// Compiles a C consumer with the same header and shim that Swift imports, then compares every
+/// retained C layout value with Rust's `repr(C)` type at runtime. Keeping the expected values
+/// derived from Rust means a one-sided field/order change fails this test instead of silently
+/// passing a table of duplicated constants. The compiler step is intentionally in the test
+/// binary: it adds no production export or dependency and exercises the actual C consumer ABI.
 #[test]
-fn audio_command_repr_c_layout_matches_header() {
-    assert_eq!(std::mem::size_of::<SpottyAudioCommand>(), 72);
-    assert_eq!(std::mem::align_of::<SpottyAudioCommand>(), 8);
-    assert_eq!(
-        std::mem::offset_of!(SpottyAudioCommand, session_generation),
-        0
-    );
-    assert_eq!(std::mem::offset_of!(SpottyAudioCommand, play_request_id), 8);
-    assert_eq!(std::mem::offset_of!(SpottyAudioCommand, track_uri), 16);
-    assert_eq!(std::mem::offset_of!(SpottyAudioCommand, position_ms), 24);
-    assert_eq!(std::mem::offset_of!(SpottyAudioCommand, duration_ms), 28);
-    assert_eq!(std::mem::offset_of!(SpottyAudioCommand, track_gid), 32);
-    assert_eq!(std::mem::offset_of!(SpottyAudioCommand, file_id), 48);
-    assert_eq!(std::mem::offset_of!(SpottyAudioCommand, kind), 68);
-    assert_eq!(std::mem::offset_of!(SpottyAudioCommand, audio_format), 69);
-    assert_eq!(std::mem::offset_of!(SpottyAudioCommand, start_playing), 70);
-}
+fn c_consumer_layout_matches_rust_repr_c_layouts() {
+    use std::collections::BTreeMap;
+    use std::path::{Path, PathBuf};
+    use std::process::Command;
 
-#[test]
-fn connection_snapshot_repr_c_layout_matches_header() {
-    assert_eq!(std::mem::size_of::<SpottyConnectionSnapshot>(), 40);
-    assert_eq!(std::mem::align_of::<SpottyConnectionSnapshot>(), 8);
-    assert_eq!(std::mem::offset_of!(SpottyConnectionSnapshot, revision), 0);
-    assert_eq!(
-        std::mem::offset_of!(SpottyConnectionSnapshot, session_generation),
-        8
+    struct TempDirectory(PathBuf);
+
+    impl Drop for TempDirectory {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.0);
+        }
+    }
+
+    let manifest_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let include_dir = manifest_dir.join("../../Sources/SpottyPlaybackCore/include");
+    let shim_path = manifest_dir.join("../../Sources/SpottyPlaybackCore/spotty_playback_shim.c");
+    let nonce = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .expect("system clock is after the Unix epoch")
+        .as_nanos();
+    let probe_dir = std::env::temp_dir().join(format!(
+        "spotty-c-rust-abi-{}-{}",
+        std::process::id(),
+        nonce
+    ));
+    std::fs::create_dir(&probe_dir).expect("create temporary ABI probe directory");
+    let _temporary_directory = TempDirectory(probe_dir.clone());
+    let source_path = probe_dir.join("probe.c");
+    let binary_path = probe_dir.join("probe");
+
+    let source = r#"
+#include "spotty_playback.h"
+#include <stddef.h>
+#include <stdio.h>
+
+#define EMIT_TYPE(T) \
+    printf("type|%s|size|%zu\n", #T, sizeof(T)); \
+    printf("type|%s|align|%zu\n", #T, _Alignof(T))
+#define EMIT_FIELD(T, F) \
+    printf("field|%s|%s|%zu\n", #T, #F, offsetof(T, F))
+#define EMIT_PRIMITIVE(LABEL, T) \
+    printf("primitive|%s|size|%zu\n", LABEL, sizeof(T)); \
+    printf("primitive|%s|align|%zu\n", LABEL, _Alignof(T))
+
+int main(void) {
+    EMIT_PRIMITIVE("uint8_t", uint8_t);
+    EMIT_PRIMITIVE("uint16_t", uint16_t);
+    EMIT_PRIMITIVE("uint32_t", uint32_t);
+    EMIT_PRIMITIVE("uint64_t", uint64_t);
+    EMIT_PRIMITIVE("int32_t", int32_t);
+    EMIT_PRIMITIVE("int64_t", int64_t);
+    EMIT_PRIMITIVE("size_t", size_t);
+    EMIT_PRIMITIVE("_Bool", _Bool);
+    EMIT_PRIMITIVE("pointer", void*);
+
+    EMIT_TYPE(SpottyStringPair);
+    EMIT_FIELD(SpottyStringPair, key);
+    EMIT_FIELD(SpottyStringPair, value);
+
+    EMIT_TYPE(SpottyRestriction);
+    EMIT_FIELD(SpottyRestriction, key);
+    EMIT_FIELD(SpottyRestriction, reasons);
+    EMIT_FIELD(SpottyRestriction, reason_count);
+
+    EMIT_TYPE(SpottyProtocolQueueTrack);
+    EMIT_FIELD(SpottyProtocolQueueTrack, uri);
+    EMIT_FIELD(SpottyProtocolQueueTrack, uid);
+    EMIT_FIELD(SpottyProtocolQueueTrack, provider);
+    EMIT_FIELD(SpottyProtocolQueueTrack, metadata);
+    EMIT_FIELD(SpottyProtocolQueueTrack, metadata_count);
+    EMIT_FIELD(SpottyProtocolQueueTrack, removed);
+    EMIT_FIELD(SpottyProtocolQueueTrack, removed_count);
+    EMIT_FIELD(SpottyProtocolQueueTrack, blocked);
+    EMIT_FIELD(SpottyProtocolQueueTrack, blocked_count);
+    EMIT_FIELD(SpottyProtocolQueueTrack, restrictions);
+    EMIT_FIELD(SpottyProtocolQueueTrack, restriction_count);
+    EMIT_FIELD(SpottyProtocolQueueTrack, album_uri);
+    EMIT_FIELD(SpottyProtocolQueueTrack, disallow_reasons);
+    EMIT_FIELD(SpottyProtocolQueueTrack, disallow_reason_count);
+    EMIT_FIELD(SpottyProtocolQueueTrack, artist_uri);
+
+    EMIT_TYPE(SpottyQueueSnapshot);
+    EMIT_FIELD(SpottyQueueSnapshot, revision);
+    EMIT_FIELD(SpottyQueueSnapshot, session_generation);
+    EMIT_FIELD(SpottyQueueSnapshot, track_uri);
+    EMIT_FIELD(SpottyQueueSnapshot, track_provider);
+    EMIT_FIELD(SpottyQueueSnapshot, track_uid);
+    EMIT_FIELD(SpottyQueueSnapshot, next_tracks);
+    EMIT_FIELD(SpottyQueueSnapshot, next_count);
+    EMIT_FIELD(SpottyQueueSnapshot, prev_tracks);
+    EMIT_FIELD(SpottyQueueSnapshot, prev_count);
+    EMIT_FIELD(SpottyQueueSnapshot, queue_revision);
+    EMIT_FIELD(SpottyQueueSnapshot, disallow_set_queue);
+    EMIT_FIELD(SpottyQueueSnapshot, disallow_removing_from_next_tracks);
+
+    EMIT_TYPE(SpottyPlaybackSnapshot);
+    EMIT_FIELD(SpottyPlaybackSnapshot, revision);
+    EMIT_FIELD(SpottyPlaybackSnapshot, session_generation);
+    EMIT_FIELD(SpottyPlaybackSnapshot, position_ms);
+    EMIT_FIELD(SpottyPlaybackSnapshot, duration_ms);
+    EMIT_FIELD(SpottyPlaybackSnapshot, timestamp_ms);
+    EMIT_FIELD(SpottyPlaybackSnapshot, is_playing);
+    EMIT_FIELD(SpottyPlaybackSnapshot, is_paused);
+    EMIT_FIELD(SpottyPlaybackSnapshot, shuffle);
+    EMIT_FIELD(SpottyPlaybackSnapshot, repeat_track);
+    EMIT_FIELD(SpottyPlaybackSnapshot, repeat_context);
+    EMIT_FIELD(SpottyPlaybackSnapshot, is_active_device);
+    EMIT_FIELD(SpottyPlaybackSnapshot, track_uri);
+    EMIT_FIELD(SpottyPlaybackSnapshot, context_uri);
+
+    EMIT_TYPE(SpottyProtocolDevice);
+    EMIT_FIELD(SpottyProtocolDevice, id);
+    EMIT_FIELD(SpottyProtocolDevice, name);
+    EMIT_FIELD(SpottyProtocolDevice, device_type);
+
+    EMIT_TYPE(SpottyDevicesSnapshot);
+    EMIT_FIELD(SpottyDevicesSnapshot, revision);
+    EMIT_FIELD(SpottyDevicesSnapshot, session_generation);
+    EMIT_FIELD(SpottyDevicesSnapshot, active_device_id);
+    EMIT_FIELD(SpottyDevicesSnapshot, devices);
+    EMIT_FIELD(SpottyDevicesSnapshot, device_count);
+
+    EMIT_TYPE(SpottyConnectionSnapshot);
+    EMIT_FIELD(SpottyConnectionSnapshot, revision);
+    EMIT_FIELD(SpottyConnectionSnapshot, session_generation);
+    EMIT_FIELD(SpottyConnectionSnapshot, session_connected);
+    EMIT_FIELD(SpottyConnectionSnapshot, spirc_ready);
+    EMIT_FIELD(SpottyConnectionSnapshot, is_active_device);
+    EMIT_FIELD(SpottyConnectionSnapshot, resume_pending);
+    EMIT_FIELD(SpottyConnectionSnapshot, credentials_rejected);
+    EMIT_FIELD(SpottyConnectionSnapshot, device_id);
+    EMIT_FIELD(SpottyConnectionSnapshot, last_error);
+
+    EMIT_TYPE(SpottyPlaybackResult);
+    printf("enum|SpottyPlaybackResult|value|SpottyPlaybackResultOk|%d\n", (int)SpottyPlaybackResultOk);
+    printf("enum|SpottyPlaybackResult|value|SpottyPlaybackResultError|%d\n", (int)SpottyPlaybackResultError);
+    printf("enum|SpottyPlaybackResult|value|SpottyPlaybackResultSessionDisconnected|%d\n", (int)SpottyPlaybackResultSessionDisconnected);
+    printf("enum|SpottyPlaybackResult|value|SpottyPlaybackResultSessionNotConnected|%d\n", (int)SpottyPlaybackResultSessionNotConnected);
+
+    EMIT_TYPE(SpottyPlaybackAudioControlEvent);
+    printf("enum|SpottyPlaybackAudioControlEvent|value|SpottyPlaybackAudioControlEventStop|%d\n", (int)SpottyPlaybackAudioControlEventStop);
+    printf("enum|SpottyPlaybackAudioControlEvent|value|SpottyPlaybackAudioControlEventStart|%d\n", (int)SpottyPlaybackAudioControlEventStart);
+    printf("enum|SpottyPlaybackAudioControlEvent|value|SpottyPlaybackAudioControlEventClear|%d\n", (int)SpottyPlaybackAudioControlEventClear);
+    return 0;
+}
+"#;
+    std::fs::write(&source_path, source).expect("write C ABI probe");
+
+    let compile = Command::new("clang")
+        .args([
+            "-std=c11",
+            source_path.to_str().expect("probe path is UTF-8"),
+            shim_path.to_str().expect("shim path is UTF-8"),
+            "-I",
+            include_dir.to_str().expect("header path is UTF-8"),
+            "-o",
+            binary_path.to_str().expect("binary path is UTF-8"),
+        ])
+        .output()
+        .expect("clang is required for the C consumer ABI proof");
+    assert!(
+        compile.status.success(),
+        "clang could not compile the C consumer ABI probe: {}",
+        String::from_utf8_lossy(&compile.stderr)
     );
-    assert_eq!(
-        std::mem::offset_of!(SpottyConnectionSnapshot, session_connected),
-        16
+
+    let run = Command::new(&binary_path)
+        .output()
+        .expect("run C ABI probe");
+    assert!(
+        run.status.success(),
+        "C ABI probe failed: {}",
+        String::from_utf8_lossy(&run.stderr)
     );
-    assert_eq!(
-        std::mem::offset_of!(SpottyConnectionSnapshot, spirc_ready),
-        17
+
+    let mut c_values = BTreeMap::new();
+    for line in String::from_utf8(run.stdout)
+        .expect("C ABI probe output is UTF-8")
+        .lines()
+    {
+        let fields = line.split('|').collect::<Vec<_>>();
+        assert!(fields.len() >= 3, "malformed C ABI probe row: {line}");
+        let value = fields.last().expect("ABI row has a value");
+        let key = fields[..fields.len() - 1].join("|");
+        assert!(
+            c_values.insert(key, value.to_string()).is_none(),
+            "C ABI probe emitted a duplicate row: {line}"
+        );
+    }
+
+    let mut rust_values = BTreeMap::new();
+    macro_rules! rust_primitive {
+        ($name:literal, $ty:ty) => {{
+            rust_values.insert(
+                format!("primitive|{}|size", $name),
+                std::mem::size_of::<$ty>().to_string(),
+            );
+            rust_values.insert(
+                format!("primitive|{}|align", $name),
+                std::mem::align_of::<$ty>().to_string(),
+            );
+        }};
+    }
+    rust_primitive!("uint8_t", u8);
+    rust_primitive!("uint16_t", u16);
+    rust_primitive!("uint32_t", u32);
+    rust_primitive!("uint64_t", u64);
+    rust_primitive!("int32_t", i32);
+    rust_primitive!("int64_t", i64);
+    rust_primitive!("size_t", usize);
+    rust_primitive!("_Bool", bool);
+    rust_primitive!("pointer", *const c_char);
+
+    macro_rules! rust_layout {
+        ($name:literal, $ty:ty, $( $field:ident ),+ $(,)?) => {{
+            rust_values.insert(
+                format!("type|{}|size", $name),
+                std::mem::size_of::<$ty>().to_string(),
+            );
+            rust_values.insert(
+                format!("type|{}|align", $name),
+                std::mem::align_of::<$ty>().to_string(),
+            );
+            $(
+                rust_values.insert(
+                    format!("field|{}|{}", $name, stringify!($field)),
+                    std::mem::offset_of!($ty, $field).to_string(),
+                );
+            )+
+        }};
+    }
+    rust_layout!("SpottyStringPair", SpottyStringPair, key, value);
+    rust_layout!(
+        "SpottyRestriction",
+        SpottyRestriction,
+        key,
+        reasons,
+        reason_count
     );
-    assert_eq!(
-        std::mem::offset_of!(SpottyConnectionSnapshot, is_active_device),
-        18
+    rust_layout!(
+        "SpottyProtocolQueueTrack",
+        SpottyProtocolQueueTrack,
+        uri,
+        uid,
+        provider,
+        metadata,
+        metadata_count,
+        removed,
+        removed_count,
+        blocked,
+        blocked_count,
+        restrictions,
+        restriction_count,
+        album_uri,
+        disallow_reasons,
+        disallow_reason_count,
+        artist_uri
     );
-    assert_eq!(
-        std::mem::offset_of!(SpottyConnectionSnapshot, resume_pending),
-        19
+    rust_layout!(
+        "SpottyQueueSnapshot",
+        SpottyQueueSnapshot,
+        revision,
+        session_generation,
+        track_uri,
+        track_provider,
+        track_uid,
+        next_tracks,
+        next_count,
+        prev_tracks,
+        prev_count,
+        queue_revision,
+        disallow_set_queue,
+        disallow_removing_from_next_tracks
     );
-    assert_eq!(
-        std::mem::offset_of!(SpottyConnectionSnapshot, device_id),
-        24
+    rust_layout!(
+        "SpottyPlaybackSnapshot",
+        SpottyPlaybackSnapshot,
+        revision,
+        session_generation,
+        position_ms,
+        duration_ms,
+        timestamp_ms,
+        is_playing,
+        is_paused,
+        shuffle,
+        repeat_track,
+        repeat_context,
+        is_active_device,
+        track_uri,
+        context_uri
     );
+    rust_layout!(
+        "SpottyProtocolDevice",
+        SpottyProtocolDevice,
+        id,
+        name,
+        device_type
+    );
+    rust_layout!(
+        "SpottyDevicesSnapshot",
+        SpottyDevicesSnapshot,
+        revision,
+        session_generation,
+        active_device_id,
+        devices,
+        device_count
+    );
+    rust_layout!(
+        "SpottyConnectionSnapshot",
+        SpottyConnectionSnapshot,
+        revision,
+        session_generation,
+        session_connected,
+        spirc_ready,
+        is_active_device,
+        resume_pending,
+        credentials_rejected,
+        device_id,
+        last_error
+    );
+    rust_values.insert(
+        "type|SpottyPlaybackResult|size".to_string(),
+        std::mem::size_of::<i32>().to_string(),
+    );
+    rust_values.insert(
+        "type|SpottyPlaybackResult|align".to_string(),
+        std::mem::align_of::<i32>().to_string(),
+    );
+    for (name, value) in [
+        ("SpottyPlaybackResultOk", 0),
+        ("SpottyPlaybackResultError", ERROR_GENERAL),
+        (
+            "SpottyPlaybackResultSessionDisconnected",
+            ERROR_NEEDS_REINIT,
+        ),
+        (
+            "SpottyPlaybackResultSessionNotConnected",
+            ERROR_NOT_CONNECTED,
+        ),
+    ] {
+        rust_values.insert(
+            format!("enum|SpottyPlaybackResult|value|{name}"),
+            value.to_string(),
+        );
+    }
+    rust_values.insert(
+        "type|SpottyPlaybackAudioControlEvent|size".to_string(),
+        std::mem::size_of::<u8>().to_string(),
+    );
+    rust_values.insert(
+        "type|SpottyPlaybackAudioControlEvent|align".to_string(),
+        std::mem::align_of::<u8>().to_string(),
+    );
+    for (name, value) in [
+        ("SpottyPlaybackAudioControlEventStop", 0),
+        ("SpottyPlaybackAudioControlEventStart", 1),
+        ("SpottyPlaybackAudioControlEventClear", 2),
+    ] {
+        rust_values.insert(
+            format!("enum|SpottyPlaybackAudioControlEvent|value|{name}"),
+            value.to_string(),
+        );
+    }
+
     assert_eq!(
-        std::mem::offset_of!(SpottyConnectionSnapshot, last_error),
-        32
+        c_values, rust_values,
+        "C consumer and Rust repr(C) ABI layouts or enum encodings differ"
     );
 }
 
@@ -982,6 +1249,7 @@ fn connection_snapshot_callback_copies_nullable_fields() {
         assert_eq!(snapshot.spirc_ready, 1);
         assert_eq!(snapshot.is_active_device, 1);
         assert_eq!(snapshot.resume_pending, 1);
+        assert_eq!(snapshot.credentials_rejected, 1);
         assert!(!snapshot.device_id.is_null());
         assert_eq!(
             unsafe { CStr::from_ptr(snapshot.device_id) }
@@ -1003,6 +1271,7 @@ fn connection_snapshot_callback_copies_nullable_fields() {
             spirc_ready: true,
             device_id: Some("fixture-mac".to_string()),
             last_error: None,
+            credentials_rejected: true,
             is_active_device: true,
             resume_pending: true,
         },
@@ -1011,6 +1280,7 @@ fn connection_snapshot_callback_copies_nullable_fields() {
     extern "C" fn capture_missing(snapshot: *const SpottyConnectionSnapshot) {
         let snapshot = unsafe { &*snapshot };
         assert_eq!(snapshot.resume_pending, 0);
+        assert_eq!(snapshot.credentials_rejected, 0);
         assert!(snapshot.device_id.is_null());
         assert!(!snapshot.last_error.is_null());
         assert_eq!(
@@ -1032,6 +1302,7 @@ fn connection_snapshot_callback_copies_nullable_fields() {
             spirc_ready: false,
             device_id: None,
             last_error: Some("fixture-session-timeout".to_string()),
+            credentials_rejected: false,
             is_active_device: false,
             resume_pending: false,
         },
@@ -1041,6 +1312,7 @@ fn connection_snapshot_callback_copies_nullable_fields() {
         let snapshot = unsafe { &*snapshot };
         assert!(snapshot.device_id.is_null());
         assert!(snapshot.last_error.is_null());
+        assert_eq!(snapshot.credentials_rejected, 0);
     }
 
     send_connection_snapshot(
@@ -1054,48 +1326,10 @@ fn connection_snapshot_callback_copies_nullable_fields() {
             spirc_ready: false,
             device_id: Some(String::new()),
             last_error: Some("err\0or".to_string()),
+            credentials_rejected: false,
             is_active_device: false,
             resume_pending: false,
         },
-    );
-}
-
-#[test]
-fn playback_snapshot_repr_c_layout_matches_header() {
-    assert_eq!(std::mem::size_of::<SpottyPlaybackSnapshot>(), 64);
-    assert_eq!(std::mem::align_of::<SpottyPlaybackSnapshot>(), 8);
-    assert_eq!(std::mem::offset_of!(SpottyPlaybackSnapshot, revision), 0);
-    assert_eq!(
-        std::mem::offset_of!(SpottyPlaybackSnapshot, session_generation),
-        8
-    );
-    assert_eq!(
-        std::mem::offset_of!(SpottyPlaybackSnapshot, position_ms),
-        16
-    );
-    assert_eq!(
-        std::mem::offset_of!(SpottyPlaybackSnapshot, duration_ms),
-        24
-    );
-    assert_eq!(
-        std::mem::offset_of!(SpottyPlaybackSnapshot, timestamp_ms),
-        32
-    );
-    assert_eq!(std::mem::offset_of!(SpottyPlaybackSnapshot, is_playing), 40);
-    assert_eq!(std::mem::offset_of!(SpottyPlaybackSnapshot, is_paused), 41);
-    assert_eq!(std::mem::offset_of!(SpottyPlaybackSnapshot, shuffle), 42);
-    assert_eq!(
-        std::mem::offset_of!(SpottyPlaybackSnapshot, repeat_track),
-        43
-    );
-    assert_eq!(
-        std::mem::offset_of!(SpottyPlaybackSnapshot, repeat_context),
-        44
-    );
-    assert_eq!(std::mem::offset_of!(SpottyPlaybackSnapshot, track_uri), 48);
-    assert_eq!(
-        std::mem::offset_of!(SpottyPlaybackSnapshot, context_uri),
-        56
     );
 }
 
@@ -1110,6 +1344,7 @@ fn playback_snapshot_callback_copies_nullable_fields() {
         assert_eq!(snapshot.shuffle, 1);
         assert_eq!(snapshot.repeat_track, 0);
         assert_eq!(snapshot.repeat_context, 1);
+        assert_eq!(snapshot.is_active_device, 1);
         assert_eq!(snapshot.position_ms, 1_250);
         assert_eq!(snapshot.duration_ms, 180_000);
         assert_eq!(snapshot.timestamp_ms, 1_700_000_000_000);
@@ -1145,6 +1380,7 @@ fn playback_snapshot_callback_copies_nullable_fields() {
             shuffle: true,
             repeat_track: false,
             repeat_context: true,
+            is_active_device: true,
             timestamp_ms: 1_700_000_000_000,
         },
     );
@@ -1155,6 +1391,7 @@ fn playback_snapshot_callback_copies_nullable_fields() {
         assert!(snapshot.context_uri.is_null());
         assert_eq!(snapshot.is_playing, 0);
         assert_eq!(snapshot.is_paused, 0);
+        assert_eq!(snapshot.is_active_device, 0);
     }
 
     send_playback_snapshot(
@@ -1173,33 +1410,9 @@ fn playback_snapshot_callback_copies_nullable_fields() {
             shuffle: false,
             repeat_track: false,
             repeat_context: false,
+            is_active_device: false,
             timestamp_ms: 0,
         },
-    );
-}
-
-#[test]
-fn devices_snapshot_repr_c_layout_matches_header() {
-    assert_eq!(std::mem::size_of::<SpottyProtocolDevice>(), 24);
-    assert_eq!(std::mem::align_of::<SpottyProtocolDevice>(), 8);
-    assert_eq!(std::mem::offset_of!(SpottyProtocolDevice, id), 0);
-    assert_eq!(std::mem::offset_of!(SpottyProtocolDevice, name), 8);
-    assert_eq!(std::mem::offset_of!(SpottyProtocolDevice, device_type), 16);
-    assert_eq!(std::mem::size_of::<SpottyDevicesSnapshot>(), 40);
-    assert_eq!(std::mem::align_of::<SpottyDevicesSnapshot>(), 8);
-    assert_eq!(std::mem::offset_of!(SpottyDevicesSnapshot, revision), 0);
-    assert_eq!(
-        std::mem::offset_of!(SpottyDevicesSnapshot, session_generation),
-        8
-    );
-    assert_eq!(
-        std::mem::offset_of!(SpottyDevicesSnapshot, active_device_id),
-        16
-    );
-    assert_eq!(std::mem::offset_of!(SpottyDevicesSnapshot, devices), 24);
-    assert_eq!(
-        std::mem::offset_of!(SpottyDevicesSnapshot, device_count),
-        32
     );
 }
 

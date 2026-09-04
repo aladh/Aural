@@ -20,6 +20,10 @@ final class AccountStore {
             onPhaseChange?(phase)
         }
     }
+    /// A credential-rejected engine session must be replaced by a fresh browser authorization.
+    /// Keeping this separate from `phase` lets ordinary transport failures reconnect with the
+    /// current grant while making the explicit reauthentication path durable until it succeeds.
+    private(set) var requiresReauthentication = false
     /// Sole writable account-epoch owner. `PlaybackStore.accountEpoch` projects this value;
     /// `PlaybackState.accountEpoch` is reducer-owned accepted snapshot state, not a second
     /// imperative counter.
@@ -32,6 +36,7 @@ final class AccountStore {
     @ObservationIgnored private var teardown = SessionTeardownCoalescer()
     @ObservationIgnored private var teardownTask: Task<SessionTeardownIntent, Never>?
     @ObservationIgnored var onPhaseChange: ((PlaybackSessionPhase) -> Void)?
+    @ObservationIgnored var onReauthenticationChange: ((Bool) -> Void)?
     @ObservationIgnored var onReady: (() -> Void)?
 
     init(environment: PlaybackEnvironment, coordinator: PlaybackCoordinator) {
@@ -52,6 +57,14 @@ final class AccountStore {
         _ = startConnection(interactive: true)
     }
 
+    /// Starts a browser authorization explicitly. The existing grant stays in place until the
+    /// new exchange and its persistence have completed successfully.
+    func reauthorize() {
+        guard !teardown.isActive, phase != .ready, connectionTask == nil else { return }
+        setRequiresReauthentication(true)
+        _ = startConnection(interactive: true)
+    }
+
     func cancelConnect() {
         guard phase == .authorizing else { return }
         connectionGeneration &+= 1
@@ -65,9 +78,10 @@ final class AccountStore {
     }
 
     func handleGrantRevocation() async {
+        setRequiresReauthentication(true)
         await endSession(
             clearGrant: false,
-            finalPhase: .failed("Your Spotify session expired. Sign in again.")
+            finalPhase: .failed(ConnectionSnapshotProjection.credentialsRejectedMessage)
         )
     }
 
@@ -76,6 +90,14 @@ final class AccountStore {
         if let session {
             phase = session
         }
+    }
+
+    /// Marks the accepted engine outcome as requiring a fresh authorization. The caller owns the
+    /// asynchronous engine teardown; this synchronous marker makes a subsequent explicit Connect
+    /// action choose the interactive path even if the old grant remains valid for Web APIs.
+    func markCredentialRejection() {
+        guard !teardown.isActive else { return }
+        setRequiresReauthentication(true)
     }
 
     func endSession(clearGrant: Bool, finalPhase: PlaybackSessionPhase) async {
@@ -134,6 +156,7 @@ final class AccountStore {
         let resolved = applied.merging(desired)
         if resolved.clearGrant && !applied.clearGrant {
             await environment.account.clear()
+            setRequiresReauthentication(false)
         }
         phase = resolved.finalPhase
         return resolved
@@ -153,6 +176,7 @@ final class AccountStore {
         var resolved = teardown.intent ?? initialIntent
         if resolved.clearGrant {
             await environment.account.clear()
+            setRequiresReauthentication(false)
             resolved = teardown.intent ?? resolved
         }
 
@@ -218,15 +242,38 @@ final class AccountStore {
     }
 
     private func runConnection(interactive: Bool, generation: UInt64, epoch: UInt64) async {
-        let hasGrant = await environment.account.hasGrant()
+        let grantState = await environment.account.grantState()
         guard isCurrent(generation: generation, epoch: epoch) else { return }
 
-        if hasGrant {
-            await restoreGrant(generation: generation, epoch: epoch)
-        } else if interactive {
-            await performInteractiveConnect(generation: generation, epoch: epoch)
-        } else {
-            phase = .signedOut
+        switch grantState {
+        case .available:
+            if requiresReauthentication {
+                if interactive {
+                    await performInteractiveConnect(generation: generation, epoch: epoch)
+                } else {
+                    phase = .failed(ConnectionSnapshotProjection.credentialsRejectedMessage)
+                }
+            } else {
+                await restoreGrant(generation: generation, epoch: epoch)
+            }
+        case .absent:
+            if interactive {
+                await performInteractiveConnect(generation: generation, epoch: epoch)
+            } else {
+                phase = .signedOut
+            }
+        case .denied:
+            if interactive {
+                await performInteractiveConnect(generation: generation, epoch: epoch)
+            } else {
+                phase = .failed("Spotty cannot access its saved Spotify session. Allow Keychain access and try again.")
+            }
+        case .failed:
+            if interactive {
+                await performInteractiveConnect(generation: generation, epoch: epoch)
+            } else {
+                phase = .failed("Spotty could not read its saved Spotify session. Try again or sign in again.")
+            }
         }
     }
 
@@ -263,6 +310,7 @@ final class AccountStore {
             guard isCurrent(generation: generation, epoch: epoch) else { return }
             try await environment.account.adopt(tokens)
             guard isCurrent(generation: generation, epoch: epoch) else { return }
+            setRequiresReauthentication(false)
             phase = .connecting
 
             let code = await coordinator.authorizeStreaming(with: tokens.accessToken)
@@ -313,6 +361,12 @@ final class AccountStore {
 
     private func isCurrent(generation: UInt64, epoch: UInt64) -> Bool {
         !Task.isCancelled && connectionGeneration == generation && self.epoch == epoch
+    }
+
+    private func setRequiresReauthentication(_ required: Bool) {
+        guard requiresReauthentication != required else { return }
+        requiresReauthentication = required
+        onReauthenticationChange?(required)
     }
 }
 

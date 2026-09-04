@@ -18,7 +18,9 @@ struct ConnectionSnapshotProjectionTests {
                     connected: false,
                     spircReady: false,
                     lastError: "session-timeout"
-                )) == (.failed("session-timeout")), "a last error while disconnected is failed")
+                )) == (.failed(ConnectionSnapshotProjection.connectionFailedMessage)),
+                "a last error uses stable privacy-safe presentation"
+            )
             #expect(
                 (ConnectionSnapshotProjection.sessionPhase(
                     connected: true,
@@ -37,6 +39,24 @@ struct ConnectionSnapshotProjectionTests {
                     spircReady: true,
                     lastError: "stale"
                 )) == (.ready), "ready wins over a leftover error string")
+            #expect(
+                (ConnectionSnapshotProjection.sessionPhase(
+                    connected: true,
+                    spircReady: true,
+                    credentialsRejected: true,
+                    lastError: nil
+                )) == (.failed(ConnectionSnapshotProjection.credentialsRejectedMessage)),
+                "credential rejection wins over ready flags"
+            )
+            #expect(
+                (ConnectionSnapshotProjection.sessionPhase(
+                    connected: false,
+                    spircReady: false,
+                    credentialsRejected: true,
+                    lastError: "private upstream detail"
+                )) == (.failed(ConnectionSnapshotProjection.credentialsRejectedMessage)),
+                "credential rejection wins over upstream error details"
+            )
 
             #expect(
                 (ConnectionSnapshotProjection.resolvedDeviceID(wire: "mac", fallback: "old")) == ("mac"),

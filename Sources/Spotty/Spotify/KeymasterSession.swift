@@ -28,15 +28,24 @@ actor KeymasterSession {
     /// `KeymasterAuth.refresh`.
     typealias Refresher = @Sendable (String) async throws -> KeymasterTokens
 
-    private let store: KeymasterTokenStoring
+    /// A single bounded lane for blocking Keychain/defaults operations. The worker is owned by
+    /// this session rather than by an untracked detached task, so its ordering outlives every
+    /// suspended token operation that submitted work to it.
+    private let persistence: KeymasterPersistenceWorker
     private let refresher: Refresher
     /// Clears Spotify authentication cookies from the jar the token exchange uses.
     /// Injected so Sign Out cleanup can be checked without mutating the process-wide store.
     private let cookieCleanup: @Sendable () -> Void
     private var tokens: KeymasterTokens?
+    private var loadFailure: KeymasterGrantLoadResult?
+    /// A replacement grant is kept private until its durable save succeeds. Reads that could
+    /// refresh or expose credentials wait for this bounded worker operation rather than racing a
+    /// newer sign-in with the still-committed grant.
+    private var adoptionInFlight: Int?
+    private var adoptionCompletion: KeymasterPersistenceReceipt<Void>?
     private var hasLoadedStore = false
     /// Concurrent first callers join this rather than observing `hasLoadedStore` before the
-    /// detached store read has assigned `tokens`. The task includes the generation-guarded
+    /// owned worker read has assigned `tokens`. The task includes the generation-guarded
     /// assignment, not only the disk read.
     private var storeLoadInFlight: Task<Void, Never>?
     private var refreshInFlight: Task<KeymasterTokens, Error>?
@@ -52,7 +61,7 @@ actor KeymasterSession {
             AuthCookieCleanup.removeSpotifyAuthenticationCookies()
         }
     ) {
-        self.store = store
+        persistence = KeymasterPersistenceWorker(store: store)
         self.refresher = refresher
         self.cookieCleanup = cookieCleanup
     }
@@ -89,9 +98,36 @@ actor KeymasterSession {
     /// Whether a grant has been completed on this machine.
     var hasGrant: Bool {
         get async {
-            await loadStoredGrantIfNeeded()
-            return tokens != nil
+            await grantState == .available
         }
+    }
+
+    /// Restores the distinction between a missing grant and a secure-store access failure for the
+    /// account workflow. Callers must not start an implicit authorization when the latter occurs.
+    var grantState: KeymasterGrantState {
+        get async {
+            await waitForAdoption()
+            await loadStoredGrantIfNeeded()
+            await waitForAdoption()
+            if tokens != nil { return .available }
+            switch loadFailure {
+            case .some(.denied): return .denied
+            case .some(.failed): return .failed
+            default: return .absent
+            }
+        }
+    }
+
+    /// Retries a previous secure-store failure when the user explicitly asks to connect again.
+    /// A denied/unavailable read is cached for the current attempt so it cannot look absent, but
+    /// it must not become a permanent process-lifetime result after Keychain access recovers.
+    func retryGrantState() async -> KeymasterGrantState {
+        await waitForAdoption()
+        if tokens == nil, loadFailure != nil {
+            hasLoadedStore = false
+            loadFailure = nil
+        }
+        return await grantState
     }
 
     /// Loads persisted state lazily on this actor rather than synchronously while the main-actor
@@ -124,43 +160,84 @@ actor KeymasterSession {
     }
 
     private func commitStoreLoad(startedAt: Int) async {
-        let store = store
-        let storedTokens = await Task.detached(priority: .utility) {
-            store.load()
-        }.value
-        applyLoadedGrant(storedTokens, startedAt: startedAt)
+        let receipt = persistence.submitLoad()
+        let result = await receipt.value()
+        applyLoadedGrant(result, startedAt: startedAt)
     }
 
     /// Only the in-flight load task assigns. Joiners wait for that task so they cannot observe
     /// `tokens == nil` after the disk read has finished. Adopt/clear bump `generation` and set
     /// `hasLoadedStore` first, so a stale snapshot is discarded.
-    private func applyLoadedGrant(_ storedTokens: KeymasterTokens?, startedAt: Int) {
+    private func applyLoadedGrant(_ result: KeymasterGrantLoadResult, startedAt: Int) {
         guard generation == startedAt, !hasLoadedStore else { return }
-        tokens = storedTokens
+        tokens = result.tokens
+        loadFailure =
+            switch result {
+            case .denied, .failed: result
+            default: nil
+            }
         hasLoadedStore = true
     }
 
     var username: String? {
         get async {
+            await waitForAdoption()
             await loadStoredGrantIfNeeded()
+            await waitForAdoption()
             return tokens?.username
         }
     }
 
     /// Records the outcome of a fresh grant.
-    func adopt(_ newTokens: KeymasterTokens) throws {
+    func adopt(_ newTokens: KeymasterTokens) async throws {
         hasLoadedStore = true
         supersedeRefresh()
+        let startedAt = generation
+        adoptionInFlight = startedAt
+        let completion = KeymasterPersistenceReceipt<Void>()
+        adoptionCompletion = completion
+        defer {
+            completion.resolve(())
+        }
+        do {
+            let receipt = persistence.submitSave(newTokens)
+            let result = await receipt.value()
+            try result.get()
+        } catch {
+            // A newer grant or sign-out owns persistence now. The worker serializes those writes
+            // after this one, so this stale failure must not replace their outcome or reach UI.
+            guard generation == startedAt, adoptionInFlight == startedAt else { return }
+            adoptionInFlight = nil
+            adoptionCompletion = nil
+            throw error
+        }
+        guard generation == startedAt, adoptionInFlight == startedAt else { return }
+        // Commit memory only after the worker confirms the durable replacement. This leaves the
+        // last committed grant available while a save is blocked and avoids rolling back to a
+        // newer grant that never reached the store when two saves fail in succession.
         tokens = newTokens
-        try store.save(newTokens)
+        loadFailure = nil
+        adoptionInFlight = nil
+        adoptionCompletion = nil
     }
 
     /// Forgets the grant — on logout, or when the refresh token is dead.
-    func clear() {
+    func clear() async {
         hasLoadedStore = true
         supersedeRefresh()
+        adoptionInFlight = nil
+        let supersededAdoption = adoptionCompletion
+        adoptionCompletion = nil
+        supersededAdoption?.resolve(())
+        let expectedGeneration = generation
         tokens = nil
-        store.clear()
+        loadFailure = nil
+        let receipt = persistence.submitClear()
+        _ = await receipt.value()
+        // A new grant may have been adopted while the bounded worker completed the clear. Its
+        // cookies belong to the replacement and must survive; the worker's ordering still makes
+        // this clear happen before that replacement's save.
+        guard generation == expectedGeneration else { return }
         cookieCleanup()
     }
 
@@ -186,7 +263,9 @@ actor KeymasterSession {
     /// Throws rather than returning nil when there is no grant: every caller needs a token to
     /// do anything at all, and "not authorized yet" is a state the UI already handles.
     func accessToken(now: Date = Date()) async throws -> String {
+        await waitForAdoption()
         await loadStoredGrantIfNeeded()
+        await waitForAdoption()
         guard let current = tokens else {
             throw KeymasterSessionError.noGrant
         }
@@ -215,7 +294,9 @@ actor KeymasterSession {
     /// Concurrent refusals of the same bearer join `refreshed(from:)` so that token is spent
     /// once.
     func refreshIgnoringExpiry(rejected: String) async throws -> String {
+        await waitForAdoption()
         await loadStoredGrantIfNeeded()
+        await waitForAdoption()
         guard let current = tokens else {
             throw KeymasterSessionError.noGrant
         }
@@ -282,7 +363,9 @@ actor KeymasterSession {
                 throw KeymasterSessionError.noGrant
             }
 
-            clear()
+            guard await clearIfCurrent(startedAt: startedAt) else {
+                throw KeymasterSessionError.noGrant
+            }
             announceRevocation()
             throw KeymasterSessionError.grantRevoked
         } catch {
@@ -308,9 +391,39 @@ actor KeymasterSession {
             merged.username = current.username
         }
 
-        try store.save(merged)
+        do {
+            let receipt = persistence.submitSave(merged)
+            let result = await receipt.value()
+            try result.get()
+        } catch {
+            guard startedAt == generation else {
+                throw KeymasterSessionError.noGrant
+            }
+            throw error
+        }
+        guard startedAt == generation else {
+            throw KeymasterSessionError.noGrant
+        }
         tokens = merged
         return merged
+    }
+
+    /// Clears a revoked grant only if the refresh that discovered the revocation still owns the
+    /// account generation. The generation check before the first await prevents an old refresh
+    /// from signing out a newer interactive grant.
+    private func clearIfCurrent(startedAt: Int) async -> Bool {
+        guard generation == startedAt else { return false }
+        await clear()
+        return generation == (startedAt &+ 1)
+    }
+
+    /// Waits for the newest sign-in save without creating an unowned task. `adopt` submits its
+    /// worker operation before its first await, so this only waits for the receipt already owned
+    /// by the actor and cannot let a token refresh race an unpersisted grant.
+    private func waitForAdoption() async {
+        while let completion = adoptionCompletion {
+            await completion.value()
+        }
     }
 }
 

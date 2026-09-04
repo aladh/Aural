@@ -45,8 +45,9 @@ or interactive acceptance.
 - User-facing errors must be actionable and privacy-safe. Follow [PRIVACY.md](PRIVACY.md) and
   [SECURITY.md](SECURITY.md). Preserve these files and `LICENSE`, `NOTICE`, and
   `THIRD_PARTY_NOTICES.md`.
-- Treat librespot updates as protocol changes. Vendored patches under `Backend/vendor/` have their
-  own `PATCHES.md`; they are not routine dependency bumps.
+- Keep the pinned Rust/librespot leaf as the sole production playback implementation; decoded PCM
+  crosses the narrow adapter to AVFoundation. Treat librespot updates as protocol and license
+  changes, not routine dependency bumps, and do not add a parallel engine or protocol stack.
 
 ## Local verification
 
