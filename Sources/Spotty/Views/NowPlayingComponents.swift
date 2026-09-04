@@ -1,4 +1,3 @@
-import AppKit
 import SwiftUI
 
 struct NowPlayingTrackIdentity: View {
@@ -13,7 +12,7 @@ struct NowPlayingTrackIdentity: View {
                     ZStack {
                         RoundedRectangle(cornerRadius: 4, style: .continuous).fill(.quaternary)
                         Image(systemName: "music.note")
-                            .font(.system(size: 17, weight: .medium))
+                            .font(.body.weight(.medium))
                             .foregroundStyle(SpottyPalette.playerSecondary)
                     }
                     .overlay { RoundedRectangle(cornerRadius: 4).strokeBorder(SpottyPalette.playerDivider) }
@@ -24,11 +23,11 @@ struct NowPlayingTrackIdentity: View {
 
             VStack(alignment: .leading, spacing: 2) {
                 Text(player.displayedTrackTitle)
-                    .font(.system(size: 12, weight: .semibold))
+                    .font(.caption.weight(.semibold))
                     .foregroundStyle(SpottyPalette.playerPrimary)
                     .lineLimit(1)
                 Text(player.displayedArtistName)
-                    .font(.system(size: 10, weight: .regular))
+                    .font(.caption2)
                     .foregroundStyle(SpottyPalette.playerSecondary)
                     .lineLimit(1)
             }
@@ -46,6 +45,7 @@ struct NowPlayingTrackIdentity: View {
 struct NowPlayingProgress: View {
     let player: PlaybackStore
     @State private var isHovering = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         TimelineView(.animation(minimumInterval: 1.0 / 30.0, paused: !player.showsPauseControl)) { timeline in
@@ -72,7 +72,7 @@ struct NowPlayingProgress: View {
         .accessibilityValue(accessibilityValue)
         .accessibilityAdjustableAction(adjust)
         .frame(height: 16)
-        .animation(.snappy(duration: 0.2), value: isHovering)
+        .animationIfAllowed(.snappy(duration: 0.2), value: isHovering, reduceMotion: reduceMotion)
     }
 
     private var height: CGFloat { isHovering && player.hasCurrentTrack ? 4 : 3 }
@@ -111,15 +111,19 @@ struct NowPlayingTransportControls: View {
                 symbol: "backward.end.fill", label: "Previous", disabled: !player.canSkipTrack, action: player.previous)
             Button(action: player.togglePlayback) {
                 ZStack {
-                    Circle().fill(player.canTogglePlayback ? SpottyPalette.playerPrimary : Color.white.opacity(0.20))
+                    Circle().fill(
+                        player.canTogglePlayback
+                            ? SpottyPalette.playerPrimary
+                            : SpottyPalette.playerDisabledControl
+                    )
                     Image(systemName: player.showsPauseControl ? "pause.fill" : "play.fill")
                         .contentTransition(.symbolEffect(.replace))
                         .symbolRenderingMode(.monochrome)
-                        .font(.system(size: 13, weight: .bold))
+                        .font(.caption.weight(.bold))
                         .foregroundStyle(
                             player.canTogglePlayback
-                                ? Color.black
-                                : Color(nsColor: .tertiaryLabelColor)
+                                ? SpottyPalette.playerButtonForeground
+                                : SpottyPalette.playerDisabledForeground
                         )
                         .offset(x: player.showsPauseControl ? 0 : 1)
                 }
@@ -151,7 +155,7 @@ struct NowPlayingTransportControls: View {
     ) -> some View {
         Button(action: action) {
             Image(systemName: symbol)
-                .font(.system(size: 12, weight: .semibold))
+                .font(.caption.weight(.semibold))
                 .foregroundStyle(
                     active ? SpottyPalette.mediaGreen : SpottyPalette.playerSecondary
                 )
@@ -172,14 +176,17 @@ struct NowPlayingTransportControls: View {
 struct NowPlayingTimeControls: View {
     let player: PlaybackStore
     @Binding var showsSidePanel: Bool
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         HStack(spacing: 8) {
             Button {
-                withAnimation(.snappy(duration: 0.2)) { showsSidePanel.toggle() }
+                withAnimationIfAllowed(.snappy(duration: 0.2), reduceMotion: reduceMotion) {
+                    showsSidePanel.toggle()
+                }
             } label: {
                 Image(systemName: "list.bullet")
-                    .font(.system(size: 13, weight: .semibold))
+                    .font(.caption.weight(.semibold))
                     .foregroundStyle(
                         showsSidePanel ? SpottyPalette.playerPrimary : SpottyPalette.playerSecondary
                     )
@@ -211,7 +218,7 @@ struct NowPlayingTimeControls: View {
             }
         } label: {
             Image(systemName: "display.2")
-                .font(.system(size: 12, weight: .medium))
+                .font(.caption.weight(.medium))
                 .foregroundStyle(
                     player.isActiveDevice ? SpottyPalette.mediaGreen : SpottyPalette.playerSecondary
                 )
@@ -241,7 +248,7 @@ private struct TransportIconButton: View {
     var body: some View {
         Button(action: action) {
             Image(systemName: symbol)
-                .font(.system(size: 12, weight: .semibold))
+                .font(.caption.weight(.semibold))
                 .foregroundStyle(SpottyPalette.playerSecondary)
                 .frame(width: 26, height: 26)
                 .contentShape(Rectangle())

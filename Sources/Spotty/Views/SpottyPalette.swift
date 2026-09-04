@@ -22,6 +22,9 @@ enum SpottyPalette {
     static let playerDivider = Color.primary.opacity(0.10)
     static let playerPrimary = Color.primary.opacity(0.92)
     static let playerSecondary = Color.secondary.opacity(0.92)
+    static let playerDisabledControl = Color.primary.opacity(0.20)
+    static let playerDisabledForeground = Color.secondary.opacity(0.55)
+    static let playerButtonForeground = Color.black
     static let remotePlaybackForeground = Color(red: 0.025, green: 0.12, blue: 0.06)
     /// Data columns (BPM, key, time signature, popularity, duration, relative times). Measures
     /// ≥4.5:1 against `catalogCanvas`, meeting WCAG AA for normal text.
@@ -32,6 +35,14 @@ enum SpottyPalette {
 
     static func mediaCardSurface(isHovering: Bool) -> Color {
         isHovering ? mediaSurfaceHover : .clear
+    }
+
+    static func quickAccessSurface(isHovering: Bool) -> Color {
+        isHovering ? quickAccessSurfaceHover : quickAccessSurface
+    }
+
+    static func historySurface(isHovering: Bool) -> Color {
+        isHovering ? Color.primary.opacity(0.055) : .clear
     }
 
     static let artworkPlaceholderColors = [

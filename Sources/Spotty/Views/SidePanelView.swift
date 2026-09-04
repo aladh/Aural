@@ -239,6 +239,7 @@ private struct QueueUpcomingRow: View {
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+        .accessibilityElement(children: .ignore)
         .accessibilityLabel(
             [displayInfo.title, subtitle, durationText].compactMap { $0 }.joined(separator: ", ")
         )
@@ -250,6 +251,10 @@ private struct HistoryRow: View {
     let action: () -> Void
 
     @State private var isHovering = false
+
+    private var relativeTime: String {
+        entry.playedAt.formatted(.relative(presentation: .named))
+    }
 
     var body: some View {
         Button(action: action) {
@@ -269,7 +274,7 @@ private struct HistoryRow: View {
 
                 Spacer(minLength: 0)
 
-                Text(entry.playedAt.formatted(.relative(presentation: .named)))
+                Text(relativeTime)
                     .font(.caption2)
                     .foregroundStyle(SpottyPalette.dataText)
                     .lineLimit(1)
@@ -277,18 +282,16 @@ private struct HistoryRow: View {
             .padding(4)
             .contentShape(Rectangle())
             .background(
-                isHovering ? Color.primary.opacity(0.055) : .clear,
+                SpottyPalette.historySurface(isHovering: isHovering),
                 in: RoundedRectangle(cornerRadius: 7, style: .continuous)
             )
         }
         .buttonStyle(.plain)
-        .onHover { isHovering = $0 }
-        // A row scrolled away under a resting cursor keeps no highlight.
-        .onDisappear { isHovering = false }
+        .hoverSurface(isHovering: $isHovering)
         .help("Play \(entry.title)")
-        .accessibilityLabel(
-            "Play \(entry.title) by \(entry.artist), played \(entry.playedAt.formatted(.relative(presentation: .named)))"
-        )
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("Play \(entry.title) by \(entry.artist)")
+        .accessibilityValue("Played \(relativeTime)")
     }
 }
 
@@ -316,7 +319,7 @@ private struct CurrentTrackRow: View {
 
             VStack(alignment: .trailing, spacing: 3) {
                 Image(systemName: "speaker.wave.2.fill")
-                    .font(.system(size: 11, weight: .semibold))
+                    .font(.caption2.weight(.semibold))
                     .foregroundStyle(SpottyPalette.mediaGreen)
                 if player.duration > 0 {
                     Text(formatDuration(player.duration))

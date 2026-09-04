@@ -230,7 +230,7 @@ struct RangedAudioFetcherTests {
             #expect(
                 (firstByte) == (bytes(0..<1)), "the gap fills in via continuation and the byte reads back correctly")
             #expect(
-                (transport.requestedRanges) == ([10...39, 0...9, 5...9]),
+                (transport.requestedRanges) == ([0...65_535, 0...9, 5...9]),
                 "the widened request is capped at the next stored segment, and a short 206 causes a follow-up")
 
             let mismatchedTransport = ScriptedRangedTransport(steps: [

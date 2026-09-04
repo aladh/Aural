@@ -54,7 +54,7 @@ struct RemoteArtwork: View {
                 endPoint: .bottomTrailing
             )
             Image(systemName: symbol)
-                .font(.system(size: 24, weight: .medium))
+                .font(.title2.weight(.medium))
                 .foregroundStyle(.secondary)
         }
     }

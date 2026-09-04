@@ -25,6 +25,7 @@ final class PlaylistStore {
     @ObservationIgnored private var requestScope: UInt64 = 0
     @ObservationIgnored private var loadTask: Task<Void, Never>?
     @ObservationIgnored private var loadSessionSnapshot: CatalogSessionSnapshot?
+    @ObservationIgnored private var loadedSessionSnapshot: CatalogSessionSnapshot?
 
     init(
         provider: any CatalogProviding,
@@ -41,6 +42,7 @@ final class PlaylistStore {
         loadTask?.cancel()
         loadTask = nil
         loadSessionSnapshot = nil
+        loadedSessionSnapshot = nil
         replaceTracks([])
         description = ""
         loadedURI = nil
@@ -52,6 +54,9 @@ final class PlaylistStore {
 
     /// Keeps `loadedURI` and `tracks` paired. Production loading still goes through `load(_:)`.
     func replaceLoadedPlaylist(uri: String, tracks: [CatalogTrack]) {
+        if loadedURI != uri {
+            loadedSessionSnapshot = nil
+        }
         loadedURI = uri
         replaceTracks(tracks)
     }
@@ -59,7 +64,13 @@ final class PlaylistStore {
     func load(_ item: CatalogItem, force: Bool = false) async {
         let currentSession = session.snapshot
         guard currentSession.isAvailable, item.kind == .playlist else { return }
-        if loadedURI == item.uri, !tracks.isEmpty, !force { return }
+        if loadedURI == item.uri,
+            loadedSessionSnapshot == currentSession,
+            error == nil,
+            !force
+        {
+            return
+        }
         if isLoading,
             loadedURI == item.uri,
             loadSessionSnapshot == currentSession,
@@ -78,6 +89,7 @@ final class PlaylistStore {
         let isNewPlaylist = loadedURI != item.uri
         loadedURI = item.uri
         if isNewPlaylist {
+            loadedSessionSnapshot = nil
             replaceTracks([])
             description = ""
             ownerURI = item.ownerURI
@@ -134,6 +146,7 @@ final class PlaylistStore {
             ownerURI = CatalogMapping.ownerURI(from: playlist) ?? item.ownerURI
             let entries = playlist.content.flatMap(\.items) ?? []
             replaceTracks(entries.compactMap(CatalogMapping.playlistTrack(from:)))
+            loadedSessionSnapshot = session.snapshot
             metadata.replaceTracks(tracks, from: .playlist)
             metadata.loadTrackAttributes(for: tracks)
         } catch {

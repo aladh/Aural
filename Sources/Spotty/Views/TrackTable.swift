@@ -110,10 +110,12 @@ struct TrackTable: View {
                 .width(64)
 
                 TableColumn("BPM", value: \.bpmSortValue) { row in
-                    Text(attributeText(metadata.trackAttributes[row.track.uri]?.bpm.map(String.init)))
+                    let text = attributeText(metadata.trackAttributes[row.track.uri]?.bpm.map(String.init))
+                    Text(text)
                         .monospacedDigit()
                         .foregroundStyle(SpottyPalette.dataText)
-                        .accessibilityLabel("Tempo in beats per minute")
+                        .accessibilityLabel("BPM")
+                        .accessibilityValue(text)
                 }
                 .width(44)
 

@@ -283,10 +283,13 @@ final class HomeLibraryStore {
         _ identity: AccountScopedRequestIdentity,
         for section: Section
     ) -> Bool {
-        requestIDs[section] == identity.requestID
-            && identity.accountEpoch == session.accountEpoch
-            && identity.sessionRevision == session.snapshot.revision
-            && session.isAvailable
-            && !Task.isCancelled
+        guard let requestID = requestIDs[section] else { return false }
+        return identity.isCurrent(
+            requestID: requestID,
+            accountEpoch: session.accountEpoch,
+            sessionRevision: session.snapshot.revision,
+            isAvailable: session.isAvailable,
+            isCancelled: Task.isCancelled
+        )
     }
 }
