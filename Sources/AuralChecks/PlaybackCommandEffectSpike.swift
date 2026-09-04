@@ -261,7 +261,10 @@ func runPlaybackCommandEffectSpikeChecks(_ check: CheckRunner) {
         check.nil_("the snapshot reconciles before the late failure", lateFailure.pending)
         lateFailure.deliver(.reconnectRequired)
         check.equal(
-            "a late reconnect-required failure keeps the reconciled completion", lateFailure.session.completions, [true])
+            "a late reconnect-required failure keeps the reconciled completion",
+            lateFailure.session.completions,
+            [true]
+        )
         check.equal("a late reconnect-required failure still reconnects", lateFailure.session.reconnectCount, 1)
         check.equal("a late coordinator failure does not roll back the confirmed pause", lateFailure.transport, .paused)
         check.nil_("a late coordinator failure does not surface an error notice", lateFailure.session.state.notice)
