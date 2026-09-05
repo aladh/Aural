@@ -114,7 +114,7 @@ currently requires a right-side hunk anchor in a text file present at the head; 
 and non-text changes remain a coverage limitation.
 
 Each source tree is bounded to 25 MB of eligible blobs, individual files to 1 MB, and each diff
-to 200 KB. Oversized diffs/snapshots fail rather than silently truncate. Non-text, oversized files,
+to 300 KB. Oversized diffs/snapshots fail rather than silently truncate. Non-text, oversized files,
 symlinks and submodules omitted from snapshots are explicitly listed in the input and comment.
 Findings must name an existing line in a text file changed by the PR. Each model pass has a
 ten-minute budget and 30 steps; the two independent audits run concurrently. The review job has
@@ -209,3 +209,41 @@ Official references: [GitHub integration](https://opencode.ai/docs/github/),
 [model/privacy terms](https://opencode.ai/docs/zen/),
 [tool permissions](https://opencode.ai/docs/permissions/), and
 [GitHub comment permissions](https://docs.github.com/en/rest/issues/comments).
+
+## OpenCode 2 and direct GitHub MCP pilot
+
+A follow-up full-rubric native fixture completed both foreground audits and parent synthesis with
+Muse contributor-free `xhigh`. OpenCode 1.18.29 took 68.92 seconds; official OpenCode 2 beta
+`0.0.0-beta-19151` took 36.92 seconds and retained the same seeded correctness and quality findings.
+The parent prompts named the seeded bug patterns, so this checks runtime/delegation compatibility,
+not independent bug discovery or review accuracy. The timing is one sample, not a benchmark. V2 uses a private `--standalone`
+server, a model selector containing `#xhigh`, and native `subagent` calls. Its session export outcome,
+rather than V1's terminal `step_finish` event, is the completion evidence.
+
+A separate [local direct-MCP trial](https://github.com/aladh/Spotty/pull/268#pullrequestreview-5121596304)
+used two independent full-rubric native V1 audits. The parent verified PR revisions and submitted an
+advisory COMMENT review through the official GitHub MCP server. The custom Python publisher did not
+post that review. Both audits returned no findings, so this run did not exercise MCP inline comments.
+The local review used the existing authenticated GitHub identity; it is not Actions-token evidence.
+
+The additional `opencode-mcp-spike.yml` workflow tests native delegation and direct MCP publication
+on this owner-controlled spike branch. Only four server tools are exposed: PR reads, immutable file
+reads, pending-review inline comments, and review publication. Children receive independent full
+Thermos rubrics and attached diffs, with local read/search tools; the parent handles corroboration
+and publication. Runtime traces and live GitHub postconditions record what actually happened.
+The experiment remains advisory. Postconditions detect violations after calls; they do not make
+GitHub's consolidated review tool technically incapable of approving or changing review threads.
+No approval gate or trusted-fork claim follows from a successful experimental run.
+
+The bounded diff allowance is 300 KB per logical input so both implementations can review this
+comparison PR in full. Oversized inputs still fail explicitly; identical full/delta diffs are
+attached once. The earlier evidence used the former 200 KB bound.
+
+V2 integration references: [CLI private servers](https://opencode.ai/v2/docs/cli),
+[MCP configuration](https://opencode.ai/v2/docs/mcp-servers), and the
+[official GitHub MCP server](https://github.com/github/github-mcp-server/tree/v1.12.0).
+
+A clean V2 runtime initially could not resolve the model because its default catalog endpoint
+returned HTTP 403 in this environment. Explicitly loading the public models.dev catalog restored
+Muse contributor-free `xhigh` without account credentials. The trial workflow supplies that catalog
+to the private runtime instead of relying on the workstation cache.

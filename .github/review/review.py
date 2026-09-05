@@ -25,7 +25,7 @@ BOT = 'github-actions[bot]'
 SHA = re.compile(r'[0-9a-f]{40}')
 MAX_FILE = 1_000_000
 MAX_SNAPSHOT = 25_000_000
-MAX_DIFF = 200_000
+MAX_DIFF = 300_000
 MAX_FINDINGS = 20
 MAX_INTENT_TITLE = 500
 MAX_INTENT_BODY = 10_000
@@ -274,7 +274,7 @@ def prepare(work):
     files_before, omitted_before = snapshot(start, source / 'before')
     for name, base in (('pr.diff', merge_base), ('delta.diff', start)):
         diff = git('diff', '--no-ext-diff', '--no-textconv', '--no-renames', base, meta['head'], '--')
-        require(len(diff) <= MAX_DIFF, 'Diff exceeds 200 KB; refusing silent truncation')
+        require(len(diff) <= MAX_DIFF, 'Diff exceeds 300 KB; refusing silent truncation')
         (source / name).write_text(diff.decode('utf-8'))
     changed = git('diff', '--name-only', '-z', '--no-renames', merge_base, meta['head'], '--').decode().split('\0')
     changed = [path for path in changed if path]
@@ -399,13 +399,13 @@ def _read_attached_diff(work, name):
         size = path.stat().st_size
     except OSError as error:
         raise ValueError(f'Unable to read required review input: {name}') from error
-    require(size <= MAX_DIFF, f'Review input exceeds 200 KB: {name}')
+    require(size <= MAX_DIFF, f'Review input exceeds 300 KB: {name}')
     try:
         with path.open('rb') as stream:
             data = stream.read(MAX_DIFF + 1)
     except OSError as error:
         raise ValueError(f'Unable to read required review input: {name}') from error
-    require(len(data) <= MAX_DIFF, f'Review input exceeds 200 KB: {name}')
+    require(len(data) <= MAX_DIFF, f'Review input exceeds 300 KB: {name}')
     try:
         text = data.decode('utf-8')
     except UnicodeDecodeError as error:
