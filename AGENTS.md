@@ -51,6 +51,15 @@ or interactive acceptance.
   crosses the narrow adapter to AVFoundation. Treat librespot updates as protocol and license
   changes, not routine dependency bumps, and do not add a parallel engine or protocol stack.
 
+## Code, test, and documentation quality
+
+- Avoid speculative abstractions and pass-through wrappers; helpers should clarify logic or remove
+  meaningful duplication.
+- Tests must catch plausible behavioral failures, not mirror implementation or duplicate coverage.
+- Skip obvious comments and production hooks added solely to test trivial code.
+- Keep docs concise and actionable; update the canonical owner instead of adding duplicate guides,
+  implementation narration, or task-history summaries.
+
 ## Local verification
 
 Run the smallest focused check that exercises the change; commands are in
