@@ -83,15 +83,27 @@ Rebuild and refresh the override after every engine-input change. Preserve diges
 and library names so SwiftPM relinks changed engines. The override selects a binary without building
 Rust; unset it to return to the published dependency. Run the Rust gate separately.
 
-The publication workflow runs from main; `source_ref` can select a reviewed, unmerged engine commit.
-Publish its artifact and update the PR's pin before merging. Candidate build code runs with read-only
-permissions, separately from the publisher's release credentials. Keep app and engine release
-identities separate and source, Cargo lock, headers, library, and license material traceable together.
+CI compares current engine inputs with the published pin. When they match, published-artifact
+Swift checks provide integration coverage and candidate construction/Swift jobs are skipped; Rust
+source checks still run. A mismatching pin requires a candidate build and both candidate Swift jobs.
 
-To publish an explicitly authorized, reviewed engine commit:
+Publication promotes the exact candidate ZIP from a completed CI run, without rebuilding it. Run
+the publisher from main after Rust and candidate Swift Debug/Release succeed. Published-pin jobs
+may still be red before an ABI-changing candidate is released. The selected source must be a
+reviewed commit from this repository; fork candidates are rejected. CI's merge checkout is retained
+in artifact provenance and used as the release target.
+
+The publisher verifies the CI definition matches its trusted checkout, the source/merge ancestry,
+successful jobs from the same run attempt, artifact identity/checksum, and embedded provenance and
+notices. It never executes candidate code and keeps release credentials in a separate Linux job.
+Expired artifacts or candidates from an older CI definition require a fresh CI run. Keep app and
+engine release identities separate; published playback releases are never overwritten.
+
+To promote an explicitly authorized candidate (use `-f dry_run=true` to validate without publishing):
 
 ```bash
-gh workflow run playback-artifact.yml --ref main -f source_ref="$reviewed_source_sha"
+gh workflow run playback-artifact.yml --ref main \
+  -f source_ref="$reviewed_source_sha" -f candidate_run_id="$candidate_ci_run_id"
 ```
 
 Download the release ZIP, verify its checksum and source input digest, then update both pins:
