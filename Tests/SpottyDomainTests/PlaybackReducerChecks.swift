@@ -120,7 +120,7 @@ struct PlaybackReducerTests {
             let beforeStaleEngine = state
             let staleEngineAccepted = PlaybackReducer.reduce(
                 &state,
-                envelope(
+                envelope: envelope(
                     account: 4,
                     engine: 6,
                     source: .enginePlayback,
@@ -1173,7 +1173,7 @@ struct PlaybackReducerTests {
 
             _ = PlaybackReducer.reduce(
                 &state,
-                envelope(
+                envelope: envelope(
                     account: 2,
                     engine: 3,
                     source: .user,
