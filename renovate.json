@@ -40,7 +40,7 @@
     {
       "description": "Update the shared librespot revision atomically",
       "matchManagers": ["cargo"],
-      "matchPackageNames": ["/^librespot-/"],
+      "matchDepNames": ["/^librespot-/"],
       "groupName": "librespot",
       "groupSlug": "librespot"
     },
