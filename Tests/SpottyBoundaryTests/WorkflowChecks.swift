@@ -1218,7 +1218,7 @@ private func workflowQueueSnapshot(
     contextURI: String,
     entryURI: String,
     occurrence: Int = 0,
-    source: QueueSnapshotSource = .connect,
+    source: PlaybackQueueSource = .connect,
     uid: String = "",
     provider: String = "connect"
 ) -> ProvenanceQueueSnapshot {

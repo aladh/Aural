@@ -87,11 +87,6 @@ public struct ProtobufReader {
         public var bytesPayload: Data? {
             if case let .bytes(payload) = value { payload } else { nil }
         }
-
-        /// The number when this is a varint field.
-        public var varintValue: UInt64? {
-            if case let .varint(number) = value { number } else { nil }
-        }
     }
 
     public enum Value {

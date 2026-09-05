@@ -18,10 +18,6 @@ extension PlaybackStore {
     /// transport state, and serializing them behind the pending flag would silently
     /// drop a second quick add. Multiple URIs are sent in visible order as sequential
     /// `add_to_queue` commands; presentation is not edited locally.
-    func addToQueue(uri: String) {
-        addToQueue(uris: [uri])
-    }
-
     func addToQueue(uris: [String]) {
         let ordered = uris.filter { !$0.isEmpty }
         guard !ordered.isEmpty else { return }

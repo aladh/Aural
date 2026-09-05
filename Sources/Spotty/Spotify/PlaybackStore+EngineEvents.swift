@@ -56,21 +56,6 @@ extension PlaybackStore {
         )
     }
 
-    func present(_ track: CatalogTrack) {
-        setPresentation(
-            track: CurrentTrack(
-                uri: track.uri,
-                title: track.title,
-                artist: track.artist,
-                artworkURL: track.artworkURL,
-                duration: track.duration,
-                metadataSource: .catalog
-            ),
-            timing: PlaybackTiming(position: 0, duration: track.duration, anchoredAt: environment.clock.now()),
-            source: .user
-        )
-    }
-
     func receive(_ state: RustPlaybackState, revision: UInt64?, receivedAt: Date) {
         guard !isTearingDown else { return }
         let isInitialSnapshot = !hasReceivedPlaybackSnapshot

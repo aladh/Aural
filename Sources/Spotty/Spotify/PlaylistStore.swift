@@ -43,7 +43,7 @@ final class PlaylistStore {
         loadTask = nil
         loadSessionSnapshot = nil
         loadedSessionSnapshot = nil
-        replaceTracks([])
+        trackCollection.replace([])
         description = ""
         loadedURI = nil
         ownerURI = nil
@@ -58,7 +58,7 @@ final class PlaylistStore {
             loadedSessionSnapshot = nil
         }
         loadedURI = uri
-        replaceTracks(tracks)
+        trackCollection.replace(tracks)
     }
 
     func load(_ item: CatalogItem, force: Bool = false) async {
@@ -90,7 +90,7 @@ final class PlaylistStore {
         loadedURI = item.uri
         if isNewPlaylist {
             loadedSessionSnapshot = nil
-            replaceTracks([])
+            trackCollection.replace([])
             description = ""
             ownerURI = item.ownerURI
             metadata.replaceTracks([], from: .playlist)
@@ -145,7 +145,7 @@ final class PlaylistStore {
             description = PlaylistDescription.plainText(from: playlist.description ?? "")
             ownerURI = CatalogMapping.ownerURI(from: playlist) ?? item.ownerURI
             let entries = playlist.content.flatMap(\.items) ?? []
-            replaceTracks(entries.compactMap(CatalogMapping.playlistTrack(from:)))
+            trackCollection.replace(entries.compactMap(CatalogMapping.playlistTrack(from:)))
             loadedSessionSnapshot = session.snapshot
             metadata.replaceTracks(tracks, from: .playlist)
             metadata.loadTrackAttributes(for: tracks)
@@ -153,10 +153,6 @@ final class PlaylistStore {
             guard !isCancellation(error), isCurrent(identity, uri: item.uri) else { return }
             self.error = error.localizedDescription
         }
-    }
-
-    private func replaceTracks(_ newTracks: [CatalogTrack]) {
-        trackCollection.replace(newTracks)
     }
 
     private func isCurrent(

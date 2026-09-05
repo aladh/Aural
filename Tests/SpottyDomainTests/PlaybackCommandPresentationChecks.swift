@@ -720,9 +720,6 @@ struct PlaybackCommandPresentationTests {
             #expect(
                 (playingA.playbackContextURI) == ("spotify:playlist:a"),
                 "a lagging A snapshot does not adopt protocol context")
-            #expect(
-                (playingA.playbackContextURI) == ("spotify:playlist:a"),
-                "a lagging A snapshot does not adopt protocol context")
             #expect((playingA.timing) == (optimisticTiming), "a lagging A snapshot keeps B timing")
             #expect((playingA.pendingCommands[.transport]?.id) == (playID), "a lagging A snapshot does not confirm B")
             #expect((playingA.transportCommandResolutions[playID]) == nil, "a lagging A snapshot is not a confirmation")

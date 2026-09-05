@@ -12,7 +12,6 @@ enum CatalogLayout {
     static let cardArtwork: CGFloat = 160
     static let cardPadding: CGFloat = 8
     static let cardCornerRadius: CGFloat = 11
-    static let cardWidth: CGFloat = cardArtwork
     static let gridMinimumWidth: CGFloat = cardArtwork + (cardPadding * 2)
     static let gridMaximumWidth: CGFloat = 208
     static let gridSpacing: CGFloat = 16

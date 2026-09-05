@@ -13,60 +13,9 @@ struct PlaybackPanelTests {
     @Test
     @MainActor
     func testPlaybackPanel() {
-        do {
-            let anchorDate = Date(timeIntervalSince1970: 1_000)
-            #expect(
-                (interpolatedPlaybackPosition(
-                    anchor: 40,
-                    anchoredAt: anchorDate,
-                    now: anchorDate.addingTimeInterval(0.25),
-                    isPlaying: true,
-                    duration: 200
-                )) == (40.25), "playing advances between backend samples")
-            #expect(
-                (interpolatedPlaybackPosition(
-                    anchor: 40,
-                    anchoredAt: anchorDate,
-                    now: anchorDate.addingTimeInterval(10),
-                    isPlaying: false,
-                    duration: 200
-                )) == (40), "paused position stays anchored")
-            #expect(
-                (interpolatedPlaybackPosition(
-                    anchor: 199.8,
-                    anchoredAt: anchorDate,
-                    now: anchorDate.addingTimeInterval(1),
-                    isPlaying: true,
-                    duration: 200
-                )) == (200), "interpolation stops at track duration")
-            #expect(
-                (interpolatedPlaybackPosition(
-                    anchor: 40,
-                    anchoredAt: anchorDate,
-                    now: anchorDate.addingTimeInterval(-1),
-                    isPlaying: true,
-                    duration: 200
-                )) == (40), "clock reversal cannot move the playhead backward")
-
-            let receivedAt = Date(timeIntervalSince1970: 1_010)
-            #expect(
-                (playbackSnapshotPosition(
-                    positionMilliseconds: 40_000,
-                    durationMilliseconds: 200_000,
-                    timestampMilliseconds: 1_005_000,
-                    isPlaying: true,
-                    now: receivedAt
-                )) == (45), "playing Connect snapshots compensate for their timestamp")
-            #expect(
-                (playbackSnapshotPosition(
-                    positionMilliseconds: 40_000,
-                    durationMilliseconds: 200_000,
-                    timestampMilliseconds: 1_005_000,
-                    isPlaying: false,
-                    now: receivedAt
-                )) == (40), "paused Connect snapshots stay at their exact position")
-        }
-
+        // Interpolation, snapshot position, repeat flags, history policy, and queue
+        // source labels are covered canonically in the domain suite; here only the
+        // boundary-owned store projection and wire decoding are exercised.
         // Cold-start resolution: backend queue/state events carry uris without names,
         // so the bar's metadata must come from the loaded catalog.
         do {
@@ -146,27 +95,6 @@ struct PlaybackPanelTests {
         }
 
         do {
-            let cycle: [RepeatMode] = [.off, .context, .track, .off]
-            for (before, after) in zip(cycle, cycle.dropFirst()) {
-                #expect((before.next) == (after), "cycle \(before) → \(after)")
-            }
-
-            #expect(
-                (RepeatMode.context.flags) == (RepeatFlags(context: true, track: false)),
-                "backend flags for context repeat"
-            )
-            #expect(
-                (RepeatMode.track.flags) == (RepeatFlags(context: false, track: true)), "backend flags for track repeat"
-            )
-            #expect(
-                (RepeatMode.off.flags) == (RepeatFlags(context: false, track: false)), "backend flags for no repeat")
-            // The two backend switches compose back into one mode.
-            #expect((RepeatMode(context: true, track: false)) == (.context), "flags rebuild to context")
-            #expect((RepeatMode(context: true, track: true)) == (.track), "track flag wins over context")
-            #expect((RepeatMode(context: false, track: false)) == (.off), "flags rebuild to off")
-        }
-
-        do {
             let now = Date(timeIntervalSince1970: 1_000_000)
             let store = PlaybackHistoryStore()
             store.notePlayed(uri: "spotify:track:a", title: "A", artist: "X", artworkURL: nil, playedAt: now)
@@ -182,126 +110,6 @@ struct PlaybackPanelTests {
             #expect(
                 (store.entries.first?.playedAt) == (now.addingTimeInterval(60)),
                 "history store replay uses the later injected timestamp")
-
-            var entries = PlaybackHistory.updated(
-                [], afterPlaying: "spotify:track:a", title: "A", artist: "X", artworkURLString: nil, playedAt: now)
-            #expect((entries.first?.uri) == ("spotify:track:a"), "newest entry lands first")
-
-            // Replaying the same track moves it rather than duplicating it.
-            entries = PlaybackHistory.updated(
-                entries,
-                afterPlaying: "spotify:track:a",
-                title: "A",
-                artist: "X",
-                artworkURLString: nil,
-                playedAt: now.addingTimeInterval(60)
-            )
-            #expect((entries.count) == (1), "replay does not duplicate")
-            #expect((entries.first?.playedAt) == (now.addingTimeInterval(60)), "replay refreshes the timestamp")
-
-            // Metadata arriving late fills the entry in.
-            entries = PlaybackHistory.withMetadata(
-                entries,
-                for: "spotify:track:a",
-                title: "Real Title",
-                artist: "Real Artist",
-                artworkURLString: "https://example/a.jpg"
-            )
-            #expect((entries.first?.title) == ("Real Title"), "late metadata fills the title")
-            #expect((entries.first?.playedAt) == (now.addingTimeInterval(60)), "late metadata keeps other fields")
-
-            // The cap holds.
-            entries = (0..<PlaybackHistory.cap + 25).reversed().reduce(entries) { current, index in
-                PlaybackHistory.updated(
-                    current,
-                    afterPlaying: "spotify:track:\(index)",
-                    title: "T\(index)",
-                    artist: "",
-                    artworkURLString: nil,
-                    playedAt: now.addingTimeInterval(TimeInterval(index))
-                )
-            }
-            #expect((entries.count) == (PlaybackHistory.cap), "history is capped")
-
-            // At exactly the cap one more play evicts precisely the oldest row.
-            var capped: [HistoryEntry] = []
-            for index in 0..<PlaybackHistory.cap {
-                capped = PlaybackHistory.updated(
-                    capped,
-                    afterPlaying: "spotify:track:t\(index)",
-                    title: "T\(index)",
-                    artist: "",
-                    artworkURLString: nil,
-                    playedAt: now.addingTimeInterval(TimeInterval(index))
-                )
-            }
-            capped = PlaybackHistory.updated(
-                capped,
-                afterPlaying: "spotify:track:new",
-                title: "New",
-                artist: "",
-                artworkURLString: nil,
-                playedAt: now.addingTimeInterval(999)
-            )
-            #expect((capped.count) == (PlaybackHistory.cap), "cap boundary stays at the cap")
-            #expect((capped.first?.uri) == ("spotify:track:new"), "the new track lands on top")
-            #expect((capped.last?.uri) == ("spotify:track:t1"), "exactly the oldest row falls off")
-
-            // Replaying a buried track lifts it without duplicating or reordering the rest.
-            var lifted: [HistoryEntry] = []
-            for suffix in ["a", "b", "c"] {
-                lifted = PlaybackHistory.updated(
-                    lifted,
-                    afterPlaying: "spotify:track:\(suffix)",
-                    title: suffix.uppercased(),
-                    artist: "",
-                    artworkURLString: nil,
-                    playedAt: now
-                )
-            }
-            lifted = PlaybackHistory.updated(
-                lifted,
-                afterPlaying: "spotify:track:a",
-                title: "A",
-                artist: "",
-                artworkURLString: nil,
-                playedAt: now.addingTimeInterval(30)
-            )
-            #expect((lifted.first?.uri) == ("spotify:track:a"), "a buried replay moves to the front")
-            #expect((lifted.count) == (3), "the lift does not duplicate")
-            #expect((lifted.last?.uri) == ("spotify:track:b"), "the other rows keep their order")
-
-            // Metadata aimed at one uri must leave every other entry untouched.
-            let untouched = [
-                HistoryEntry(
-                    uri: "spotify:track:kept", title: "Kept", artist: "K", artworkURLString: nil, playedAt: now)
-            ]
-            let afterMiss = PlaybackHistory.withMetadata(
-                untouched,
-                for: "spotify:track:other",
-                title: "X",
-                artist: "Y",
-                artworkURLString: "https://example/x.jpg"
-            )
-            #expect((afterMiss) == (untouched), "metadata for an absent uri changes nothing")
-
-            // Artwork already known is never downgraded by a later fill-in.
-            let owned = [
-                HistoryEntry(
-                    uri: "spotify:track:a", title: "A", artist: "X",
-                    artworkURLString: "https://example/old.jpg", playedAt: now
-                )
-            ]
-            let enriched = PlaybackHistory.withMetadata(
-                owned,
-                for: "spotify:track:a",
-                title: "Better Title",
-                artist: "X",
-                artworkURLString: "https://example/new.jpg"
-            )
-            #expect(
-                (enriched.first?.artworkURLString) == ("https://example/old.jpg"), "known artwork survives enrichment")
-            #expect((enriched.first?.title) == ("Better Title"), "non-empty titles still update")
         }
 
         do {
@@ -353,25 +161,6 @@ struct PlaybackPanelTests {
             } catch {
                 #expect((false) == true, "cased device types decode: \(error)")
             }
-        }
-
-        do {
-            // What fed a row, in listener-facing words.
-            let queued = QueueEntry(uri: "spotify:track:a", provider: "queue")
-            let suggested = QueueEntry(uri: "spotify:track:b", provider: "autoplay")
-            let contextual = QueueEntry(uri: "spotify:track:c", provider: "context")
-            let documented = QueueEntry(uri: "spotify:track:d", provider: "web-api")
-            #expect(
-                (queued.sourceLabel == "From your queue"
-                    && suggested.sourceLabel == "Suggested by Spotify"
-                    && contextual.sourceLabel == "From the current context"
-                    && documented.sourceLabel == "Up next") == true, "providers map to listener labels")
-            let repeated = [
-                QueueEntry(uri: "spotify:track:a", provider: "queue", occurrence: 0),
-                QueueEntry(uri: "spotify:track:a", provider: "queue", occurrence: 1),
-            ]
-            #expect((repeated[0].id != repeated[1].id) == true, "duplicate queue tracks have distinct row identities")
-
         }
 
         do {

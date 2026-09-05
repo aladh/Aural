@@ -54,7 +54,3 @@ nonisolated func debugLog(_ module: String, _ message: String) {
     #endif
 }
 
-/// Short process-local identity used only to distinguish duplicate store instances.
-nonisolated func storeTag(_ object: AnyObject) -> String {
-    String(UInt(bitPattern: ObjectIdentifier(object).hashValue) % 1_000)
-}

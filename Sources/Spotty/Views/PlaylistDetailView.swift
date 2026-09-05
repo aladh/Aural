@@ -23,9 +23,16 @@ struct PlaylistDetailView: View {
                 style: .playlist
             )
 
-            PlaylistDetailActionStrip(canPlay: playback.canStartPlayback) {
-                playback.playPlaylist(item)
+            HStack {
+                CircularPlayButton(
+                    action: { playback.playPlaylist(item) },
+                    isEnabled: playback.canStartPlayback
+                )
+                Spacer(minLength: 0)
             }
+            .padding(.horizontal, CatalogLayout.contentPadding)
+            .frame(maxWidth: .infinity, minHeight: 56, maxHeight: 56, alignment: .leading)
+            .background(SpottyPalette.catalogCanvas)
 
             CatalogTableDivider()
 
@@ -137,37 +144,4 @@ struct PlaylistDetailView: View {
         return [songCountText, formatPlaylistDuration(totalDuration)].joined(separator: " · ")
     }
 
-}
-
-private struct PlaylistDetailActionStrip: View {
-    let canPlay: Bool
-    let play: () -> Void
-
-    var body: some View {
-        HStack {
-            CircularPlayButton(action: play, isEnabled: canPlay)
-            Spacer(minLength: 0)
-        }
-        .padding(.horizontal, CatalogLayout.contentPadding)
-        .frame(maxWidth: .infinity, minHeight: 56, maxHeight: 56, alignment: .leading)
-        .background(SpottyPalette.catalogCanvas)
-    }
-}
-
-func formatPlaylistDuration(_ interval: TimeInterval) -> String {
-    let totalSeconds = roundedCatalogDurationSeconds(interval)
-    let hours = totalSeconds / 3_600
-    if hours > 0 {
-        let minutes = (totalSeconds % 3_600) / 60
-        return minutes == 0 ? "\(hours) hr" : "\(hours) hr \(minutes) min"
-    }
-    let minutes = totalSeconds / 60
-    let seconds = totalSeconds % 60
-    if minutes == 0 {
-        return "\(seconds) sec"
-    }
-    if seconds == 0 {
-        return "\(minutes) min"
-    }
-    return "\(minutes) min \(seconds) sec"
 }

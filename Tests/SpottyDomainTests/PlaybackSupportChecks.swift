@@ -342,8 +342,6 @@ struct PlaybackSupportTests {
         }
 
         do {
-            #expect((PCMWriteBackpressure.waitTimeoutMilliseconds) == (500), "one wait slice is 500 milliseconds")
-
             var policy = PCMWriteBackpressure()
             policy.beginWrite()
             #expect(
@@ -407,7 +405,7 @@ struct PlaybackSupportTests {
                 (trickle.admit(freeSpace: 0, remaining: 7, isRendering: true)) == (.waitForSpace),
                 "the next write call restores a single wait")
 
-            full.resetWaitBudget()
+            full.beginWrite()
             #expect(
                 (full.admit(freeSpace: 0, remaining: 1, isRendering: true)) == (.waitForSpace),
                 "ring reset allows a later full buffer to wait again")

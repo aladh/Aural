@@ -524,7 +524,7 @@ final nonisolated class AudioRenderer: @unchecked Sendable {
         cursor.reset()
         totalSamplesWritten = 0
         writeStartTime = ProcessInfo.processInfo.systemUptime
-        writeBackpressure.resetWaitBudget()
+        writeBackpressure.beginWrite()
         bufferLock.unlock()
         writerSpace.signalIfArmed()
     }

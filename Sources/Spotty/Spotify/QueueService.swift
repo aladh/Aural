@@ -2,14 +2,11 @@ import SpottyDomain
 import Foundation
 import OSLog
 
-typealias QueueSnapshotSource = PlaybackQueueSource
-typealias QueueSnapshotCompleteness = PlaybackQueueCompleteness
-
 nonisolated struct ProvenanceQueueSnapshot: Sendable {
     let accountEpoch: UInt64
     let revision: UInt64
-    let source: QueueSnapshotSource
-    let completeness: QueueSnapshotCompleteness
+    let source: PlaybackQueueSource
+    let completeness: PlaybackQueueCompleteness
     let receivedAt: Date
     let contextURI: String?
     let entries: [QueueEntry]

@@ -16,18 +16,6 @@ extension View {
     }
 }
 
-func withAnimationIfAllowed(
-    _ animation: Animation,
-    reduceMotion: Bool,
-    _ changes: () -> Void
-) {
-    if reduceMotion {
-        changes()
-    } else {
-        withAnimation(animation, changes)
-    }
-}
-
 private struct HoverSurfaceModifier: ViewModifier {
     @Binding var isHovering: Bool
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
