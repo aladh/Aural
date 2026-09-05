@@ -93,7 +93,7 @@ pub(crate) fn classify_spirc_command_failure(err: &librespot_core::Error) -> Spi
 
 /// Maps a failed public Spirc command to the FFI recovery code.
 ///
-/// Pinned librespot (`9c7d75615fc093bdcbdb29adbce3fed38c531852`) exposes
+/// Pinned librespot (`a1b66d3c8a14e55a9572a9e17467150dca618c9a`) exposes
 /// `librespot_core::Error.kind`. Every `Spirc` handle used by [`crate::spirc_error`]
 /// either only sends on the unbounded command `mpsc` (`play`, `pause`, `next`,
 /// `prev`, `shuffle`, `repeat`, `repeat_track`, `set_position_ms`, `load`,

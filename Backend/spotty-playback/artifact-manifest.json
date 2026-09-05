@@ -1,9 +1,9 @@
 {
   "artifact" : {
     "archive" : "SpottyPlaybackCore.xcframework.zip",
-    "checksum" : "a98eafa5d53ce90b2f4714c04e1be95512a93d139b0df4d42f1e1f7a29296865",
+    "checksum" : "b183c58d53947292d945927b6449c83b306701004eaf2a08281e8bc55dd035b3",
     "name" : "SpottyPlaybackCore",
-    "url" : "https:\/\/github.com\/aladh\/Spotty\/releases\/download\/spotty-playback-core-2094ea53c8b4a6ecadb02f460f937c366485cf2e83ef1ab43f44116461e787b9\/SpottyPlaybackCore.xcframework.zip"
+    "url" : "https:\/\/github.com\/aladh\/Spotty\/releases\/download\/spotty-playback-core-dddc55e4c54469213528148897bc148dc75c27a884d7bf59a77705259acc4bfd\/SpottyPlaybackCore.xcframework.zip"
   },
   "licensing" : {
     "archiveLicenseDirectory" : "Notices\/licenses",
@@ -17,7 +17,7 @@
     ]
   },
   "module" : {
-    "library" : "libSpottyPlaybackCore_2094ea53c8b4a6ecadb02f460f937c366485cf2e83ef1ab43f44116461e787b9_a2ed1097835ec51f2353d448b6e1291d2193cb2c2f7da978bc4d5636847008b1.a",
+    "library" : "libSpottyPlaybackCore_dddc55e4c54469213528148897bc148dc75c27a884d7bf59a77705259acc4bfd_3c232c66b73b10e7eef8b21c79a44332dfa34be3189bd5db11bc04873d19caf6.a",
     "moduleMap" : "module.modulemap",
     "name" : "SpottyPlaybackCore",
     "umbrellaHeader" : "spotty_playback.h",
@@ -35,12 +35,12 @@
   "schemaVersion" : 1,
   "source" : {
     "canonicalHeadersSHA256" : "18a330b53df5c989a58db8bc259cd9b81e9d75125ba2ef3f83e49b23dd3dce8f",
-    "cargoLockSHA256" : "57e154dae22de45ee0798da45186a6fc31d566709f8879f6de96e2338dd2e9fe",
-    "engineInputDigest" : "2094ea53c8b4a6ecadb02f460f937c366485cf2e83ef1ab43f44116461e787b9",
-    "librespotRevision" : "9c7d75615fc093bdcbdb29adbce3fed38c531852",
+    "cargoLockSHA256" : "e619e817b7fc6ee35702301ec889854725e19926977224d44d400c9bdfc6faad",
+    "engineInputDigest" : "dddc55e4c54469213528148897bc148dc75c27a884d7bf59a77705259acc4bfd",
+    "librespotRevision" : "a1b66d3c8a14e55a9572a9e17467150dca618c9a",
     "rustToolchain" : "1.98.0",
     "sourceDirty" : false,
-    "sourceRevision" : "191c89765567f8b8f0579a8dbb47b5008929cb4f",
+    "sourceRevision" : "7452fcb2ca753c615f26d24cd8b1caf02b954e46",
     "target" : "aarch64-apple-darwin"
   }
 }

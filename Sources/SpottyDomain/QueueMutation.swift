@@ -172,16 +172,18 @@ public enum QueueAddFeedbackPolicy: Sendable {
     }
 }
 
-/// librespot 9c7d756 `Spirc` publishes `add_to_queue` only. Incoming dealer `SetQueue` is
-/// handled internally (`connect_state.handle_set_queue`) and is not a public local command.
+/// librespot a1b66d3 `Spirc` publishes `add_to_queue` and `clear_queue`, but not
+/// selected-occurrence removal. Incoming dealer `SetQueue` is handled internally
+/// (`connect_state.handle_set_queue`) and is not a public local command.
 /// Routing HTTP `set_queue` to the local device is unproven without a live Connect mutation
 /// and would invent a second owner beside Spirc. Local-owner removal is therefore disabled
 /// until a tested Spirc replacement export exists.
 public enum LocalQueueReplacementCapability: Sendable {
     public static let isSupported = false
     public static let evidence = """
-        librespot Spirc at 9c7d75615fc093bdcbdb29adbce3fed38c531852 exposes add_to_queue, load, \
-        play/pause, skip, shuffle, repeat, transfer, activate, and disconnect. SetQueueCommand is \
+        librespot Spirc at a1b66d3c8a14e55a9572a9e17467150dca618c9a exposes add_to_queue, \
+        clear_queue, load, play/pause, skip, shuffle, repeat, transfer, activate, and disconnect. \
+        SetQueueCommand is \
         inbound-only (spirc.rs handle of dealer SetQueue). Device is_restricted in Spotty's cluster \
         mapping is hardcoded false and is not a restriction signal. Follow-up: a panic-barrier FFI \
         that performs the same connect_state.set_next_tracks/set_prev_tracks replacement Spirc \
