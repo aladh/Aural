@@ -6,13 +6,12 @@ import unittest
 import zipfile
 
 from playback_promotion import (
-    promote, validate_artifact, validate_checkout, validate_payload, validate_run,
+    promote, release_tag, validate_artifact, validate_checkout, validate_payload, validate_run,
 )
 
 
 HEAD = "a" * 40
 BASE = "b" * 40
-MERGE = "c" * 40
 DIGEST = "d" * 64
 
 
@@ -26,7 +25,7 @@ def zip_bytes(files):
 
 def payload():
     provenance = json.dumps({"source": {
-        "sourceDirty": False, "sourceRevision": MERGE, "engineInputDigest": DIGEST,
+        "sourceDirty": False, "sourceRevision": HEAD, "engineInputDigest": DIGEST,
     }}).encode()
     notices = {"Notices/source/" + name: name.encode()
                for name in ("LICENSE", "NOTICE", "THIRD_PARTY_NOTICES.md")}
@@ -43,7 +42,7 @@ def payload():
         "SpottyPlaybackCore-notices.zip": zip_bytes(notices),
         "spotty_playback_provenance.json": provenance,
         "source-provenance.txt":
-            f"source_sha={MERGE}\nsource_ref={HEAD}\nsource_input_digest={DIGEST}\n".encode(),
+            f"source_sha={HEAD}\nsource_ref={HEAD}\nsource_input_digest={DIGEST}\n".encode(),
         **{name: name.encode() for name in ("LICENSE", "NOTICE", "THIRD_PARTY_NOTICES.md")},
     }
 
@@ -53,9 +52,8 @@ class PromotionTests(unittest.TestCase):
         self.run = {
             "repository": {"full_name": "owner/repo"},
             "head_repository": {"full_name": "owner/repo"},
-            "path": ".github/workflows/ci.yml", "event": "pull_request",
+            "path": ".github/workflows/ci.yml", "event": "push", "head_branch": "main",
             "head_sha": HEAD, "status": "completed", "conclusion": "failure",
-            "pull_requests": [{"base": {"sha": BASE}}],
         }
         self.jobs = [{"name": name, "conclusion": "success", "started_at": "2026-09-05T12:00:00Z",
                       "completed_at": "2026-09-05T12:10:00Z"} for name in ("Rust checks", "Candidate Swift debug", "Candidate Swift release")]
@@ -65,24 +63,24 @@ class PromotionTests(unittest.TestCase):
 
     def test_failed_published_pin_does_not_block_successful_candidate(self):
         validate_run(self.run, self.jobs, "owner/repo", HEAD)
-        validate_checkout(self.run, MERGE, [BASE, HEAD], base_is_trusted=True)
+        validate_checkout(self.run, HEAD)
         validate_artifact(self.artifact, self.jobs)
-        self.assertEqual(validate_payload(payload(), HEAD), (MERGE, DIGEST))
+        self.assertEqual(validate_payload(payload(), HEAD), (HEAD, DIGEST))
 
     def promotion_inputs(self):
         bundle = zip_bytes(payload())
         return dict(
             run=self.run, jobs=self.jobs,
-            artifacts=[{**self.artifact, "name": f"playback-candidate-{MERGE}",
+            artifacts=[{**self.artifact, "name": f"playback-candidate-{HEAD}",
                         "digest": "sha256:" + hashlib.sha256(bundle).hexdigest()}],
-            bundle=bundle, commit={"parents": [{"sha": BASE}, {"sha": HEAD}]},
+            bundle=bundle,
             comparison="ahead", workflow_bytes=b"trusted CI", trusted_ci=b"trusted CI",
             source_ref=HEAD, repo="owner/repo")
 
     def test_complete_promotion_returns_exact_publication_bytes(self):
         args = self.promotion_inputs()
         source, digest, assets = promote(**args)
-        self.assertEqual((source, digest), (MERGE, DIGEST))
+        self.assertEqual((source, digest), (HEAD, DIGEST))
         # Compare to the actual bundle contents, including unchanged archive bytes.
         with zipfile.ZipFile(io.BytesIO(args["bundle"])) as archive:
             self.assertEqual(assets, {name: archive.read(name) for name in archive.namelist()})
@@ -108,20 +106,16 @@ class PromotionTests(unittest.TestCase):
         with self.assertRaises(KeyError):
             promote(**args)
 
-    def test_push_promotion_uses_exact_reviewed_checkout(self):
-        args = self.promotion_inputs()
-        args["run"] = {**self.run, "event": "push", "head_sha": MERGE}
-        args["source_ref"] = MERGE
-        args["comparison"] = None
-        files = payload()
-        files["source-provenance.txt"] = files["source-provenance.txt"].replace(
-            f"source_ref={HEAD}".encode(), f"source_ref={MERGE}".encode())
-        args["bundle"] = zip_bytes(files)
-        args["artifacts"][0]["digest"] = "sha256:" + hashlib.sha256(args["bundle"]).hexdigest()
-        self.assertEqual(promote(**args)[:2], (MERGE, DIGEST))
+    def test_release_versions_use_a_separate_tag_namespace(self):
+        self.assertEqual(release_tag("0.1.0"), "playback-v0.1.0")
+        self.assertEqual(release_tag("1.20.3"), "playback-v1.20.3")
+        for version in ("v0.1.0", "01.0.0", "0.1", "0.1.0-beta", "0.1.0\n", "../v0.1.0"):
+            with self.subTest(version=version), self.assertRaises(ValueError):
+                release_tag(version)
 
     def test_wrong_origin_or_source_is_rejected(self):
         for key, value in (("head_sha", BASE), ("event", "workflow_dispatch"),
+                           ("event", "pull_request"), ("head_branch", "feature"),
                            ("path", ".github/workflows/fake.yml"), ("status", "in_progress"),
                            ("head_repository", {"full_name": "fork/repo"})):
             with self.subTest(key=key), self.assertRaises(ValueError):
@@ -143,13 +137,10 @@ class PromotionTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             validate_artifact({**self.artifact, "expired": True}, self.jobs)
 
-    def test_unrelated_merge_is_rejected(self):
-        for parents in ([BASE, BASE], [HEAD, BASE], [HEAD]):
-            with self.subTest(parents=parents), self.assertRaises(ValueError):
-                validate_checkout(self.run, MERGE, parents, base_is_trusted=True)
+    def test_different_checkout_is_rejected(self):
         with self.assertRaises(ValueError):
-            validate_checkout(self.run, MERGE, [BASE, HEAD], base_is_trusted=False)
-        validate_checkout({**self.run, "event": "push"}, HEAD, [BASE])
+            validate_checkout(self.run, BASE)
+        validate_checkout(self.run, HEAD)
 
     def test_tampering_is_rejected(self):
         for asset in ("SpottyPlaybackCore.xcframework.zip", "LICENSE", "NOTICE"):

@@ -64,8 +64,8 @@ Stable IDs preserve searchability in issue and code history. They are navigation
 
 | IDs | Invariant | Primary enforcement |
 | --- | --- | --- |
-| `ABI-SYM-001`, `ABI-USE-001` | Checked-in C declarations equal archive exports and every retained export is consumed by `PlaybackCore.swift` | Header/archive comparison and export-use checks in `Scripts/check.sh` |
-| `ABI-SIG-001` | C signatures stay compile-time compatible with Rust exports | C compiler type-compatibility assertions generated from `abi-signatures.txt`, exact fixture/export coverage, Rust compile-time function assignments, and fixture-parity tests |
+| `ABI-SYM-001`, `ABI-USE-001` | Selected artifact C declarations equal archive exports and every retained export is consumed by `PlaybackCore.swift` | Header/archive comparison and export-use checks in `Scripts/check.sh` |
+| `ABI-SIG-001` | C signatures stay compile-time compatible with Rust exports | Source-candidate C compiler type-compatibility assertions from `abi-signatures.txt`, exact fixture/export coverage, Rust compile-time function assignments, and fixture-parity tests |
 | `ABI-GEN-001` | All checked-in playback function declarations and snapshot layouts reproduce from Rust using the pinned development tool | `Scripts/generate-c-header.sh --check` in the full/Rust gate; C layout and signature checks remain independent |
 | `ABI-SWIFT-001` | Swift retains required callbacks, typed enums, and each nullable pointer shape | Positive and expected-failing compiler probes in `Scripts/check-c-header-imports.sh`, run in the full/Swift gate without linking or executing |
 | `ABI-ARC-001` | The static archive and matching headers travel together in a pinned XCFramework; app builds never invoke Rust | SwiftPM binary target, artifact validation/provenance, explicit local override, and Rust-free build checks |
@@ -101,7 +101,7 @@ the package graph, deterministic suites, current focused checks, or semantic rev
 | `CI-WF-001`, `CI-RG-001` | CI workflow exists and acquires ripgrep only when absent | `Scripts/check.sh` workflow assertions |
 | `CI-RUST-001` | Rust cache key/content stays tied to runner architecture, toolchain, and lockfile | `Scripts/check.sh` plus semantic workflow review |
 | `CI-FMT-001` | CI uses the selected toolchain formatter, not Homebrew Swift formatting/lint tools | `Scripts/check.sh` |
-| `CI-REL-001` | Rust, published-artifact Swift/architecture and Release lanes, plus candidate Debug/Release lanes when the engine digest differs from the pin, feed the aggregate | workflow commands/dependencies asserted from `Scripts/check.sh`; `test_playback_promotion.py` in the Rust/full gate covers promotion origin, job results, artifact integrity, and provenance |
+| `CI-REL-001` | Rust, published-artifact Swift/architecture and Release lanes, plus candidate Debug/Release lanes (when engine inputs differ from the pinned release tag, or the pin is still unversioned), feed the aggregate | workflow commands/dependencies asserted from `Scripts/check.sh`; `test_playback_promotion.py` in the Rust/full gate covers promotion origin, job results, artifact integrity, provenance, and engine-version tag syntax |
 | `CI-TOOL-001` | CI lanes select the documented toolchain, run on the pinned macOS runner, check out without persisted credentials, and restore caches by the exact content keys | literal workflow fragments asserted from `Scripts/check.sh`; the pin values are owned by the development setup guide and change together |
 
 Action SHA pins, least permissions, cache contents beyond asserted fragments, tag/version agreement,
@@ -148,4 +148,5 @@ Source and Markdown checks prove lexical boundaries, not runtime behavior. The a
 
 Rust lexical guards remain in the Rust suite invoked by `Scripts/check.sh`; do not duplicate their
 scanner in shell. `Backend/spotty-playback/source-input-digest.sh` defines artifact inputs; Rust
-tests outside `src/` are excluded from that digest.
+tests outside `src/` are excluded from that digest. CI uses the same input list for its diff against
+the pinned engine tag, including source and license directories to catch deletions.

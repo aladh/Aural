@@ -30,12 +30,19 @@ def require(condition, message):
         raise ValueError(message)
 
 
+def release_tag(version):
+    require(re.fullmatch(r"(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)", version),
+            "Engine version must be MAJOR.MINOR.PATCH without a prefix or leading zeroes")
+    return f"playback-v{version}"
+
+
 def validate_run(run, jobs, repo, source_ref):
     require(re.fullmatch(r"[0-9a-f]{40}", source_ref), "Expected a full reviewed source SHA")
     require(run["repository"]["full_name"] == repo, "Wrong repository")
     require(run["head_repository"]["full_name"] == repo, "Fork candidates cannot be published")
     require(run["path"] == ".github/workflows/ci.yml", "Candidate must come from CI")
-    require(run["event"] in ("push", "pull_request"), "Unsupported candidate event")
+    require(run["event"] == "push" and run["head_branch"] == "main",
+            "Candidate must come from a main-branch push CI run")
     require(run["head_sha"] == source_ref, "CI run does not cover the reviewed source")
     require(run["status"] == "completed", "CI run is still running")
     # Published-pin jobs can fail before an ABI-changing candidate has been published.
@@ -45,13 +52,9 @@ def validate_run(run, jobs, repo, source_ref):
                 f"Missing successful {name} in this run attempt")
 
 
-def validate_checkout(run, source_sha, parents, base_is_trusted=False):
+def validate_checkout(run, source_sha):
     require(re.fullmatch(r"[0-9a-f]{40}", source_sha), "Invalid candidate checkout SHA")
-    if source_sha == run["head_sha"]:
-        return
-    require(run["event"] == "pull_request", "Candidate checkout differs from push SHA")
-    require(len(parents) == 2 and parents[1] == run["head_sha"] and base_is_trusted,
-            "Candidate is not the CI merge of the reviewed source and base")
+    require(source_sha == run["head_sha"], "Candidate checkout differs from main CI SHA")
 
 
 def validate_artifact(artifact, jobs):
@@ -115,7 +118,7 @@ def candidate_artifact(artifacts):
     return candidates[0]
 
 
-def promote(run, jobs, artifacts, bundle, commit, comparison, workflow_bytes,
+def promote(run, jobs, artifacts, bundle, comparison, workflow_bytes,
             trusted_ci, source_ref, repo):
     validate_run(run, jobs, repo, source_ref)
     artifact = candidate_artifact(artifacts)
@@ -125,8 +128,8 @@ def promote(run, jobs, artifacts, bundle, commit, comparison, workflow_bytes,
     assets = read_payload(bundle)
     source_sha, digest = validate_payload(assets, source_ref)
     require(artifact["name"] == f"playback-candidate-{source_sha}", "Artifact name/checkout mismatch")
-    parents = [p["sha"] for p in commit["parents"]]
-    validate_checkout(run, source_sha, parents, comparison in ("ahead", "identical"))
+    validate_checkout(run, source_sha)
+    require(comparison in ("ahead", "identical"), "Candidate source is not on publisher main history")
     require(workflow_bytes == trusted_ci,
             "Candidate CI definition differs from the trusted publisher checkout; run current CI")
     return source_sha, digest, assets
@@ -150,10 +153,12 @@ def pages(path, key):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--version", required=True)
     parser.add_argument("--run-id", required=True, type=int)
     parser.add_argument("--source-ref", required=True)
     parser.add_argument("--output", required=True, type=Path)
     args = parser.parse_args()
+    tag = release_tag(args.version)
     repo = os.environ["GITHUB_REPOSITORY"]
     root = f"repos/{repo}"
     run_path = f"{root}/actions/runs/{args.run_id}"
@@ -167,20 +172,17 @@ def main():
     with zipfile.ZipFile(io.BytesIO(data)) as archive:
         source_sha = json.loads(archive.read("spotty_playback_provenance.json"))["source"]["sourceRevision"]
     require(re.fullmatch(r"[0-9a-f]{40}", source_sha), "Invalid candidate checkout SHA")
-    commit = api(f"{root}/commits/{source_sha}")
-    parents = [p["sha"] for p in commit["parents"]]
-    comparison = None
-    if source_sha != run["head_sha"] and len(parents) == 2:
-        comparison = api(f"{root}/compare/{parents[0]}...{os.environ['GITHUB_SHA']}")["status"]
+    validate_checkout(run, source_sha)
+    comparison = api(f"{root}/compare/{source_sha}...{os.environ['GITHUB_SHA']}")["status"]
     workflow = api(f"{root}/contents/.github/workflows/ci.yml?ref={source_sha}")
     source_sha, digest, assets = promote(
-        run, jobs, artifacts, data, commit, comparison, base64.b64decode(workflow["content"]),
+        run, jobs, artifacts, data, comparison, base64.b64decode(workflow["content"]),
         Path(".github/workflows/ci.yml").read_bytes(), args.source_ref, repo)
     args.output.mkdir(parents=True, exist_ok=False)
     for name, content in assets.items():
         (args.output / name).write_bytes(content)
     with open(os.environ["GITHUB_OUTPUT"], "a") as output:
-        output.write(f"source_sha={source_sha}\nengine_digest={digest}\n")
+        output.write(f"source_sha={source_sha}\nengine_digest={digest}\nversion={args.version}\nrelease_tag={tag}\n")
     print(f"Validated candidate {artifact['id']} from CI run {args.run_id}, checkout {source_sha}")
 
 
