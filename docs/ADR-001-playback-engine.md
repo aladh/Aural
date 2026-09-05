@@ -1,53 +1,25 @@
 # ADR 001: Playback engine boundary
 
-Status: accepted on 2026-08-18. The later retained-engine decision is recorded in
-[ADR 005](ADR-005-retain-librespot.md); the contained boundary and application-ownership principles
-below remain accepted.
+Status: accepted on 2026-08-18; the engine choice is reaffirmed by [ADR 005](ADR-005-retain-librespot.md).
 
-## Context
+## Context and decision
 
-Spotty needs local Spotify Premium playback and Spotify Connect without the Spotify desktop app, a
-WebView, or a Chromium shell. When the engine was chosen there was no maintained Swift library for
-the private session, Connect, media delivery, decryption, codec, and reconnection work. librespot
-supplied all of it, so it was embedded as a statically linked Rust leaf that hands decoded PCM to
-the native AVFoundation renderer.
+Spotty needs standalone playback and Spotify Connect with a native macOS interface. Private
+session, media delivery, decoding, and reconnection work should not spread through application code.
 
-Two constraints from the original research still hold. Spotify's developer policy and terms
-restrict reverse engineering and permit streaming only for Premium subscribers, so the private
-protocol is a policy and enforcement risk in any implementation language. Spotifly's experience
-showed that the durable shape is one lifecycle owner and one revisioned snapshot stream, not a
-clone of any particular implementation.
+Contain that work behind one C module and one Swift adapter. Swift owns application state and
+policy; decoded PCM goes directly to the native AVFoundation renderer. The boundary must allow an
+engine replacement without making the application depend on librespot internals.
 
-## Decision
+This containment decision remains current. [ADR 005](ADR-005-retain-librespot.md) owns the choice to
+retain librespot and the conditions for reconsidering it. [ADR 006](ADR-006-prebuilt-playback-engine.md)
+owns binary distribution. Neither replaceability nor a C boundary implies a migration roadmap.
 
-Keep the embedded Rust/librespot core, but treat it as a replaceable leaf:
+## Tradeoff
 
-- Swift reaches it through the `SpottyPlaybackCore` C module,
-  `Sources/Spotty/Spotify/PlaybackCore.swift`, and `RustPlaybackEngine`.
-- Swift owns application logic: state, queue policy, presentation, resume policy, catalog, OAuth,
-  persistence, and error policy. `AudioRenderer` stays native AVFoundation.
-- `SpottyCore` is the testable Swift application implementation, not another playback
-  abstraction; no second engine-abstraction target is reintroduced.
+A foreign-function boundary adds ABI and lifetime verification, but limits the reach of private
+protocol changes. Adding another application-facing engine abstraction would add indirection
+without improving that containment.
 
-The live boundary is [playback engine ownership](playback-engine-ownership.md).
-
-## Options rejected
-
-- Pure Swift engine now: verification cost and protocol churn outweigh the gain.
-- Spotify iOS SDK: an App Remote SDK that needs the Spotify app and offers no macOS engine.
-- Web Playback SDK in `WKWebView`: removes Rust but adds a JavaScript bridge, WebKit helper
-  processes, a second client ID and setup flow, and REST device transfer.
-
-## Consequences
-
-- The foreign-boundary review surface is the C header, `PlaybackCore.swift` and
-  `RustPlaybackEngine`, the Rust `extern "C"` exports (`ffi.rs`, `player_control.rs`,
-  `queue.rs`, `transport.rs`), and the paired ABI-parity and layout checks. A change to any one
-  of them is reviewed against the others.
-- librespot updates are protocol migrations, not routine dependency bumps.
-- Changes in ownership must keep the boundary narrow and follow ADR 005.
-
-## Revisit trigger
-
-A supported macOS playback SDK or measured evidence that a different engine improves reliability
-and total resource use enough to justify revisiting ADR 005.
+Current modules and responsibilities are listed in [playback engine ownership](playback-engine-ownership.md);
+ABI and import checks are indexed in the [enforcement inventory](architecture-enforcement.md).

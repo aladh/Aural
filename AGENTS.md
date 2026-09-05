@@ -62,7 +62,8 @@ Release compilation but does not run that clean-room gate.
 | --- | --- |
 | Product overview and capabilities | [README](README.md) |
 | UX, scope, and live-account acceptance | [Product contract](docs/product-and-acceptance-contract.md) |
-| Architecture, protocol notes, and engine ownership | [ADR index](docs/architecture-decisions.md) |
+| Architectural choices and tradeoffs | [Decision log](docs/architecture-decisions.md) |
+| Current Swift/Rust responsibilities | [Playback engine ownership](docs/playback-engine-ownership.md) |
 | Rule owners and verification coverage | [Enforcement inventory](docs/architecture-enforcement.md) |
 | Setup, generated local state, and signing recovery | [Development setup](docs/development-setup.md) |
 | Verification, PRs, packaging, and releases | [Agent operations](CONTRIBUTING.md) |

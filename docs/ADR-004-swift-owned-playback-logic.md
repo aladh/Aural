@@ -1,42 +1,16 @@
 # ADR 004: Move Spotty-owned playback logic into Swift incrementally
 
 Status: superseded on 2026-09-04 by [ADR 005](ADR-005-retain-librespot.md).
+This historical record is not an active migration plan.
 
-Supersession note: this record preserves the historical incremental-migration decision and its
-ownership principles. Its `#201` gate and migration commitment are no longer active; ADR 005 is the
-current retained-engine decision.
+## Historical decision
 
-## Context
+The Rust leaf had accumulated application-facing projections and orchestration alongside protocol
+work. The decision was to move coherent application responsibilities into Swift incrementally,
+with deterministic checks, instead of attempting a big-bang engine rewrite.
 
-[ADR 001](ADR-001-playback-engine.md) keeps librespot behind a narrow boundary. The leaf also
-accumulated Spotty-owned orchestration: queue presentation filtering, snapshot envelopes shaped
-for the UI, device-list projections, resume fallback sequencing, and generation gates used to
-coordinate app state across the C boundary. A big-bang rewrite would put live Connect correctness
-at risk, so application policy moves to Swift one owner at a time.
+## Why it was superseded
 
-## Decision
-
-- `SpottyDomain.PlaybackState` remains the authoritative app-facing playback snapshot, with
-  `PlaybackReducer` as its only mutation entrance
-  ([ADR 002](ADR-002-playback-state-and-dependencies.md)).
-- Rust remains a protocol/runtime adapter: session, Spirc, cluster subscribe/bootstrap, PCM
-  decode, reconnection that rebuilds librespot objects, and panic-barrier FFI.
-- When a projection exists only to cross the FFI boundary, prefer typed Swift models and shrink
-  the envelope instead of keeping a second presentation copy in Rust.
-- Keep behavior-preserving seams. Port one coherent owner at a time and move its deterministic
-  checks with it.
-
-## Consequences
-
-All four observation callbacks (connection, playback, device list, queue) cross FFI as typed C
-snapshots. Presentation and resume/rehydration policy are Swift-owned; the engine forwards
-protocol rows and flags and holds readiness open behind `resume_pending` while Swift's reconnect
-loads run. The former #201 roadmap proposed further ownership stages; that roadmap was retired
-by ADR 005. Current Rust module ownership and the retained FFI surface are defined in
-[playback engine ownership](playback-engine-ownership.md). ADR 001 remains accepted.
-
-## Options considered
-
-- Rewrite the engine in Swift: historically deferred to #201; rejected by ADR 005.
-- Forward raw cluster protobuf to Swift immediately: deferred. It would expand the ABI and require
-  Swift protobuf models of Connect state in one step.
+The later Swift playback experiment introduced a second implementation and additional lifetime and
+verification costs without an established benefit. ADR 005 retired the replacement roadmap and
+retained librespot as the sole production engine.

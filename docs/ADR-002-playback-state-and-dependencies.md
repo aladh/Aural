@@ -1,68 +1,42 @@
 # ADR 002: Atomic playback state and explicit dependency ownership
 
-Status: accepted on 2026-08-23
+Status: accepted on 2026-08-23.
 
 ## Context
 
-Playback, account, Connect ownership, queue provenance, metadata, and catalog work previously met
-in one mutable controller. Correct local fixes accumulated, but a callback or suspended request
-could still combine values from different account, engine, command, queue, or selection lifetimes.
+Playback callbacks and suspended account, catalog, and queue requests can finish after the state
+that started them has changed. Independently mutating presentation fields can combine observations
+from different lifetimes and make stale work appear current.
 
 ## Decision
 
-- `SpottyDomain.PlaybackState` is the single playback presentation snapshot. Everything the UI
-  shows about playback, connection, devices, and the upcoming queue is projected into it in Swift;
-  which projection owns which field is listed in
-  [playback engine ownership](playback-engine-ownership.md).
-- `PlaybackReducer` is the only mutation mechanism for that snapshot. External callbacks enter as
-  account/engine/source-stamped events; ordered sources also carry revisions. An event is applied
-  only when the reducer accepts the stamped envelope; intake must not guess a newer generation.
-- `PlaybackStore` is a `@MainActor` compatibility and action surface. `PlaybackCoordinator`
-  serializes playback effects and talks only to injected ports.
-- `AccountStore` owns restore, interactive authorization, revocation, logout, and account epochs.
-  `AccountStore.epoch` is the only writable account-epoch owner. `PlaybackStore.accountEpoch` is a
-  read-only projection of that value. `PlaybackState.accountEpoch` remains reducer-owned accepted
-  snapshot state, not a second imperative lifecycle counter. Every suspended account operation
-  revalidates its generation and epoch before mutation.
-- `QueueService` owns source precedence, context identity, and the Connect mutation snapshot used
-  for `set_queue`. Metadata enrichment cannot reorder a queue, and stale or provisional results
-  cannot erase a newer authoritative snapshot. Same-context Web API `/me/player/queue` snapshots
-  may enrich labels only; complete Connect occurrence order remains authoritative, and a Web
-  snapshot must not copy its revision or `receivedAt` onto that Connect snapshot. Connect queue
-  callback identity is a distinct generation+revision watermark that adopting an engine epoch does
-  not clear. `PlaybackStore.queueMutation` is a MainActor projection of that owner, not a second
-  mutation source.
-- Home/library, search, and selected-playlist work have separate stores, request scopes, and
-  account-epoch snapshots. The metadata repository independently rejects cross-account writes.
-  Playlist add/remove is a focused `PlaylistMutating` port injected beside read-only
-  `CatalogProviding`; views consume catalog models and `PlaylistMutationController`, not
-  Pathfinder DTOs.
-- `RustPlaybackEngine` is the process-lifetime callback adapter. It emits a bounded typed stream
-  whose process-local sequence is assigned and delivered by one re-entry-safe drain so every
-  subscriber observes strictly increasing order across playback, queue, connection, and devices
-  callbacks. PCM continues directly to `AudioRenderer` and never enters the state architecture.
-- The `SpottyApp` scene in `SpottyCore` is the production composition root; the shipping `SpottyApp`
-  target is a deliberately thin launcher. Views receive feature stores or narrow immutable
-  playback values/actions. Stores and views do not construct production APIs or call the C bridge.
-  `TransientFeedbackPresenter` is composed once there and injected into `PlaybackStore` and
-  `RootView`. Transient mutation success/info/failure is not `PlaybackState` and is not a
-  NotificationCenter or generic event bus.
+- Keep one reducer-owned playback presentation snapshot in `SpottyDomain`. External observations
+  carry their account/engine lifetime and, where applicable, source revision. The reducer decides
+  whether they may change presentation.
+- Give account lifecycle, queue authority, catalog requests, and command work explicit owners.
+  Projections expose their state without creating another writable authority. Suspended work
+  revalidates its lifetime before applying a result.
+- Assemble production dependencies at the app composition root. Views and feature stores use
+  injected ports; they do not construct authentication, network, or C playback dependencies.
+- Keep PCM delivery outside observable presentation state. Transient mutation feedback also has a
+  separate owner; it is not playback state or a general event bus.
+- Keep portable policy in `SpottyDomain`, concrete app adapters in `SpottyCore`, and the executable
+  launcher thin. Test targets do not ship.
 
-`SpottyDomain` and `SpottyCore` are separate SwiftPM products; test targets do not ship. A
-separate infrastructure target is not created solely for folder aesthetics: those adapters still
-share private Spotify transport models, while dependency direction is enforced by injected
-protocols and static checks.
+## Tradeoffs
 
-## Consequences
+Explicit stamps and ownership add coordination work, but make cancellation, stale results, and
+source precedence testable without a live account. A single mutable controller or several
+independently writable snapshots would make those relationships implicit again.
 
-Event ordering, optimistic command reconciliation, account replacement, queue precedence, and
-paused remote ownership can be replayed in `SpottyDomain` without Spotify, Rust, Keychain, AppKit,
-or SwiftUI. Concrete app boundaries and injected coordinator/queue workflows run in separate
-boundary checks. The shipping executable contains no check harness.
+A separate infrastructure target is not justified solely by folder organization: the adapters share
+private transport models, while injected ports and import checks enforce the useful boundaries.
 
-Adding a new callback, queue provider, or account-scoped request requires an explicit epoch,
-revision/provenance rule, effect owner, and cancellation rule. This is intentional friction at the
-boundaries where Spotty historically regressed.
+## Implementation and evidence
 
-Store-level asynchronous work keeps `PlaybackEffectRegistry` as the task owner; command follow-up
-gating is decided in [ADR 003](ADR-003-playback-command-effects.md).
+[Playback engine ownership](playback-engine-ownership.md) maps current responsibilities.
+The [enforcement inventory](architecture-enforcement.md) routes state, epoch, queue, dependency,
+and feedback rules to their tests and scoped instructions. Those owners describe exact behavior;
+this record does not duplicate callback fields or reconciliation cases.
+
+[ADR 003](ADR-003-playback-command-effects.md) selects the task owner for asynchronous command work.

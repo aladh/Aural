@@ -1,48 +1,42 @@
 # ADR 006: Consume a prebuilt playback engine through SwiftPM
 
-Status: Accepted
+Status: accepted on 2026-09-04.
 
 ## Context
 
-ADR 005 retains Rust/librespot behind the C playback boundary. Building that leaf from source on
-every development machine makes ordinary Swift work depend on Cargo, Rust, and header-generation
-tools. The previous archive also lived outside SwiftPM's dependency graph, so callers had to manage
-its freshness and relinking themselves.
+Retaining Rust/librespot does not require every app developer to maintain its toolchain. The previous
+static archive also lived outside SwiftPM's dependency graph, leaving callers responsible for
+freshness and relinking.
 
 ## Decision
 
-Ship the existing static playback library as a macOS ARM64 XCFramework consumed by a SwiftPM binary
-target. The artifact contains its matching C headers, module map, build provenance, and dependency
-notices. The Swift adapter stays in source and the runtime ownership boundary is unchanged.
+Distribute the existing engine as a macOS ARM64 static XCFramework through a SwiftPM binary target.
+Pin an immutable HTTPS archive by SHA-256 and package the library with its matching generated C
+headers, module map, provenance, and dependency notices. Keep the Swift adapter in source.
 
-Ordinary app compilation and packaging consume an immutable HTTPS artifact pinned by SHA-256.
-The pin updater maintains matching literal URL/checksum declarations in `Package.swift` so changes
-invalidate SwiftPM manifest caching. Content-addressed library filenames change the linker command
-when the engine changes; replacing a same-named archive alone is insufficient in the tested toolchain.
-Ordinary app builds do not invoke or install Rust tools. A missing or incompatible artifact fails with a diagnostic;
-it never silently switches to source compilation. Apple's SDK, compiler, linker, and existing app
-signing requirements still apply.
+Ordinary app compilation and packaging do not invoke Rust tools or silently fall back to a source
+build. Engine development uses an explicit local artifact override. Rust source and its locked
+dependency graph remain in the repository; generated binaries stay out of Git.
 
-Engine development has an explicit local XCFramework override. Rust sources and the locked
-dependency graph remain in this repository. CI verifies the source engine, generated ABI, and
-artifact before publication; source changes require a matching rebuilt artifact. Published headers
-and the library are one versioned unit, and generated binaries stay out of Git history.
+Two measured SwiftPM behaviors shape the pin: literal URL/checksum declarations make changes visible
+to manifest caching, and content-addressed library filenames force relinking when the binary changes.
+Replacing an archive under the same name was insufficient in the tested toolchain.
 
-The complete verification gate retains Rust and Swift checks. The app-only gate proves Swift
-compilation, deterministic tests, and Swift/C import compatibility without access to Rust executables.
-The complete gate also proves C/Rust layouts and signatures. CI retains Debug, Release, and
-source-engine coverage.
+## Alternatives and tradeoffs
 
-## Consequences
+Source-only integration keeps distribution simple but imposes Rust tooling on ordinary Swift work.
+Checking binaries into Git would grow repository history without providing SwiftPM's remote artifact
+resolution. The binary target removes that build dependency while retaining the existing C ABI.
+Keeping the Swift adapter in source avoids compiled Swift-module compatibility requirements.
 
-App developers download and link the engine without maintaining a Rust installation. SwiftPM owns
-the binary dependency. Supporting macOS ARM64 alone keeps the artifact to one platform slice.
+Artifact availability, checksums, provenance, and license material become part of the build contract.
+Engine changes require a validated artifact and pin update; Rust debugging still needs the source
+toolchain. Apple SDK and signing requirements are unchanged.
 
-Engine changes require an artifact build and pin update. Artifact availability, provenance, checksum
-validation, and retained license material become part of the build contract. Rust debugging still
-requires the source toolchain. A C ABI avoids embedding a compiled Swift adapter and its Swift module
-compatibility requirements in the artifact.
+CI verifies source-built candidates before publication and the published dependency before merge,
+with Rust blocked in app lanes. [Agent operations](../CONTRIBUTING.md#playback-binary-artifacts) owns
+build, publication, and pin-update commands; the [enforcement inventory](architecture-enforcement.md)
+owns the coverage map.
 
-This changes build distribution, not ADR 005's playback implementation or ownership. Procedures and
-verification commands live in [agent operations](../CONTRIBUTING.md) and
-[development setup](development-setup.md).
+This decision changes build distribution, not [ADR 005](ADR-005-retain-librespot.md)'s engine choice
+or runtime ownership.

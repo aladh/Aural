@@ -1,48 +1,43 @@
-# Architecture decision records
+# Architecture decisions
 
-Architecture decision records (ADRs) capture choices that constrain future Spotty changes. Read the
-records relevant to a task before changing the corresponding boundary. An accepted ADR remains in
-force until a later ADR explicitly supersedes it; edit an accepted record only to correct factual or
-linking errors, not to silently change its decision.
+ADRs explain consequential choices and their tradeoffs. Read the relevant decision when changing a
+boundary; routine implementation work does not require reading the whole history.
 
-## Index
+## Current decisions
 
-| Record | Status | Decision |
-| --- | --- | --- |
-| [ADR 001: Playback engine boundary](ADR-001-playback-engine.md) | Accepted; retained by ADR 005 | Keep librespot as a contained, replaceable leaf behind one adapter and one C header; Swift owns application logic. |
-| [ADR 002: Atomic playback state and explicit dependency ownership](ADR-002-playback-state-and-dependencies.md) | Accepted | Use one reducer-owned playback snapshot, explicit dependency assembly, and generation-aware async ownership. |
-| [ADR 003: Keep PlaybackEffectRegistry; reject TCA and a generic Effect type](ADR-003-playback-command-effects.md) | Accepted | Keep the store-level `PlaybackEffectRegistry`; reducer acceptance gates command follow-ups and reconnect recovery. |
-| [ADR 004: Move Spotty-owned playback logic into Swift incrementally](ADR-004-swift-owned-playback-logic.md) | Superseded by ADR 005 | Historical incremental ownership decision; applicable ownership principles are retained by ADR 005. |
-| [ADR 005: Retain librespot as the playback engine](ADR-005-retain-librespot.md) | Accepted | Keep the pinned Rust/librespot engine as the sole production playback implementation; Swift owns application policy and native presentation behind the narrow C boundary. |
-| [ADR 006: Prebuilt playback engine through SwiftPM](ADR-006-prebuilt-playback-engine.md) | Accepted | Ordinary app builds consume a checksum-pinned static XCFramework; Rust tools remain in the explicit engine-development and artifact-production workflow. |
+| Record | Decision |
+| --- | --- |
+| [ADR 001: Playback engine boundary](ADR-001-playback-engine.md) | Contain private protocol work behind one C module and Swift adapter. |
+| [ADR 002: Playback state and dependency ownership](ADR-002-playback-state-and-dependencies.md) | Use one reducer-owned presentation snapshot and explicit dependency and lifetime owners. |
+| [ADR 003: Playback command effects](ADR-003-playback-command-effects.md) | Keep `PlaybackEffectRegistry`; no TCA or generic Effect abstraction for the current architecture. |
+| [ADR 005: Retain librespot](ADR-005-retain-librespot.md) | Keep the pinned Rust/librespot leaf as the sole production engine; no replacement roadmap. |
+| [ADR 006: Prebuilt playback engine](ADR-006-prebuilt-playback-engine.md) | Consume a checksum-pinned XCFramework for ordinary app builds; retain explicit engine source workflows. |
 
-Related index: [Architecture enforcement inventory](architecture-enforcement.md) routes hard-rule
-families to their canonical decision, strongest proof, scoped agent guidance, and known enforcement
-gaps. It is a registry, not another ADR.
+## Historical decisions
 
-## Related technical context
+[ADR 004: Incremental Swift ownership migration](ADR-004-swift-owned-playback-logic.md) was superseded
+by ADR 005. Consult it for historical reasoning, not current work instructions.
 
-These documents are supporting evidence or protocol notes, not accepted ADRs:
+## Where other information belongs
 
-- [Private extended-metadata protocol](extended-metadata.md)
-- [Playback engine ownership](playback-engine-ownership.md): live Swift/Rust classification, FFI
-  surface, retained-engine guarantees, and the historical resource baseline
+| Need | Owner |
+| --- | --- |
+| Current Swift/Rust responsibilities and retained-engine guarantees | [Playback engine ownership](playback-engine-ownership.md) |
+| Rules, checks, and known verification limits | [Enforcement inventory](architecture-enforcement.md) |
+| Product behavior and live-account acceptance | [Product contract](product-and-acceptance-contract.md) |
+| Build, verification, packaging, and publication commands | [Agent operations](../CONTRIBUTING.md) |
+| Environment setup and signing recovery | [Development setup](development-setup.md) |
+| Private extended-metadata protocol notes | [Extended metadata](extended-metadata.md) |
 
-## Maintaining these records
+## Maintaining the decision log
 
-- Live state goes only in [playback engine ownership](playback-engine-ownership.md). A change to
-  live ownership edits that table, never an ADR.
-- No PR- or issue-numbered narrative inside an ADR. An ADR may name the issue that gates its
-  revisit; it does not log which PR implemented which slice.
-- Behavior semantics live in checks. An ADR names the suite that proves them instead of restating
-  the cases.
-- Superseded records stay in place with a two-line "Superseded by" header linking the replacement.
-
-## Maintaining the index
-
-- Give each new record the next three-digit number and add it to this table in the same change.
-- State whether the record is Proposed, Accepted, Superseded, or Rejected.
-- When one record replaces another, retain both files, mark the old row Superseded, and link the
-  replacement from both records.
-- Keep implementation details in code and stable architectural reasoning in the ADR. If a decision
-  changes, write a new record instead of rewriting history.
+- Record choices whose reasoning cannot be recovered easily from code: context, decision,
+  alternatives, and meaningful consequences. Add a revisit trigger when it helps.
+- Correct facts, links, and implementation references in place. Clarifications and implementation
+  refinements do not need another numbered record when the underlying decision is unchanged.
+- For a significant reversal, add a record with the next number, explain what it replaces, and mark
+  the old record superseded. Keep a short historical explanation and reciprocal links.
+- State whether a record is proposed, accepted, rejected, or superseded. Reflect current and
+  historical status in this index.
+- Keep commands, field inventories, exact behavior cases, and delivery progress in their existing
+  owners. Link to them rather than copying them into an ADR.

@@ -96,15 +96,12 @@ Install [Rustup](https://rustup.rs/) when changing the Rust engine or running it
 `rust-toolchain.toml` pins the components and ARM64 macOS target. Install cbindgen 0.29.4 for header
 regeneration: `cargo install cbindgen --locked --version 0.29.4`.
 
-The complete source verification gate remains `./Scripts/check.sh`; the Rust-only lane is
-`SPOTTY_CHECK_SCOPE=rust ./Scripts/check.sh`. Artifact build and pin-update commands are documented
-in [agent operations](../CONTRIBUTING.md). Use the explicit `SPOTTY_PLAYBACK_LOCAL_XCFRAMEWORK`
-override when testing a source-built engine. Ordinary builds never fall back to compiling Rust.
+Producing an engine artifact also requires Python 3.11 or newer for dependency-notice generation.
+It is not an app-build prerequisite.
 
-The checked-in artifact manifest pins the published library and its headers together. Engine input
-changes require a matching artifact; do not patch the published header separately or overwrite a
-release asset. Keep Rust tooling for engine debugging, while Swift-only development can use the
-published artifact throughout.
+See [agent operations](../CONTRIBUTING.md#normal-verification) for Rust checks and
+[playback binary artifacts](../CONTRIBUTING.md#playback-binary-artifacts) for source builds, the local
+override, publication, and pin updates.
 
 ## Generated local state
 

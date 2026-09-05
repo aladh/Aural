@@ -59,7 +59,7 @@ cd Spotty
 ./script/build_and_run.sh
 ```
 
-The first build downloads locked dependencies and takes longer than subsequent builds. The launch
+The first build downloads the pinned playback XCFramework and takes longer than subsequent builds. The launch
 script replaces any running development copy; see the
 [build-and-run details](CONTRIBUTING.md#build-and-run). On first launch, choose **Connect** and
 complete Spotify authorization in the browser.
@@ -86,7 +86,8 @@ in [SECURITY.md](SECURITY.md), not a public issue.
 - [Agent operations](CONTRIBUTING.md): build modes, verification, packaging, and releases.
 - [Product and acceptance contract](docs/product-and-acceptance-contract.md): UX behavior and safe
   live-account testing.
-- [Architecture decisions](docs/architecture-decisions.md): module boundaries and playback ownership.
+- [Architecture decisions](docs/architecture-decisions.md): choices, tradeoffs, and historical context.
+- [Playback engine ownership](docs/playback-engine-ownership.md): current Swift/Rust responsibilities.
 
 ## License
 

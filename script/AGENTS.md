@@ -4,8 +4,9 @@ This directory owns the build, sign, terminate, and launch entry point. Read
 [agent operations](../CONTRIBUTING.md#build-and-run) and
 [development setup](../docs/development-setup.md) before changing it.
 
-- `build_and_run.sh` is not a compile-only helper: it can rebuild Rust, package and sign the app,
-  terminate a running Spotty executable process, launch a replacement, and touch an authenticated
+- `build_and_run.sh` is not a compile-only helper: it builds Swift against the pinned playback
+  XCFramework, packages and signs the app,
+  terminates a running Spotty executable process, launches a replacement, and can touch an authenticated
   session.
   Require explicit current-request authorization for launch or interactive acceptance.
 - Authenticated launches require an Apple-issued development identity with a stable Team ID. Do not

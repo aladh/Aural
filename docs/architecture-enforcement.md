@@ -1,10 +1,11 @@
 # Architecture enforcement inventory
 
 This routing table names each hard rule's decision owner and strongest available proof. It also
-marks rules that require semantic review instead of mechanical enforcement. Complete requirements
-remain in the ADRs, product contract, and agent instructions.
+marks rules that require semantic review instead of mechanical enforcement. ADRs explain the
+architectural choices; current responsibilities, behavior requirements, and scoped constraints live
+in the ownership document, product contract, and agent instructions.
 
-Spotty has no human implementation or review path. In this document, **semantic agent review** means
+In this document, **semantic agent review** means
 inspection of the affected code, tests, diff, and canonical decisions by the implementing agent and
 available automated reviewers. It is evidence, but it is weaker than compiler, deterministic test,
 ABI, or focused source enforcement and must never be described as machine proof.
@@ -33,10 +34,10 @@ Stable IDs preserve searchability in issue and code history. They are navigation
 | --- | --- | --- | --- |
 | `FMT-SWIFT-001`–`003` | One selected-toolchain `swift-format` contract; Spotty builds fail on warnings; wrapper discovery cannot drift | `CONTRIBUTING.md` | `Scripts/format-swift.sh`, its self-test, and warning flags in `Scripts/swiftpm-env.sh` / build scripts |
 | `FMT-RUST-001`–`002` | Rust is rustfmt-clean and Clippy warning-clean on locked targets | `CONTRIBUTING.md` | `cargo fmt --all -- --check`; `cargo clippy --locked --all-targets -- -D warnings` in `Scripts/check.sh` |
-| `CMP-PLT-001` | macOS 15+ on Apple Silicon is the supported runtime envelope | Product contract | `Package.swift`, pinned ARM64 Rust target/build, and ARM64 release workflow; support wording remains semantic |
-| `CMP-DEP-001`, `CMP-FFI-001` | Target direction is `SpottyApp -> SpottyCore -> SpottyDomain`; only SpottyCore depends on the C module | ADR 001–002 | SwiftPM target graph plus focused import checks |
+| `CMP-PLT-001` | macOS 15+ on Apple Silicon is the supported runtime envelope | Product contract | `Package.swift`, ARM64 XCFramework validation and app release checks; Rust source/artifact lanes also enforce the ARM64 target; support wording remains semantic |
+| `CMP-DEP-001`, `CMP-FFI-001` | Target direction is `SpottyApp -> SpottyCore -> SpottyDomain`; only SpottyCore depends on the C module | Root `AGENTS.md` architecture rules and scoped Spotify boundary guidance | SwiftPM target graph plus focused import checks |
 | `CMP-CHK-001`–`002` | Test targets never ship; pure tests do not depend on SpottyCore/Rust; boundary tests remain separate | ADR 002 | SwiftPM targets and `Scripts/check.sh` |
-| `CMP-TCA-001` | No TCA or generic Effect framework | ADR 003 | Empty external Swift dependency graph plus semantic review of dependency additions |
+| `CMP-TCA-001` | No TCA or generic Effect framework | ADR 003 | No external Swift effect-framework dependency in `Package.swift`, plus semantic review of generic effect abstractions |
 | `CMP-LIVE-001` | Shipping code uses live integrations; fakes and synthetic hooks stay in checks | Product contract | Package separation, hygiene checks, deterministic fixture checks, and semantic review |
 | `CMP-PKG-001` | Packaging metadata remains parseable | Agent operations | `plutil -lint Packaging/Info.plist` in `Scripts/check.sh` |
 
@@ -99,7 +100,7 @@ the package graph, deterministic suites, current focused checks, or semantic rev
 | `CI-WF-001`, `CI-RG-001` | CI workflow exists and acquires ripgrep only when absent | `Scripts/check.sh` workflow assertions |
 | `CI-RUST-001` | Rust cache key/content stays tied to runner architecture, toolchain, and lockfile | `Scripts/check.sh` plus semantic workflow review |
 | `CI-FMT-001` | CI uses the selected toolchain formatter, not Homebrew Swift formatting/lint tools | `Scripts/check.sh` |
-| `CI-REL-001` | Rust, Swift/architecture, and release compile lanes all feed the required aggregate without reducing coverage | workflow commands/dependencies asserted from `Scripts/check.sh` |
+| `CI-REL-001` | Rust, published-artifact Swift/architecture and Release lanes, plus candidate Debug/Release lanes for engine changes, feed the aggregate | workflow commands/dependencies asserted from `Scripts/check.sh` |
 | `CI-TOOL-001` | CI lanes select the documented toolchain, run on the pinned macOS runner, check out without persisted credentials, and restore caches by the exact content keys | literal workflow fragments asserted from `Scripts/check.sh`; the pin values are owned by the development setup guide and change together |
 
 Action SHA pins, least permissions, cache contents beyond asserted fragments, tag/version agreement,
@@ -121,4 +122,4 @@ review under `DOC-CI-001` and `DOC-REL-001`.
 | `DOC-VER-001`, `DOC-PR-001` | Local verification scope and pull-request authorization | Root `AGENTS.md` and `CONTRIBUTING.md` |
 | `DOC-GEN-001`, `DOC-DEP-001` | Generated/private state stays untracked; Actions/dependencies remain pinned and deliberately reviewed | Development setup and operations guide |
 | `DOC-SEC-001`–`002` | Credentials/private data never enter Git; authenticated launch uses a stable Apple-issued Team ID | PRIVACY, SECURITY, development setup, `script/AGENTS.md`, signature checks |
-| `DOC-ARCH-001` | New async/callback/provider/optimistic flows define owner, lifetime, cancellation, ordering, stale behavior, failure policy, and coverage | ADR 002 and scoped Spotify guidance |
+| `DOC-ARCH-001` | New async/callback/provider/optimistic flows define owner, lifetime, cancellation, ordering, stale behavior, failure policy, and coverage | `Sources/Spotty/Spotify/AGENTS.md` |
