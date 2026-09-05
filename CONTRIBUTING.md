@@ -249,7 +249,7 @@ push it, open the PR, monitor available checks/reviews during the run, and addre
 findings. It does not authorize merge, release, tag, repository-setting changes, or issue closure
 unless the request says so.
 
-### Automated PR acceptance
+### PR acceptance
 
 A PR is ready when all three conditions hold for its latest changes:
 

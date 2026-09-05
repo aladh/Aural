@@ -22,7 +22,7 @@ behavior and truthful state. Keep the product surface small; optimize measured, 
 - PR requests authorize branch/commit/push, opening the PR, and addressing its automated review as
   described in [agent operations](CONTRIBUTING.md#pull-request-execution). They do not authorize
   merging, tagging, releases, repository settings, or unrelated issue mutations.
-- Use the [automated PR acceptance criteria](CONTRIBUTING.md#automated-pr-acceptance) to determine
+- Use the [PR acceptance criteria](CONTRIBUTING.md#pr-acceptance) to determine
   readiness; do not add a manual review or app-testing gate.
 - Signing/keychain changes, destructive cleanup, new production dependencies, external publication,
   and material scope expansion require explicit current-request authorization.
