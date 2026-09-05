@@ -64,7 +64,8 @@ script replaces any running development copy; see the
 [build-and-run details](CONTRIBUTING.md#build-and-run). On first launch, choose **Connect** and
 complete Spotify authorization in the browser.
 
-The Rust archive and app bundle are generated locally and ignored by Git. Version tags also
+The app bundle is generated locally and ignored by Git. Explicit engine-development builds create
+ignored Rust archives; ordinary app builds use the pinned XCFramework. App version tags also
 publish experimental GitHub prereleases. Until Developer ID and notarization credentials are
 configured, those artifacts use a hardened-runtime, ad-hoc signature and are not automatically
 trusted by macOS.

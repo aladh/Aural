@@ -333,7 +333,15 @@ def package_license_candidates(package: dict[str, Any]) -> list[Path]:
             and path.name.lower().startswith(LEGAL_FILE_PREFIXES)
             and path.suffix.lower() in LEGAL_TEXT_SUFFIXES
         ):
-            candidates.add(path)
+            resolved = path.resolve()
+            try:
+                resolved.relative_to(package_dir)
+            except ValueError:
+                fail(
+                    f"license candidate escapes package source directory: "
+                    f"{path} -> {resolved}"
+                )
+            candidates.add(resolved)
 
     declared = package.get("license_file")
     if declared:
@@ -407,6 +415,7 @@ def collect_package(
     lock_records: dict[tuple[str, str, str], dict[str, Any]],
     overrides: dict[str, Any],
     documents: dict[str, dict[str, Any]],
+    override_inputs: set[Path],
 ) -> dict[str, Any]:
     key = package_key(package)
     source = package.get("source")
@@ -465,13 +474,14 @@ def collect_package(
     archive_license_records: list[dict[str, Any]] = []
     package_url = source_url(package, kind)
     for path in archive_files:
+        resolved = path.resolve()
         try:
-            source_path = path.relative_to(package_dir).as_posix()
+            source_path = resolved.relative_to(package_dir).as_posix()
         except ValueError:
             fail(f"license file escaped package source directory: {path}")
         archive_license_records.append(
             document_reference(
-                path.read_bytes(),
+                resolved.read_bytes(),
                 package=key,
                 license_name=package["license"],
                 origin="package source archive",
@@ -484,6 +494,7 @@ def collect_package(
 
     override_license_records: list[dict[str, Any]] = []
     for descriptor in override_files:
+        override_inputs.add(descriptor["path"])
         override_license_records.append(
             document_reference(
                 descriptor["path"].read_bytes(),
@@ -635,6 +646,7 @@ def write_output(
     root_package: dict[str, Any],
     package_records: list[dict[str, Any]],
     documents: dict[str, dict[str, Any]],
+    override_inputs: set[Path],
 ) -> None:
     output.mkdir(parents=True, exist_ok=True)
     license_dir = output / "licenses"
@@ -652,6 +664,12 @@ def write_output(
         "Scripts/playback-notices-preamble.md": sha256_file(PREAMBLE),
         "Scripts/generate-playback-notices.py": sha256_file(Path(__file__).resolve()),
     }
+    for path in sorted(override_inputs):
+        try:
+            relative = path.relative_to(ROOT).as_posix()
+        except ValueError:
+            fail(f"override input escaped repository root: {path}")
+        input_hashes[relative] = sha256_file(path)
     inventory = {
         "schema_version": 1,
         "target": target,
@@ -774,8 +792,9 @@ def generate(target: str, output: Path) -> tuple[int, int]:
     if not isinstance(overrides, dict):
         fail(f"license override manifest is not an object: {OVERRIDES}")
     documents: dict[str, dict[str, Any]] = {}
+    override_inputs: set[Path] = set()
     package_records = [
-        collect_package(package, lock_records, overrides, documents)
+        collect_package(package, lock_records, overrides, documents, override_inputs)
         for package in selected
         if package["id"] not in workspace_members
     ]
@@ -792,6 +811,7 @@ def generate(target: str, output: Path) -> tuple[int, int]:
         root_package=root_package,
         package_records=package_records,
         documents=documents,
+        override_inputs=override_inputs,
     )
     return len(package_records), len(documents)
 

@@ -142,6 +142,7 @@ if [[ "$manifest_path" == "$backend_root/artifact-manifest.json" ]]; then
         fail "could not update generated Package.swift artifact checksum"
     mv "$temporary_package" "$package_path"
 fi
+plutil -convert json -r "$temporary_manifest"
 mv "$temporary_manifest" "$manifest_path"
 
 print "Pinned $manifest_path"

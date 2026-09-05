@@ -12,6 +12,9 @@ spotty_playback_resolve_xcframework() {
 
     if [ -n "${SPOTTY_PLAYBACK_LOCAL_XCFRAMEWORK:-}" ]; then
         local_playback_path="$SPOTTY_PLAYBACK_LOCAL_XCFRAMEWORK"
+        while [ "${local_playback_path%/}" != "$local_playback_path" ]; do
+            local_playback_path="${local_playback_path%/}"
+        done
         case "$local_playback_path" in
             /*) ;;
             *) local_playback_path="$project_root/$local_playback_path" ;;
@@ -127,6 +130,10 @@ spotty_playback_archive_path() {
     local_playback_info="$local_playback_framework/Info.plist"
     if [ ! -f "$local_playback_info" ]; then
         echo "SpottyPlaybackCore metadata is missing: $local_playback_info" >&2
+        return 1
+    fi
+    if [ "$(plutil -extract 'AvailableLibraries.0.LibraryIdentifier' raw -o - "$local_playback_info" 2>/dev/null || true)" != "macos-arm64" ]; then
+        echo "SpottyPlaybackCore metadata must identify the macos-arm64 slice" >&2
         return 1
     fi
     local_playback_library_path="$(plutil -extract 'AvailableLibraries.0.LibraryPath' raw -o - "$local_playback_info" 2>/dev/null || true)"

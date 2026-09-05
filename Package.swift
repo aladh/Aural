@@ -13,8 +13,8 @@ private let playbackManifestURL =
 // BEGIN GENERATED PLAYBACK ARTIFACT PIN. Run Backend/spotty-playback/update-artifact-manifest.sh
 // after publishing a new immutable XCFramework; keep this block synchronized with the manifest.
 private let generatedPlaybackArtifactURL =
-    "https://github.com/aladh/Spotty/releases/download/spotty-playback-core-a304609d5596f105eedb1058f77e3b97167703e475679ee8916f4fd4c0742f68/SpottyPlaybackCore.xcframework.zip"
-private let generatedPlaybackArtifactChecksum = "0000000000000000000000000000000000000000000000000000000000000000"
+    "https://github.com/aladh/Spotty/releases/download/spotty-playback-core-4cd95a9923747bc6dd52971a2e635ebe7d68f258e0229f552d8c8277f1a6414f/SpottyPlaybackCore.xcframework.zip"
+private let generatedPlaybackArtifactChecksum = "0552b741592585910bada8a5cede419db5218a41824c74dda763a541b1c9d44e"
 // END GENERATED PLAYBACK ARTIFACT PIN
 
 private struct PlaybackTargetSelection {
@@ -71,6 +71,9 @@ private func remotePlaybackTarget() -> PlaybackTargetSelection {
     let checksum = manifestString("checksum", from: artifact, context: "playback artifact")
     guard checksum.range(of: "^[0-9a-fA-F]{64}$", options: .regularExpression) != nil else {
         fatalError("Playback artifact checksum must be a 64-character SHA-256 hex string")
+    }
+    guard checksum.range(of: "^0{64}$", options: .regularExpression) == nil else {
+        fatalError("Playback artifact checksum is still the placeholder value")
     }
     guard
         urlString == generatedPlaybackArtifactURL,

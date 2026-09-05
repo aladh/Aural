@@ -44,12 +44,18 @@ jobs:
           else
             base_sha="$PUSH_BASE_SHA"
             head_sha="$PUSH_HEAD_SHA"
-            if [[ "$base_sha" =~ ^0+$ ]]; then
-              base_sha="$(git rev-list --max-parents=0 "$head_sha")"
+            if [[ "$base_sha" =~ ^0+$ ]] || ! git cat-file -e "$base_sha^{commit}" 2>/dev/null; then
+              base_sha=""
             fi
           fi
 
           engine_changed=false
+          changed_paths=""
+          if [[ -z "$base_sha" ]]; then
+            engine_changed=true
+          else
+            changed_paths="$(git diff --name-only "$base_sha" "$head_sha")"
+          fi
           while IFS= read -r changed_path; do
             case "$changed_path" in
               Backend/spotty-playback/artifact-manifest.json)
@@ -59,7 +65,7 @@ jobs:
                 break
                 ;;
             esac
-          done < <(git diff --name-only "$base_sha" "$head_sha")
+          done <<< "$changed_paths"
 
           echo "engine_changed=$engine_changed" >> "$GITHUB_OUTPUT"
           echo "Playback engine inputs changed: $engine_changed"
@@ -336,12 +342,7 @@ jobs:
       - name: Report release build size
         run: |
           set -euo pipefail
-          project_root="$PWD"
-          source "$project_root/Scripts/playback-xcframework.sh"
-          selected_xcframework="$(spotty_playback_resolve_xcframework)"
-          ./Scripts/report-size.sh \
-            --xcframework "$selected_xcframework" \
-            --out-dir "$RUNNER_TEMP"
+          ./Scripts/report-size.sh --out-dir "$RUNNER_TEMP"
 
       - name: Upload size report
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2

@@ -29,8 +29,9 @@ artifact before publication; source changes require a matching rebuilt artifact.
 and the library are one versioned unit, and generated binaries stay out of Git history.
 
 The complete verification gate retains Rust and Swift checks. The app-only gate proves Swift
-compilation, deterministic tests, and ABI compatibility without access to Rust executables. CI
-retains Debug, Release, and source-engine coverage.
+compilation, deterministic tests, and Swift/C import compatibility without access to Rust executables.
+The complete gate also proves C/Rust layouts and signatures. CI retains Debug, Release, and
+source-engine coverage.
 
 ## Consequences
 

@@ -400,6 +400,8 @@ swift_entrypoints=(
     "$project_root/Scripts/compile-release-spotty.sh"
     "$project_root/Scripts/package-app.sh"
     "$project_root/Scripts/report-size.sh"
+    "$project_root/Scripts/playback-xcframework.sh"
+    "$project_root/Scripts/swiftpm-env.sh"
 )
 if rg -n '(^|[^[:alnum:]_])(cargo|rustc|rustup|cbindgen)([^[:alnum:]_]|$)|Backend/lib|libspotty_playback' \
     "${swift_entrypoints[@]}"; then
@@ -462,7 +464,6 @@ if ! rg -q --fixed-strings 'engine_changed:' <<< "$changes_job" \
     || ! rg -q 'key: macos-swiftpm-release-.*artifact-manifest\.json' <<< "$release_job" \
     || ! rg -U -q --fixed-strings -- $'- name: Compile release Spotty with SPOTTY_DISTRIBUTION\n        run: ./Scripts/compile-release-spotty.sh' <<< "$release_job" \
     || ! rg -q --fixed-strings 'report-size.sh' <<< "$release_job" \
-    || ! rg -q --fixed-strings -- '--xcframework' <<< "$release_job" \
     || ! rg -q --fixed-strings 'if: always()' <<< "$gate_job" \
     || ! rg -q --fixed-strings 'needs: [changes, rust, checks, candidate, release]' <<< "$gate_job" \
     || ! rg -U -q --fixed-strings -- $'test "$RUST_RESULT" = success\n          test "$CHECKS_RESULT" = success\n          if [[ "$ENGINE_CHANGED" == true ]]; then\n            test "$CANDIDATE_RESULT" = success' <<< "$gate_job" \

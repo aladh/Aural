@@ -145,7 +145,8 @@ engine and Apple toolchains. Python is not an app-build prerequisite. The embedd
 apps without regeneration.
 
 The artifact publication workflow builds the selected source revision with read-only repository
-permissions. A separate publisher uploads versioned assets without running candidate build code
+permissions. The workflow itself runs from main, but `source_ref` can select a reviewed, unmerged
+engine PR commit; publish its artifact and update that PR’s pin before merging. A separate publisher uploads versioned assets without running candidate build code
 with release credentials. The resulting pin is updated in a reviewed source change; app and engine
 releases have separate identities. Verify the downloaded artifact with its checksum and source input
 digest before updating the manifest. Keep source revision, Cargo lock identity, headers, library,
