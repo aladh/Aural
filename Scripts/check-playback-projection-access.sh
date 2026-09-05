@@ -55,6 +55,12 @@ if [[ ! -d "$swift_bin_path" ]]; then
     exit 1
 fi
 
+# Xcode's SwiftPM build system selects the active Xcode SDK for its Products modules,
+# even when the shell SDKROOT points at a compatible command-line SDK. Match that build.
+if [[ -d "$swift_bin_path/SpottyCore.swiftmodule" ]]; then
+    sdk_path="$(xcrun --sdk macosx --show-sdk-path)"
+fi
+
 # SwiftPM's output layout differs between the command-line and Xcode build systems. The Debug
 # boundary test always builds a testable SpottyCore module; include both known Swift module
 # locations, then select exactly one C module-map location. Passing the generated and checked-in
