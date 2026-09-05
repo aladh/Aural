@@ -168,7 +168,7 @@ class MCPGuardProtocolTests(unittest.TestCase):
             ]
             env = {**os.environ, "TRACE": str(trace), "GH_TOKEN": "outer-secret", "GITHUB_TOKEN": "outer-github"}
             process = subprocess.run(
-                [sys.executable, str(Path(__file__).with_name("mcp_guard.py")),
+                [sys.executable, "-B", str(Path(__file__).with_name("mcp_guard.py")),
                  str(metadata), str(token), str(server)],
                 input="".join(json.dumps(item) + "\n" for item in requests),
                 text=True, capture_output=True, env=env, timeout=5,
