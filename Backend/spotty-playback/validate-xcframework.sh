@@ -97,6 +97,7 @@ architecture="$(plist_value AvailableLibraries.0.SupportedArchitectures.0 "$info
 require_equal "architecture" arm64 "$architecture"
 library_relative_path="$(plist_value AvailableLibraries.0.LibraryPath "$info_plist")"
 headers_relative_path="$(plist_value AvailableLibraries.0.HeadersPath "$info_plist")"
+require_equal "binary path" "$library_relative_path" "$(plist_value AvailableLibraries.0.BinaryPath "$info_plist")"
 [[ "$library_relative_path" == libSpottyPlaybackCore_*.a ]] || \
     fail "static library name must carry the engine input digest"
 [[ "$library_relative_path" != */* && "$library_relative_path" != *..* ]] || \
@@ -178,6 +179,7 @@ header_digest="$({
 } | shasum -a 256 | awk '{print $1}')"
 if [[ -n "$manifest_path" ]]; then
     require_equal "manifest source input digest" "$source_digest" "$(manifest_value source.engineInputDigest)"
+    require_equal "manifest target" aarch64-apple-darwin "$(manifest_value source.target)"
     require_equal "manifest canonical header digest" "$header_digest" "$(manifest_value source.canonicalHeadersSHA256)"
     require_equal "manifest library name" "$library_relative_path" "$(manifest_value module.library)"
 fi
