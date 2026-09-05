@@ -3,7 +3,8 @@ import AppKit
 // Border-opacity gate for the macOS app icon source artwork. macOS Tahoe
 // places icons with transparent edges inside a gray squircle in the Dock,
 // so the source must be opaque edge-to-edge. Reads raw 8-bit samples with
-// the same packed-sample contract as assemble-icns.swift.
+// the same packed-sample contract as assemble-icns.swift. Opaque RGB (and
+// RGBX pad-byte) input carries no alpha plane and passes trivially.
 //
 // Exit 0: every border pixel is fully opaque.
 // Exit 1: at least one border pixel is transparent.
@@ -21,30 +22,34 @@ do {
         bitmap.pixelsWide > 0,
         bitmap.pixelsHigh > 0,
         !bitmap.isPlanar,
-        bitmap.samplesPerPixel == 4,
         bitmap.bitsPerSample == 8,
-        bitmap.bytesPerRow == bitmap.pixelsWide * 4,
+        (bitmap.samplesPerPixel == 3 || bitmap.samplesPerPixel == 4),
+        bitmap.bytesPerRow >= bitmap.pixelsWide * bitmap.samplesPerPixel,
         let samples = bitmap.bitmapData
     else {
         throw CocoaError(.fileReadCorruptFile)
     }
 
     let width = bitmap.pixelsWide, height = bitmap.pixelsHigh
-    let alphaOffset = bitmap.bitmapFormat.contains(.alphaFirst) ? 0 : 3
+    let samplesPerPixel = bitmap.samplesPerPixel
+    let hasAlphaPlane = bitmap.hasAlpha && samplesPerPixel == 4
+    let alphaOffset = bitmap.bitmapFormat.contains(.alphaFirst) ? 0 : samplesPerPixel - 1
     var transparent = 0
-    // The side scan skips the corner rows so each border pixel counts once.
-    for x in 0..<width {
-        for y in [0, height - 1] {
-            if samples[y * bitmap.bytesPerRow + x * 4 + alphaOffset] != 255 {
-                transparent += 1
+    if hasAlphaPlane {
+        // The side scan skips the corner rows so each border pixel counts once.
+        for x in 0..<width {
+            for y in [0, height - 1] {
+                if samples[y * bitmap.bytesPerRow + x * samplesPerPixel + alphaOffset] != 255 {
+                    transparent += 1
+                }
             }
         }
-    }
-    if height > 2 {
-        for y in 1..<(height - 1) {
-            for x in [0, width - 1] {
-                if samples[y * bitmap.bytesPerRow + x * 4 + alphaOffset] != 255 {
-                    transparent += 1
+        if height > 2 {
+            for y in 1..<(height - 1) {
+                for x in [0, width - 1] {
+                    if samples[y * bitmap.bytesPerRow + x * samplesPerPixel + alphaOffset] != 255 {
+                        transparent += 1
+                    }
                 }
             }
         }
