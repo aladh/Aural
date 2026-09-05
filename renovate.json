@@ -30,19 +30,12 @@
   ],
   "packageRules": [
     {
-      "description": "Group routine Rust dependency updates",
+      "description": "Group playback engine dependency updates for one artifact publication",
       "matchManagers": ["cargo"],
-      "matchUpdateTypes": ["minor", "patch"],
       "minimumReleaseAge": "3 days",
-      "groupName": "Rust dependencies",
-      "groupSlug": "rust-dependencies"
-    },
-    {
-      "description": "Update the shared librespot revision atomically",
-      "matchManagers": ["cargo"],
-      "matchDepNames": ["/^librespot-/"],
-      "groupName": "librespot",
-      "groupSlug": "librespot"
+      "groupName": "Playback engine dependencies",
+      "groupSlug": "playback-engine-dependencies",
+      "separateMajorMinor": false
     },
     {
       "description": "Group non-major GitHub Actions updates and retain digest pins",
@@ -52,17 +45,21 @@
       "groupSlug": "github-actions"
     },
     {
-      "description": "Keep Rust toolchain updates explicit",
+      "description": "Group the Rust toolchain with playback engine dependencies",
       "matchManagers": ["rust-toolchain"],
-      "minimumReleaseAge": "3 days"
+      "minimumReleaseAge": "3 days",
+      "groupName": "Playback engine dependencies",
+      "groupSlug": "playback-engine-dependencies",
+      "separateMajorMinor": false
     },
     {
-      "description": "Keep cbindgen updates synchronized and explicit",
+      "description": "Group synchronized cbindgen updates with playback engine dependencies",
       "matchManagers": ["custom.regex"],
       "matchPackageNames": ["cbindgen"],
       "minimumReleaseAge": "3 days",
-      "groupName": "cbindgen",
-      "groupSlug": "cbindgen"
+      "groupName": "Playback engine dependencies",
+      "groupSlug": "playback-engine-dependencies",
+      "separateMajorMinor": false
     }
   ]
 }
