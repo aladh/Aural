@@ -53,9 +53,8 @@ jobs:
           pin_url="$(spotty_playback_pin_value url)"
           tag="${pin_url%/*}"
           tag="${tag##*/}"
-          version=""
-          if [[ "$tag" == playback-v* ]]; then version="${tag#playback-v}"; fi
-          if [[ -n "$version" ]]; then
+          if [[ "$tag" == playback-v* ]]; then
+            version="${tag#playback-v}"
             if [[ ! "$version" =~ ^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]; then
               echo "Invalid pinned playback version: $version" >&2
               exit 1

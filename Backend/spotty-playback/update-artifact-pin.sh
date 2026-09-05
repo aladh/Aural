@@ -44,9 +44,24 @@ artifact_url="https://github.com/aladh/Spotty/releases/download/playback-v$artif
 
 temporary_root="$(mktemp -d "${TMPDIR:-/tmp}/spotty-playback-pin.XXXXXX")"
 trap 'rm -rf "$temporary_root"' EXIT
-if ! unzip -q "$archive_path" -d "$temporary_root"; then
-    fail "could not extract archive: $archive_path"
-fi
+python3 - "$archive_path" "$temporary_root" <<'PYTHON'
+import stat
+import sys
+import zipfile
+from pathlib import PurePosixPath
+
+with zipfile.ZipFile(sys.argv[1]) as archive:
+    entries = archive.infolist()
+    names = [entry.filename for entry in entries]
+    if len(names) != len(set(names)):
+        raise SystemExit("Archive contains duplicate entries")
+    for entry in entries:
+        path = PurePosixPath(entry.filename)
+        mode = stat.S_IFMT(entry.external_attr >> 16)
+        if path.is_absolute() or ".." in path.parts or mode not in (0, stat.S_IFREG, stat.S_IFDIR):
+            raise SystemExit(f"Unsafe archive entry: {entry.filename}")
+    archive.extractall(sys.argv[2])
+PYTHON
 xcframework_candidates=("$temporary_root"/**/*.xcframework(N/))
 if (( ${#xcframework_candidates[@]} != 1 )); then
     fail "archive must contain exactly one XCFramework"
@@ -54,7 +69,7 @@ fi
 xcframework_path="$xcframework_candidates[1]"
 archive_digest="$(shasum -a 256 "$archive_path" | awk '{print $1}')"
 "$backend_root/validate-xcframework.sh" "$xcframework_path" \
-    --archive "$archive_path" --for-publish >/dev/null
+    --archive "$archive_path" --published >/dev/null
 
 package_path="$project_root/Package.swift"
 temporary_package="$temporary_root/Package.swift"

@@ -123,7 +123,8 @@ gh workflow run playback-artifact.yml --ref main \
   -f source_ref="$reviewed_source_sha" -f candidate_run_id="$candidate_ci_run_id"
 ```
 
-Download the release ZIP, verify its checksum and source input digest, then update the package pin:
+Download the release ZIP and update the package pin; the updater validates the bundled artifact
+and computes its checksum without requiring current engine source to match:
 
 ```bash
 ./Backend/spotty-playback/update-artifact-pin.sh \
