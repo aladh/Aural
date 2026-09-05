@@ -8,6 +8,25 @@
   "dependencyDashboard": true,
   "labels": ["dependencies"],
   "rebaseWhen": "conflicted",
+  "customManagers": [
+    {
+      "customType": "regex",
+      "description": "Update the pinned cbindgen tool and its synchronized references",
+      "managerFilePatterns": [
+        "/^\\.github/workflows/(?:ci|playback-artifact)\\.yml$/",
+        "/^Backend/spotty-playback/cbindgen\\.toml$/",
+        "/^CONTRIBUTING\\.md$/",
+        "/^Scripts/generate-c-header\\.sh$/",
+        "/^Sources/SpottyPlaybackCore/include/spotty_playback_generated\\.h$/",
+        "/^docs/development-setup\\.md$/"
+      ],
+      "matchStrings": [
+        "cbindgen[^\\r\\n0-9]*(?<currentValue>\\d+\\.\\d+\\.\\d+)"
+      ],
+      "depNameTemplate": "cbindgen",
+      "datasourceTemplate": "crate"
+    }
+  ],
   "packageRules": [
     {
       "description": "Group routine Rust dependency updates",
@@ -35,6 +54,14 @@
       "description": "Keep Rust toolchain updates explicit",
       "matchManagers": ["rust-toolchain"],
       "minimumReleaseAge": "3 days"
+    },
+    {
+      "description": "Keep cbindgen updates synchronized and explicit",
+      "matchManagers": ["custom.regex"],
+      "matchPackageNames": ["cbindgen"],
+      "minimumReleaseAge": "3 days",
+      "groupName": "cbindgen",
+      "groupSlug": "cbindgen"
     }
   ]
 }
