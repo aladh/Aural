@@ -116,9 +116,7 @@ signing material as disposable build output:
 
 When changing the master app artwork in `Assets/SpottyIcon.png`, regenerate every standard macOS
 icon representation with `./Scripts/generate-icon.sh`. Every representation is derived from that
-same source image, including the small sizes used in the Dock and Finder. The source must be
-square, at least 1024 pixels, and opaque edge-to-edge: transparent edges make macOS Tahoe wrap
-the icon in a gray squircle in the Dock instead of clipping it cleanly. Commit both the source
+same source image, including the small sizes used in the Dock and Finder. Commit both the source
 PNG and generated `Assets/Spotty.icns`.
 
 To recover from an uncertain local state, a fresh clone is the preferred reset. Do not copy build

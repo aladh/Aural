@@ -6,8 +6,8 @@ Spotify's three-line logo and contains no Spotify artwork.
 
 The source is opaque full-bleed art with no transparency: macOS Tahoe places icons with
 transparent edges inside a gray squircle in the Dock, so the system must clip the full-bleed
-art to a clean squircle itself. `generate-icon.sh` rejects source art with transparent border
-pixels. Keep the silhouette readable at 16 px.
+art to a clean squircle itself. `Scripts/verify-icon-opaque.swift` (run by `generate-icon.sh`)
+rejects source art with transparent border pixels. Keep the silhouette readable at 16 px.
 
 The source artwork was generated with Codex's built-in image-generation tool from this design brief:
 

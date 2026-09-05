@@ -33,37 +33,20 @@ fi
 # macOS Tahoe places icons with transparent edges inside a gray squircle in
 # the Dock, shrinking the artwork. The source must be opaque edge-to-edge so
 # the system clips the full-bleed art to a clean squircle itself.
-SPOTTY_ICON_SOURCE="$source_icon" SWIFT_MODULECACHE_PATH="$module_cache" \
+opaque_status=0
+SWIFT_MODULECACHE_PATH="$module_cache" \
 CLANG_MODULE_CACHE_PATH="$module_cache" \
-    xcrun swift -e '
-import AppKit
-guard let path = ProcessInfo.processInfo.environment["SPOTTY_ICON_SOURCE"],
-    let data = try? Data(contentsOf: URL(fileURLWithPath: path)),
-    let rep = NSBitmapImageRep(data: data)
-else { exit(2) }
-let w = rep.pixelsWide, h = rep.pixelsHigh
-var transparent = 0
-for x in 0..<w {
-    for y in [0, h - 1] {
-        if (rep.colorAt(x: x, y: y)?.usingColorSpace(.deviceRGB)?.alphaComponent ?? 0) < 1.0 {
-            transparent += 1
-        }
-    }
-}
-for y in 0..<h {
-    for x in [0, w - 1] {
-        if (rep.colorAt(x: x, y: y)?.usingColorSpace(.deviceRGB)?.alphaComponent ?? 0) < 1.0 {
-            transparent += 1
-        }
-    }
-}
-if transparent > 0 { exit(1) }
-' || {
-    print -u2 "Source artwork must be opaque edge-to-edge (found transparent border pixels);"
+    xcrun swift "$project_root/Scripts/verify-icon-opaque.swift" "$source_icon" \
+    || opaque_status=$?
+if [[ "$opaque_status" == 1 ]]; then
+    print -u2 "Source artwork must be opaque edge-to-edge;"
     print -u2 "transparent edges make macOS Tahoe wrap the icon in a gray squircle in the Dock."
     print -u2 "See Assets/README.md."
     exit 1
-}
+elif [[ "$opaque_status" != 0 ]]; then
+    print -u2 "Unable to validate source artwork opacity: $source_icon"
+    exit 1
+fi
 
 representations=(
     "16 icon_16x16.png"
