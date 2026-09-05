@@ -14,8 +14,8 @@ Rewriting the engine would transfer private-protocol maintenance to Spotty rathe
 
 Keep the pinned Rust/librespot leaf as the sole production playback engine and remove the replacement
 experiment. Swift retains application policy and presentation, including playback state, queue and
-resume policy, catalog, OAuth, persistence, and user-facing errors. AVFoundation renders the bounded
-PCM supplied by the engine.
+resume policy, catalog, OAuth, app/domain persistence, and user-facing errors. Rust retains streaming-cache
+lifecycle and coordination. AVFoundation renders the bounded PCM supplied by the engine.
 
 Keep the narrow C boundary from ADR 001. No alternate decoder, protocol stack, or runtime engine
 selector is part of the production design. The boundary remains replaceable, but there is no staged

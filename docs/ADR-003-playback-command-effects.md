@@ -31,7 +31,8 @@ current playback architecture.
 
 Exact acceptance, reconciliation, rollback, and reconnect behavior belongs in the command lifecycle,
 presentation, failure, registry, and session tests. The [enforcement inventory](architecture-enforcement.md)
-indexes that coverage under `TST-CMD-001`.
+indexes command lifecycle coverage under `TST-CMD-001`, Rust reconnect generation checks under
+`TST-LIF-001`, and generation/cancellation checks under `TST-EPC-001`.
 
 ## Revisit trigger
 

@@ -38,7 +38,7 @@ an identity and for Keychain recovery.
 ## Normal verification
 
 Follow the local-verification policy in [AGENTS.md](AGENTS.md#local-verification). The complete
-non-playback gate is:
+verification gate is:
 
 ```bash
 ./Scripts/check.sh
