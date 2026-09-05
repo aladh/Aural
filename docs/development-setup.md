@@ -2,7 +2,8 @@
 
 This repository is the complete source of truth needed to resume Spotty development. A previous
 checkout, generated static library, app bundle, signing certificate, Spotify response capture,
-Spotifly checkout, or separate librespot checkout is neither required nor expected.
+Spotifly checkout, or separate librespot checkout is neither required nor expected. Ordinary app builds
+download the pinned playback binary; the Rust source remains available for engine development.
 
 ## Fresh clone
 
@@ -10,11 +11,7 @@ Development requires:
 
 - An Apple Silicon Mac running macOS 26.2 or newer; the app's runtime target is macOS 15+.
 - Xcode 26.6 with Swift 6.3.3.
-- [Rustup](https://rustup.rs/); `rust-toolchain.toml` pins the components and ARM64 macOS target.
 - [ripgrep](https://github.com/BurntSushi/ripgrep) for repository verification.
-- cbindgen 0.29.4 for header regeneration and the complete verification gate:
-  `cargo install cbindgen --locked --version 0.29.4`. It is a development tool; ordinary app
-  compilation consumes the checked-in header and does not invoke or download cbindgen.
 - Spotify Premium only for live integration testing authorized under the
   [product contract](product-and-acceptance-contract.md#safe-acceptance-testing).
 
@@ -30,21 +27,20 @@ Confirm the local toolchains before a long first build:
 ```bash
 xcode-select -p
 swift --version
-cargo --version
 rg --version
 ```
 
-Run the complete non-playback quality gate:
+Build directly with SwiftPM, or run the app verification gate:
 
 ```bash
-./Scripts/check.sh
+swift build --product Spotty
+SPOTTY_CHECK_SCOPE=swift ./Scripts/check.sh
 ```
 
-The first run downloads the exact Rust toolchain and locked Cargo dependencies, compiles the
-contained Rust/librespot backend, generates `Backend/lib/libspotty_playback.a`, builds the Swift
-products, and runs all deterministic checks. The pinned Rust/librespot engine is the sole production
-playback implementation; no alternate audio path or local switch is required. No Spotify sign-in or
-playback occurs.
+SwiftPM downloads the checksum-pinned macOS ARM64 playback XCFramework on first resolution and
+caches it. The artifact includes the matching C headers and static library. App compilation, Swift
+tests, and packaging do not require Cargo, rustc, or cbindgen. The Apple SDK and Clang remain necessary
+for the C import and native link. No Spotify sign-in or playback occurs in the verification gate.
 
 For authenticated development, sign in to Xcode with an Apple Account and select its free Personal
 Team; paid Apple Developer Program membership is not required for local personal use. Create an
@@ -99,23 +95,28 @@ Follow the
 [product and acceptance contract](product-and-acceptance-contract.md) before exercising a live
 Spotify account; playback is opt-in during acceptance testing.
 
-## SwiftPM archive caveat
+## Engine development
 
-Plain `swift build` is not a complete build path for products that link `SpottyCore`, notably `Spotty`
-and `SpottyBoundaryTests`. SwiftPM links `Backend/lib/libspotty_playback.a` into those products, but
-the generated archive is outside its dependency graph: a missing archive produces a linker error,
-and Rust source changes do not rebuild it or necessarily relink an already-built Swift product.
-The build and package commands in [CONTRIBUTING.md](../CONTRIBUTING.md) handle the archive. For
-deliberate direct SwiftPM iteration, run `./Backend/spotty-playback/build.sh` after changing Rust
-sources or dependencies, then run `swift package clean` before rebuilding so an existing Swift
-product cannot retain the older linked archive.
+Install [Rustup](https://rustup.rs/) when changing the Rust engine or running its tests.
+`rust-toolchain.toml` pins the components and ARM64 macOS target. Install cbindgen 0.29.4 for header
+regeneration: `cargo install cbindgen --locked --version 0.29.4`.
+
+The complete source verification gate remains `./Scripts/check.sh`; the Rust-only lane is
+`SPOTTY_CHECK_SCOPE=rust ./Scripts/check.sh`. Artifact build and pin-update commands are documented
+in [agent operations](../CONTRIBUTING.md). Use the explicit `SPOTTY_PLAYBACK_LOCAL_XCFRAMEWORK`
+override when testing a source-built engine. Ordinary builds never fall back to compiling Rust.
+
+The checked-in artifact manifest pins the published library and its headers together. Engine input
+changes require a matching artifact; do not patch the published header separately or overwrite a
+release asset. Keep Rust tooling for engine debugging, while Swift-only development can use the
+published artifact throughout.
 
 ## Generated local state
 
 The following are reproducible, ignored outputs and may be deleted at any time:
 
 - `.build/` and `Backend/spotty-playback/target/` — Swift and Rust build products;
-- `Backend/lib/*.a` — the generated Rust static library consumed by SwiftPM;
+- `Backend/lib/*.a` — intermediate static archives for explicit engine builds;
 - `Spotty.app/` and `dist/` — local packages and archives;
 - `diagnostics/` — local diagnostic exports that must be reviewed before sharing;
 - `SpottyArtwork/` — the bounded artwork cache;
@@ -127,5 +128,5 @@ same source image, including the small sizes used in the Dock and Finder. Commit
 PNG and generated `Assets/Spotty.icns`.
 
 To recover from an uncertain local state, a fresh clone is the preferred reset. Do not copy build
-products or signing material from an older checkout. Cargo resolves the pinned librespot revision
-from `Cargo.lock`, and the scripts rebuild every generated input.
+products or signing material from an older checkout. SwiftPM resolves the pinned playback artifact.
+For source engine work, Cargo resolves the pinned librespot revision from `Cargo.lock`.

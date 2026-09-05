@@ -13,8 +13,60 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  changes:
+    name: Classify playback inputs
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      engine_changed: ${{ steps.filter.outputs.engine_changed }}
+
+    steps:
+      - name: Check out source history
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Detect engine input changes
+        id: filter
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          PUSH_BASE_SHA: ${{ github.event.before }}
+          PUSH_HEAD_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+
+          if [[ "$EVENT_NAME" == pull_request ]]; then
+            base_sha="$PR_BASE_SHA"
+            head_sha="$PR_HEAD_SHA"
+          else
+            base_sha="$PUSH_BASE_SHA"
+            head_sha="$PUSH_HEAD_SHA"
+            if [[ "$base_sha" =~ ^0+$ ]]; then
+              base_sha="$(git rev-list --max-parents=0 "$head_sha")"
+            fi
+          fi
+
+          engine_changed=false
+          while IFS= read -r changed_path; do
+            case "$changed_path" in
+              Backend/spotty-playback/artifact-manifest.json)
+                ;;
+              Backend/spotty-playback/*|Sources/SpottyPlaybackCore/*|Scripts/generate-c-header.sh|Scripts/generate-playback-notices.py|Scripts/playback-license-overrides.json|Scripts/playback-license-overrides/*|Scripts/playback-notices-preamble.md|rust-toolchain.toml|LICENSE|NOTICE|THIRD_PARTY_NOTICES.md)
+                engine_changed=true
+                break
+                ;;
+            esac
+          done < <(git diff --name-only "$base_sha" "$head_sha")
+
+          echo "engine_changed=$engine_changed" >> "$GITHUB_OUTPUT"
+          echo "Playback engine inputs changed: $engine_changed"
+
   rust:
     name: Rust checks
+    needs: [changes]
     runs-on: macos-26
     timeout-minutes: 30
 
@@ -24,6 +76,9 @@ jobs:
         with:
           persist-credentials: false
 
+      - name: Select Xcode 26.6
+        run: sudo xcode-select -s /Applications/Xcode_26.6.app
+
       - name: Install pinned cbindgen
         run: |
           set -euo pipefail
@@ -32,7 +87,15 @@ jobs:
           echo "$RUNNER_TEMP/spotty-cbindgen/bin" >> "$GITHUB_PATH"
 
       - name: Show Rust toolchain
-        run: rustc --version
+        run: |
+          set -euo pipefail
+          rustc --version
+          echo "RUST_TOOLCHAIN_KEY=$(rustc --version | shasum -a 256 | awk '{print $1}')" >> "$GITHUB_ENV"
+
+      - name: Identify playback inputs
+        run: |
+          set -euo pipefail
+          echo "PLAYBACK_INPUT_DIGEST=$(./Backend/spotty-playback/source-input-digest.sh)" >> "$GITHUB_ENV"
 
       - name: Cache Rust verification products
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
@@ -47,6 +110,46 @@ jobs:
 
       - name: Run Rust checks
         run: SPOTTY_CHECK_SCOPE=rust ./Scripts/check.sh
+
+      - name: Cache Rust release build products
+        if: needs.changes.outputs.engine_changed == 'true'
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: Backend/spotty-playback/target/aarch64-apple-darwin/release
+          key: macos-rust-playback-${{ runner.arch }}-${{ env.RUST_TOOLCHAIN_KEY }}-${{ env.PLAYBACK_INPUT_DIGEST }}
+
+      - name: Build candidate playback XCFramework
+        if: needs.changes.outputs.engine_changed == 'true'
+        run: |
+          set -euo pipefail
+          candidate_root="$RUNNER_TEMP/spotty-playback-candidate"
+          framework_path="$candidate_root/SpottyPlaybackCore.xcframework"
+          archive_path="$candidate_root/SpottyPlaybackCore.xcframework.zip"
+          rm -rf "$candidate_root"
+          mkdir -p "$candidate_root"
+
+          ./Backend/spotty-playback/build-xcframework.sh \
+            --output "$framework_path" \
+            --archive "$archive_path"
+          ./Backend/spotty-playback/validate-xcframework.sh \
+            "$framework_path" \
+            --archive "$archive_path"
+
+          (cd "$candidate_root" && shasum -a 256 "$(basename "$archive_path")" > "$(basename "$archive_path").sha256")
+          printf 'source_sha=%s\nsource_ref=%s\nsource_input_digest=%s\n' \
+            "$(git rev-parse HEAD)" \
+            "${GITHUB_REF_NAME:-$GITHUB_REF}" \
+            "$PLAYBACK_INPUT_DIGEST" > "$candidate_root/source-provenance.txt"
+          cp LICENSE NOTICE THIRD_PARTY_NOTICES.md "$candidate_root/"
+
+      - name: Upload candidate playback artifact
+        if: needs.changes.outputs.engine_changed == 'true'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: playback-candidate-${{ github.sha }}
+          path: ${{ runner.temp }}/spotty-playback-candidate
+          if-no-files-found: error
+          retention-days: 7
 
   checks:
     name: Debug and deterministic checks
@@ -77,24 +180,21 @@ jobs:
             swift --version
             uname -m
           } | tee "$RUNNER_TEMP/swift-toolchain.txt"
-          rustc --version
           xcrun --find swift-format
           xcrun swift-format --version
           grep -q 'Apple Swift version 6.3.3' "$RUNNER_TEMP/swift-toolchain.txt"
           echo "SWIFT_TOOLCHAIN_KEY=$(shasum -a 256 "$RUNNER_TEMP/swift-toolchain.txt" | awk '{print $1}')" >> "$GITHUB_ENV"
-          echo "RUST_TOOLCHAIN_KEY=$(rustc --version | shasum -a 256 | awk '{print $1}')" >> "$GITHUB_ENV"
 
-      - name: Cache playback archive
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: Backend/lib/libspotty_playback.a
-          key: macos-playback-archive-${{ runner.arch }}-${{ env.RUST_TOOLCHAIN_KEY }}-${{ hashFiles('rust-toolchain.toml', 'Backend/spotty-playback/Cargo.toml', 'Backend/spotty-playback/Cargo.lock', 'Backend/spotty-playback/build.sh', 'Backend/spotty-playback/src/**') }}
-
-      - name: Refresh cached playback archive timestamp
+      - name: Block Rust tools
         run: |
-          if [[ -f Backend/lib/libspotty_playback.a ]]; then
-            touch Backend/lib/libspotty_playback.a
-          fi
+          set -euo pipefail
+          blocked_tools="$RUNNER_TEMP/spotty-no-rust-tools"
+          mkdir -p "$blocked_tools"
+          for tool in cargo rustc rustup cbindgen; do
+            printf '#!/bin/sh\necho "%s is blocked in the Swift lane" >&2\nexit 127\n' "$tool" > "$blocked_tools/$tool"
+            chmod 755 "$blocked_tools/$tool"
+          done
+          echo "$blocked_tools" >> "$GITHUB_PATH"
 
       - name: Cache SwiftPM build directory
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
@@ -102,13 +202,87 @@ jobs:
           path: |
             .build/*
             !.build/spotty-signing
-          key: macos-swiftpm-debug-${{ runner.os }}-${{ runner.arch }}-${{ env.SWIFT_TOOLCHAIN_KEY }}-${{ hashFiles('Package.swift', 'Package.resolved') }}-${{ github.sha }}
+          key: macos-swiftpm-debug-${{ runner.os }}-${{ runner.arch }}-${{ env.SWIFT_TOOLCHAIN_KEY }}-${{ hashFiles('Package.swift', 'Package.resolved', 'Backend/spotty-playback/artifact-manifest.json') }}-${{ github.sha }}
           restore-keys: |
             macos-swiftpm-debug-${{ runner.os }}-${{ runner.arch }}-${{ env.SWIFT_TOOLCHAIN_KEY }}-
             macos-swiftpm-${{ runner.os }}-${{ runner.arch }}-${{ env.SWIFT_TOOLCHAIN_KEY }}-
 
       - name: Run checks
         run: SPOTTY_CHECK_SCOPE=swift ./Scripts/check.sh
+
+  candidate:
+    name: Candidate Swift ${{ matrix.configuration }}
+    needs: [changes, rust]
+    if: needs.changes.outputs.engine_changed == 'true' && needs.rust.result == 'success'
+    runs-on: macos-26
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        configuration: [debug, release]
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Select Xcode 26.6
+        run: sudo xcode-select -s /Applications/Xcode_26.6.app
+
+      - name: Download candidate playback artifact
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: playback-candidate-${{ github.sha }}
+          path: ${{ runner.temp }}/spotty-playback-candidate
+
+      - name: Block Rust tools and select candidate
+        run: |
+          set -euo pipefail
+          blocked_tools="$RUNNER_TEMP/spotty-no-rust-tools"
+          mkdir -p "$blocked_tools"
+          for tool in cargo rustc rustup cbindgen; do
+            printf '#!/bin/sh\necho "%s is blocked in the Swift candidate lane" >&2\nexit 127\n' "$tool" > "$blocked_tools/$tool"
+            chmod 755 "$blocked_tools/$tool"
+          done
+          echo "$blocked_tools" >> "$GITHUB_PATH"
+          candidate_path="$RUNNER_TEMP/spotty-playback-candidate/SpottyPlaybackCore.xcframework"
+          test -d "$candidate_path"
+          echo "SPOTTY_PLAYBACK_LOCAL_XCFRAMEWORK=$candidate_path" >> "$GITHUB_ENV"
+
+      - name: Install verification tools
+        run: |
+          if command -v rg >/dev/null 2>&1; then
+            rg --version
+          else
+            brew install ripgrep
+          fi
+
+      - name: Show Swift toolchain
+        run: |
+          set -euo pipefail
+          {
+            swift --version
+            uname -m
+          } | tee "$RUNNER_TEMP/swift-toolchain.txt"
+          xcrun --find swift-format
+          xcrun swift-format --version
+          grep -q 'Apple Swift version 6.3.3' "$RUNNER_TEMP/swift-toolchain.txt"
+          echo "SWIFT_TOOLCHAIN_KEY=$(shasum -a 256 "$RUNNER_TEMP/swift-toolchain.txt" | awk '{print $1}')" >> "$GITHUB_ENV"
+
+      - name: Cache SwiftPM candidate build directory
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            .build/*
+            !.build/spotty-signing
+          key: macos-swiftpm-candidate-${{ matrix.configuration }}-${{ runner.os }}-${{ runner.arch }}-${{ env.SWIFT_TOOLCHAIN_KEY }}-${{ hashFiles('Package.swift', 'Package.resolved', 'Backend/spotty-playback/artifact-manifest.json') }}-${{ github.sha }}
+
+      - name: Run candidate Swift checks
+        env:
+          SPOTTY_BUILD_CONFIGURATION: ${{ matrix.configuration }}
+          SPOTTY_CHECK_SCOPE: swift
+        run: ./Scripts/check.sh
 
   release:
     name: Release distribution compile
@@ -131,36 +305,19 @@ jobs:
             swift --version
             uname -m
           } | tee "$RUNNER_TEMP/swift-toolchain.txt"
-          rustc --version
           grep -q 'Apple Swift version 6.3.3' "$RUNNER_TEMP/swift-toolchain.txt"
           echo "SWIFT_TOOLCHAIN_KEY=$(shasum -a 256 "$RUNNER_TEMP/swift-toolchain.txt" | awk '{print $1}')" >> "$GITHUB_ENV"
-          echo "RUST_TOOLCHAIN_KEY=$(rustc --version | shasum -a 256 | awk '{print $1}')" >> "$GITHUB_ENV"
 
-      - name: Cache playback archive
-        id: playback-archive
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: Backend/lib/libspotty_playback.a
-          key: macos-playback-archive-${{ runner.arch }}-${{ env.RUST_TOOLCHAIN_KEY }}-${{ hashFiles('rust-toolchain.toml', 'Backend/spotty-playback/Cargo.toml', 'Backend/spotty-playback/Cargo.lock', 'Backend/spotty-playback/build.sh', 'Backend/spotty-playback/src/**') }}
-
-      - name: Cache Rust dependencies and build products
-        if: steps.playback-archive.outputs.cache-hit != 'true'
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: |
-            ~/.cargo/git
-            ~/.cargo/registry
-            Backend/spotty-playback/target
-          key: macos-rust-${{ hashFiles('Backend/spotty-playback/Cargo.lock') }}
-          restore-keys: macos-rust-
-
-      - name: Prepare playback archive
+      - name: Block Rust tools
         run: |
-          if [[ -f Backend/lib/libspotty_playback.a ]]; then
-            touch Backend/lib/libspotty_playback.a
-          else
-            ./Backend/spotty-playback/build.sh
-          fi
+          set -euo pipefail
+          blocked_tools="$RUNNER_TEMP/spotty-no-rust-tools"
+          mkdir -p "$blocked_tools"
+          for tool in cargo rustc rustup cbindgen; do
+            printf '#!/bin/sh\necho "%s is blocked in the Swift lane" >&2\nexit 127\n' "$tool" > "$blocked_tools/$tool"
+            chmod 755 "$blocked_tools/$tool"
+          done
+          echo "$blocked_tools" >> "$GITHUB_PATH"
 
       - name: Cache SwiftPM release build directory
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
@@ -168,7 +325,7 @@ jobs:
           path: |
             .build/*
             !.build/spotty-signing
-          key: macos-swiftpm-release-${{ runner.os }}-${{ runner.arch }}-${{ env.SWIFT_TOOLCHAIN_KEY }}-${{ hashFiles('Package.swift', 'Package.resolved') }}-${{ github.sha }}
+          key: macos-swiftpm-release-${{ runner.os }}-${{ runner.arch }}-${{ env.SWIFT_TOOLCHAIN_KEY }}-${{ hashFiles('Package.swift', 'Package.resolved', 'Backend/spotty-playback/artifact-manifest.json') }}-${{ github.sha }}
           restore-keys: |
             macos-swiftpm-release-${{ runner.os }}-${{ runner.arch }}-${{ env.SWIFT_TOOLCHAIN_KEY }}-
             macos-swiftpm-${{ runner.os }}-${{ runner.arch }}-${{ env.SWIFT_TOOLCHAIN_KEY }}-
@@ -177,7 +334,14 @@ jobs:
         run: ./Scripts/compile-release-spotty.sh
 
       - name: Report release build size
-        run: ./Scripts/report-size.sh --out-dir "$RUNNER_TEMP"
+        run: |
+          set -euo pipefail
+          project_root="$PWD"
+          source "$project_root/Scripts/playback-xcframework.sh"
+          selected_xcframework="$(spotty_playback_resolve_xcframework)"
+          ./Scripts/report-size.sh \
+            --xcframework "$selected_xcframework" \
+            --out-dir "$RUNNER_TEMP"
 
       - name: Upload size report
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
@@ -189,17 +353,26 @@ jobs:
   gate:
     name: Debug quality gate
     if: always()
-    needs: [rust, checks, release]
+    needs: [changes, rust, checks, candidate, release]
     runs-on: ubuntu-latest
     timeout-minutes: 5
 
     steps:
       - name: Require every quality lane
         env:
+          CHANGES_RESULT: ${{ needs.changes.result }}
+          ENGINE_CHANGED: ${{ needs.changes.outputs.engine_changed }}
           RUST_RESULT: ${{ needs.rust.result }}
           CHECKS_RESULT: ${{ needs.checks.result }}
+          CANDIDATE_RESULT: ${{ needs.candidate.result }}
           RELEASE_RESULT: ${{ needs.release.result }}
         run: |
+          test "$CHANGES_RESULT" = success
           test "$RUST_RESULT" = success
           test "$CHECKS_RESULT" = success
+          if [[ "$ENGINE_CHANGED" == true ]]; then
+            test "$CANDIDATE_RESULT" = success
+          else
+            test "$CANDIDATE_RESULT" = skipped
+          fi
           test "$RELEASE_RESULT" = success

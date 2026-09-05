@@ -27,31 +27,47 @@ jobs:
       - name: Select Xcode 26.6
         run: sudo xcode-select -s /Applications/Xcode_26.6.app
 
-      - name: Cache Rust dependencies and build products
+      - name: Install verification tools
+        run: |
+          if command -v rg >/dev/null 2>&1; then
+            rg --version
+          else
+            brew install ripgrep
+          fi
+
+      - name: Show Swift toolchain
+        run: |
+          set -euo pipefail
+          {
+            swift --version
+            uname -m
+          } | tee "$RUNNER_TEMP/swift-toolchain.txt"
+          xcrun --find swift-format
+          xcrun swift-format --version
+          grep -q 'Apple Swift version 6.3.3' "$RUNNER_TEMP/swift-toolchain.txt"
+          echo "SWIFT_TOOLCHAIN_KEY=$(shasum -a 256 "$RUNNER_TEMP/swift-toolchain.txt" | awk '{print $1}')" >> "$GITHUB_ENV"
+
+      - name: Block Rust tools
+        run: |
+          set -euo pipefail
+          blocked_tools="$RUNNER_TEMP/spotty-no-rust-tools"
+          mkdir -p "$blocked_tools"
+          for tool in cargo rustc rustup cbindgen; do
+            printf '#!/bin/sh\necho "%s is blocked in the app release lane" >&2\nexit 127\n' "$tool" > "$blocked_tools/$tool"
+            chmod 755 "$blocked_tools/$tool"
+          done
+          echo "$blocked_tools" >> "$GITHUB_PATH"
+
+      - name: Cache SwiftPM release build directory
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |
-            ~/.cargo/git
-            ~/.cargo/registry
-            Backend/spotty-playback/target
-          key: macos-release-rust-${{ hashFiles('Backend/spotty-playback/Cargo.lock') }}
+            .build/*
+            !.build/spotty-signing
+          key: macos-swiftpm-app-release-${{ runner.os }}-${{ runner.arch }}-${{ env.SWIFT_TOOLCHAIN_KEY }}-${{ hashFiles('Package.swift', 'Package.resolved', 'Backend/spotty-playback/artifact-manifest.json') }}-${{ github.sha }}
           restore-keys: |
-            macos-release-rust-
-            macos-rust-
-
-      - name: Install verification tools
-        run: |
-          if brew tap | grep -qx 'aws/tap'; then
-            brew untap aws/tap
-          fi
-          brew install ripgrep
-
-      - name: Install pinned cbindgen
-        run: |
-          set -euo pipefail
-          CARGO_HOME="$RUNNER_TEMP/spotty-cbindgen-cargo" \
-            cargo install cbindgen --locked --version 0.29.4 --root "$RUNNER_TEMP/spotty-cbindgen"
-          echo "$RUNNER_TEMP/spotty-cbindgen/bin" >> "$GITHUB_PATH"
+            macos-swiftpm-app-release-${{ runner.os }}-${{ runner.arch }}-${{ env.SWIFT_TOOLCHAIN_KEY }}-
+            macos-swiftpm-release-${{ runner.os }}-${{ runner.arch }}-${{ env.SWIFT_TOOLCHAIN_KEY }}-
 
       - name: Verify tag and runner
         run: |

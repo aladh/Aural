@@ -63,8 +63,9 @@ To build it from this repository:
 
 - Install the prerequisites in the [development setup guide](docs/development-setup.md#fresh-clone).
 
-The repository is source-only. Its architecture-specific Rust archive and app bundle are generated
-locally and ignored by Git.
+App builds download a checksum-pinned playback XCFramework through SwiftPM; a Rust installation is
+only needed when changing the engine. The complete engine source remains in this repository, while
+generated binaries and app bundles stay out of Git.
 
 ## Getting started
 

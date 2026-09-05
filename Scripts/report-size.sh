@@ -4,36 +4,54 @@ trap 'echo "report-size.sh: failed at line $LINENO" >&2' ERR
 
 # Reports release build size for measured resource comparisons (#37).
 #
-# Prints a Markdown table with the app binary size, the Rust static archive size,
+# Prints a Markdown table with the app binary size, the playback static archive size,
 # per-segment totals for the binary, and the archive's exported symbol count.
 # Appends the table to $GITHUB_STEP_SUMMARY when set, and always prints it to
 # stdout. Also writes a machine-readable size-report.json under --out-dir.
 #
 # Usage:
-#   Scripts/report-size.sh [--binary PATH] [--archive PATH] [--out-dir DIR]
+#   Scripts/report-size.sh [--binary PATH] [--xcframework PATH] [--out-dir DIR]
 #
 # Defaults match Scripts/compile-release-spotty.sh's release layout:
 #   --binary   <repo>/.build/release/Spotty
-#   --archive  <repo>/Backend/lib/libspotty_playback.a
+#   --xcframework  SwiftPM's resolved remote XCFramework path; use
+#                  SPOTTY_PLAYBACK_LOCAL_XCFRAMEWORK for a source-built artifact
 #   --out-dir  <repo>/.build (ignored by git)
 
 project_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+source "$project_root/Scripts/playback-xcframework.sh"
 
 binary_path="$project_root/.build/release/Spotty"
-archive_path="$project_root/Backend/lib/libspotty_playback.a"
+xcframework_override=""
 out_dir="$project_root/.build"
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
         --binary)
+            if [[ $# -lt 2 ]]; then
+                echo "report-size.sh: --binary requires a path" >&2
+                exit 1
+            fi
             binary_path="$2"
             shift 2
             ;;
-        --archive)
-            archive_path="$2"
+        --xcframework)
+            if [[ $# -lt 2 ]]; then
+                echo "report-size.sh: --xcframework requires a path" >&2
+                exit 1
+            fi
+            xcframework_override="$2"
             shift 2
             ;;
+        --archive)
+            echo "report-size.sh: --archive is no longer accepted; pass the selected XCFramework with --xcframework" >&2
+            exit 1
+            ;;
         --out-dir)
+            if [[ $# -lt 2 ]]; then
+                echo "report-size.sh: --out-dir requires a path" >&2
+                exit 1
+            fi
             out_dir="$2"
             shift 2
             ;;
@@ -43,6 +61,52 @@ while [[ $# -gt 0 ]]; do
             ;;
     esac
 done
+
+if [[ -n "$xcframework_override" ]]; then
+    if [[ -n "${SPOTTY_PLAYBACK_LOCAL_XCFRAMEWORK:-}" ]]; then
+        # An explicit local source artifact is intentionally outside the published manifest pin.
+        # Keep the environment contract authoritative and reject a second, different path.
+        local_override_path="$SPOTTY_PLAYBACK_LOCAL_XCFRAMEWORK"
+        case "$local_override_path" in
+            /*) ;;
+            *) local_override_path="$project_root/$local_override_path" ;;
+        esac
+        local_override_path="$(cd "$local_override_path" && pwd -P)"
+        requested_override_path="$xcframework_override"
+        case "$requested_override_path" in
+            /*) ;;
+            *) requested_override_path="$project_root/$requested_override_path" ;;
+        esac
+        requested_override_path="$(cd "$requested_override_path" && pwd -P)"
+        if [[ "$local_override_path" != "$requested_override_path" ]]; then
+            echo "report-size.sh: --xcframework conflicts with SPOTTY_PLAYBACK_LOCAL_XCFRAMEWORK" >&2
+            exit 1
+        fi
+        selected_xcframework="$local_override_path"
+    else
+        # A path supplied by the release lane must be the path SwiftPM selected for the current
+        # remote URL/checksum. This preserves the remote manifest validation below while still
+        # allowing the size report to inspect the exact path used by compile-release-spotty.sh.
+        resolved_remote_xcframework="$(spotty_playback_resolve_xcframework)"
+        requested_override_path="$xcframework_override"
+        case "$requested_override_path" in
+            /*) ;;
+            *) requested_override_path="$project_root/$requested_override_path" ;;
+        esac
+        requested_override_path="$(cd "$requested_override_path" && pwd -P)"
+        if [[ "$resolved_remote_xcframework" != "$requested_override_path" ]]; then
+            echo "report-size.sh: --xcframework must be SwiftPM's resolved remote artifact; set SPOTTY_PLAYBACK_LOCAL_XCFRAMEWORK for a source-built artifact" >&2
+            exit 1
+        fi
+        selected_xcframework="$resolved_remote_xcframework"
+    fi
+else
+    selected_xcframework="$(spotty_playback_resolve_xcframework)"
+fi
+spotty_playback_validate_xcframework "$selected_xcframework"
+playback_slice="$(spotty_playback_slice_path "$selected_xcframework")"
+archive_path="$(spotty_playback_archive_path "$playback_slice")"
+archive_name="$(basename "$archive_path")"
 
 if [[ ! -f "$binary_path" ]]; then
     # SwiftPM does not always create the `.build/release` convenience symlink (compile-
@@ -63,7 +127,7 @@ if [[ ! -f "$binary_path" ]]; then
 fi
 
 if [[ ! -f "$archive_path" ]]; then
-    echo "report-size.sh: archive not found at $archive_path" >&2
+    echo "report-size.sh: playback archive not found at $archive_path" >&2
     exit 1
 fi
 
@@ -123,7 +187,7 @@ render_table() {
     echo "| Metric | Value |"
     echo "| --- | ---: |"
     echo "| App binary | ${binary_bytes} bytes (${binary_mib} MiB) |"
-    echo "| libspotty_playback.a | ${archive_bytes} bytes (${archive_mib} MiB) |"
+    echo "| ${archive_name} | ${archive_bytes} bytes (${archive_mib} MiB) |"
     if [[ "$have_size_tool" -eq 1 ]]; then
         echo "| Binary __TEXT | ${text_bytes} bytes ($(to_mib "$text_bytes") MiB) |"
         echo "| Binary __DATA | ${data_bytes} bytes ($(to_mib "$data_bytes") MiB) |"
@@ -170,6 +234,7 @@ cat >"$json_path" <<JSON
   "binary_path": "$binary_path",
   "binary_bytes": $binary_bytes,
   "binary_mib": $binary_mib,
+  "xcframework_path": "$selected_xcframework",
   "archive_path": "$archive_path",
   "archive_bytes": $archive_bytes,
   "archive_mib": $archive_mib,

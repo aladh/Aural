@@ -4,7 +4,11 @@ set -euo pipefail
 # Compile-only Swift importer contract. This deliberately type-checks an uncalled fixture and
 # never links or runs the playback library.
 project_root="$(cd "$(dirname "$0")/.." && pwd)"
-header_dir="$project_root/Sources/SpottyPlaybackCore/include"
+if (( $# > 1 )); then
+    print -u2 "usage: $0 [XCFRAMEWORK_HEADERS]"
+    exit 2
+fi
+header_dir="${1:-${SPOTTY_PLAYBACK_HEADER_DIR:-$project_root/Sources/SpottyPlaybackCore/include}}"
 header_path="$header_dir/spotty_playback.h"
 positive_fixture="$project_root/Tests/ABI/positive.swift"
 negative_fixture="$project_root/Tests/ABI/negative.swift"

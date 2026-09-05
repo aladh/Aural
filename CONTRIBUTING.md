@@ -16,8 +16,9 @@ From the repository root:
 ./script/build_and_run.sh
 ```
 
-The script compiles the Rust backend when needed, builds the SwiftPM executable, creates and signs a
-local `Spotty.app`, terminates any running development copy, and launches the replacement. Because that
+The script resolves the pinned playback XCFramework, runs the Swift verification gate, builds the
+SwiftPM executable, creates and signs a local `Spotty.app`, terminates any running development copy,
+and launches the replacement. It does not require Rust tools. Because that
 can disturb an authenticated session, use it only when the request authorizes launch or interactive
 acceptance; do not use it as a compile check. The path-specific contract is
 [`script/AGENTS.md`](script/AGENTS.md).
@@ -49,7 +50,11 @@ gate is:
 ./Scripts/check.sh
 ```
 
-The gate checks tracked Swift formatting, Rust formatting, warning-clean Clippy, locked Rust tests,
+The complete gate requires the engine toolchain. App-only development uses
+`SPOTTY_CHECK_SCOPE=swift ./Scripts/check.sh`, which resolves the binary dependency and never invokes
+Cargo, rustc, or cbindgen. Packaging uses this app-only gate.
+
+The complete gate checks tracked Swift formatting, Rust formatting, warning-clean Clippy, locked Rust tests,
 the pinned cbindgen output against the checked-in header,
 Rust/C export and header parity, Swift builds with project-owned warnings as errors, deterministic
 Swift tests, architecture contracts, CI policy, and packaging metadata. It does not sign in
@@ -117,12 +122,51 @@ SPOTTY_CHECK_SCOPE=swift ./Scripts/check.sh
 ```
 
 The required `Debug quality gate` aggregates Rust verification, Swift/architecture verification, and
-the release compile. CI uses the [documented toolchain](docs/development-setup.md#fresh-clone), a
-content-keyed Rust archive, and configuration-safe SwiftPM caches; cache hits may reduce latency but
-never coverage.
+the release compile. CI uses the [documented toolchain](docs/development-setup.md#fresh-clone),
+content-keyed engine artifacts, and configuration-safe SwiftPM caches; cache hits may reduce latency
+but never coverage. App lanes deliberately block Rust executables to detect accidental source-build
+fallbacks.
 
 Use `SPOTTY_CHECK_REPEATS=N ./Scripts/check.sh` with `N` from 1 through 25 when concurrency or lifetime
 work merits stress.
+
+## Playback binary artifacts
+
+The artifact pin lives in `Backend/spotty-playback/artifact-manifest.json` and a generated declaration
+in `Package.swift`. The pin updater changes both together. Literal package declarations make pin
+changes visible to SwiftPM's manifest cache. They pin an immutable engine ZIP by URL and SHA-256. The artifact contains one macOS ARM64 static-library slice,
+its matching C headers/module map, provenance, and dependency notices. Ordinary SwiftPM builds
+resolve that dependency without Cargo or cbindgen. Never overwrite an existing published asset.
+
+For engine development, install the pinned Rust and cbindgen tools and build an explicit local
+artifact:
+
+```bash
+./Backend/spotty-playback/build-xcframework.sh
+engine_digest="$(./Backend/spotty-playback/source-input-digest.sh)"
+export SPOTTY_PLAYBACK_LOCAL_XCFRAMEWORK="$PWD/.build/playback-engine/$engine_digest/SpottyPlaybackCore.xcframework"
+SPOTTY_CHECK_SCOPE=swift ./Scripts/check.sh
+./Scripts/compile-release-spotty.sh
+```
+
+Rebuild that artifact and refresh the override after changing any engine input. Both its default
+directory carries the engine digest, and the library filename carries both engine-input and binary
+digests. This changes the linker input when the
+engine changes; replacing a same-named static archive alone can leave a cached executable linked to
+old code in SwiftPM. The local override selects a binary; it does
+not arrange an implicit Cargo build. Unset it to return to the published dependency. Full Rust
+verification remains `SPOTTY_CHECK_SCOPE=rust ./Scripts/check.sh`.
+
+Artifact production uses Python 3.11 or newer for dependency-notice generation in addition to the engine and
+Apple toolchains. Python is not an app-build prerequisite. The embedded notices travel into packaged
+apps without regeneration.
+
+The artifact publication workflow builds the selected source revision with read-only repository
+permissions. A separate publisher uploads versioned assets without running candidate build code
+with release credentials. The resulting pin is updated in a reviewed source change; app and engine
+releases have separate identities. Verify the downloaded artifact with its checksum and source input
+digest before updating the manifest. Keep source revision, Cargo lock identity, headers, library,
+and required license/source material traceable together.
 
 ## Clean and risk-specific verification
 
@@ -132,7 +176,8 @@ The clean-room gate is:
 ./Scripts/check-clean.sh
 ```
 
-It removes generated Swift build products, rebuilds Rust, then verifies Debug and Release. Do not run
+It removes generated Swift build products, rebuilds the local engine artifact, then verifies Debug
+and Release. Do not run
 destructive cleanup over unrelated work. `./Scripts/compile-release-spotty.sh` remains the local
 compile-only release command.
 
@@ -167,13 +212,13 @@ SPOTTY_NOTARY_PROFILE="spotty-notary" \
 
 `validate-app.sh --distribution` requires a Developer ID signature, a valid notarization ticket, and
 Gatekeeper acceptance. Signing proves artifact integrity; it does not make the private Spotify
-integration supported or policy-compliant. Before distributing a binary, generate and inspect the
-complete transitive license set from `Cargo.lock`.
+integration supported or policy-compliant. Engine artifact publication generates and inspects the complete transitive license set from
+`Cargo.lock`; app packaging copies that material from the pinned artifact.
 
 ## Tagged releases
 
 A matching `vX.Y.Z` tag runs the ARM64 release workflow. It compares the numeric tag with
-`CFBundleShortVersionString` in `Packaging/Info.plist`, runs the full gate, validates an ARM64-only
+`CFBundleShortVersionString` in `Packaging/Info.plist`, runs the app verification gate against the pinned engine, validates an ARM64-only
 app, creates a ZIP and SHA-256 checksum, and publishes an experimental prerelease. Until Developer ID
 and notarization credentials are configured, artifacts use a hardened-runtime ad-hoc signature and
 release notes must state that macOS will not automatically trust them.
