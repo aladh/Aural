@@ -86,7 +86,9 @@ struct NavigationBar: View {
                 .allowsWindowActivationEvents(true)
         }
         .background { WindowButtonAlignment() }
-        .onChange(of: searchText) { showSearch() }
+        .onChange(of: searchText) {
+            if !searchText.isEmpty { showSearch() }
+        }
         .defaultFocus($focusedControl, .home)
     }
 }
@@ -103,7 +105,7 @@ private struct NavigationSymbol: Shape {
                 CGPoint(x: 12, y: 1), CGPoint(x: 2, y: 8.5), CGPoint(x: 2, y: 22),
                 CGPoint(x: 9, y: 22), CGPoint(x: 9, y: 15),
                 CGPoint(x: 15, y: 15), CGPoint(x: 15, y: 22),
-                CGPoint(x: 22, y: 22), CGPoint(x: 22, y: 8.5)
+                CGPoint(x: 22, y: 22), CGPoint(x: 22, y: 8.5),
             ])
             path.closeSubpath()
             if kind == .home {
@@ -111,7 +113,7 @@ private struct NavigationSymbol: Shape {
                     CGPoint(x: 12, y: 3.5), CGPoint(x: 4, y: 9.5), CGPoint(x: 4, y: 20),
                     CGPoint(x: 7, y: 20), CGPoint(x: 7, y: 13),
                     CGPoint(x: 17, y: 13), CGPoint(x: 17, y: 20),
-                    CGPoint(x: 20, y: 20), CGPoint(x: 20, y: 9.5)
+                    CGPoint(x: 20, y: 20), CGPoint(x: 20, y: 9.5),
                 ])
                 path.closeSubpath()
             }
@@ -120,7 +122,7 @@ private struct NavigationSymbol: Shape {
             path.addEllipse(in: CGRect(x: 3, y: 3, width: 15, height: 15))
             path.addLines([
                 CGPoint(x: 17.92, y: 16.5), CGPoint(x: 23, y: 21.58),
-                CGPoint(x: 21.58, y: 23), CGPoint(x: 16.5, y: 17.92)
+                CGPoint(x: 21.58, y: 23), CGPoint(x: 16.5, y: 17.92),
             ])
             path.closeSubpath()
         }
