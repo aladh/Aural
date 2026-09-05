@@ -13,8 +13,8 @@ private let playbackManifestURL =
 // BEGIN GENERATED PLAYBACK ARTIFACT PIN. Run Backend/spotty-playback/update-artifact-manifest.sh
 // after publishing a new immutable XCFramework; keep this block synchronized with the manifest.
 private let generatedPlaybackArtifactURL =
-    "https://github.com/aladh/Spotty/releases/download/spotty-playback-core-dddc55e4c54469213528148897bc148dc75c27a884d7bf59a77705259acc4bfd/SpottyPlaybackCore.xcframework.zip"
-private let generatedPlaybackArtifactChecksum = "b183c58d53947292d945927b6449c83b306701004eaf2a08281e8bc55dd035b3"
+    "https://github.com/aladh/Spotty/releases/download/spotty-playback-core-f050af3671acc4eb710221db5027bbb86b1edb2d575128f9e7231622debef690/SpottyPlaybackCore.xcframework.zip"
+private let generatedPlaybackArtifactChecksum = "eefae6eff025bb599a05ded52945c9d571a008663ff837215b087bb52c8bc357"
 // END GENERATED PLAYBACK ARTIFACT PIN
 
 private func pathRelativeToPackageRoot(_ url: URL) -> String {
