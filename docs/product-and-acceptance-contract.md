@@ -7,6 +7,13 @@ integration may violate Spotify's terms. See [ADRs](architecture-decisions.md) f
 
 ## Product direction
 
+- Apply the **80/20 product principle**: aim to cover the most-used listening workflows—roughly
+  80% of everyday value—with roughly 20% of the implementation and maintenance cost of full
+  feature parity. These proportions are a prioritization heuristic, not measured targets.
+  Favor a small, coherent feature set; defer rarely used features and options whose value does
+  not justify their complexity. Evaluate additions by frequency of use, user-visible benefit,
+  and ongoing cost. This principle never relaxes account/privacy/session safety, playback and
+  lifetime correctness, or native macOS behavior and truthful state.
 - Spotty is a focused native macOS client for personal Spotify Premium use; macOS is its only
   target. Prefer SwiftUI and AppKit over custom chrome, and do not add a WebView, Chromium runtime,
   or second UI framework.

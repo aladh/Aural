@@ -6,7 +6,9 @@ playback and Connect leaf. No WebView, Chromium shell, cross-platform UI, or sup
 fallback. Keep the experimental and no-affiliation warnings prominent in public material.
 
 Prioritize account/privacy/session safety, then playback and lifetime correctness, then native macOS
-behavior and truthful state. Keep the product surface small; optimize measured, user-visible costs.
+behavior and truthful state. Keep the product surface small; apply the
+[80/20 product principle](docs/product-and-acceptance-contract.md#product-direction) when choosing
+features, and optimize measured, user-visible costs.
 
 ## Working in this repository
 
