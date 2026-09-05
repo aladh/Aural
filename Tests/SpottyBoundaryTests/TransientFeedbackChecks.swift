@@ -413,4 +413,65 @@ struct TransientFeedbackTests {
         }
 
     }
+
+    @Test
+    @MainActor
+    func testSettledCommandErrorTimerCannotDismissNewerPlaybackNotice() async {
+        let clock = UncooperativeParkedClock()
+        let player = PlaybackStore(
+            environment: feedbackEnvironment(clock: clock),
+            feedback: TransientFeedbackPresenter(clock: clock)
+        )
+        seedReady(player)
+
+        player.showTransientCommandError("An older command failed.")
+        #expect(
+            (await waitUntil { clock.waiterCount == 1 }) == true,
+            "the command-error dismissal is parked before the replacement arrives"
+        )
+        let oldNoticeID = player.playbackNotice?.id
+        let failedURI = "spotify:track:unavailable-timer"
+        player.receive(
+            RustPlaybackState(
+                revision: 1,
+                sessionGeneration: player.engineGeneration,
+                isPlaying: false,
+                isPaused: true,
+                trackURI: failedURI,
+                positionMS: 0,
+                durationMS: 180_000,
+                timestampMS: 0,
+                shuffle: false,
+                repeatTrack: false,
+                repeatContext: false,
+                trackUnavailable: true,
+                isActiveDevice: true
+            ),
+            revision: 1,
+            receivedAt: clock.now()
+        )
+        let unavailableNoticeID = player.playbackNotice?.id
+        #expect((unavailableNoticeID) != nil, "the accepted local failure replaces the old notice")
+        #expect((unavailableNoticeID) != (oldNoticeID), "the replacement has a new notice identity")
+        #expect(
+            (player.playbackNotice?.message) == (PlaybackNotice.trackUnavailableMessage),
+            "the unavailable-track notice is visible before the old timer settles"
+        )
+
+        let commandError = player.effects.settlement(of: .commandError)
+        #expect((commandError) != nil, "the old command-error timer remains observable")
+        clock.releaseNext()
+        await commandError?.wait()
+
+        #expect(
+            (player.playbackNotice?.id) == (unavailableNoticeID),
+            "the settled old timer cannot dismiss the newer notice"
+        )
+        #expect(
+            (player.playbackNotice?.message) == (PlaybackNotice.trackUnavailableMessage),
+            "the actionable unavailable-track notice survives the old timer"
+        )
+
+        await player.shutdownForTermination()
+    }
 }

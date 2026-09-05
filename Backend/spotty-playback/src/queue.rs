@@ -37,6 +37,7 @@ pub(crate) fn send_playback_state(player_state: &PlayerState, is_active_device: 
             PlaybackObservation {
                 is_playing: player_state.is_playing,
                 is_paused: player_state.is_paused,
+                track_unavailable: false,
                 track_uri,
                 context_uri: player_state.context_uri.clone(),
                 position_ms: player_state.position_as_of_timestamp,
@@ -87,13 +88,29 @@ pub(crate) fn capture_local_playback_state(
     position_ms: u32,
     session_generation: u64,
 ) -> Option<LocalPlaybackStateNotification> {
-    capture_local_playback_state_with_owner(is_playing, position_ms, Some(session_generation))
+    capture_local_playback_state_with_owner(
+        is_playing,
+        position_ms,
+        Some(session_generation),
+        false,
+    )
+}
+
+/// Captures the one-shot local playback observation used for a current requested track's
+/// unavailable event. The event pump has already applied its generation, request-identity, and
+/// active-device checks before asking for this payload.
+pub(crate) fn capture_local_playback_unavailable(
+    position_ms: u32,
+    session_generation: u64,
+) -> Option<LocalPlaybackStateNotification> {
+    capture_local_playback_state_with_owner(false, position_ms, Some(session_generation), true)
 }
 
 fn capture_local_playback_state_with_owner(
     is_playing: bool,
     position_ms: u32,
     session_generation: Option<u64>,
+    track_unavailable: bool,
 ) -> Option<LocalPlaybackStateNotification> {
     debug!(
         "send_local_playback_state called: is_playing={}, position_ms={}",
@@ -121,6 +138,7 @@ fn capture_local_playback_state_with_owner(
                 is_playing,
                 // Local PlayerEvent has one bit; shape it as the protocol pair Swift already projects.
                 is_paused: !is_playing,
+                track_unavailable,
                 track_uri,
                 // Local PlayerEvent has no protocol context. Sticky CURRENT_CONTEXT_URI is
                 // resume-load input only; publishing it here would restore a session-lifetime
@@ -173,7 +191,7 @@ pub(crate) fn deliver_local_playback_state(notification: LocalPlaybackStateNotif
 
 pub(crate) fn send_local_playback_state(is_playing: bool, position_ms: u32) {
     if let Some(notification) =
-        capture_local_playback_state_with_owner(is_playing, position_ms, None)
+        capture_local_playback_state_with_owner(is_playing, position_ms, None, false)
     {
         deliver_local_playback_state(notification);
     }

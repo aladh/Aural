@@ -37,6 +37,7 @@ extension PlaybackStore {
     var localDeviceID: String? { state.devices.localDeviceID }
     var isPlaybackCommandPending: Bool { catalogPlaybackAvailability.hasPendingPlaybackCommand }
     var hasCurrentTrackMetadata: Bool { (state.currentTrack?.metadataSource ?? .none) != .none }
+    var playbackNotice: PlaybackNotice? { state.notice }
     var transientCommandError: String? { state.notice?.message }
     var isConnected: Bool { catalogPlaybackAvailability.isConnected }
     var catalogCurrentTrack: CatalogTrack? {

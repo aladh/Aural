@@ -1,3 +1,4 @@
+import SpottyDomain
 import SwiftUI
 
 struct NowPlayingBar: View {
@@ -7,6 +8,12 @@ struct NowPlayingBar: View {
 
     var body: some View {
         VStack(spacing: 0) {
+            if let notice = player.playbackNotice {
+                PlaybackNoticeBanner(notice: notice) {
+                    player.dismissPlaybackNotice(id: notice.id)
+                }
+            }
+
             HStack(spacing: 18) {
                 NowPlayingTrackIdentity(player: player)
                     .frame(minWidth: 190, maxWidth: .infinity, alignment: .leading)
@@ -100,5 +107,31 @@ private struct RemotePlaybackBanner: View {
         .background(SpottyPalette.mediaGreen)
         .accessibilityElement(children: .combine)
         .accessibilityLabel("\(isPlaying ? "Playing" : "Paused") on \(device.name)")
+    }
+}
+
+private struct PlaybackNoticeBanner: View {
+    let notice: PlaybackNotice
+    let dismiss: () -> Void
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "exclamationmark.circle")
+                .accessibilityHidden(true)
+            Text(notice.message)
+                .fixedSize(horizontal: false, vertical: true)
+            Spacer(minLength: 8)
+            Button("Dismiss playback notice", systemImage: "xmark", action: dismiss)
+                .labelStyle(.iconOnly)
+                .buttonStyle(.borderless)
+                .help("Dismiss playback notice")
+        }
+        .font(.callout)
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
+        .background(.regularMaterial)
+        .onChange(of: notice.id, initial: true) { _, _ in
+            AccessibilityNotification.Announcement(notice.message).post()
+        }
     }
 }
