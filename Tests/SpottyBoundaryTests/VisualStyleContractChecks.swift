@@ -138,6 +138,7 @@ struct VisualStyleContractTests {
                     #expect(
                         (playlistDetail.contains("variant: .playlist")
                             && table.contains("let initialSortOrder = variant.initialSortOrder")
+                            && table.contains("_sortOrder = State(initialValue: initialSortOrder)")
                             && table.contains("case .playlist:")) == true,
                         "playlist tables start with a local newest-date projection")
                     #expect(
