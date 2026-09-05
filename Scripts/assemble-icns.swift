@@ -78,17 +78,28 @@ private func runLengthEncode(_ channel: [UInt8]) -> Data {
     return encoded
 }
 
-private func componentByte(_ component: CGFloat) -> UInt8 {
-    UInt8((min(max(component, 0), 1) * 255).rounded())
-}
-
 private func argbPayload(from png: Data, pixels: Int) throws -> Data {
     guard let bitmap = NSBitmapImageRep(data: png),
         bitmap.pixelsWide == pixels,
-        bitmap.pixelsHigh == pixels
+        bitmap.pixelsHigh == pixels,
+        !bitmap.isPlanar,
+        bitmap.samplesPerPixel == 4,
+        bitmap.bitsPerSample == 8,
+        bitmap.bytesPerRow == pixels * 4,
+        let samples = bitmap.bitmapData
     else {
         throw CocoaError(.fileReadCorruptFile)
     }
+
+    // Store the raw 8-bit samples exactly as iconutil does. Converting the
+    // pixels through a color space first brightens translucent RGB past its
+    // alpha, and Icon Services clamps those channels back to white on decode
+    // (a 16 px icon full of white-fringed edges fails the round-trip check).
+    let alphaFirst = bitmap.bitmapFormat.contains(.alphaFirst)
+    let alphaOffset = alphaFirst ? 0 : 3
+    let redOffset = alphaFirst ? 1 : 0
+    let greenOffset = alphaFirst ? 2 : 1
+    let blueOffset = alphaFirst ? 3 : 2
 
     var alpha = [UInt8]()
     var red = [UInt8]()
@@ -100,14 +111,13 @@ private func argbPayload(from png: Data, pixels: Int) throws -> Data {
     blue.reserveCapacity(pixels * pixels)
 
     for y in 0..<pixels {
+        let row = y * bitmap.bytesPerRow
         for x in 0..<pixels {
-            guard let color = bitmap.colorAt(x: x, y: y)?.usingColorSpace(.deviceRGB) else {
-                throw CocoaError(.fileReadCorruptFile)
-            }
-            alpha.append(componentByte(color.alphaComponent))
-            red.append(componentByte(color.redComponent))
-            green.append(componentByte(color.greenComponent))
-            blue.append(componentByte(color.blueComponent))
+            let base = row + x * 4
+            alpha.append(samples[base + alphaOffset])
+            red.append(samples[base + redOffset])
+            green.append(samples[base + greenOffset])
+            blue.append(samples[base + blueOffset])
         }
     }
 

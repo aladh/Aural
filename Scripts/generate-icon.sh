@@ -30,6 +30,41 @@ if [[ -z "$width" || "$width" != "$height" || "$width" -lt 1024 ]]; then
     exit 1
 fi
 
+# macOS Tahoe places icons with transparent edges inside a gray squircle in
+# the Dock, shrinking the artwork. The source must be opaque edge-to-edge so
+# the system clips the full-bleed art to a clean squircle itself.
+SPOTTY_ICON_SOURCE="$source_icon" SWIFT_MODULECACHE_PATH="$module_cache" \
+CLANG_MODULE_CACHE_PATH="$module_cache" \
+    xcrun swift -e '
+import AppKit
+guard let path = ProcessInfo.processInfo.environment["SPOTTY_ICON_SOURCE"],
+    let data = try? Data(contentsOf: URL(fileURLWithPath: path)),
+    let rep = NSBitmapImageRep(data: data)
+else { exit(2) }
+let w = rep.pixelsWide, h = rep.pixelsHigh
+var transparent = 0
+for x in stride(from: 0, to: w, by: 4) {
+    for y in [0, h - 1] {
+        if (rep.colorAt(x: x, y: y)?.usingColorSpace(.deviceRGB)?.alphaComponent ?? 0) < 0.99 {
+            transparent += 1
+        }
+    }
+}
+for y in stride(from: 0, to: h, by: 4) {
+    for x in [0, w - 1] {
+        if (rep.colorAt(x: x, y: y)?.usingColorSpace(.deviceRGB)?.alphaComponent ?? 0) < 0.99 {
+            transparent += 1
+        }
+    }
+}
+if transparent > 0 { exit(1) }
+' || {
+    print -u2 "Source artwork must be opaque edge-to-edge (found transparent border pixels);"
+    print -u2 "transparent edges make macOS Tahoe wrap the icon in a gray squircle in the Dock."
+    print -u2 "See Assets/README.md."
+    exit 1
+}
+
 representations=(
     "16 icon_16x16.png"
     "32 icon_16x16@2x.png"
