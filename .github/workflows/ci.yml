@@ -13,6 +13,18 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  review_checks:
+    name: Review automation checks
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Check out source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Test review boundaries
+        run: python3 -B -m unittest discover -s .github/review -p 'test_*.py'
+
   changes:
     name: Classify playback inputs
     runs-on: ubuntu-latest
@@ -354,7 +366,7 @@ jobs:
   gate:
     name: Debug quality gate
     if: always()
-    needs: [changes, rust, checks, candidate, release]
+    needs: [changes, rust, checks, candidate, release, review_checks]
     runs-on: ubuntu-latest
     timeout-minutes: 5
 
@@ -367,6 +379,7 @@ jobs:
           CHECKS_RESULT: ${{ needs.checks.result }}
           CANDIDATE_RESULT: ${{ needs.candidate.result }}
           RELEASE_RESULT: ${{ needs.release.result }}
+          REVIEW_RESULT: ${{ needs.review_checks.result }}
         run: |
           test "$CHANGES_RESULT" = success
           test "$RUST_RESULT" = success
@@ -377,3 +390,4 @@ jobs:
             test "$CANDIDATE_RESULT" = skipped
           fi
           test "$RELEASE_RESULT" = success
+          test "$REVIEW_RESULT" = success

@@ -57,7 +57,9 @@ swift test --disable-sandbox --filter ProtobufTests/testProtobuf
 swift test --disable-sandbox --no-parallel --filter AuthFlowTests/testAuthFlow
 ```
 
-CI's required `Debug quality gate` aggregates Rust, Swift/architecture, and Release compilation.
+CI's required `Debug quality gate` aggregates Rust, Swift/architecture, Release compilation, and
+review-automation boundary tests. Run the latter with
+`python3 -B -m unittest discover -s .github/review -p 'test_*.py'`.
 
 Use `SPOTTY_CHECK_REPEATS=N ./Scripts/check.sh` with `N` from 1 through 25 when concurrency or
 lifetime work merits stress.
@@ -169,6 +171,9 @@ A request to open a PR authorizes the agent to create a branch, commit the compl
 push it, open the PR, monitor available checks/reviews during the run, and address automated
 findings. It does not authorize merge, release, tag, repository-setting changes, or issue closure
 unless the request says so.
+
+The [OpenCode reviewer](docs/opencode-review.md) performs one advisory full review per eligible PR;
+subsequent pushes do not trigger incremental reviews.
 
 ### PR acceptance
 
