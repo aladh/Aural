@@ -69,7 +69,8 @@ is available. Never install the generated identity in the login keychain or comm
 Packaging compiles `Assets/Spotty.icon` into `.build/spotty-icon/<configuration>/Assets.car` using
 Xcode's `actool`; select full Xcode with `xcode-select -s` or `DEVELOPER_DIR`.
 `CFBundleIconName=Spotty` selects the catalog, including macOS 15 compatibility renditions.
-`Assets/Spotty.icns` remains available to icon-file consumers.
+`Assets/Spotty.icns` remains available to icon-file consumers; it does not override macOS 15's
+catalog selection.
 
 Sandboxed development tools may need permission for the packaging or launch script to invoke
 `security` and `codesign`. Apple Development signing can require private-key access once; Spotty

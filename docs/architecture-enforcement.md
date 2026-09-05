@@ -147,4 +147,5 @@ Source and Markdown checks prove lexical boundaries, not runtime behavior. The a
 | ABI and fixtures | Signature/layout probes remain ABI evidence. Parser fixtures exercise retained scanners; synthetic payload and persistence reads test data, not implementation spelling. |
 
 Rust lexical guards remain in the Rust suite invoked by `Scripts/check.sh`; do not duplicate their
-scanner in shell. Rust test-source changes also change the engine artifact identity.
+scanner in shell. `Backend/spotty-playback/source-input-digest.sh` defines artifact inputs; Rust
+tests outside `src/` are excluded from that digest.
