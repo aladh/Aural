@@ -7,10 +7,6 @@ private enum PlaylistMutationCheckFailure: Error {
     case unavailable
 }
 
-private struct MutationCheckAttributes: TrackAttributesProviding {
-    func attributes(for _: [String]) async throws -> [String: TrackAttributes] { [:] }
-}
-
 /// Parks until cancelled so a presented message stays visible for assertions.
 private final class HoldingClock: PlaybackClock, @unchecked Sendable {
     func now() -> Date { Date(timeIntervalSince1970: 1_800_000_000) }
@@ -159,7 +155,7 @@ private func makeCatalog(
 ) -> CatalogStore {
     CatalogStore(
         provider: services,
-        attributesProvider: MutationCheckAttributes(),
+        attributesProvider: BoundaryIdleAttributes(),
         playlistMutations: services,
         session: session,
         clock: SystemPlaybackClock(),

@@ -3,8 +3,6 @@ import SpottyDomain
 import Foundation
 @testable import SpottyCore
 
-private enum EpochOwnershipFailure: Error { case unavailable }
-
 private final class EpochEngine: LocalPlaybackEngine, @unchecked Sendable {
     private let lock = NSLock()
     private var storage: [String: Int] = [:]
@@ -80,12 +78,6 @@ private final class EpochAccount: AccountSession, @unchecked Sendable {
     }
 }
 
-private final class EpochLifecycle: SystemLifecycleEvents, @unchecked Sendable {
-    func events() -> AsyncStream<SystemLifecycleEvent> {
-        AsyncStream { $0.finish() }
-    }
-}
-
 private actor EpochPreferences: PlaybackPreferences {
     func shuffleEnabled() -> Bool { false }
     func setShuffleEnabled(_: Bool) {}
@@ -109,27 +101,10 @@ private actor EpochRemote: RemotePlaybackClient {
     }
 }
 
-private struct EpochAudio: AudioOutputPreparing { func prepareForPlayback() throws {} }
 private struct EpochClock: PlaybackClock {
     func now() -> Date { Date(timeIntervalSince1970: 1_800_000_000) }
     func sleep(seconds _: TimeInterval) async throws {}
 }
-private struct EpochAttributes: TrackAttributesProviding {
-    func attributes(for _: [String]) async throws -> [String: TrackAttributes] { [:] }
-}
-private struct EpochCatalog: CatalogProviding {
-    func searchTracks(_: String, limit _: Int) async throws -> [PathfinderTrack] {
-        throw EpochOwnershipFailure.unavailable
-    }
-    func home() async throws -> PathfinderHome { throw EpochOwnershipFailure.unavailable }
-    func libraryPlaylists() async throws -> [PathfinderPlaylist] { throw EpochOwnershipFailure.unavailable }
-    func libraryAlbums() async throws -> [PathfinderAlbum] { throw EpochOwnershipFailure.unavailable }
-    func libraryArtists() async throws -> [PathfinderArtist] { throw EpochOwnershipFailure.unavailable }
-    func libraryTracks() async throws -> [PathfinderLibraryTrackItem] { throw EpochOwnershipFailure.unavailable }
-    func profile() async throws -> PathfinderProfile { throw EpochOwnershipFailure.unavailable }
-    func playlist(id _: String) async throws -> PathfinderPlaylistUnion { throw EpochOwnershipFailure.unavailable }
-}
-
 private actor EpochWebQueue: WebQueueClient {
     func queue() async throws -> [CatalogTrack] {
         throw URLError(.badServerResponse)
@@ -145,13 +120,13 @@ private func epochEnvironment(
         local: engine,
         webQueue: EpochWebQueue(),
         account: account,
-        audioOutput: EpochAudio(),
+        audioOutput: BoundaryIdleAudio(),
         preferences: EpochPreferences(),
-        lifecycle: EpochLifecycle(),
+        lifecycle: BoundaryIdleLifecycle(),
         clock: EpochClock(),
-        catalog: EpochCatalog(),
+        catalog: BoundaryIdleCatalog(),
         playlistMutations: UnavailablePlaylistMutations(),
-        trackAttributes: EpochAttributes()
+        trackAttributes: BoundaryIdleAttributes()
     )
 }
 

@@ -111,62 +111,25 @@ swift_arguments=(
 # new writable projection were added next to an existing invalid write; independent diagnostics
 # make each access-control promise observable. The compiler's diagnostic wording is intentionally
 # the only assertion here: no production source or generated interface is parsed by the script.
-negative_probes=(
-    "NEG_CURRENT_TRACK_INDICATOR:currentTrackIndicator private setter"
-    "NEG_CATALOG_PLAYBACK_AVAILABILITY:catalogPlaybackAvailability private setter"
-    "NEG_STATE:state private setter"
-    "NEG_STATE_MEMBER:nested state member mutation"
-    "NEG_REQUIRES_REAUTHENTICATION:requiresReauthentication private setter"
-    "NEG_ACCOUNT_EPOCH:accountEpoch projection"
-    "NEG_PLAYBACK_LIFETIME:playbackLifetime projection"
-    "NEG_PHASE:phase projection"
-    "NEG_TRACK_URI:trackURI projection"
-    "NEG_TRACK_TITLE:trackTitle projection"
-    "NEG_ARTIST_NAME:artistName projection"
-    "NEG_ARTWORK_URL:artworkURL projection"
-    "NEG_IS_PLAYING:isPlaying projection"
-    "NEG_IS_SHUFFLE_ENABLED:isShuffleEnabled projection"
-    "NEG_REPEAT_MODE:repeatMode projection"
-    "NEG_IS_ACTIVE_DEVICE:isActiveDevice projection"
-    "NEG_POSITION:position projection"
-    "NEG_DURATION:duration projection"
-    "NEG_POSITION_ANCHOR_DATE:positionAnchorDate projection"
-    "NEG_QUEUE_NEXT_ENTRIES:queueNextEntries projection"
-    "NEG_CONNECT_DEVICES:connectDevices projection"
-    "NEG_LOCAL_DEVICE_ID:localDeviceID projection"
-    "NEG_IS_PLAYBACK_COMMAND_PENDING:isPlaybackCommandPending projection"
-    "NEG_HAS_CURRENT_TRACK_METADATA:hasCurrentTrackMetadata projection"
-    "NEG_TRANSIENT_COMMAND_ERROR:transientCommandError projection"
-    "NEG_IS_CONNECTED:isConnected projection"
-    "NEG_CATALOG_CURRENT_TRACK:catalogCurrentTrack projection"
-    "NEG_DISPLAYED_TRACK_TITLE:displayedTrackTitle projection"
-    "NEG_DISPLAYED_ARTIST_NAME:displayedArtistName projection"
-    "NEG_DISPLAYED_ARTWORK_URL:displayedArtworkURL projection"
-    "NEG_HAS_CURRENT_TRACK:hasCurrentTrack projection"
-    "NEG_SHOWS_PAUSE_CONTROL:showsPauseControl projection"
-    "NEG_CAN_START_PLAYBACK:canStartPlayback projection"
-    "NEG_CAN_TOGGLE_PLAYBACK:canTogglePlayback projection"
-    "NEG_CAN_SKIP_TRACK:canSkipTrack projection"
-    "NEG_STATUS_TEXT:statusText projection"
-    "NEG_ACTIVE_REMOTE_DEVICE:activeRemoteDevice projection"
-    "NEG_REMOTE_PLAYBACK_BANNER:remotePlaybackBanner projection"
-    "NEG_COMMAND_ROUTE:commandRoute projection"
-)
+# The conditional fixture is the inventory: adding a negative branch automatically runs it.
+negative_flags=("${(@f)$(awk '/^[[:space:]]*#(if|elseif) NEG_[A-Z_]+$/ { print $2 }' "$negative_fixture")}")
+if (( ${#negative_flags} == 0 )) || [[ -z "${negative_flags[1]}" ]]; then
+    print -u2 "PlaybackStore compiler fixture contains no negative probes"
+    exit 1
+fi
 
-for probe in "${negative_probes[@]}"; do
-    flag="${probe%%:*}"
-    label="${probe#*:}"
+for flag in "${negative_flags[@]}"; do
     negative_log="$module_cache/$flag.err"
     if "$swiftc_path" "${swift_arguments[@]}" "-D$flag" "$negative_fixture" \
         > /dev/null 2> "$negative_log"; then
-        print -u2 "negative $label probe unexpectedly compiled"
+        print -u2 "negative $flag probe unexpectedly compiled"
         exit 1
     fi
     if ! rg -q 'setter is inaccessible|get-only property' "$negative_log"; then
-        print -u2 "negative $label probe failed for an unexpected reason"
+        print -u2 "negative $flag probe failed for an unexpected reason"
         cat "$negative_log" >&2
         exit 1
     fi
 done
 
-print "PlaybackStore compiler access contract passed: positive reads and ${#negative_probes} access-control negatives"
+print "PlaybackStore compiler access contract passed: positive reads and ${#negative_flags} access-control negatives"
