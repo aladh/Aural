@@ -50,10 +50,12 @@ impl PlayerRequestState {
 
     /// Records only a Loading event belonging to the latest request. A Loading event from an old
     /// request must not arm the unavailable notice for a later event.
-    fn loading(&mut self, play_request_id: u64, track_uri: String) {
-        if self.current_play_request_id == Some(play_request_id) {
-            self.loading_track_uri = Some(track_uri);
+    fn loading(&mut self, play_request_id: u64, track_uri: String) -> bool {
+        if self.current_play_request_id != Some(play_request_id) {
+            return false;
         }
+        self.loading_track_uri = Some(track_uri);
+        true
     }
 
     /// Playing and Paused are terminal transitions for the pending load. A preload failure that
@@ -404,7 +406,9 @@ fn apply_player_event_locked(
         } => {
             let track_uri_str = track_id.to_string();
             debug!("Loading event: {} at {}ms", track_uri_str, position_ms);
-            request_state.loading(play_request_id, track_uri_str.clone());
+            if !request_state.loading(play_request_id, track_uri_str.clone()) {
+                return;
+            }
 
             // Both, together. The position and the track URI are read as a
             // pair — a resume load seeks `POSITION_MS` within
@@ -825,6 +829,18 @@ mod player_event_pump_policy {
             &mut state,
         );
         apply_current_generation_event_with_state(
+            PlayerEvent::Loading {
+                play_request_id: 14,
+                track_id: parse_spotify_uri("spotify:track:0000000000000000000004")
+                    .expect("synthetic stale track URI"),
+                position_ms: 9_999,
+            },
+            1,
+            &mut state,
+        );
+        assert!(current_track_uri_matches(track_uri));
+        assert_eq!(POSITION_MS.load(Ordering::SeqCst), 0);
+        apply_current_generation_event_with_state(
             PlayerEvent::Unavailable {
                 play_request_id: 15,
                 track_id: track_id.clone(),
@@ -990,13 +1006,16 @@ mod player_event_pump_policy {
         *CURRENT_TRACK_URI.lock().unwrap_or_else(|e| e.into_inner()) =
             Some("spotify:track:outgoing".to_string());
 
-        apply_current_generation_event(
+        let mut request_state = PlayerRequestState::default();
+        request_state.play_request_id_changed(1);
+        apply_current_generation_event_with_state(
             PlayerEvent::Loading {
                 play_request_id: 1,
                 track_id: synthetic_track(),
                 position_ms: 250,
             },
             1,
+            &mut request_state,
         );
 
         assert_eq!(POSITION_MS.load(Ordering::SeqCst), 250);
