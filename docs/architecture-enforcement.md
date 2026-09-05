@@ -69,7 +69,7 @@ Stable IDs preserve searchability in issue and code history. They are navigation
 | `ABI-SIG-001` | C signatures stay compile-time compatible with Rust exports | C compiler type-compatibility assertions generated from `abi-signatures.txt`, exact fixture/export coverage, Rust compile-time function assignments, and fixture-parity tests |
 | `ABI-GEN-001` | All checked-in playback function declarations and snapshot layouts reproduce from Rust using the pinned development tool | `Scripts/generate-c-header.sh --check` in the full/Rust gate; C layout and signature checks remain independent |
 | `ABI-SWIFT-001` | Swift retains required callbacks, typed enums, and each nullable pointer shape | Positive and expected-failing compiler probes in `Scripts/check-c-header-imports.sh`, run in the full/Swift gate without linking or executing |
-| `ABI-ARC-001` | The static archive is generated, untracked, and rebuilt when missing or stale | Build script, stale detection, gitignore, and tracked-artifact check |
+| `ABI-ARC-001` | The static archive and matching headers travel together in a pinned XCFramework; app builds never invoke Rust | SwiftPM binary target, artifact validation/provenance, explicit local override, and Rust-free build checks |
 
 ### Focused source and topology checks
 

@@ -1,0 +1,46 @@
+{
+  "artifact" : {
+    "archive" : "SpottyPlaybackCore.xcframework.zip",
+    "checksum" : "c6e5a528bf4eb5a500a31c5a8f2b024ab199cd4efb849f5a6542701e25e3ed2c",
+    "name" : "SpottyPlaybackCore",
+    "url" : "https:\/\/github.com\/aladh\/Spotty\/releases\/download\/spotty-playback-core-5a45cacc6a9921418f60214d26eebabeb54d45c662025c0a4f3a3e5d84df4675\/SpottyPlaybackCore.xcframework.zip"
+  },
+  "licensing" : {
+    "archiveLicenseDirectory" : "Notices\/licenses",
+    "archiveManifest" : "Notices\/manifest.json",
+    "archiveNoticePath" : "Notices\/ThirdPartyNotices.md",
+    "sourceLicense" : "MIT",
+    "sourceLicenseFiles" : [
+      "LICENSE",
+      "NOTICE",
+      "THIRD_PARTY_NOTICES.md"
+    ]
+  },
+  "module" : {
+    "library" : "libSpottyPlaybackCore_5a45cacc6a9921418f60214d26eebabeb54d45c662025c0a4f3a3e5d84df4675_052f24bf04a6bdbe0441b7b6cddb416b921005cc01ea7d7f5a6b6199f5ab6007.a",
+    "moduleMap" : "module.modulemap",
+    "name" : "SpottyPlaybackCore",
+    "umbrellaHeader" : "spotty_playback.h",
+    "xcframework" : "SpottyPlaybackCore.xcframework"
+  },
+  "platform" : {
+    "architectures" : [
+      "arm64"
+    ],
+    "libraryType" : "static",
+    "minimumOSVersion" : "15.0",
+    "os" : "macOS",
+    "target" : "aarch64-apple-darwin"
+  },
+  "schemaVersion" : 1,
+  "source" : {
+    "canonicalHeadersSHA256" : "9b4ec642768c3c40ce558347558c84e46c209a475c2cc2706864ff186f965a11",
+    "cargoLockSHA256" : "77f059bc1a58d7478723b979255cbb8eea87681ae2683feb35d722b7f7147092",
+    "engineInputDigest" : "5a45cacc6a9921418f60214d26eebabeb54d45c662025c0a4f3a3e5d84df4675",
+    "librespotRevision" : "9c7d75615fc093bdcbdb29adbce3fed38c531852",
+    "rustToolchain" : "1.98.0",
+    "sourceDirty" : false,
+    "sourceRevision" : "b65318efdcfd85687ee0251b15be63f48b25dcc9",
+    "target" : "aarch64-apple-darwin"
+  }
+}

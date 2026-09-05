@@ -138,7 +138,7 @@ own commit and surfaces.
 ### Binary size
 
 Every CI run's "Release distribution compile" job publishes a size table (app binary,
-`libspotty_playback.a`, binary segment totals, archive exported symbol count) to the job
+the selected content-addressed playback archive, binary segment totals, archive exported symbol count) to the job
 summary via `Scripts/report-size.sh`, and uploads the same data as the `size-report` artifact
 (`size-report.json`, 30-day retention).
 

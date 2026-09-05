@@ -6,6 +6,7 @@ build_configuration="${SPOTTY_BUILD_CONFIGURATION:-debug}"
 check_scope="${SPOTTY_CHECK_SCOPE:-full}"
 source "$project_root/Scripts/swiftpm-env.sh"
 source "$project_root/Scripts/abi-signature-fixture.sh"
+source "$project_root/Scripts/playback-xcframework.sh"
 
 case "$build_configuration" in
     debug|release) ;;
@@ -27,7 +28,6 @@ esac
 if [[ "$check_scope" != rust ]]; then
     "$project_root/Scripts/format-swift-self-test.sh"
     "$project_root/Scripts/format-swift.sh" --check
-    "$project_root/Scripts/check-c-header-imports.sh"
 fi
 
 # The Rust suite owns lifecycle, generation, queue conversion, typed C snapshots,
@@ -69,22 +69,16 @@ if [[ "$check_scope" != swift ]]; then
     fi
 fi
 
-# The archive is a generated, architecture-specific build product. Keep it out of Git and make
-# every verification entry point self-contained by rebuilding when it is absent or stale.
-backend_lib="$project_root/Backend/lib/libspotty_playback.a"
-playback_header="$project_root/Sources/SpottyPlaybackCore/include/spotty_playback.h"
-stale_backend_input=""
-if [[ -f "$backend_lib" ]]; then
-    stale_backend_input="$(find "$project_root/Backend/spotty-playback/src" \
-        "$project_root/rust-toolchain.toml" \
-        "$project_root/Backend/spotty-playback/Cargo.toml" \
-        "$project_root/Backend/spotty-playback/Cargo.lock" \
-        "$project_root/Backend/spotty-playback/build.sh" \
-        -type f -newer "$backend_lib" -print -quit)"
-fi
-if [[ ! -f "$backend_lib" || -n "$stale_backend_input" ]]; then
-    "$project_root/Backend/spotty-playback/build.sh"
-fi
+# Resolve one immutable playback artifact and keep all C/ABI checks paired with the headers
+# shipped beside its selected archive. The SwiftPM resolver owns remote downloads; a source-built
+# engine must be selected explicitly with SPOTTY_PLAYBACK_LOCAL_XCFRAMEWORK.
+selected_xcframework="$(spotty_playback_resolve_xcframework)"
+spotty_playback_validate_xcframework "$selected_xcframework"
+playback_slice="$(spotty_playback_slice_path "$selected_xcframework")"
+playback_archive="$(spotty_playback_archive_path "$playback_slice")"
+playback_headers="$(spotty_playback_headers_path "$playback_slice")"
+"$project_root/Scripts/check-c-header-imports.sh" "$playback_headers"
+playback_header="$playback_headers/spotty_playback.h"
 
 # Keep the checked-in C header and the actual static-library exports in exact
 # agreement. Apple's nm can warn on newer Rust LLVM attributes in unrelated
@@ -104,16 +98,16 @@ if ! spotty_abi_fixture_symbols "$abi_signature_fixture" > "$fixture_symbols"; t
     exit 1
 fi
 
-# Parse the umbrella header once. Clang follows its quoted includes, so declarations in the
+# Parse the artifact's umbrella header once. Clang follows its quoted includes, so declarations in the
 # checked-in cbindgen fragment remains part of the symbol and dead-export contracts. Full
 # declarations are type-checked below by Clang against the unchanged Rust ABI fixture.
 if ! command -v clang >/dev/null 2>&1; then
     print -u2 "Clang is required to inspect the checked-in Spotty C ABI signatures"
     exit 1
 fi
-if ! clang -x c -fsyntax-only -Xclang -ast-dump \
+if ! clang -I "$playback_headers" -x c -fsyntax-only -Xclang -ast-dump \
     "$playback_header" > "$header_ast" 2>/dev/null; then
-    print -u2 "Clang could not parse the checked-in Spotty C ABI header"
+    print -u2 "Clang could not parse the Spotty C ABI header shipped in the selected XCFramework"
     exit 1
 fi
 sed -nE "s/.*FunctionDecl .* (spotty_playback_[a-z0-9_]+) '([^']+)'$/\\1/p" \
@@ -125,11 +119,11 @@ if (( header_declaration_count != header_symbol_count )); then
     print -u2 "The C ABI header declares a Spotty export more than once"
     exit 1
 fi
-(nm -gU "$backend_lib" 2>/dev/null || true) \
+(nm -gU "$playback_archive" 2>/dev/null || true) \
     | sed -nE 's/.*_(spotty_playback_[a-z0-9_]+)$/\1/p' \
     | sort -u > "$library_symbols"
 if ! diff -u "$header_symbols" "$library_symbols"; then
-    print -u2 "The C header and libspotty_playback.a export different Spotty symbols"
+    print -u2 "The XCFramework C header and selected SpottyPlaybackCore archive export different Spotty symbols"
     exit 1
 fi
 
@@ -163,7 +157,7 @@ if (( abi_assertion_count != fixture_symbol_count )); then
     print -u2 "The C ABI compiler assertion count does not match the fixture rows"
     exit 1
 fi
-if ! clang -I "$project_root/Sources/SpottyPlaybackCore/include" \
+if ! clang -I "$playback_headers" \
     -x c \
     -std=c11 \
     -fsyntax-only \
@@ -194,12 +188,9 @@ swift_arguments=(
     --configuration "$build_configuration"
     --product Spotty
 )
-# A library newer than the linked executable means SwiftPM would skip the link step;
-# drop the executable so the build below relinks against the current library.
-built_binary="$project_root/.build/$build_configuration/Spotty"
-if [[ -f "$built_binary" && "$backend_lib" -nt "$built_binary" ]]; then
-    rm -f "$built_binary"
-fi
+# SwiftPM owns relinking. Published artifacts and source-built local overrides use a
+# content-addressed XCFramework/library path so changing the selected engine is a dependency
+# identity change, rather than a replacement hidden behind the same archive path.
 if [[ -n "${SPOTTY_SIGNING_IDENTITY:-}" ]]; then
     swift_arguments+=(-Xswiftc -DSPOTTY_DISTRIBUTION)
 fi
@@ -402,8 +393,24 @@ if rg -n 'security@example\.com|replace this placeholder' \
     exit 1
 fi
 
-# The debug quality gate must keep using an existing runner rg, exact-input playback archives,
-# job-local SwiftPM caches, and credential-free checkouts.
+# App-only entry points must remain usable with the Rust toolchain completely absent. The CI Swift
+# and release lanes also install executable traps for these names; keep this source check close to
+# the runtime trap contract so a new indirect source-engine/archive path cannot bypass it.
+swift_entrypoints=(
+    "$project_root/Scripts/compile-release-spotty.sh"
+    "$project_root/Scripts/package-app.sh"
+    "$project_root/Scripts/report-size.sh"
+    "$project_root/Scripts/playback-xcframework.sh"
+    "$project_root/Scripts/swiftpm-env.sh"
+)
+if rg -n '(^|[^[:alnum:]_])(cargo|rustc|rustup|cbindgen)([^[:alnum:]_]|$)|Backend/lib|libspotty_playback' \
+    "${swift_entrypoints[@]}"; then
+    print -u2 "App build, packaging, and size entry points must not invoke or consume Rust artifacts"
+    exit 1
+fi
+
+# The CI quality gates must keep using an existing runner rg, immutable playback inputs,
+# job-local SwiftPM caches, Rust-free Swift lanes, and credential-free checkouts.
 ci_workflow="$project_root/.github/workflows/ci.yml"
 if [[ ! -f "$ci_workflow" ]]; then
     print -u2 "CI workflow is missing"
@@ -421,37 +428,48 @@ if rg -q 'brew install swift-format|brew install swiftlint' "$ci_workflow"; then
     print -u2 "CI must use the selected toolchain swift-format, not a Homebrew Swift linter"
     exit 1
 fi
+changes_job="$(sed -n '/^  changes:/,/^  rust:/p' "$ci_workflow")"
 rust_job="$(sed -n '/^  rust:/,/^  checks:/p' "$ci_workflow")"
-checks_job="$(sed -n '/^  checks:/,/^  release:/p' "$ci_workflow")"
+checks_job="$(sed -n '/^  checks:/,/^  candidate:/p' "$ci_workflow")"
+candidate_job="$(sed -n '/^  candidate:/,/^  release:/p' "$ci_workflow")"
 release_job="$(sed -n '/^  release:/,/^  gate:/p' "$ci_workflow")"
 gate_job="$(sed -n '/^  gate:/,$p' "$ci_workflow")"
-playback_cache_key='key: macos-playback-archive-${{ runner.arch }}-${{ env.RUST_TOOLCHAIN_KEY }}-${{ hashFiles('\''rust-toolchain.toml'\'', '\''Backend/spotty-playback/Cargo.toml'\'', '\''Backend/spotty-playback/Cargo.lock'\'', '\''Backend/spotty-playback/build.sh'\'', '\''Backend/spotty-playback/src/**'\'') }}'
-rust_cache_key='key: macos-rust-debug-${{ runner.arch }}-${{ hashFiles('\''rust-toolchain.toml'\'', '\''Backend/spotty-playback/Cargo.lock'\'') }}'
-debug_cache_key='key: macos-swiftpm-debug-${{ runner.os }}-${{ runner.arch }}-${{ env.SWIFT_TOOLCHAIN_KEY }}-${{ hashFiles('\''Package.swift'\'', '\''Package.resolved'\'') }}-${{ github.sha }}'
-release_cache_key='key: macos-swiftpm-release-${{ runner.os }}-${{ runner.arch }}-${{ env.SWIFT_TOOLCHAIN_KEY }}-${{ hashFiles('\''Package.swift'\'', '\''Package.resolved'\'') }}-${{ github.sha }}'
 checkout_without_credentials=$'uses: actions/checkout@[0-9a-f]{40} # v[^\n]+\n        with:\n          persist-credentials: false'
-if ! rg -q --fixed-strings 'runs-on: macos-26' <<< "$rust_job" \
+blocked_rust_tools=$'for tool in cargo rustc rustup cbindgen; do\n'
+if ! rg -q --fixed-strings 'engine_changed:' <<< "$changes_job" \
+    || ! rg -q --fixed-strings 'Backend/spotty-playback/artifact-manifest.json' <<< "$changes_job" \
+    || ! rg -q --fixed-strings 'runs-on: macos-26' <<< "$rust_job" \
     || ! rg -U -q "$checkout_without_credentials" <<< "$rust_job" \
-    || ! rg -q --fixed-strings "$rust_cache_key" <<< "$rust_job" \
+    || ! rg -q 'key: macos-rust-.*Cargo\.lock' <<< "$rust_job" \
+    || ! rg -q --fixed-strings 'source-input-digest.sh' <<< "$rust_job" \
     || ! rg -q --fixed-strings 'run: SPOTTY_CHECK_SCOPE=rust ./Scripts/check.sh' <<< "$rust_job" \
     || ! rg -q --fixed-strings 'runs-on: macos-26' <<< "$checks_job" \
     || ! rg -q --fixed-strings 'xcode-select -s /Applications/Xcode_26.6.app' <<< "$checks_job" \
     || ! rg -q --fixed-strings "grep -q 'Apple Swift version 6.3.3'" <<< "$checks_job" \
     || ! rg -U -q "$checkout_without_credentials" <<< "$checks_job" \
-    || ! rg -q --fixed-strings "$playback_cache_key" <<< "$checks_job" \
-    || ! rg -q --fixed-strings "$debug_cache_key" <<< "$checks_job" \
+    || ! rg -U -q --fixed-strings -- "$blocked_rust_tools" <<< "$checks_job" \
+    || ! rg -q 'key: macos-swiftpm-debug-.*artifact-manifest\.json' <<< "$checks_job" \
     || ! rg -U -q --fixed-strings -- $'- name: Run checks\n        run: SPOTTY_CHECK_SCOPE=swift ./Scripts/check.sh' <<< "$checks_job" \
+    || ! rg -q --fixed-strings 'needs: [changes, rust]' <<< "$candidate_job" \
+    || ! rg -q --fixed-strings "if: needs.changes.outputs.engine_changed == 'true' && needs.rust.result == 'success'" <<< "$candidate_job" \
+    || ! rg -q --fixed-strings 'configuration: [debug, release]' <<< "$candidate_job" \
+    || ! rg -q --fixed-strings 'SPOTTY_PLAYBACK_LOCAL_XCFRAMEWORK=' <<< "$candidate_job" \
+    || ! rg -U -q --fixed-strings -- "$blocked_rust_tools" <<< "$candidate_job" \
+    || ! rg -q --fixed-strings 'SPOTTY_CHECK_SCOPE: swift' <<< "$candidate_job" \
     || ! rg -q --fixed-strings 'runs-on: macos-26' <<< "$release_job" \
     || ! rg -q --fixed-strings 'xcode-select -s /Applications/Xcode_26.6.app' <<< "$release_job" \
     || ! rg -q --fixed-strings "grep -q 'Apple Swift version 6.3.3'" <<< "$release_job" \
     || ! rg -U -q "$checkout_without_credentials" <<< "$release_job" \
-    || ! rg -q --fixed-strings "$playback_cache_key" <<< "$release_job" \
-    || ! rg -q --fixed-strings "$release_cache_key" <<< "$release_job" \
+    || ! rg -U -q --fixed-strings -- "$blocked_rust_tools" <<< "$release_job" \
+    || ! rg -q 'key: macos-swiftpm-release-.*artifact-manifest\.json' <<< "$release_job" \
     || ! rg -U -q --fixed-strings -- $'- name: Compile release Spotty with SPOTTY_DISTRIBUTION\n        run: ./Scripts/compile-release-spotty.sh' <<< "$release_job" \
+    || ! rg -q --fixed-strings 'report-size.sh' <<< "$release_job" \
     || ! rg -q --fixed-strings 'if: always()' <<< "$gate_job" \
-    || ! rg -q --fixed-strings 'needs: [rust, checks, release]' <<< "$gate_job" \
-    || ! rg -U -q --fixed-strings -- $'test "$RUST_RESULT" = success\n          test "$CHECKS_RESULT" = success\n          test "$RELEASE_RESULT" = success' <<< "$gate_job"; then
-    print -u2 "CI must cache exact inputs and aggregate parallel Rust, Swift, and release lanes"
+    || ! rg -q --fixed-strings 'needs: [changes, rust, checks, candidate, release]' <<< "$gate_job" \
+    || ! rg -U -q --fixed-strings -- $'test "$RUST_RESULT" = success\n          test "$CHECKS_RESULT" = success\n          if [[ "$ENGINE_CHANGED" == true ]]; then\n            test "$CANDIDATE_RESULT" = success' <<< "$gate_job" \
+    || ! rg -q --fixed-strings 'test "$CANDIDATE_RESULT" = skipped' <<< "$gate_job" \
+    || ! rg -q --fixed-strings 'test "$RELEASE_RESULT" = success' <<< "$gate_job"; then
+    print -u2 "CI must cache immutable inputs, block Rust in Swift lanes, and aggregate all quality lanes"
     exit 1
 fi
 

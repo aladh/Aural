@@ -1,22 +1,16 @@
 #!/bin/zsh
 set -euo pipefail
 
-# Compile-only release path for the shipping Spotty executable. Reuses an already-built
-# playback archive and the repository SwiftPM/.build cache. Does not run the Rust suite,
-# Swift checks, packaging, or signing.
+# Compile-only release path for the shipping Spotty executable. SwiftPM resolves the pinned
+# playback XCFramework (or the explicit local override) and owns its cache. The artifact path is
+# content-addressed so a changed engine cannot be hidden behind a stale SwiftPM archive path.
+# Does not run the Rust suite, Swift checks, packaging, or signing.
 project_root="${0:A:h:h}"
 source "$project_root/Scripts/swiftpm-env.sh"
+source "$project_root/Scripts/playback-xcframework.sh"
 
-backend_lib="$project_root/Backend/lib/libspotty_playback.a"
-if [[ ! -f "$backend_lib" ]]; then
-    print -u2 "libspotty_playback.a is missing. Run ./Scripts/check.sh first so this compile can reuse the archive."
-    exit 1
-fi
-
-release_binary="$project_root/.build/release/Spotty"
-if [[ -f "$release_binary" && "$backend_lib" -nt "$release_binary" ]]; then
-    rm -f "$release_binary"
-fi
+selected_xcframework="$(spotty_playback_resolve_xcframework)"
+spotty_playback_validate_xcframework "$selected_xcframework"
 
 swift_arguments=(
     --disable-sandbox
