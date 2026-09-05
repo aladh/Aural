@@ -98,7 +98,7 @@ app-facing store. Sticky resume-load identity stays in Rust behind `ResumeLoadPl
 
 ## Standing constraints
 
-- Keep PCM, Spirc, session connect, dealer cluster fetch, streaming, decryption, and decoding in
+- Keep PCM production, Spirc, session connect, dealer cluster fetch, streaming, decryption, and decoding in
   Rust/librespot. Follow [ADR 005](ADR-005-retain-librespot.md) for protocol/license review.
   Reversals require evidence and a replacement ADR under the
   [decision-log guidance](architecture-decisions.md#maintaining-the-decision-log).
