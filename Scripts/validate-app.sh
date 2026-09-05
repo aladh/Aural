@@ -62,6 +62,11 @@ if [[ ! -s "$native_icon_catalog" ]]; then
     print -u2 "Missing compiled native app icon catalog: $native_icon_catalog"
     exit 1
 fi
+if ! /usr/bin/assetutil --info "$native_icon_catalog" \
+    | /usr/bin/jq -e 'any(.[]; .AssetType == "IconImageStack" and .Name == "Spotty")' >/dev/null; then
+    print -u2 "App icon catalog must contain the native Spotty icon stack"
+    exit 1
+fi
 if [[ ! -s "$legacy_icon" ]]; then
     print -u2 "Missing legacy app icon file: $legacy_icon"
     exit 1

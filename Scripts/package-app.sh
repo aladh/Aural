@@ -20,7 +20,6 @@ icon_source="$project_root/Assets/Spotty.icon"
 legacy_icon="$project_root/Assets/Spotty.icns"
 icon_build_dir="$project_root/.build/spotty-icon/$build_configuration"
 compiled_assets="$icon_build_dir/Assets.car"
-icon_partial_info="$icon_build_dir/asset-info.plist"
 info_template="$project_root/Packaging/Info.plist"
 third_party_notices="$project_root/THIRD_PARTY_NOTICES.md"
 # Version bump procedure: edit CFBundleShortVersionString and CFBundleVersion in
@@ -57,13 +56,14 @@ if [[ ! -d "$icon_source" ]]; then
 fi
 rm -rf "$icon_build_dir"
 mkdir -p "$icon_build_dir"
+# actool needs the partial-info output to emit this icon catalog; bundle metadata stays in the template.
 actool_output=""
 if ! actool_output="$("$actool" \
     --compile "$icon_build_dir" \
     --platform macosx \
     --minimum-deployment-target 15.0 \
     --app-icon Spotty \
-    --output-partial-info-plist "$icon_partial_info" \
+    --output-partial-info-plist "$icon_build_dir/asset-info.plist" \
     "$icon_source" 2>&1)"; then
     print -u2 "Failed to compile native Spotty icon with actool: $icon_source"
     if [[ -n "$actool_output" ]]; then
@@ -75,16 +75,6 @@ if [[ ! -s "$compiled_assets" ]]; then
     print -u2 "actool did not produce the native Spotty icon catalog: $compiled_assets"
     exit 1
 fi
-if [[ ! -f "$icon_partial_info" ]] || ! plutil -lint "$icon_partial_info" >/dev/null; then
-    print -u2 "actool did not produce a valid native Spotty icon metadata plist"
-    exit 1
-fi
-compiled_icon_name="$(plutil -extract CFBundleIconName raw -o - "$icon_partial_info" 2>/dev/null || true)"
-if [[ "$compiled_icon_name" != "Spotty" ]]; then
-    print -u2 "actool did not declare CFBundleIconName=Spotty for the native icon"
-    exit 1
-fi
-
 "$project_root/Scripts/check.sh"
 
 selected_xcframework="$(spotty_playback_resolve_xcframework)"
@@ -133,7 +123,6 @@ cp "$info_template" "$app_path/Contents/Info.plist"
 
 plutil -replace CFBundleShortVersionString -string "$app_version" "$app_path/Contents/Info.plist"
 plutil -replace CFBundleVersion -string "$app_build_number" "$app_path/Contents/Info.plist"
-plutil -replace CFBundleIconName -string "$compiled_icon_name" "$app_path/Contents/Info.plist"
 plutil -lint "$app_path/Contents/Info.plist"
 
 sign_with_local_identity() {
