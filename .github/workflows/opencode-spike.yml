@@ -19,6 +19,11 @@ jobs:
     name: OpenCode / Muse availability spike
     runs-on: ubuntu-24.04
     timeout-minutes: 10
+    env:
+      OPENCODE_VERSION: '1.18.29'
+      OPENCODE_SHA256: ea800b7ff56226b70952126c9fc1e2517ca4c4b5682fd9d3f9e87449697a1194
+      MODEL: opencode/muse-spark-1.3-contributor-free
+      VARIANT: xhigh
     permissions:
       contents: read
       pull-requests: read
@@ -71,7 +76,8 @@ jobs:
               'pr': int(os.environ['PR_NUMBER']), 'head': pr['head']['sha'],
               'base': pr['base']['sha'], 'diff_bytes': len(diff),
               'run': os.environ['GITHUB_RUN_ID'], 'attempt': os.environ['GITHUB_RUN_ATTEMPT'],
-              'model': 'opencode/muse-spark-1.3-contributor-free', 'variant': 'xhigh', 'opencode': '1.18.29'
+              'model': os.environ['MODEL'], 'variant': os.environ['VARIANT'],
+              'opencode': os.environ['OPENCODE_VERSION']
           }, indent=2) + '\n')
           PY
 
@@ -80,9 +86,9 @@ jobs:
           set -euo pipefail
           cd "$RUNNER_TEMP/opencode-spike"
           curl --fail --silent --show-error --location --retry 2 --max-time 120 \
-            https://github.com/anomalyco/opencode/releases/download/v1.18.29/opencode-linux-x64.tar.gz \
+            "https://github.com/anomalyco/opencode/releases/download/v$OPENCODE_VERSION/opencode-linux-x64.tar.gz" \
             -o opencode.tar.gz
-          echo 'ea800b7ff56226b70952126c9fc1e2517ca4c4b5682fd9d3f9e87449697a1194  opencode.tar.gz' | sha256sum --check
+          printf '%s  opencode.tar.gz\n' "$OPENCODE_SHA256" | sha256sum --check
           mkdir bin
           tar -xzf opencode.tar.gz -C bin
 
@@ -91,14 +97,12 @@ jobs:
       - name: Review through the OpenCode GitHub App
         timeout-minutes: 5
         env:
-          MODEL: opencode/muse-spark-1.3-contributor-free
-          VARIANT: xhigh
           SHARE: 'false'
           USE_GITHUB_TOKEN: 'false'
           OPENCODE_DISABLE_PROJECT_CONFIG: 'true'
           OPENCODE_DISABLE_AUTOUPDATE: 'true'
           OPENCODE_CONFIG_CONTENT: >-
-            {"share":"disabled","permission":{"*":"deny"},"small_model":"opencode/muse-spark-1.3-contributor-free"}
+            {"share":"disabled","permission":{"*":"deny"},"small_model":"${{ env.MODEL }}"}
           XDG_CONFIG_HOME: ${{ runner.temp }}/opencode-spike/config
           XDG_DATA_HOME: ${{ runner.temp }}/opencode-spike/data
           XDG_STATE_HOME: ${{ runner.temp }}/opencode-spike/state

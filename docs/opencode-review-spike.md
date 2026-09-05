@@ -19,10 +19,12 @@ its official `opencode github run` integration and OIDC token exchange. The App 
 access to code, issues, pull requests, secrets and workflows; GitHub's workflow-token permissions
 do not reduce that installation token. Keep the installation confined to Spotty.
 
-The runner downloads OpenCode 1.18.29 from its official release and verifies the pinned SHA-256.
+The [workflow's job environment](../.github/workflows/opencode-spike.yml) owns the CLI version,
+release checksum, model and reasoning pins. The runner downloads that official release and verifies
+its SHA-256.
 This invokes the same entrypoint as the official composite action while avoiding its unpinned
-latest-version installer. It uses `opencode/muse-spark-1.3-contributor-free` without a provider API
-key, with the `xhigh` reasoning variant explicitly selected. There is no paid-model fallback.
+latest-version installer. It uses the selected free model without a provider API key, with the
+reasoning variant explicitly selected. There is no paid-model fallback.
 Provider errors and timeouts fail the job. A successful run
 also needs an advisory comment from `opencode-agent[bot]` linking to that Actions run.
 
