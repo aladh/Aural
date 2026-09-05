@@ -52,21 +52,3 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 THE SOFTWARE.
-
-## Transitive Rust dependencies
-
-The playback artifact report is generated from the exact target graph recorded in
-`Backend/spotty-playback/Cargo.lock`:
-
-```sh
-python3 Scripts/generate-playback-notices.py \
-  --target aarch64-apple-darwin \
-  --output <artifact-notices-directory>
-```
-
-The generated directory contains `ThirdPartyNotices.md`, a machine-readable `manifest.json`, and
-the complete UTF-8 license and notice texts under `licenses/`. The current Apple Silicon graph
-contains 269 third-party packages and 188 unique full license texts. The manifest records each
-package's lockfile checksum or pinned git revision, source location, license expression, and the
-SHA-256 and byte count for every bundled text. The generator fails closed when a source package has
-no discoverable license text and no explicit pinned upstream override.

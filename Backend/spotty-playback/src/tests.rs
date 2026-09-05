@@ -961,7 +961,6 @@ fn c_consumer_layout_matches_rust_repr_c_layouts() {
 
     let manifest_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
     let include_dir = manifest_dir.join("../../Sources/SpottyPlaybackCore/include");
-    let shim_path = manifest_dir.join("../../Sources/SpottyPlaybackCore/spotty_playback_shim.c");
     let nonce = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .expect("system clock is after the Unix epoch")
@@ -1099,7 +1098,6 @@ int main(void) {
         .args([
             "-std=c11",
             source_path.to_str().expect("probe path is UTF-8"),
-            shim_path.to_str().expect("shim path is UTF-8"),
             "-I",
             include_dir.to_str().expect("header path is UTF-8"),
             "-o",

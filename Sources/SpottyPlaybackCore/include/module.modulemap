@@ -1,0 +1,4 @@
+module SpottyPlaybackCore {
+    header "spotty_playback.h"
+    export *
+}

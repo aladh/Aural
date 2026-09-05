@@ -14,6 +14,7 @@ linking errors, not to silently change its decision.
 | [ADR 003: Keep PlaybackEffectRegistry; reject TCA and a generic Effect type](ADR-003-playback-command-effects.md) | Accepted | Keep the store-level `PlaybackEffectRegistry`; reducer acceptance gates command follow-ups and reconnect recovery. |
 | [ADR 004: Move Spotty-owned playback logic into Swift incrementally](ADR-004-swift-owned-playback-logic.md) | Superseded by ADR 005 | Historical incremental ownership decision; applicable ownership principles are retained by ADR 005. |
 | [ADR 005: Retain librespot as the playback engine](ADR-005-retain-librespot.md) | Accepted | Keep the pinned Rust/librespot engine as the sole production playback implementation; Swift owns application policy and native presentation behind the narrow C boundary. |
+| [ADR 006: Prebuilt playback engine through SwiftPM](ADR-006-prebuilt-playback-engine.md) | Accepted | Ordinary app builds consume a checksum-pinned static XCFramework; Rust tools remain in the explicit engine-development and artifact-production workflow. |
 
 Related index: [Architecture enforcement inventory](architecture-enforcement.md) routes hard-rule
 families to their canonical decision, strongest proof, scoped agent guidance, and known enforcement

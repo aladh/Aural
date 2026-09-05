@@ -1,0 +1,238 @@
+name: Publish playback artifact
+
+on:
+  workflow_dispatch:
+    inputs:
+      source_ref:
+        description: Full 40-character SHA of the reviewed source commit to build
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: playback-artifact-publication
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: Build playback artifact
+    if: github.ref == 'refs/heads/main'
+    runs-on: macos-26
+    timeout-minutes: 45
+    permissions:
+      contents: read
+
+    steps:
+      - name: Validate selected source SHA
+        env:
+          SOURCE_REF: ${{ inputs.source_ref }}
+        run: |
+          set -euo pipefail
+          if [[ ! "$SOURCE_REF" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "source_ref must be a full lowercase 40-character commit SHA" >&2
+            exit 1
+          fi
+
+      - name: Check out selected source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.source_ref }}
+          persist-credentials: false
+
+      - name: Select Xcode 26.6
+        run: sudo xcode-select -s /Applications/Xcode_26.6.app
+
+      - name: Install pinned cbindgen
+        run: |
+          set -euo pipefail
+          CARGO_HOME="$RUNNER_TEMP/spotty-cbindgen-cargo" \
+            cargo install cbindgen --locked --version 0.29.4 --root "$RUNNER_TEMP/spotty-cbindgen"
+          echo "$RUNNER_TEMP/spotty-cbindgen/bin" >> "$GITHUB_PATH"
+
+      - name: Show source toolchains
+        run: |
+          set -euo pipefail
+          rustc --version
+          swift --version
+          uname -m
+
+      - name: Identify playback inputs
+        run: |
+          set -euo pipefail
+          echo "PLAYBACK_INPUT_DIGEST=$(./Backend/spotty-playback/source-input-digest.sh)" >> "$GITHUB_ENV"
+
+      - name: Cache playback build products
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.cargo/git
+            ~/.cargo/registry
+            Backend/spotty-playback/target/aarch64-apple-darwin/release
+          key: macos-playback-publish-${{ runner.arch }}-${{ env.PLAYBACK_INPUT_DIGEST }}
+
+      - name: Run Rust source checks
+        run: SPOTTY_CHECK_SCOPE=rust ./Scripts/check.sh
+
+      - name: Build and validate playback XCFramework
+        env:
+          SOURCE_REF: ${{ inputs.source_ref }}
+        run: |
+          set -euo pipefail
+          publication_root="$RUNNER_TEMP/spotty-playback-publication"
+          framework_path="$publication_root/SpottyPlaybackCore.xcframework"
+          archive_path="$publication_root/SpottyPlaybackCore.xcframework.zip"
+          rm -rf "$publication_root"
+          mkdir -p "$publication_root"
+
+          ./Backend/spotty-playback/build-xcframework.sh \
+            --output "$framework_path" \
+            --archive "$archive_path"
+          ./Backend/spotty-playback/validate-xcframework.sh \
+            "$framework_path" \
+            --archive "$archive_path" \
+            --for-publish
+
+          (cd "$publication_root" && shasum -a 256 "$(basename "$archive_path")" > "$(basename "$archive_path").sha256")
+          source_sha="$(git rev-parse HEAD)"
+          source_dirty="$(git status --porcelain --untracked-files=all)"
+          test -z "$source_dirty"
+          test "$source_sha" = "$SOURCE_REF"
+          printf 'source_sha=%s\nsource_ref=%s\nsource_input_digest=%s\n' \
+            "$source_sha" \
+            "$SOURCE_REF" \
+            "$PLAYBACK_INPUT_DIGEST" > "$publication_root/source-provenance.txt"
+
+          test -f "$framework_path/spotty_playback_provenance.json"
+          cp "$framework_path/spotty_playback_provenance.json" "$publication_root/spotty_playback_provenance.json"
+          cp LICENSE NOTICE THIRD_PARTY_NOTICES.md "$publication_root/"
+          (
+            cd "$framework_path"
+            zip -X -q -r "$publication_root/SpottyPlaybackCore-notices.zip" Notices
+          )
+
+      - name: Run candidate Swift Debug and Release checks
+        env:
+          SPOTTY_PLAYBACK_LOCAL_XCFRAMEWORK: ${{ runner.temp }}/spotty-playback-publication/SpottyPlaybackCore.xcframework
+          SPOTTY_CHECK_SCOPE: swift
+        run: |
+          set -euo pipefail
+          blocked_tools="$RUNNER_TEMP/spotty-no-rust-tools"
+          mkdir -p "$blocked_tools"
+          for tool in cargo rustc rustup cbindgen; do
+            printf '#!/bin/sh\necho "%s is blocked in the publication Swift lane" >&2\nexit 127\n' "$tool" > "$blocked_tools/$tool"
+            chmod 755 "$blocked_tools/$tool"
+          done
+          export PATH="$blocked_tools:$PATH"
+          for configuration in debug release; do
+            SPOTTY_BUILD_CONFIGURATION="$configuration" ./Scripts/check.sh
+          done
+
+      - name: Upload immutable publication candidate
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: playback-publication-candidate
+          path: |
+            ${{ runner.temp }}/spotty-playback-publication/*
+            !${{ runner.temp }}/spotty-playback-publication/SpottyPlaybackCore.xcframework
+          if-no-files-found: error
+          retention-days: 14
+
+  publish:
+    name: Publish immutable playback release
+    needs: [build]
+    if: github.ref == 'refs/heads/main' && needs.build.result == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+
+    steps:
+      - name: Download fixed publication candidate
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: playback-publication-candidate
+          path: ${{ runner.temp }}/spotty-playback-publication
+
+      - name: Verify publication candidate
+        env:
+          PUBLICATION_ROOT: ${{ runner.temp }}/spotty-playback-publication
+          REQUESTED_SOURCE_REF: ${{ inputs.source_ref }}
+        run: |
+          set -euo pipefail
+          archive="$PUBLICATION_ROOT/SpottyPlaybackCore.xcframework.zip"
+          checksum="$archive.sha256"
+          provenance="$PUBLICATION_ROOT/source-provenance.txt"
+          test -f "$archive"
+          test -f "$checksum"
+          test -f "$provenance"
+          (cd "$PUBLICATION_ROOT" && shasum -a 256 -c "$(basename "$checksum")")
+          unzip -l "$archive" | grep -q 'SpottyPlaybackCore.xcframework/Info.plist'
+          test -f "$PUBLICATION_ROOT/LICENSE"
+          test -f "$PUBLICATION_ROOT/NOTICE"
+          test -f "$PUBLICATION_ROOT/THIRD_PARTY_NOTICES.md"
+          test -f "$PUBLICATION_ROOT/SpottyPlaybackCore-notices.zip"
+          unzip -l "$PUBLICATION_ROOT/SpottyPlaybackCore-notices.zip" | grep -q 'Notices/ThirdPartyNotices.md'
+          unzip -l "$PUBLICATION_ROOT/SpottyPlaybackCore-notices.zip" | grep -q 'Notices/manifest.json'
+
+          source_sha="$(sed -n 's/^source_sha=//p' "$provenance")"
+          if [[ ! "$source_sha" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "Publication provenance does not contain a full source SHA" >&2
+            exit 1
+          fi
+          requested_sha="$REQUESTED_SOURCE_REF"
+          if [[ ! "$requested_sha" =~ ^[0-9a-f]{40}$ || "$source_sha" != "$requested_sha" ]]; then
+            echo "Publication provenance does not match the requested source SHA" >&2
+            exit 1
+          fi
+          test "$(grep -c '^source_sha=' "$provenance")" -eq 1
+          test "$(grep -c '^source_ref=' "$provenance")" -eq 1
+          test "$(grep -c '^source_input_digest=' "$provenance")" -eq 1
+          provenance_ref="$(sed -n 's/^source_ref=//p' "$provenance")"
+          test "$provenance_ref" = "$requested_sha"
+          source_input_digest="$(sed -n 's/^source_input_digest=//p' "$provenance")"
+          if [[ ! "$source_input_digest" =~ ^[0-9a-f]{64}$ ]]; then
+            echo "Publication provenance does not contain a valid engine input digest" >&2
+            exit 1
+          fi
+          embedded_source_sha="$(jq -er '.source.sourceRevision | select(test("^[0-9a-f]{40}$"))' "$PUBLICATION_ROOT/spotty_playback_provenance.json")"
+          test "$embedded_source_sha" = "$requested_sha"
+          test "$(jq -er '.source.sourceDirty == false' "$PUBLICATION_ROOT/spotty_playback_provenance.json")" = true
+          engine_digest="$(jq -er '.source.engineInputDigest | select(test("^[0-9a-f]{64}$"))' "$PUBLICATION_ROOT/spotty_playback_provenance.json")"
+          test "$engine_digest" = "$source_input_digest"
+          echo "SOURCE_SHA=$source_sha" >> "$GITHUB_ENV"
+          echo "ENGINE_INPUT_DIGEST=$engine_digest" >> "$GITHUB_ENV"
+          echo "PLAYBACK_RELEASE_TAG=spotty-playback-core-$engine_digest" >> "$GITHUB_ENV"
+
+      - name: Publish without overwriting an existing release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          REQUESTED_SOURCE_REF: ${{ inputs.source_ref }}
+          PUBLICATION_ROOT: ${{ runner.temp }}/spotty-playback-publication
+        run: |
+          set -euo pipefail
+          if gh release view "$PLAYBACK_RELEASE_TAG" >/dev/null 2>&1; then
+            echo "Refusing to overwrite existing playback release $PLAYBACK_RELEASE_TAG" >&2
+            exit 1
+          fi
+          gh release create "$PLAYBACK_RELEASE_TAG" \
+            "$PUBLICATION_ROOT/SpottyPlaybackCore.xcframework.zip" \
+            "$PUBLICATION_ROOT/SpottyPlaybackCore.xcframework.zip.sha256" \
+            "$PUBLICATION_ROOT/source-provenance.txt" \
+            "$PUBLICATION_ROOT/spotty_playback_provenance.json" \
+            "$PUBLICATION_ROOT/SpottyPlaybackCore-notices.zip" \
+            "$PUBLICATION_ROOT/LICENSE" \
+            "$PUBLICATION_ROOT/NOTICE" \
+            "$PUBLICATION_ROOT/THIRD_PARTY_NOTICES.md" \
+            --target "$SOURCE_SHA" \
+            --prerelease \
+            --title "SpottyPlaybackCore $SOURCE_SHA" \
+            --notes "$(cat <<EOF
+          > [!CAUTION]
+          > Experimental, unofficial, independent Spotty playback artifact. Spotty is not affiliated with Spotify and uses unsupported reverse-engineered interfaces.
+
+          Immutable macOS ARM64 SpottyPlaybackCore XCFramework built from source commit $SOURCE_SHA and engine input digest $ENGINE_INPUT_DIGEST. The archive includes its matching C headers, module map, source provenance, and required license notices. Update the reviewed artifact manifest with this release URL and SHA-256; published playback releases are never overwritten.
+          EOF
+          )"

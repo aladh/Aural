@@ -12,6 +12,7 @@ case "$package_mode" in
 esac
 
 project_root="${0:A:h:h}"
+source "$project_root/Scripts/playback-xcframework.sh"
 app_path="${SPOTTY_APP_PATH:-$project_root/Spotty.app}"
 staged_launch_path="$project_root/.build/spotty-launch/Spotty.app"
 executable="$project_root/.build/$build_configuration/Spotty"
@@ -32,9 +33,19 @@ if [[ -n "$distribution_identity" && -n "$development_identity" ]]; then
 fi
 
 export SPOTTY_BUILD_CONFIGURATION="$build_configuration"
+export SPOTTY_CHECK_SCOPE=swift
 "$project_root/Scripts/check.sh"
 
-for required_file in "$executable" "$icon" "$info_template" "$third_party_notices"; do
+selected_xcframework="$(spotty_playback_resolve_xcframework)"
+playback_slice="$(spotty_playback_slice_path "$selected_xcframework")"
+playback_notices="$selected_xcframework/Notices"
+if [[ ! -d "$playback_notices" || ! -f "$playback_notices/ThirdPartyNotices.md" || ! -f "$playback_notices/manifest.json" || ! -d "$playback_notices/licenses" || ! -f "$selected_xcframework/spotty_playback_provenance.json" ]]; then
+    print -u2 "Selected playback XCFramework is missing its notices or provenance material"
+    exit 1
+fi
+
+playback_archive="$(spotty_playback_archive_path "$playback_slice")"
+for required_file in "$executable" "$icon" "$info_template" "$third_party_notices" "$playback_archive"; do
     if [[ ! -f "$required_file" ]]; then
         print -u2 "Missing packaging input: $required_file"
         exit 1
@@ -62,6 +73,10 @@ printf 'APPL????' > "$app_path/Contents/PkgInfo"
 cp "$executable" "$app_path/Contents/MacOS/Spotty"
 cp "$icon" "$app_path/Contents/Resources/Spotty.icns"
 cp "$third_party_notices" "$app_path/Contents/Resources/ThirdPartyNotices.md"
+mkdir -p "$app_path/Contents/Resources/PlaybackNotices"
+cp -R "$playback_notices/." "$app_path/Contents/Resources/PlaybackNotices/"
+cp "$selected_xcframework/spotty_playback_provenance.json" \
+    "$app_path/Contents/Resources/PlaybackNotices/spotty_playback_provenance.json"
 cp "$info_template" "$app_path/Contents/Info.plist"
 
 plutil -replace CFBundleShortVersionString -string "$app_version" "$app_path/Contents/Info.plist"
