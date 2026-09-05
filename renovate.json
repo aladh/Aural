@@ -15,13 +15,14 @@
       "managerFilePatterns": [
         "/^\\.github/workflows/(?:ci|playback-artifact)\\.yml$/",
         "/^Backend/spotty-playback/cbindgen\\.toml$/",
-        "/^CONTRIBUTING\\.md$/",
         "/^Scripts/generate-c-header\\.sh$/",
-        "/^Sources/SpottyPlaybackCore/include/spotty_playback_generated\\.h$/",
         "/^docs/development-setup\\.md$/"
       ],
       "matchStrings": [
-        "cbindgen[^\\r\\n0-9]*(?<currentValue>\\d+\\.\\d+\\.\\d+)"
+        "cargo install cbindgen --locked --version (?<currentValue>\\d+\\.\\d+\\.\\d+)(?:[\\s`.]|$)",
+        "required_cbindgen_version=\\\"(?<currentValue>\\d+\\.\\d+\\.\\d+)\\\"",
+        "autogen_warning = \\\"[^\\r\\n]*cbindgen (?<currentValue>\\d+\\.\\d+\\.\\d+)\\. Do not edit\\. \\*/\\\"",
+        "Install cbindgen (?<currentValue>\\d+\\.\\d+\\.\\d+) for header"
       ],
       "depNameTemplate": "cbindgen",
       "datasourceTemplate": "crate"
