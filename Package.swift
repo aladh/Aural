@@ -17,10 +17,6 @@ private let generatedPlaybackArtifactURL =
 private let generatedPlaybackArtifactChecksum = "c6e5a528bf4eb5a500a31c5a8f2b024ab199cd4efb849f5a6542701e25e3ed2c"
 // END GENERATED PLAYBACK ARTIFACT PIN
 
-private struct PlaybackTargetSelection {
-    let target: Target
-}
-
 private func pathRelativeToPackageRoot(_ url: URL) -> String {
     let baseComponents = packageRoot.standardizedFileURL.pathComponents
     let targetComponents = url.standardizedFileURL.pathComponents
@@ -47,7 +43,7 @@ private func manifestString(
     return value
 }
 
-private func remotePlaybackTarget() -> PlaybackTargetSelection {
+private func remotePlaybackTarget() -> Target {
     guard
         let data = try? Data(contentsOf: playbackManifestURL),
         let object = try? JSONSerialization.jsonObject(with: data),
@@ -84,12 +80,10 @@ private func remotePlaybackTarget() -> PlaybackTargetSelection {
         )
     }
 
-    return PlaybackTargetSelection(
-        target: .binaryTarget(name: "SpottyPlaybackCore", url: urlString, checksum: checksum)
-    )
+    return .binaryTarget(name: "SpottyPlaybackCore", url: urlString, checksum: checksum)
 }
 
-private func playbackTarget() -> PlaybackTargetSelection {
+private func playbackTarget() -> Target {
     guard let override = ProcessInfo.processInfo.environment["SPOTTY_PLAYBACK_LOCAL_XCFRAMEWORK"] else {
         return remotePlaybackTarget()
     }
@@ -131,9 +125,7 @@ private func playbackTarget() -> PlaybackTargetSelection {
         fatalError("Playback provenance digests must be 64-character SHA-256 hex strings")
     }
 
-    return PlaybackTargetSelection(
-        target: .binaryTarget(name: "SpottyPlaybackCore", path: pathRelativeToPackageRoot(url))
-    )
+    return .binaryTarget(name: "SpottyPlaybackCore", path: pathRelativeToPackageRoot(url))
 }
 
 private let playbackSelection = playbackTarget()
@@ -147,7 +139,7 @@ let package = Package(
         .library(name: "SpottyDomain", targets: ["SpottyDomain"]),
     ],
     targets: [
-        playbackSelection.target,
+        playbackSelection,
         .target(
             name: "SpottyCore",
             dependencies: ["SpottyDomain", "SpottyPlaybackCore"],
