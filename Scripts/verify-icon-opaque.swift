@@ -36,20 +36,27 @@ do {
     let alphaOffset = bitmap.bitmapFormat.contains(.alphaFirst) ? 0 : samplesPerPixel - 1
     var transparent = 0
     if hasAlphaPlane {
-        // The side scan skips the corner rows so each border pixel counts once.
+        // Each scan covers distinct coordinates: the bottom row only when it
+        // differs from the top, the side columns only when they differ from
+        // each other, and the side scan skips the corner rows, so every
+        // border pixel counts exactly once.
         for x in 0..<width {
-            for y in [0, height - 1] {
-                if samples[y * bitmap.bytesPerRow + x * samplesPerPixel + alphaOffset] != 255 {
-                    transparent += 1
-                }
+            if samples[x * samplesPerPixel + alphaOffset] != 255 {
+                transparent += 1
+            }
+            if height > 1,
+                samples[(height - 1) * bitmap.bytesPerRow + x * samplesPerPixel + alphaOffset] != 255
+            {
+                transparent += 1
             }
         }
-        if height > 2 {
+        if width > 1, height > 2 {
             for y in 1..<(height - 1) {
-                for x in [0, width - 1] {
-                    if samples[y * bitmap.bytesPerRow + x * samplesPerPixel + alphaOffset] != 255 {
-                        transparent += 1
-                    }
+                if samples[y * bitmap.bytesPerRow + alphaOffset] != 255 {
+                    transparent += 1
+                }
+                if samples[y * bitmap.bytesPerRow + (width - 1) * samplesPerPixel + alphaOffset] != 255 {
+                    transparent += 1
                 }
             }
         }

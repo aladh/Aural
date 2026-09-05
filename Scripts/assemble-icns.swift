@@ -96,19 +96,20 @@ private func argbPayload(from png: Data, pixels: Int) throws -> Data {
     // alpha, and Icon Services clamps those channels back to white on decode
     // (a 16 px icon full of white-fringed edges fails the round-trip check).
     // Opaque RGB (and RGBX pad-byte) input carries no alpha plane, so those
-    // pixels assemble with a fully opaque alpha channel. AppKit expands RGB
-    // samples to RGBX in memory: samplesPerPixel still reports 3 while each
-    // row holds 4 bytes per pixel with an opaque pad byte, so the in-memory
-    // stride is detected instead of assumed.
+    // pixels assemble with a fully opaque alpha channel. The pixel stride
+    // comes from bitsPerPixel, not bytesPerRow: rows may carry trailing
+    // padding, so a 24-bit RGB row can still span pixels * 4 bytes. AppKit
+    // expands RGB samples to RGBX in memory (32 bits per pixel).
     let samplesPerPixel = bitmap.samplesPerPixel
     let pixelStride: Int
-    if samplesPerPixel == 4 {
+    switch (samplesPerPixel, bitmap.bitsPerPixel) {
+    case (4, 32):
         pixelStride = 4
-    } else if bitmap.bytesPerRow == pixels * 3 {
+    case (3, 24):
         pixelStride = 3
-    } else if bitmap.bytesPerRow == pixels * 4 {
+    case (3, 32):
         pixelStride = 4
-    } else {
+    default:
         throw CocoaError(.fileReadCorruptFile)
     }
     guard bitmap.bytesPerRow >= pixels * pixelStride else {
