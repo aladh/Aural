@@ -1,7 +1,7 @@
 # Development setup
 
-A fresh clone contains the source needed to resume development. Ordinary app builds download the
-pinned playback binary; engine development uses the included Rust source.
+Ordinary app builds download the pinned playback binary; engine development uses the included Rust
+source.
 
 ## Fresh clone
 

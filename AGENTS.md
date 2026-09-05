@@ -13,15 +13,15 @@ behavior and truthful state. Keep the product surface small; optimize measured, 
 - Check `git status --short` and preserve unrelated work.
 - Before editing, read the applicable `AGENTS.md` chain. Discover tracked instruction files with
   `git ls-files | rg '(^|/)AGENTS\.md$'` from the repository root.
-- Load only the documents relevant to the task, and inspect the affected implementation, checks,
-  and recent history. Use the canonical owners below rather than duplicating their rules.
-- Reviews, explanations, diagnoses, and plans are read-only unless the request also asks for changes.
-  For changes, complete the in-scope work and non-destructive validation without routine approval.
-- Spotty is maintained exclusively by agents. Complete agent-operable work rather than assigning it
-  to an imagined human maintainer; report any unperformed acceptance steps honestly.
-- PR requests authorize branch/commit/push, opening the PR, and addressing its automated review as
-  described in [agent operations](CONTRIBUTING.md#pull-request-execution). They do not authorize
-  merging, tagging, releases, repository settings, or unrelated issue mutations.
+- Load only relevant documents; inspect the affected implementation, checks, and recent history,
+  using the canonical owners below rather than duplicating their rules.
+- Reviews, explanations, diagnoses, and plans are read-only unless changes are requested.
+  For changes, complete in-scope work and non-destructive validation without routine approval.
+- Spotty is maintained exclusively by agents: complete agent-operable work and report unperformed
+  acceptance steps honestly.
+- PR requests authorize branch/commit/push, opening the PR, and addressing automated review per
+  [agent operations](CONTRIBUTING.md#pull-request-execution). They do not authorize merging,
+  tagging, releases, repository settings, or unrelated issue mutations.
 - Use the [PR acceptance criteria](CONTRIBUTING.md#pr-acceptance) to determine
   readiness; do not add a manual review or app-testing gate.
 - Signing/keychain changes, destructive cleanup, new production dependencies, external publication,
