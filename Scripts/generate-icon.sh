@@ -43,16 +43,16 @@ guard let path = ProcessInfo.processInfo.environment["SPOTTY_ICON_SOURCE"],
 else { exit(2) }
 let w = rep.pixelsWide, h = rep.pixelsHigh
 var transparent = 0
-for x in stride(from: 0, to: w, by: 4) {
+for x in 0..<w {
     for y in [0, h - 1] {
-        if (rep.colorAt(x: x, y: y)?.usingColorSpace(.deviceRGB)?.alphaComponent ?? 0) < 0.99 {
+        if (rep.colorAt(x: x, y: y)?.usingColorSpace(.deviceRGB)?.alphaComponent ?? 0) < 1.0 {
             transparent += 1
         }
     }
 }
-for y in stride(from: 0, to: h, by: 4) {
+for y in 0..<h {
     for x in [0, w - 1] {
-        if (rep.colorAt(x: x, y: y)?.usingColorSpace(.deviceRGB)?.alphaComponent ?? 0) < 0.99 {
+        if (rep.colorAt(x: x, y: y)?.usingColorSpace(.deviceRGB)?.alphaComponent ?? 0) < 1.0 {
             transparent += 1
         }
     }
