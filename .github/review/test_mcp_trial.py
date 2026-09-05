@@ -163,7 +163,8 @@ class MCPTrialTests(TestCase):
     def test_validate_sessions_gates_root_discussion_on_correctness_severity(self):
         def session_fixtures(findings):
             events = direct_events()
-            for event in events: event["sessionID"] = "ses_root"
+            for event in events:
+                event["sessionID"] = "ses_root"
             exports = {}
             for session, role in [("ses_root", "thermos-parent"), ("ses_correct", mcp_trial.ROLES[0]),
                                   ("ses_quality", mcp_trial.ROLES[1])]:

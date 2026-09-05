@@ -262,7 +262,10 @@ def child_ids(events):
 def validate_sessions(events, exports, model, variant):
     roots = {event.get("sessionID") for event in events if event.get("sessionID")}
     require(len(roots) == 1, "ambiguous root session")
-    root = next(iter(roots)); children = child_ids(events); times = []; correctness_high = False
+    root = next(iter(roots))
+    children = child_ids(events)
+    times = []
+    correctness_high = False
     for session, role in {root: "thermos-parent", **children}.items():
         value = exports[session]; info = value["info"]; selected = info.get("model") or {}
         require(info.get("id") == session and info.get("agent") == role, "session identity mismatch")
