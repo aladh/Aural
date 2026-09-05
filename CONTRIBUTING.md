@@ -251,8 +251,7 @@ unless the request says so.
 
 ### Automated PR acceptance
 
-PR acceptance is fully automated. A PR is ready when all three conditions hold for its latest
-changes:
+A PR is ready when all three conditions hold for its latest changes:
 
 1. All review findings have a documented disposition and all review threads are resolved.
 2. Required approvals are satisfied according to repository settings.
@@ -267,7 +266,8 @@ After pushing fixes, wait for checks and required reviews to cover the updated h
 blocking review state must be cleared through the reviewer’s normal workflow; do not bypass
 repository protections.
 
-Manual app testing and human review are not PR acceptance gates. Report any limits of automated
+Manual app testing is not a PR acceptance gate, and no human review is required beyond repository
+settings. Report any limits of automated
 coverage honestly; separately requested manual verification may happen after merge. Live-account
 work still follows the [safe acceptance contract](docs/product-and-acceptance-contract.md#safe-acceptance-testing).
 Meeting these criteria establishes readiness, not permission to merge: merge authorization remains
