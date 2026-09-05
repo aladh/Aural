@@ -33,7 +33,6 @@ nonisolated enum PlaybackCore {
             isPlaying: snapshot.is_playing != 0,
             isPaused: snapshot.is_paused != 0,
             trackURI: optionalCString(snapshot.track_uri) ?? "",
-            contextURI: optionalCString(snapshot.context_uri) ?? "",
             positionMS: snapshot.position_ms,
             durationMS: snapshot.duration_ms,
             timestampMS: snapshot.timestamp_ms,

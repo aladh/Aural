@@ -8,6 +8,16 @@ import Foundation
 private let spikeDate = Date(timeIntervalSince1970: 1_000_000)
 private let pauseNoticeID = UUID(uuidString: "00000000-0000-0000-0000-0000000000AA")!
 
+private func pausedPlaybackEvent() -> PlaybackEvent {
+    .enginePlayback(
+        EnginePlaybackSnapshot(
+            transport: .paused,
+            trackURI: "spotify:track:pause",
+            timing: PlaybackTiming(anchoredAt: spikeDate)
+        )
+    )
+}
+
 private enum CommandWorkResult: Equatable {
     case succeeded
     case remoteFailed
@@ -244,7 +254,7 @@ struct PlaybackCommandEffectSpikeTests {
             let commandID = runtime.pending?.id
             #expect((commandID) != nil, "pause is pending before the snapshot")
             let reconciled = runtime.session.send(
-                .transport(.paused),
+                pausedPlaybackEvent(),
                 source: .enginePlayback,
                 revision: 1
             )
@@ -259,7 +269,7 @@ struct PlaybackCommandEffectSpikeTests {
             let lateFailure = RegistryRuntime()
             _ = lateFailure.requestPause()
             _ = lateFailure.session.send(
-                .transport(.paused),
+                pausedPlaybackEvent(),
                 source: .enginePlayback,
                 revision: 1
             )
@@ -294,7 +304,7 @@ struct PlaybackCommandEffectSpikeTests {
             let commandID = confirmed.pending?.id
             #expect((commandID) != nil, "pause is pending before the snapshot")
             _ = confirmed.session.send(
-                .transport(.paused),
+                pausedPlaybackEvent(),
                 source: .enginePlayback,
                 revision: 1
             )

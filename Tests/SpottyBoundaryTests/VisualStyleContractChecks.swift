@@ -130,7 +130,7 @@ struct VisualStyleContractTests {
                     #expect(
                         (playlistDetail.contains("store.description")
                             && playlistDetail.contains("songCountText")
-                            && playlistDetail.contains("formatPlaylistDuration(totalDuration)")
+                            && playlistDetail.contains("formatPlaylistDuration(store.totalDuration)")
                             && playlistDetail.contains("guard showsPlaylistMetadata else { return nil }")
                             && !playlistDetail.contains("ownerText")
                             && detailHeader.contains("[item.subtitle, detail, itemCount ?? \"\"]")) == true,
@@ -138,8 +138,8 @@ struct VisualStyleContractTests {
                     #expect(
                         (playlistDetail.contains("variant: .playlist")
                             && table.contains("let initialSortOrder = variant.initialSortOrder")
-                            && table.contains("case .playlist:")
-                            && table.contains("sortOrder: initialSortOrder")) == true,
+                            && table.contains("_sortOrder = State(initialValue: initialSortOrder)")
+                            && table.contains("case .playlist:")) == true,
                         "playlist tables start with a local newest-date projection")
                     #expect(
                         (playlistDetail.contains("variant: .playlist")
@@ -160,8 +160,11 @@ struct VisualStyleContractTests {
                     #expect(
                         (table.contains("displayCache.displayPosition(for: row)")
                             && table.contains("speaker.wave.2.fill")
-                            && table.contains("if isCurrentTrack && playback.isPlaying")
-                            && catalogPlaybackAccess.contains("var isPlaying: Bool { player.isPlaying }")
+                            && table.contains("let currentTrackIndicator = playback.currentTrackIndicator")
+                            && table.contains("if isCurrentTrack && currentTrackIndicator.isPlaying")
+                            && catalogPlaybackAccess.contains(
+                                "var currentTrackIndicator: CurrentTrackIndicator { player.currentTrackIndicator }")
+                            && !table.contains("playback.isPlaying")
                             && table.contains("playlistRowMinimumHeight")
                             && table.contains("Current track, track \\(position) of \\(total)")
                             && table.contains("formatCatalogDuration(row.track.duration)")

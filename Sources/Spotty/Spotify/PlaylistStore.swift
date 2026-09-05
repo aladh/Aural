@@ -13,6 +13,7 @@ import Foundation
 final class PlaylistStore {
     private(set) var trackCollection = CatalogTrackCollection()
     var tracks: [CatalogTrack] { trackCollection.tracks }
+    private(set) var totalDuration: TimeInterval = 0
     var description = ""
     private(set) var loadedURI: String?
     private(set) var ownerURI: String?
@@ -43,7 +44,7 @@ final class PlaylistStore {
         loadTask = nil
         loadSessionSnapshot = nil
         loadedSessionSnapshot = nil
-        trackCollection.replace([])
+        replaceTracks([])
         description = ""
         loadedURI = nil
         ownerURI = nil
@@ -58,7 +59,7 @@ final class PlaylistStore {
             loadedSessionSnapshot = nil
         }
         loadedURI = uri
-        trackCollection.replace(tracks)
+        replaceTracks(tracks)
     }
 
     func load(_ item: CatalogItem, force: Bool = false) async {
@@ -90,7 +91,7 @@ final class PlaylistStore {
         loadedURI = item.uri
         if isNewPlaylist {
             loadedSessionSnapshot = nil
-            trackCollection.replace([])
+            replaceTracks([])
             description = ""
             ownerURI = item.ownerURI
             metadata.replaceTracks([], from: .playlist)
@@ -145,7 +146,7 @@ final class PlaylistStore {
             description = PlaylistDescription.plainText(from: playlist.description ?? "")
             ownerURI = CatalogMapping.ownerURI(from: playlist) ?? item.ownerURI
             let entries = playlist.content.flatMap(\.items) ?? []
-            trackCollection.replace(entries.compactMap(CatalogMapping.playlistTrack(from:)))
+            replaceTracks(entries.compactMap(CatalogMapping.playlistTrack(from:)))
             loadedSessionSnapshot = session.snapshot
             metadata.replaceTracks(tracks, from: .playlist)
             metadata.loadTrackAttributes(for: tracks)
@@ -167,5 +168,12 @@ final class PlaylistStore {
                 isAvailable: session.isAvailable,
                 isCancelled: Task.isCancelled
             )
+    }
+
+    private func replaceTracks(_ tracks: [CatalogTrack]) {
+        trackCollection.replace(tracks)
+        totalDuration = tracks.reduce(0) { total, track in
+            total + TimeInterval(roundedCatalogDurationSeconds(track.duration))
+        }
     }
 }

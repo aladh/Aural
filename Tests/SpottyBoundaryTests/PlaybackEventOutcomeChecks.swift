@@ -1,6 +1,7 @@
 import Testing
 import SpottyDomain
 import Foundation
+import Observation
 @testable import SpottyCore
 
 private final class GatedPositionEngine: LocalPlaybackEngine, @unchecked Sendable {
@@ -217,6 +218,23 @@ private struct IdleAttributes: TrackAttributesProviding {
 
 private enum OutcomeCheckFailure: Error { case unavailable }
 
+private final class ObservationCounter: @unchecked Sendable {
+    private let lock = NSLock()
+    private var countStorage = 0
+
+    var count: Int {
+        lock.lock()
+        defer { lock.unlock() }
+        return countStorage
+    }
+
+    func increment() {
+        lock.lock()
+        countStorage += 1
+        lock.unlock()
+    }
+}
+
 private struct IdleCatalog: CatalogProviding {
     func searchTracks(_: String, limit _: Int) async throws -> [PathfinderTrack] {
         throw OutcomeCheckFailure.unavailable
@@ -371,7 +389,6 @@ private func startTrackResolution(_ player: PlaybackStore, uri: String) {
             isPlaying: true,
             isPaused: false,
             trackURI: uri,
-            contextURI: "",
             positionMS: 1_000,
             durationMS: 180_000,
             timestampMS: 0,
@@ -395,6 +412,51 @@ private func awaitCapturedEffect(
 
 @Suite("Playback Event Outcome")
 struct PlaybackEventOutcomeTests {
+    @Test
+    @MainActor
+    func testCatalogPlaybackObservationSkipsTimingTicks() async {
+        let player = playbackStore(outcomeEnvironment(remote: ImmediateMetadataRemote()))
+        seedReadyLocalPlayback(player, uri: "spotify:track:indicator")
+
+        let initialIndicator = player.currentTrackIndicator
+        let initialAvailability = player.catalogPlaybackAvailability
+        let invalidations = ObservationCounter()
+        withObservationTracking {
+            _ = player.currentTrackIndicator
+            _ = player.catalogPlaybackAvailability
+            _ = player.canStartPlayback
+        } onChange: {
+            invalidations.increment()
+        }
+
+        #expect(player.setTiming(position: 42), "the timing sample is accepted")
+        #expect(player.position == 42, "authoritative timing advances without notifying catalog observers")
+        #expect(
+            (player.currentTrackIndicator) == (initialIndicator),
+            "position samples preserve the coarse track/transport indicator"
+        )
+        #expect(
+            (player.catalogPlaybackAvailability) == (initialAvailability),
+            "position samples preserve coarse catalog capabilities"
+        )
+        #expect((invalidations.count) == (0), "position samples do not invalidate coarse catalog observation")
+
+        _ = player.send(
+            .presentation(
+                PlaybackPresentationSnapshot(
+                    currentTrack: player.state.currentTrack,
+                    transport: .paused,
+                    timing: player.state.timing
+                )),
+            source: .user
+        )
+        #expect((player.currentTrackIndicator.trackURI) == ("spotify:track:indicator"))
+        #expect((player.currentTrackIndicator.isPlaying) == (false), "transport changes update the indicator")
+        #expect((invalidations.count) == (1), "transport changes invalidate coarse catalog observation")
+
+        await player.shutdownForTermination()
+    }
+
     @Test
     @MainActor
     func testPlaybackEventOutcome() async {
@@ -888,13 +950,11 @@ struct PlaybackEventOutcomeTests {
                 (launch.state.devices.lastRemoteDeviceID) == ("phone"),
                 "the store stamps last-remote context onto the snapshot")
             _ = launch.send(
-                .currentTrack(
-                    CurrentTrack(
-                        uri: pausedURI,
-                        title: "Paused",
-                        artist: "Artist",
-                        duration: 180,
-                        metadataSource: .connect
+                .enginePlayback(
+                    EnginePlaybackSnapshot(
+                        transport: .paused,
+                        trackURI: pausedURI,
+                        timing: PlaybackTiming(position: 0, duration: 180)
                     )),
                 source: .enginePlayback,
                 revision: 1,
@@ -995,7 +1055,6 @@ struct PlaybackEventOutcomeTests {
                     isPlaying: true,
                     isPaused: false,
                     trackURI: "spotify:track:clocked",
-                    contextURI: "",
                     positionMS: 40_000,
                     durationMS: 200_000,
                     timestampMS: 0,
@@ -1047,7 +1106,6 @@ struct PlaybackEventOutcomeTests {
             isPlaying: true,
             isPaused: false,
             trackURI: "spotify:track:order-independent",
-            contextURI: "",
             positionMS: 1_000,
             durationMS: 180_000,
             timestampMS: 0,
@@ -1097,7 +1155,12 @@ struct PlaybackEventOutcomeTests {
 
         #expect(
             (player.send(
-                .currentTrack(CurrentTrack(uri: "spotify:track:new")),
+                .presentation(
+                    PlaybackPresentationSnapshot(
+                        currentTrack: CurrentTrack(uri: "spotify:track:new"),
+                        transport: player.state.transport,
+                        timing: player.state.timing
+                    )),
                 source: .user
             )) == true,
             "the new track is accepted while the getter is suspended"

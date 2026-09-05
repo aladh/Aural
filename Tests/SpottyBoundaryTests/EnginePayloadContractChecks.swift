@@ -28,7 +28,6 @@ struct EnginePayloadContractTests {
                             && containsToken(bridge, "isActiveDevice: snapshot.is_active_device != 0")
                             && containsToken(bridge, "credentialsRejected: snapshot.credentials_rejected != 0")
                             && containsToken(bridge, "trackURI: optionalCString(snapshot.track_uri) ?? \"\"")
-                            && containsToken(bridge, "contextURI: optionalCString(snapshot.context_uri) ?? \"\"")
                             && containsToken(
                                 bridge,
                                 "private static func optionalCString(_ pointer: UnsafePointer<CChar>?) -> String?")

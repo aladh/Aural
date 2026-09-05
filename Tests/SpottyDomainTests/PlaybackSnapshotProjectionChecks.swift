@@ -14,10 +14,6 @@ struct PlaybackSnapshotProjectionTests {
                 (PlaybackSnapshotProjection.resolvedTrackURI("spotify:track:now")) == ("spotify:track:now"),
                 "a nonempty wire URI is kept")
             #expect(
-                (PlaybackSnapshotProjection.resolvedTrackURI("spotify:playlist:ctx")) == ("spotify:playlist:ctx"),
-                "a nonempty context URI is kept")
-
-            #expect(
                 (PlaybackSnapshotProjection.isAudible(isPlaying: true, isPaused: false)) == true,
                 "playing and not paused is audible")
             #expect(
@@ -79,21 +75,18 @@ struct PlaybackSnapshotProjectionTests {
                 isPlaying: true,
                 isPaused: false,
                 trackURI: "",
-                contextURI: "",
                 positionMilliseconds: 40_000,
                 durationMilliseconds: 200_000,
                 timestampMilliseconds: 1_005_000,
                 shuffle: false,
                 repeatContext: false,
                 repeatTrack: false,
-                previousRepeat: RepeatFlags(context: false, track: false),
                 isInitialSnapshot: false,
                 isActiveDevice: false,
                 receivedAt: receivedAt
             )
             #expect((emptyURIPlaying.transport) == (.playing), "empty-URI audible snapshot stays playing")
             #expect((emptyURIPlaying.trackURI) == nil, "empty-URI audible snapshot has no track identity")
-            #expect((emptyURIPlaying.contextURI) == nil, "empty-URI audible snapshot has no context identity")
             #expect(
                 (PlaybackSnapshotProjection.transport(
                     isPlaying: false,
@@ -103,33 +96,22 @@ struct PlaybackSnapshotProjectionTests {
                     isActiveDevice: true
                 )) == (.paused), "a paused track is paused")
 
-            let previous = RepeatFlags(context: true, track: false)
-            #expect(
-                (PlaybackSnapshotProjection.repeatFlags(context: nil, track: nil, previous: previous)) == (previous),
-                "omitted repeat flags keep the previous pair")
-            #expect(
-                (PlaybackSnapshotProjection.repeatFlags(context: false, track: true, previous: previous))
-                    == (RepeatFlags(context: false, track: true)), "present repeat flags replace the previous pair")
-
             let snapshot = PlaybackSnapshotProjection.snapshot(
                 isPlaying: true,
                 isPaused: false,
                 trackURI: "spotify:track:now",
-                contextURI: "spotify:playlist:ctx",
                 positionMilliseconds: 40_000,
                 durationMilliseconds: 200_000,
                 timestampMilliseconds: 1_005_000,
                 shuffle: true,
                 repeatContext: true,
                 repeatTrack: false,
-                previousRepeat: RepeatFlags(context: false, track: false),
                 isInitialSnapshot: false,
                 isActiveDevice: false,
                 receivedAt: receivedAt
             )
             #expect((snapshot.transport) == (.playing), "a live remote snapshot presents playing")
             #expect((snapshot.trackURI) == ("spotify:track:now"), "snapshot track identity drops empty URIs")
-            #expect((snapshot.contextURI) == ("spotify:playlist:ctx"), "snapshot context identity drops empty URIs")
             #expect((snapshot.timing.position) == (45), "playing snapshots compensate for their timestamp")
             #expect((snapshot.timing.duration) == (200), "snapshot duration is seconds")
             #expect((snapshot.shuffle) == (true), "snapshot shuffle is forwarded")
@@ -142,14 +124,12 @@ struct PlaybackSnapshotProjectionTests {
                 isPlaying: true,
                 isPaused: false,
                 trackURI: "spotify:track:now",
-                contextURI: "spotify:playlist:ctx",
                 positionMilliseconds: 40_000,
                 durationMilliseconds: 200_000,
                 timestampMilliseconds: 1_005_000,
                 shuffle: false,
                 repeatContext: false,
                 repeatTrack: false,
-                previousRepeat: RepeatFlags(context: false, track: false),
                 isInitialSnapshot: true,
                 isActiveDevice: true,
                 receivedAt: receivedAt

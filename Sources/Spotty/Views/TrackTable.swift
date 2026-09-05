@@ -26,7 +26,7 @@ struct TrackTable: View {
     var playlistActions: TrackPlaylistActions?
     @State private var selection: Set<CatalogTrack.ID> = []
     @State private var sortOrder: [KeyPathComparator<TrackTableRow>] = []
-    @State private var displayCache: TrackTableDisplayCache
+    @State private var displayCache = TrackTableDisplayCache()
 
     init(
         tracks: CatalogTrackCollection,
@@ -42,14 +42,6 @@ struct TrackTable: View {
         self.playlistActions = playlistActions
         let initialSortOrder = variant.initialSortOrder
         _sortOrder = State(initialValue: initialSortOrder)
-        _displayCache = State(
-            initialValue: TrackTableDisplayCache(
-                tracks,
-                sortValues: metadata.trackTableSortValues,
-                sortValuesRevision: metadata.trackAttributesRevision,
-                sortOrder: initialSortOrder
-            )
-        )
     }
 
     var body: some View {
@@ -229,18 +221,19 @@ struct TrackTable: View {
     }
 
     private func isCurrent(_ track: CatalogTrack) -> Bool {
-        playback.hasCurrentTrack && playback.currentTrackURI == track.uri
+        playback.currentTrackIndicator.trackURI == track.uri
     }
 
     private func playlistIndexCell(_ row: TrackTableRow) -> some View {
-        let isCurrentTrack = isCurrent(row.track)
+        let currentTrackIndicator = playback.currentTrackIndicator
+        let isCurrentTrack = currentTrackIndicator.trackURI == row.track.uri
         let isSelected = selection.contains(row.id)
         let position = displayCache.displayPosition(for: row)
         let total = displayCache.rows.count
         let indexForeground: Color = isSelected ? .primary : SpottyPalette.mediaGreen
 
         return Group {
-            if isCurrentTrack && playback.isPlaying {
+            if isCurrentTrack && currentTrackIndicator.isPlaying {
                 Image(systemName: "speaker.wave.2.fill")
                     .foregroundStyle(indexForeground)
                     .accessibilityLabel("Current track, track \(position) of \(total)")

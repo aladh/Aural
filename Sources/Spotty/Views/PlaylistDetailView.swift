@@ -133,15 +133,9 @@ struct PlaylistDetailView: View {
         return "\(count) \(count == 1 ? "song" : "songs")"
     }
 
-    private var totalDuration: TimeInterval {
-        store.tracks.reduce(0) { total, track in
-            total + TimeInterval(roundedCatalogDurationSeconds(track.duration))
-        }
-    }
-
     private var playlistMetadataText: String? {
         guard showsPlaylistMetadata else { return nil }
-        return [songCountText, formatPlaylistDuration(totalDuration)].joined(separator: " · ")
+        return [songCountText, formatPlaylistDuration(store.totalDuration)].joined(separator: " · ")
     }
 
 }

@@ -36,7 +36,7 @@ struct RootView: View {
 
             NowPlayingBar(player: player, showsSidePanel: $showsSidePanel)
         }
-        .onChange(of: player.state.accountEpoch) {
+        .onChange(of: player.accountEpoch) {
             resetMediaSelection()
         }
         .onChange(of: mediaSelectionRawValue) {

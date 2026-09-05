@@ -44,9 +44,8 @@ audio or protocol implementation.
   [playback engine ownership](../../../docs/playback-engine-ownership.md) before changing projections,
   snapshot fields, or reconnect behavior.
 - Resume and reconnect use `ResumeLoadPlan` over sticky resume-load URIs, not presentation
-  `playbackContextURI` (local `PlayerEvent` snapshots intentionally omit context). Playback context
-  is also distinct from `QueueService` mutation identity. Preserve one rehydration sequence per
-  engine session generation and the readiness hold; do not widen `spotty_playback_resume`.
+  snapshots. Preserve one rehydration sequence per engine session generation and the readiness
+  hold; do not widen `spotty_playback_resume`.
 - Keep read-only catalog access separate from playlist mutation. Writes use `PlaylistMutating` and
   `PlaylistMutationController`; Pathfinder mutation DTOs do not enter views.
 - PCM goes directly from the retained engine adapter to `AudioRenderer`, never observable UI state.

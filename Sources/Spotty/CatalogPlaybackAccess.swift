@@ -13,11 +13,9 @@ struct CatalogPlaybackAccess {
     }
 
     var isConnected: Bool { player.isConnected }
-    var accountEpoch: UInt64 { player.state.accountEpoch }
+    var accountEpoch: UInt64 { player.accountEpoch }
     var canStartPlayback: Bool { player.canStartPlayback }
-    var hasCurrentTrack: Bool { player.hasCurrentTrack }
-    var isPlaying: Bool { player.isPlaying }
-    var currentTrackURI: String { player.trackURI }
+    var currentTrackIndicator: CurrentTrackIndicator { player.currentTrackIndicator }
     var statusText: String { player.statusText }
     var requiresReauthentication: Bool { player.requiresReauthentication }
     var connectionActionTitle: String {

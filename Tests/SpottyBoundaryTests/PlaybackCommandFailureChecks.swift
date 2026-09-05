@@ -2311,7 +2311,6 @@ struct PlaybackCommandFailureTests {
                     )),
                 source: .user
             )
-            #expect((player.state.playbackContextURI) == nil, "local pause presentation has no context URI")
             #expect((player.canTogglePlayback) == true, "paused local playback can resume")
             player.togglePlayback()
             _ = await waitUntil { player.state.pendingCommands[.transport] == nil }

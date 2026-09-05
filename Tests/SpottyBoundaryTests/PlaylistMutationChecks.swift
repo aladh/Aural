@@ -174,14 +174,14 @@ private func yieldPasses(_ count: Int = 200) async {
     }
 }
 
-private func fixtureTrack(id: String, uri: String) -> CatalogTrack {
+private func fixtureTrack(id: String, uri: String, duration: TimeInterval = 1) -> CatalogTrack {
     CatalogTrack(
         id: id,
         uri: uri,
         title: id,
         artist: "Artist",
         album: "Album",
-        duration: 1,
+        duration: duration,
         artworkURL: nil,
         addedAt: nil
     )
@@ -734,13 +734,14 @@ struct PlaylistMutationTests {
             let session = CatalogSessionAvailability(accountEpoch: 1, isAvailable: true)
             let feedback = TransientFeedbackPresenter(clock: HoldingClock())
             let catalog = makeCatalog(services: services, session: session, feedback: feedback)
-            let first = fixtureTrack(id: "uid-a", uri: "spotify:track:a")
-            let second = fixtureTrack(id: "uid-b", uri: "spotify:track:b")
+            let first = fixtureTrack(id: "uid-a", uri: "spotify:track:a", duration: 1.49)
+            let second = fixtureTrack(id: "uid-b", uri: "spotify:track:b", duration: 2.5)
             catalog.playlistStore.replaceLoadedPlaylist(uri: "spotify:playlist:owned", tracks: [first, second])
+            #expect((catalog.playlistStore.totalDuration) == (4), "playlist store caches rounded track durations")
             let loadedVersion = catalog.playlistStore.trackCollection.version
             catalog.playlistStore.replaceLoadedPlaylist(
                 uri: "spotify:playlist:owned",
-                tracks: [first, fixtureTrack(id: "uid-mid", uri: "spotify:track:mid")]
+                tracks: [first, fixtureTrack(id: "uid-mid", uri: "spotify:track:mid", duration: 3.6)]
             )
             #expect((catalog.playlistStore.tracks.count) == (2), "replacement keeps the same row count")
             #expect(
@@ -749,6 +750,9 @@ struct PlaylistMutationTests {
             #expect(
                 (catalog.playlistStore.tracks.map(\.id)) == (["uid-a", "uid-mid"]),
                 "authoritative rows follow the replacement identity")
+            #expect((catalog.playlistStore.totalDuration) == (5), "replacing rows refreshes the cached duration")
+            catalog.playlistStore.reset()
+            #expect((catalog.playlistStore.totalDuration) == (0), "reset clears the cached duration")
         }
 
         do {
