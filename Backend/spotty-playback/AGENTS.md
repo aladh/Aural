@@ -26,9 +26,8 @@ across the Swift/Rust boundary.
   Presentation and resume plans stay in Swift. Preserve the reconnect readiness hold and the
   intentionally empty context on local `PlayerEvent` snapshots; follow
   [playback engine ownership](../../docs/playback-engine-ownership.md) when changing these boundaries.
-- The pinned Rust/librespot engine is the sole production playback implementation. Keep decoded PCM
-  on `proxy_sink` and do not reintroduce a parallel audio/protocol path, debug selector, Swift
-  decoder, or player-injection seam.
+- Keep decoded PCM on `proxy_sink`; do not reintroduce a parallel audio/protocol path, debug selector,
+  Swift decoder, or player-injection seam.
 - Keep the checked-in C header, exported symbol set, signatures, ownership, allocation, and callback
   lifetime aligned.
 - Treat librespot changes as protocol migrations. Preserve the ownership classification instead of
