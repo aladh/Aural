@@ -262,7 +262,7 @@ def child_ids(events):
 def validate_sessions(events, exports, model, variant):
     roots = {event.get("sessionID") for event in events if event.get("sessionID")}
     require(len(roots) == 1, "ambiguous root session")
-    root = next(iter(roots)); children = child_ids(events); times = []
+    root = next(iter(roots)); children = child_ids(events); times = []; correctness_high = False
     for session, role in {root: "thermos-parent", **children}.items():
         value = exports[session]; info = value["info"]; selected = info.get("model") or {}
         require(info.get("id") == session and info.get("agent") == role, "session identity mismatch")
@@ -278,10 +278,18 @@ def validate_sessions(events, exports, model, variant):
                     and isinstance(report["summary"], str) and report["summary"].strip()
                     and isinstance(report["findings"], list) and len(report["findings"]) <= 20
                     and report["resolved"] == [], "invalid child report")
+            if role == ROLES[0]:
+                correctness_high = any(isinstance(item, dict) and item.get("severity") in ("P1", "P2")
+                                       for item in report["findings"])
             parts = [p for m in assistants for p in m.get("parts", [])]
             require(all(p.get("tool") in {"read", "glob", "grep"} for p in parts if p.get("type") == "tool"), "child exceeded read-only tools")
             times.append((info["time"]["created"], assistants[-1]["info"]["time"]["completed"]))
     require(max(t[0] for t in times) < min(t[1] for t in times), "child audits did not overlap")
+    discussion_methods = {"get_comments", "get_reviews", "get_review_comments"}
+    discussion_requested = any(
+        (event.get("part") or {}).get("tool") == "github_pull_request_read"
+        and tool_input(event).get("method") in discussion_methods for event in events)
+    require(correctness_high or not discussion_requested, "discussion was requested without a P1/P2 correctness finding")
     return {"root": root, "children": children}
 
 

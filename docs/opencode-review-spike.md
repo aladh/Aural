@@ -286,3 +286,9 @@ replacement inline finding. GitHub documents that
 Only the control's separate publisher job receives that permission; no model runs there and checkout
 credentials are not persisted. The MCP trial still uses contents-read/PR-write and does not resolve
 threads. This is another constraint to handle before introducing an authoritative general reviewer.
+
+The [control run on `461119c`](https://github.com/aladh/Spotty/actions/runs/33978878101)
+passed with the isolated publisher permission and automatically resolved the superseded inline
+thread. Both review workflows and normal CI passed on that commit. The next implementation PR
+should select one orchestration path and remove the other before enabling reviews beyond this
+spike branch; the parallel control is not intended to survive that promotion.

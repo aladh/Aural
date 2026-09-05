@@ -160,6 +160,34 @@ class MCPTrialTests(TestCase):
         exports["ses_root"]["messages"][0]["info"]["finish"] = "error"
         with self.assertRaises(ValueError): mcp_trial.validate_sessions(events, exports, "opencode/muse", "xhigh")
 
+    def test_validate_sessions_gates_root_discussion_on_correctness_severity(self):
+        def session_fixtures(findings):
+            events = direct_events()
+            for event in events: event["sessionID"] = "ses_root"
+            exports = {}
+            for session, role in [("ses_root", "thermos-parent"), ("ses_correct", mcp_trial.ROLES[0]),
+                                  ("ses_quality", mcp_trial.ROLES[1])]:
+                exports[session] = {"info": {"id": session, "agent": role, "parentID": "ses_root",
+                    "model": {"providerID": "opencode", "id": "muse", "variant": "xhigh"},
+                    "time": {"created": 1}}, "messages": [{"info": {"role": "assistant", "finish": "stop",
+                    "providerID": "opencode", "modelID": "muse", "variant": "xhigh", "time": {"completed": 3}},
+                    "parts": [{"type": "text", "text": json.dumps({"summary": "audited", "findings": findings if role == mcp_trial.ROLES[0] else [], "resolved": []})}]}]}
+            for event, session in zip(events[1:3], ("ses_correct", "ses_quality")):
+                event["part"]["state"]["metadata"] = {"sessionId": session}
+            discussions = [tool("github_pull_request_read", {"owner": META["owner"], "repo": META["name"],
+                "pullNumber": META["pr"], "method": method, "perPage": 20})
+                for method in ("get_comments", "get_reviews", "get_review_comments")]
+            events[3:3] = discussions
+            return events, exports
+
+        events, exports = session_fixtures([])
+        mcp_trial.validate_events(events, META)
+        with self.assertRaises(ValueError):
+            mcp_trial.validate_sessions(events, exports, "opencode/muse", "xhigh")
+        for severity in ("P1", "P2"):
+            events, exports = session_fixtures([{"severity": severity}])
+            mcp_trial.validate_sessions(events, exports, "opencode/muse", "xhigh")
+
     def test_file_reads_require_exact_head(self):
         events = direct_events()
         events.insert(1, tool("github_get_file_contents", {"owner": META["owner"], "repo": META["name"], "ref": "main"}))
