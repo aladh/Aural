@@ -464,8 +464,7 @@ release_job="$(sed -n '/^  release:/,/^  gate:/p' "$ci_workflow")"
 gate_job="$(sed -n '/^  gate:/,$p' "$ci_workflow")"
 checkout_without_credentials=$'uses: actions/checkout@[0-9a-f]{40} # v[^\n]+\n        with:\n          persist-credentials: false'
 blocked_rust_tools=$'for tool in cargo rustc rustup cbindgen; do\n'
-if ! rg -q --fixed-strings 'engine_changed:' <<< "$changes_job" \
-    || ! rg -q --fixed-strings 'Backend/spotty-playback/artifact-manifest.json' <<< "$changes_job" \
+if ! rg -q --fixed-strings 'test_playback_promotion.py' <<< "$changes_job" \
     || ! rg -q --fixed-strings 'runs-on: macos-26' <<< "$rust_job" \
     || ! rg -U -q "$checkout_without_credentials" <<< "$rust_job" \
     || ! rg -q 'key: macos-rust-.*Cargo\.lock' <<< "$rust_job" \
@@ -479,7 +478,7 @@ if ! rg -q --fixed-strings 'engine_changed:' <<< "$changes_job" \
     || ! rg -q 'key: macos-swiftpm-debug-.*artifact-manifest\.json' <<< "$checks_job" \
     || ! rg -U -q --fixed-strings -- $'- name: Run checks\n        run: SPOTTY_CHECK_SCOPE=swift ./Scripts/check.sh' <<< "$checks_job" \
     || ! rg -q --fixed-strings 'needs: [changes, rust]' <<< "$candidate_job" \
-    || ! rg -q --fixed-strings "if: needs.changes.outputs.engine_changed == 'true' && needs.rust.result == 'success'" <<< "$candidate_job" \
+    || ! rg -q --fixed-strings "if: needs.rust.outputs.candidate_needed == 'true' && needs.rust.result == 'success'" <<< "$candidate_job" \
     || ! rg -q --fixed-strings 'configuration: [debug, release]' <<< "$candidate_job" \
     || ! rg -q --fixed-strings 'SPOTTY_PLAYBACK_LOCAL_XCFRAMEWORK=' <<< "$candidate_job" \
     || ! rg -U -q --fixed-strings -- "$blocked_rust_tools" <<< "$candidate_job" \
@@ -494,7 +493,7 @@ if ! rg -q --fixed-strings 'engine_changed:' <<< "$changes_job" \
     || ! rg -q --fixed-strings 'report-size.sh' <<< "$release_job" \
     || ! rg -q --fixed-strings 'if: always()' <<< "$gate_job" \
     || ! rg -q --fixed-strings 'needs: [changes, rust, checks, candidate, release]' <<< "$gate_job" \
-    || ! rg -U -q --fixed-strings -- $'test "$RUST_RESULT" = success\n          test "$CHECKS_RESULT" = success\n          if [[ "$ENGINE_CHANGED" == true ]]; then\n            test "$CANDIDATE_RESULT" = success' <<< "$gate_job" \
+    || ! rg -U -q --fixed-strings -- $'test "$RUST_RESULT" = success\n          test "$CHECKS_RESULT" = success\n          if [[ "$CANDIDATE_NEEDED" == true ]]; then\n            test "$CANDIDATE_RESULT" = success' <<< "$gate_job" \
     || ! rg -q --fixed-strings 'test "$CANDIDATE_RESULT" = skipped' <<< "$gate_job" \
     || ! rg -q --fixed-strings 'test "$RELEASE_RESULT" = success' <<< "$gate_job"; then
     print -u2 "CI must cache immutable inputs, block Rust in Swift lanes, and aggregate all quality lanes"
