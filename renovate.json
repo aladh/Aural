@@ -31,10 +31,15 @@
     {
       "description": "Group playback engine dependency updates for one artifact publication",
       "matchManagers": ["cargo"],
-      "minimumReleaseAge": "3 days",
       "groupName": "Playback engine dependencies",
       "groupSlug": "playback-engine-dependencies",
       "separateMajorMinor": false
+    },
+    {
+      "description": "Delay crates.io updates without delaying librespot git revisions",
+      "matchManagers": ["cargo"],
+      "matchDatasources": ["crate"],
+      "minimumReleaseAge": "3 days"
     },
     {
       "description": "Group non-major GitHub Actions updates and retain digest pins",
