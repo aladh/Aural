@@ -8,6 +8,8 @@
 	<string>Spotty</string>
 	<key>CFBundleExecutable</key>
 	<string>Spotty</string>
+	<key>CFBundleIconName</key>
+	<string>Spotty</string>
 	<key>CFBundleIconFile</key>
 	<string>Spotty</string>
 	<key>CFBundleIdentifier</key>

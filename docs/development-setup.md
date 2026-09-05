@@ -69,6 +69,14 @@ keychain under `.build/spotty-signing/`. It is local-only, unsuitable for distri
 `build_and_run.sh` fails before terminating or launching Spotty when no Apple-issued Team identity
 is available. Never install the generated identity in the login keychain or commit it.
 
+`Scripts/package-app.sh` compiles the native Icon Composer source at `Assets/Spotty.icon` into an
+ignored `.build/spotty-icon/<configuration>/Assets.car`. Packaging therefore requires the full
+Xcode installation that provides `actool`; when the active developer directory is not Xcode, select
+it with `xcode-select -s` or set `DEVELOPER_DIR`. `CFBundleIconName=Spotty` selects the catalog,
+including compiler-generated compatibility renditions on macOS 15. The bundle retains
+`Assets/Spotty.icns` for icon-file consumers; its presence does not force macOS 15 to select that
+artwork instead of the catalog.
+
 Sandboxed development tools may need permission for the packaging or launch script to invoke
 `security` and `codesign`. Apple Development signing can require private-key access once; Spotty
 should not reauthorize its stored Spotify credential after later rebuilds.
@@ -114,10 +122,12 @@ signing material as disposable build output:
 - `diagnostics/` — local reports; review them before sharing;
 - `SpottyArtwork/`, `.DS_Store`, and `.swiftpm/` — artwork cache and local tooling metadata.
 
-When changing the master app artwork in `Assets/SpottyIcon.png`, regenerate every standard macOS
-icon representation with `./Scripts/generate-icon.sh`. Every representation is derived from that
-same source image, including the small sizes used in the Dock and Finder. Commit both the source
-PNG and generated `Assets/Spotty.icns`.
+When changing the master app artwork in `Assets/SpottyIcon.png`, regenerate the legacy icon
+representations with `./Scripts/generate-icon.sh`. Also replace the embedded image in
+`Assets/Spotty.icon` using Icon Composer, then check its macOS previews and package the app to
+compile the native catalog. Icon Composer embeds a copy; changing the master PNG does not update
+that copy automatically. Commit the source PNG, generated `Assets/Spotty.icns`, and updated
+`Assets/Spotty.icon` document together.
 
 To recover from an uncertain local state, a fresh clone is the preferred reset. Do not copy build
 products or signing material from an older checkout. SwiftPM resolves the pinned playback artifact.

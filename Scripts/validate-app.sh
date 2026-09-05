@@ -31,6 +31,8 @@ fi
 info_plist="$app_path/Contents/Info.plist"
 app_binary="$app_path/Contents/MacOS/Spotty"
 third_party_notices="$app_path/Contents/Resources/ThirdPartyNotices.md"
+native_icon_catalog="$app_path/Contents/Resources/Assets.car"
+legacy_icon="$app_path/Contents/Resources/Spotty.icns"
 
 plutil -lint "$info_plist"
 if [[ ! -f "$app_path/Contents/PkgInfo" ]]; then
@@ -40,6 +42,8 @@ fi
 for required_key in \
     CFBundleIdentifier \
     CFBundleExecutable \
+    CFBundleIconName \
+    CFBundleIconFile \
     CFBundleShortVersionString \
     CFBundleVersion \
     LSMinimumSystemVersion; do
@@ -52,6 +56,27 @@ if [[ ! -x "$app_binary" ]]; then
 fi
 if [[ ! -s "$third_party_notices" ]]; then
     print -u2 "Missing third-party license notices: $third_party_notices"
+    exit 1
+fi
+if [[ ! -s "$native_icon_catalog" ]]; then
+    print -u2 "Missing compiled native app icon catalog: $native_icon_catalog"
+    exit 1
+fi
+if ! /usr/bin/assetutil --info "$native_icon_catalog" \
+    | /usr/bin/jq -e 'any(.[]; .AssetType == "IconImageStack" and .Name == "Spotty")' >/dev/null; then
+    print -u2 "App icon catalog must contain the native Spotty icon stack"
+    exit 1
+fi
+if [[ ! -s "$legacy_icon" ]]; then
+    print -u2 "Missing legacy app icon file: $legacy_icon"
+    exit 1
+fi
+if [[ "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIconName' "$info_plist")" != "Spotty" ]]; then
+    print -u2 "App bundle must select the native Spotty icon with CFBundleIconName=Spotty"
+    exit 1
+fi
+if [[ "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIconFile' "$info_plist")" != "Spotty" ]]; then
+    print -u2 "App bundle must retain the Spotty.icns resource with CFBundleIconFile=Spotty"
     exit 1
 fi
 
