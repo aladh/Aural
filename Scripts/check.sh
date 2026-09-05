@@ -272,16 +272,16 @@ fi
 # the product contract do not fail the gate.
 spotty_app_source="$project_root/Sources/Spotty/SpottyApp.swift"
 dark_appearance_assignment_pattern='^[[:space:]]*NSApplication\.shared\.appearance[[:space:]]*=[[:space:]]*NSAppearance\(named:[[:space:]]*\.darkAqua\)[[:space:]]*$'
-strip_noncode_appearance_text() {
+strip_noncode_policy_text() {
     perl -0pe 's{""".*?"""}{}gs; s{/\*.*?\*/}{}gs; s{//[^\n]*}{}g'
 }
-spotty_app_code="$(strip_noncode_appearance_text < "$spotty_app_source")"
+spotty_app_code="$(strip_noncode_policy_text < "$spotty_app_source")"
 if ! rg -q "$dark_appearance_assignment_pattern" <<< "$spotty_app_code"; then
     print -u2 "SpottyApp must pin the application to native dark Aqua"
     exit 1
 fi
 dark_appearance_noncode_fixture=$'// NSApplication.shared.appearance = NSAppearance(named: .darkAqua)\n/*\nNSApplication.shared.appearance = NSAppearance(named: .darkAqua)\n*/\nlet example = """\nNSApplication.shared.appearance = NSAppearance(named: .darkAqua)\n"""'
-dark_appearance_fixture_code="$(strip_noncode_appearance_text <<< "$dark_appearance_noncode_fixture")"
+dark_appearance_fixture_code="$(strip_noncode_policy_text <<< "$dark_appearance_noncode_fixture")"
 if rg -q "$dark_appearance_assignment_pattern" <<< "$dark_appearance_fixture_code"; then
     print -u2 "Dark appearance assignment check must reject comments and multiline strings"
     exit 1
@@ -318,8 +318,8 @@ fi
 # Lexical API boundary only: the app's legacy Keychain owner must not reference these
 # opt-in APIs. This does not prove credential storage behavior or signing correctness.
 legacy_keychain_api_pattern='\b(kSecUseDataProtectionKeychain|kSecAttrAccessGroup)\b'
-if rg -n "$legacy_keychain_api_pattern" \
-    "$project_root/Sources/Spotty/Spotify/KeychainManager.swift"; then
+legacy_keychain_code="$(strip_noncode_policy_text < "$project_root/Sources/Spotty/Spotify/KeychainManager.swift")"
+if rg -n "$legacy_keychain_api_pattern" <<< "$legacy_keychain_code"; then
     print -u2 "KeychainManager must not reference data-protection or access-group APIs"
     exit 1
 fi
@@ -327,8 +327,14 @@ if rg -q "$legacy_keychain_api_pattern" <<< 'let query = [kSecClass: kSecClassGe
     print -u2 "Legacy Keychain API check rejected an allowed fixture"
     exit 1
 fi
+keychain_comment_fixture_code="$(strip_noncode_policy_text <<< '// kSecUseDataProtectionKeychain and kSecAttrAccessGroup are deliberately omitted')"
+if rg -q "$legacy_keychain_api_pattern" <<< "$keychain_comment_fixture_code"; then
+    print -u2 "Legacy Keychain API check must allow explanatory comments"
+    exit 1
+fi
 for forbidden_keychain_api in kSecUseDataProtectionKeychain kSecAttrAccessGroup; do
-    if ! rg -q "$legacy_keychain_api_pattern" <<< "let query = [$forbidden_keychain_api: true]"; then
+    keychain_api_fixture_code="$(strip_noncode_policy_text <<< "let query = [$forbidden_keychain_api: true]")"
+    if ! rg -q "$legacy_keychain_api_pattern" <<< "$keychain_api_fixture_code"; then
         print -u2 "Legacy Keychain API check missed a forbidden fixture"
         exit 1
     fi
