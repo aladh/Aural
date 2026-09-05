@@ -78,49 +78,17 @@ private func runLengthEncode(_ channel: [UInt8]) -> Data {
     return encoded
 }
 
+private func componentByte(_ component: CGFloat) -> UInt8 {
+    UInt8((min(max(component, 0), 1) * 255).rounded())
+}
+
 private func argbPayload(from png: Data, pixels: Int) throws -> Data {
     guard let bitmap = NSBitmapImageRep(data: png),
         bitmap.pixelsWide == pixels,
-        bitmap.pixelsHigh == pixels,
-        !bitmap.isPlanar,
-        bitmap.bitsPerSample == 8,
-        (bitmap.samplesPerPixel == 3 || bitmap.samplesPerPixel == 4),
-        bitmap.bytesPerRow >= pixels * bitmap.samplesPerPixel,
-        let samples = bitmap.bitmapData
+        bitmap.pixelsHigh == pixels
     else {
         throw CocoaError(.fileReadCorruptFile)
     }
-
-    // Store the raw 8-bit samples exactly as iconutil does. Converting the
-    // pixels through a color space first brightens translucent RGB past its
-    // alpha, and Icon Services clamps those channels back to white on decode
-    // (a 16 px icon full of white-fringed edges fails the round-trip check).
-    // Opaque RGB (and RGBX pad-byte) input carries no alpha plane, so those
-    // pixels assemble with a fully opaque alpha channel. The pixel stride
-    // comes from bitsPerPixel, not bytesPerRow: rows may carry trailing
-    // padding, so a 24-bit RGB row can still span pixels * 4 bytes. AppKit
-    // expands RGB samples to RGBX in memory (32 bits per pixel).
-    let samplesPerPixel = bitmap.samplesPerPixel
-    let pixelStride: Int
-    switch (samplesPerPixel, bitmap.bitsPerPixel) {
-    case (4, 32):
-        pixelStride = 4
-    case (3, 24):
-        pixelStride = 3
-    case (3, 32):
-        pixelStride = 4
-    default:
-        throw CocoaError(.fileReadCorruptFile)
-    }
-    guard bitmap.bytesPerRow >= pixels * pixelStride else {
-        throw CocoaError(.fileReadCorruptFile)
-    }
-    let hasAlphaPlane = bitmap.hasAlpha && samplesPerPixel == 4
-    let alphaFirst = bitmap.bitmapFormat.contains(.alphaFirst)
-    let alphaOffset = alphaFirst ? 0 : pixelStride - 1
-    let redOffset = alphaFirst && pixelStride == 4 ? 1 : 0
-    let greenOffset = alphaFirst && pixelStride == 4 ? 2 : 1
-    let blueOffset = alphaFirst && pixelStride == 4 ? 3 : 2
 
     var alpha = [UInt8]()
     var red = [UInt8]()
@@ -132,13 +100,14 @@ private func argbPayload(from png: Data, pixels: Int) throws -> Data {
     blue.reserveCapacity(pixels * pixels)
 
     for y in 0..<pixels {
-        let row = y * bitmap.bytesPerRow
         for x in 0..<pixels {
-            let base = row + x * pixelStride
-            alpha.append(hasAlphaPlane ? samples[base + alphaOffset] : 255)
-            red.append(samples[base + redOffset])
-            green.append(samples[base + greenOffset])
-            blue.append(samples[base + blueOffset])
+            guard let color = bitmap.colorAt(x: x, y: y)?.usingColorSpace(.deviceRGB) else {
+                throw CocoaError(.fileReadCorruptFile)
+            }
+            alpha.append(componentByte(color.alphaComponent))
+            red.append(componentByte(color.redComponent))
+            green.append(componentByte(color.greenComponent))
+            blue.append(componentByte(color.blueComponent))
         }
     }
 
