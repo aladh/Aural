@@ -867,9 +867,9 @@ struct PlaylistMutationTests {
                             && !containsToken(playlistDetail, "removeOccurrences")) == true,
                         "nonempty playlist rows show a persistent stale-refresh warning with Retry")
                     #expect(
-                        (containsToken(contract, "Write failure, cancellation, and stale account/session results")
-                            && containsToken(contract, "A committed write stays successful if that refresh fails")
-                            && containsToken(contract, "Retry reloads rows without")) == true,
+                        (containsToken(contract, "Failed, cancelled, and stale account/session writes")
+                            && containsToken(contract, "A committed write remains successful if refresh fails")
+                            && containsToken(contract, "let Retry reload without repeating the mutation")) == true,
                         "the product contract distinguishes mutation success from a stale playlist refresh")
                     #expect(
                         (!containsToken(table, ".draggable(")

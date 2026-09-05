@@ -1,13 +1,5 @@
 import SwiftUI
 
-/// Restrained near-black catalog canvas that keeps artwork and native selection as visual anchors.
-struct CatalogCanvasBackground: View {
-    var body: some View {
-        SpottyPalette.catalogCanvas
-            .ignoresSafeArea()
-    }
-}
-
 /// A low-contrast boundary between an artwork-led header and its native table.
 struct CatalogTableDivider: View {
     var body: some View {

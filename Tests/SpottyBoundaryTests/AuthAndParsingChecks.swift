@@ -196,126 +196,18 @@ struct AuthFlowTests {
     }
 }
 
-@Suite("Pagination")
-struct PaginationTests {
-    @Test
-    @MainActor
-    func testPagination() {
-        do {
-            // Walks advance by what each page carried, not by how many rows decoded.
-            #expect(
-                (Pagination.nextOffset(offset: 50, pageEntryCount: 50, totalCount: 130)) == (100),
-                "mid-collection page advances by its entry count")
-            #expect(
-                (Pagination.nextOffset(offset: 100, pageEntryCount: 30, totalCount: 130)) == nil,
-                "reaching totalCount ends the walk")
-            #expect(
-                (Pagination.nextOffset(offset: 100, pageEntryCount: 50, totalCount: 130)) == nil,
-                "overshooting totalCount ends the walk")
-
-            // A collection that shrinks mid-walk would otherwise name a length no offset reaches.
-            #expect(
-                (Pagination.nextOffset(offset: 50, pageEntryCount: 0, totalCount: 130)) == nil,
-                "an empty page ends the walk")
-
-            // A missing totalCount keeps walking until a page comes back empty.
-            #expect(
-                (Pagination.nextOffset(offset: 0, pageEntryCount: 50, totalCount: nil)) == (50),
-                "missing totalCount keeps walking")
-
-            // Folders decode as entries but can collapse the rendered list; the offset must
-            // still move by the raw count or pages would repeat.
-            #expect(
-                (Pagination.nextOffset(offset: 0, pageEntryCount: 50, totalCount: 60)) == (50),
-                "offset ignores how many entities survived decoding")
-
-            // The last row before the boundary still names a next page; only reaching the
-            // total ends the walk.
-            #expect(
-                (Pagination.nextOffset(offset: 100, pageEntryCount: 29, totalCount: 130)) == (129),
-                "one short of totalCount keeps walking")
-
-            // A collection served in a single page must not ask for another.
-            #expect(
-                (Pagination.nextOffset(offset: 0, pageEntryCount: 50, totalCount: 50)) == nil,
-                "single-page collections end immediately")
-
-            // A collection that empties mid-walk names no further offset either.
-            #expect(
-                (Pagination.nextOffset(offset: 40, pageEntryCount: 20, totalCount: 0)) == nil,
-                "an emptied collection ends the walk")
-        }
-    }
-}
-
 @Suite("Loopback Parsing")
 struct LoopbackParsingTests {
     @Test
     @MainActor
     func testLoopbackParsing() {
-        do {
-            let parsed = LoopbackCallbackServer.parseRequestLine(
-                "GET /login?code=abc&state=xyz HTTP/1.1\r\nHost: 127.0.0.1\n"
-            )
-            #expect((parsed) != nil, "CRLF GET line parses")
-            if let parsed {
-                #expect((parsed.path) == ("/login"), "path")
-                #expect((parsed.queryItems?.first(where: { $0.name == "code" })?.value) == ("abc"), "code parameter")
-                #expect((parsed.queryItems?.first(where: { $0.name == "state" })?.value) == ("xyz"), "state parameter")
-            }
-
-            let lf = LoopbackCallbackServer.parseRequestLine(
-                "GET /login?code=abc&state=xyz HTTP/1.1\nHost: 127.0.0.1\n"
-            )
-            #expect((lf?.path) == ("/login"), "LF terminator yields the same path")
-
-            // A request split across TCP reads may arrive with no trailing newline yet.
-            let splitLine = LoopbackCallbackServer.parseRequestLine("GET /login?code=abc HTTP/1.1")
-            #expect((splitLine) != nil, "split request still parses")
-            if let splitLine {
-                #expect((splitLine.path) == ("/login"), "split-request path")
-                #expect(
-                    (splitLine.queryItems?.first(where: { $0.name == "code" })?.value) == ("abc"), "split-request code")
-            }
-
-            #expect((LoopbackCallbackServer.parseRequestLine("")) == nil, "empty input rejected")
-            #expect((LoopbackCallbackServer.parseRequestLine("\n")) == nil, "newline-only input rejected")
-            #expect(
-                (LoopbackCallbackServer.parseRequestLine("POST /login?code=abc HTTP/1.1\n")) == nil,
-                "non-GET methods rejected")
-            // HTTP verbs are case-sensitive; a smuggled lowercase one is not our request.
-            #expect(
-                (LoopbackCallbackServer.parseRequestLine("get /login?code=abc HTTP/1.1\n")) == nil,
-                "lowercase methods rejected")
-
-            // A query-less line still parses: the code simply comes back absent.
-            let bare = LoopbackCallbackServer.parseRequestLine("GET /login HTTP/1.1\n")
-            #expect((bare) != nil, "query-less request parses")
-            if let bare {
-                #expect((bare.path) == ("/login"), "query-less path")
-                #expect((bare.queryItems) == nil, "no parameters without a query")
-            }
-
-            #expect((LoopbackCallbackServer.parseRequestLine("GET / HTTP/1.1\n")) == nil, "root path rejected")
-            #expect(
-                (LoopbackCallbackServer.parseRequestLine("GET /?code=abc&state=xyz HTTP/1.1\n")) == nil,
-                "root path with query cannot win")
-            #expect(
-                (LoopbackCallbackServer.parseRequestLine("GET /login/extra?code=abc HTTP/1.1\n")) == nil,
-                "prefix lookalike rejected")
-            #expect(
-                (LoopbackCallbackServer.parseRequestLine("GET /loginn?code=abc HTTP/1.1\n")) == nil,
-                "suffix lookalike rejected")
-            #expect(
-                (LoopbackCallbackServer.parseRequestLine("GET /login%2Fextra?code=abc HTTP/1.1\n")) == nil,
-                "encoded extra segment rejected")
-            #expect(
-                (LoopbackCallbackServer.parseRequestLine("GET /login?code=abc HTTP/\n")) == nil,
-                "empty HTTP version rejected")
-            #expect(
-                (LoopbackCallbackServer.parseRequestLine("GET /login?code=abc HTTP/1.1junk\n")) == nil,
-                "suffixed HTTP version rejected")
-        }
+        // The parser itself is covered exhaustively in the domain suite; here just
+        // prove the server forwards to it.
+        let parsed = LoopbackCallbackServer.parseRequestLine(
+            "GET /login?code=abc&state=xyz HTTP/1.1\r\nHost: 127.0.0.1\n"
+        )
+        #expect((parsed?.path) == ("/login"), "forwarder parses the login path")
+        #expect((LoopbackCallbackServer.parseRequestLine("GET / HTTP/1.1\n")) == nil, "root path rejected")
     }
 }
 
@@ -418,7 +310,7 @@ struct AuthCookieCleanupTests {
             )
             do {
                 try await session.adopt(tokens)
-                #expect((true) == true, "adopt writes the grant")
+                #expect((store.stored?.accessToken) == ("at"), "adopt writes the grant")
             } catch {
                 #expect((false) == true, "adopt writes the grant")
             }
@@ -461,29 +353,5 @@ private final class CleanupCounter: @unchecked Sendable {
         lock.lock()
         defer { lock.unlock() }
         return value
-    }
-}
-
-@Suite("URI")
-struct URITests {
-    @Test
-    @MainActor
-    func testURI() {
-        do {
-            #expect(
-                (SpotifyURI.id(from: "spotify:playlist:37i9dQZF1DXcBWIGoYBM5M", kind: "playlist"))
-                    == ("37i9dQZF1DXcBWIGoYBM5M"), "kind-matched playlist uri yields its id")
-
-            // A playlist folder wears an id at the end too; requiring the kind is what
-            // keeps it from masquerading as a playlist.
-            #expect(
-                (SpotifyURI.id(from: "spotify:user:alice:folder:9ab01c", kind: "playlist")) == nil,
-                "folder uris never pass as playlists")
-            #expect(
-                (SpotifyURI.id(from: "spotify:album:abc123", kind: "playlist")) == nil, "a mismatched kind is refused")
-            #expect(
-                (SpotifyURI.id(from: "spotify:user:alice:playlist:xyz789")) == ("xyz789"),
-                "kind-free parsing takes the last component")
-        }
     }
 }

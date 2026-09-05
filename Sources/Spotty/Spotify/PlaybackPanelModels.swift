@@ -14,52 +14,6 @@ typealias ConnectCommandRoute = SpottyDomain.ConnectCommandRoute
 typealias HistoryEntry = SpottyDomain.HistoryEntry
 typealias PlaybackHistory = SpottyDomain.PlaybackHistory
 
-func interpolatedPlaybackPosition(
-    anchor: TimeInterval,
-    anchoredAt: Date,
-    now: Date,
-    isPlaying: Bool,
-    duration: TimeInterval
-) -> TimeInterval {
-    SpottyDomain.interpolatedPlaybackPosition(
-        anchor: anchor,
-        anchoredAt: anchoredAt,
-        now: now,
-        isPlaying: isPlaying,
-        duration: duration
-    )
-}
-
-func playbackSnapshotPosition(
-    positionMilliseconds: Int64,
-    durationMilliseconds: Int64,
-    timestampMilliseconds: Int64?,
-    isPlaying: Bool,
-    now: Date
-) -> TimeInterval {
-    SpottyDomain.playbackSnapshotPosition(
-        positionMilliseconds: positionMilliseconds,
-        durationMilliseconds: durationMilliseconds,
-        timestampMilliseconds: timestampMilliseconds,
-        isPlaying: isPlaying,
-        now: now
-    )
-}
-
-func connectCommandRoute(
-    isLocalActive: Bool,
-    localDeviceID: String?,
-    devices: [ConnectDevice],
-    fallbackRemoteDeviceID: String? = nil
-) -> ConnectCommandRoute {
-    SpottyDomain.connectCommandRoute(
-        isLocalActive: isLocalActive,
-        localDeviceID: localDeviceID,
-        devices: devices,
-        fallbackRemoteDeviceID: fallbackRemoteDeviceID
-    )
-}
-
 /// The in-memory recently-played list shown in the panel's History tab.
 /// Session-scoped by design: nothing about history needs to outlive the app.
 @MainActor

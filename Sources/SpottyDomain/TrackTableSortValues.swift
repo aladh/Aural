@@ -31,7 +31,7 @@ public struct TrackTableRow: Identifiable, Equatable, Sendable {
     public var title: String { track.title }
     public var artist: String { track.artist }
     public var album: String { track.album }
-    public var dateAddedSortValue: Date { track.addedAt ?? .distantPast }
+    public var dateAddedSortValue: Date { track.dateAddedSortValue }
     public var duration: TimeInterval { track.duration }
 
     init(track: CatalogTrack, sortValues: TrackTableSortValues?, sourceIndex: Int) {

@@ -13,7 +13,7 @@ public enum PCMWriteAdmission: Equatable, Sendable {
 /// A full ring must not wait forever: `stop` / `flush` run on that same thread after `write`
 /// returns. The budget is a single 500 ms wait for the whole call. Partial writes that see a
 /// little free space do not renew it, so a trickle of consumer releases cannot stack parks.
-/// Reset at the next write-call boundary (`beginWrite`) or when the ring is reset.
+/// Reset at the next write-call boundary or when the ring is reset.
 public struct PCMWriteBackpressure: Equatable, Sendable {
     public static let waitTimeoutMilliseconds = 500
 
@@ -22,10 +22,6 @@ public struct PCMWriteBackpressure: Equatable, Sendable {
     public init() {}
 
     public mutating func beginWrite() {
-        hasSpentWait = false
-    }
-
-    public mutating func resetWaitBudget() {
         hasSpentWait = false
     }
 

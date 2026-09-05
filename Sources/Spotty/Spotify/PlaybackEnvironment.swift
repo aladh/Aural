@@ -216,27 +216,27 @@ nonisolated final class UserDefaultsPlaybackPreferences: PlaybackPreferences, @u
         self.defaults = defaults
     }
 
-    func shuffleEnabled() -> Bool { lock.withCriticalSection { defaults.bool(forKey: Key.shuffle) } }
+    func shuffleEnabled() -> Bool { lock.withLock { defaults.bool(forKey: Key.shuffle) } }
 
     func setShuffleEnabled(_ enabled: Bool) {
-        lock.withCriticalSection { defaults.set(enabled, forKey: Key.shuffle) }
+        lock.withLock { defaults.set(enabled, forKey: Key.shuffle) }
     }
 
     func lastRemoteDeviceID() -> String? {
-        lock.withCriticalSection { defaults.string(forKey: Key.remoteDevice) }
+        lock.withLock { defaults.string(forKey: Key.remoteDevice) }
     }
 
     func setLastRemoteDeviceID(_ id: String?) {
         if let id {
-            lock.withCriticalSection { defaults.set(id, forKey: Key.remoteDevice) }
+            lock.withLock { defaults.set(id, forKey: Key.remoteDevice) }
         } else {
-            lock.withCriticalSection { defaults.removeObject(forKey: Key.remoteDevice) }
+            lock.withLock { defaults.removeObject(forKey: Key.remoteDevice) }
         }
     }
 
     func shuffleHistory() -> [String: TimeInterval] {
         guard
-            let data = lock.withCriticalSection({ defaults.data(forKey: Key.history) }),
+            let data = lock.withLock({ defaults.data(forKey: Key.history) }),
             let history = try? JSONDecoder().decode([String: TimeInterval].self, from: data)
         else { return [:] }
         return history
@@ -244,7 +244,7 @@ nonisolated final class UserDefaultsPlaybackPreferences: PlaybackPreferences, @u
 
     func setShuffleHistory(_ history: [String: TimeInterval]) {
         guard let data = try? JSONEncoder().encode(history) else { return }
-        lock.withCriticalSection { defaults.set(data, forKey: Key.history) }
+        lock.withLock { defaults.set(data, forKey: Key.history) }
     }
 }
 
@@ -307,19 +307,11 @@ nonisolated private final class LifecycleObserverTokens: @unchecked Sendable {
     }
 
     func cancel() {
-        lock.withCriticalSection {
+        lock.withLock {
             guard !cancelled else { return }
             cancelled = true
             for token in tokens { center.removeObserver(token) }
         }
-    }
-}
-
-private extension NSLock {
-    func withCriticalSection<T>(_ body: () throws -> T) rethrows -> T {
-        lock()
-        defer { unlock() }
-        return try body()
     }
 }
 

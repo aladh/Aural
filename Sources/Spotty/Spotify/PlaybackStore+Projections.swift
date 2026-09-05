@@ -60,7 +60,7 @@ extension PlaybackStore {
     var canSkipTrack: Bool { canStartPlayback && hasCurrentTrack }
 
     func displayedPosition(at date: Date) -> TimeInterval {
-        interpolatedPlaybackPosition(
+        SpottyDomain.interpolatedPlaybackPosition(
             anchor: position,
             anchoredAt: positionAnchorDate,
             now: date,

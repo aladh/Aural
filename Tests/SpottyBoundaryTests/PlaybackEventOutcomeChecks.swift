@@ -1021,7 +1021,7 @@ struct PlaybackEventOutcomeTests {
                 (player.history.entries.first?.playedAt) == (clockNow),
                 "played history uses the injected orchestration clock")
             #expect(
-                (player.playbackHistory()["spotify:track:clocked"]) == (clockNow.timeIntervalSince1970),
+                (player.shuffleHistoryCache["spotify:track:clocked"]) == (clockNow.timeIntervalSince1970),
                 "shuffle history uses the same orchestration clock instant")
             await player.shutdownForTermination()
         }

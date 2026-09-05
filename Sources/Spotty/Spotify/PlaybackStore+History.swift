@@ -14,7 +14,7 @@ extension PlaybackStore {
         guard !uri.isEmpty else { return }
         let playedAt = environment.clock.now()
         let now = playedAt.timeIntervalSince1970
-        var history = playbackHistory()
+        var history = shuffleHistoryCache
         history[uri] = now
         history = ShufflePolicy.pruned(history, now: now)
 
@@ -32,17 +32,13 @@ extension PlaybackStore {
         )
     }
 
-    func playbackHistory() -> [String: TimeInterval] {
-        shuffleHistoryCache
-    }
-
     func fewerRepeatsOrder(_ tracks: [CatalogTrack]) -> [CatalogTrack] {
         guard tracks.count > 1 else { return tracks }
         var generator = SystemRandomNumberGenerator()
         let order = ShufflePolicy.order(
             count: tracks.count,
             uri: { tracks[$0].uri },
-            history: playbackHistory(),
+            history: shuffleHistoryCache,
             now: environment.clock.now().timeIntervalSince1970,
             generator: &generator
         )

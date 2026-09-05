@@ -37,8 +37,6 @@ struct ParsingTests {
         }
 
         do {
-            #expect((Pagination.maximumPageCount) == (500), "maximum page bound is finite and explicit")
-
             #expect(
                 (Pagination.decision(offset: 0, pageEntryCount: 50, totalCount: 130, pagesFetched: 1))
                     == (.fetch(offset: 50)), "ordinary totalCount names the next offset")

@@ -44,10 +44,6 @@ public enum PlaylistEditability: Sendable {
 /// Occurrence-safe selection for playlist mutations. Track URIs may repeat; `CatalogTrack.id`
 /// is the Pathfinder occurrence uid in a playlist and must not be collapsed to a URI set.
 public enum PlaylistMutationSelection: Sendable {
-    public enum KeyboardCommand: Equatable, Sendable {
-        case removeOccurrences
-    }
-
     /// Selected rows in `tracks` order. A `Set` of IDs cannot emit the same occurrence twice.
     public static func orderedTracks(
         selectedIDs: Set<String>,
@@ -77,26 +73,4 @@ public enum PlaylistMutationSelection: Sendable {
     public static func canRemove(isPlaylistEditable: Bool, occurrenceIDs: [String]) -> Bool {
         isPlaylistEditable && !occurrenceIDs.isEmpty
     }
-
-    public static func keyboardCommand(
-        deleteOrBackspace: Bool,
-        isPlaylistEditable: Bool,
-        selectedOccurrenceCount: Int
-    ) -> KeyboardCommand? {
-        guard deleteOrBackspace, isPlaylistEditable, selectedOccurrenceCount > 0 else {
-            return nil
-        }
-        return .removeOccurrences
-    }
-}
-
-/// Recorded result of the native drag-to-playlist prototype for issue #14.
-///
-/// SwiftUI `Table` transfer representations serialize the dragged row, not the
-/// occurrence-aware multi-selection. Disabled drop targeting for non-editable
-/// library rows cannot be proven without private hit-testing or pixel coordinates.
-/// The context-menu Add to Playlist path and Delete/Backspace removal are the
-/// keyboard-accessible equivalents, so drag UI is not shipped.
-public enum PlaylistTrackDragDecision: Sendable {
-    public static let shipsNativeDragAndDrop = false
 }

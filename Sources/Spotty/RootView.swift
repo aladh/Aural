@@ -19,7 +19,7 @@ struct RootView: View {
             } detail: {
                 detail
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    .background { CatalogCanvasBackground() }
+                    .background { SpottyPalette.catalogCanvas.ignoresSafeArea() }
             }
             .navigationSplitViewStyle(.balanced)
             .inspector(isPresented: $showsSidePanel) {

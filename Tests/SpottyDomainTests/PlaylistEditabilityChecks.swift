@@ -137,45 +137,5 @@ struct PlaylistEditabilityTests {
                 (!PlaylistMutationSelection.canRemove(isPlaylistEditable: false, occurrenceIDs: ["uid-a"])) == true,
                 "read-only playlists cannot route destructive removal")
         }
-
-        do {
-            #expect(
-                (PlaylistMutationSelection.keyboardCommand(
-                    deleteOrBackspace: true,
-                    isPlaylistEditable: true,
-                    selectedOccurrenceCount: 2
-                )) == (.removeOccurrences), "Delete on an editable selection removes occurrences")
-            #expect(
-                (PlaylistMutationSelection.keyboardCommand(
-                    deleteOrBackspace: true,
-                    isPlaylistEditable: true,
-                    selectedOccurrenceCount: 1
-                )) == (.removeOccurrences), "Backspace uses the same native delete command")
-            #expect(
-                (PlaylistMutationSelection.keyboardCommand(
-                    deleteOrBackspace: true,
-                    isPlaylistEditable: false,
-                    selectedOccurrenceCount: 2
-                )) == nil, "Delete does nothing in a read-only playlist")
-            #expect(
-                (PlaylistMutationSelection.keyboardCommand(
-                    deleteOrBackspace: true,
-                    isPlaylistEditable: true,
-                    selectedOccurrenceCount: 0
-                )) == nil, "Delete does nothing without a selection")
-            #expect(
-                (PlaylistMutationSelection.keyboardCommand(
-                    deleteOrBackspace: false,
-                    isPlaylistEditable: true,
-                    selectedOccurrenceCount: 2
-                )) == nil, "unrelated keys are not playlist removal")
-        }
-
-        do {
-            #expect(
-                (!PlaylistTrackDragDecision.shipsNativeDragAndDrop) == true,
-                "native drag onto playlist rows is not shipped"
-            )
-        }
     }
 }
