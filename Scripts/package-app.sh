@@ -16,7 +16,11 @@ source "$project_root/Scripts/playback-xcframework.sh"
 app_path="${SPOTTY_APP_PATH:-$project_root/Spotty.app}"
 staged_launch_path="$project_root/.build/spotty-launch/Spotty.app"
 executable="$project_root/.build/$build_configuration/Spotty"
-icon="$project_root/Assets/Spotty.icns"
+icon_source="$project_root/Assets/Spotty.icon"
+legacy_icon="$project_root/Assets/Spotty.icns"
+icon_build_dir="$project_root/.build/spotty-icon/$build_configuration"
+compiled_assets="$icon_build_dir/Assets.car"
+icon_partial_info="$icon_build_dir/asset-info.plist"
 info_template="$project_root/Packaging/Info.plist"
 third_party_notices="$project_root/THIRD_PARTY_NOTICES.md"
 # Version bump procedure: edit CFBundleShortVersionString and CFBundleVersion in
@@ -34,6 +38,53 @@ fi
 
 export SPOTTY_BUILD_CONFIGURATION="$build_configuration"
 export SPOTTY_CHECK_SCOPE=swift
+
+if ! command -v xcrun >/dev/null 2>&1; then
+    print -u2 "Native Spotty icon packaging requires xcrun from a full Xcode installation"
+    print -u2 "Select Xcode with xcode-select or set DEVELOPER_DIR, then retry packaging"
+    exit 1
+fi
+actool="$(xcrun --find actool 2>/dev/null || true)"
+if [[ -z "$actool" || ! -x "$actool" ]]; then
+    print -u2 "Native Spotty icon packaging requires Apple's actool (Icon Composer compiler)"
+    print -u2 "Select Xcode 26.2 or newer with xcode-select -s, or set DEVELOPER_DIR, then retry packaging"
+    exit 1
+fi
+
+if [[ ! -d "$icon_source" ]]; then
+    print -u2 "Missing native Spotty icon source: $icon_source"
+    exit 1
+fi
+rm -rf "$icon_build_dir"
+mkdir -p "$icon_build_dir"
+actool_output=""
+if ! actool_output="$("$actool" \
+    --compile "$icon_build_dir" \
+    --platform macosx \
+    --minimum-deployment-target 15.0 \
+    --app-icon Spotty \
+    --output-partial-info-plist "$icon_partial_info" \
+    "$icon_source" 2>&1)"; then
+    print -u2 "Failed to compile native Spotty icon with actool: $icon_source"
+    if [[ -n "$actool_output" ]]; then
+        print -u2 -- "$actool_output"
+    fi
+    exit 1
+fi
+if [[ ! -s "$compiled_assets" ]]; then
+    print -u2 "actool did not produce the native Spotty icon catalog: $compiled_assets"
+    exit 1
+fi
+if [[ ! -f "$icon_partial_info" ]] || ! plutil -lint "$icon_partial_info" >/dev/null; then
+    print -u2 "actool did not produce a valid native Spotty icon metadata plist"
+    exit 1
+fi
+compiled_icon_name="$(plutil -extract CFBundleIconName raw -o - "$icon_partial_info" 2>/dev/null || true)"
+if [[ "$compiled_icon_name" != "Spotty" ]]; then
+    print -u2 "actool did not declare CFBundleIconName=Spotty for the native icon"
+    exit 1
+fi
+
 "$project_root/Scripts/check.sh"
 
 selected_xcframework="$(spotty_playback_resolve_xcframework)"
@@ -45,7 +96,7 @@ if [[ ! -d "$playback_notices" || ! -f "$playback_notices/ThirdPartyNotices.md" 
 fi
 
 playback_archive="$(spotty_playback_archive_path "$playback_slice")"
-for required_file in "$executable" "$icon" "$info_template" "$third_party_notices" "$playback_archive"; do
+for required_file in "$executable" "$legacy_icon" "$info_template" "$third_party_notices" "$playback_archive"; do
     if [[ ! -f "$required_file" ]]; then
         print -u2 "Missing packaging input: $required_file"
         exit 1
@@ -71,7 +122,8 @@ rm -rf "$app_path"
 mkdir -p "$app_path/Contents/MacOS" "$app_path/Contents/Resources"
 printf 'APPL????' > "$app_path/Contents/PkgInfo"
 cp "$executable" "$app_path/Contents/MacOS/Spotty"
-cp "$icon" "$app_path/Contents/Resources/Spotty.icns"
+cp "$compiled_assets" "$app_path/Contents/Resources/Assets.car"
+cp "$legacy_icon" "$app_path/Contents/Resources/Spotty.icns"
 cp "$third_party_notices" "$app_path/Contents/Resources/ThirdPartyNotices.md"
 mkdir -p "$app_path/Contents/Resources/PlaybackNotices"
 cp -R "$playback_notices/." "$app_path/Contents/Resources/PlaybackNotices/"
@@ -81,6 +133,7 @@ cp "$info_template" "$app_path/Contents/Info.plist"
 
 plutil -replace CFBundleShortVersionString -string "$app_version" "$app_path/Contents/Info.plist"
 plutil -replace CFBundleVersion -string "$app_build_number" "$app_path/Contents/Info.plist"
+plutil -replace CFBundleIconName -string "$compiled_icon_name" "$app_path/Contents/Info.plist"
 plutil -lint "$app_path/Contents/Info.plist"
 
 sign_with_local_identity() {

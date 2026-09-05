@@ -12,6 +12,10 @@ The source artwork was generated with Codex's built-in image-generation tool fro
 > 16 px. Use no text, letters, musical notes, headphones, play triangle, equalizer bars, watermark,
 > or imitation of Spotify's logo.
 
-The generated `Spotty.icns` contains every standard macOS icon size, with Finder-compatible legacy
-encodings. After changing the source PNG, follow the
-[icon regeneration procedure](../docs/development-setup.md#generated-local-state).
+`Spotty.icon` is the Icon Composer document used for the native icon catalog. It embeds the original
+artwork at its native size on the 1024-point canvas, so its transparent padding falls outside the
+system mask. Extra glass, translucency, and group shadows are disabled to preserve the artwork.
+Edit this document in Icon Composer and verify its macOS previews when changing the native icon.
+
+The generated `Spotty.icns` retains the legacy icon representations. After changing the source PNG,
+follow the [icon regeneration procedure](../docs/development-setup.md#generated-local-state).
