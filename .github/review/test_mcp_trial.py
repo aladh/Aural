@@ -1,4 +1,7 @@
 import importlib.util
+import sys
+import unittest
+sys.path.insert(0, str(__import__("pathlib").Path(__file__).parent))
 import json
 from pathlib import Path
 import tempfile
@@ -27,14 +30,14 @@ def direct_events(**changes):
               "pullNumber": META["pr"], "commitID": HEAD, "event": "COMMENT",
               "body": marker + "\nOpenCode GitHub MCP experiment (Actions, advisory)\n"
                      "Verdict: clean\nCorrectness: clean\nQuality: clean\nLimits: fixture\nHead: " + HEAD}
-    tasks = [tool("subagent", {"agent": role}, '<subagent sessionID="ses_fixture" state="completed">{}</subagent>'.format(role))
+    tasks = [tool("task", {"subagent_type": role}, "<task_result>{}</task_result>".format(role))
              for role in mcp_trial.ROLES]
     events = [{"type": "step_start"}, *tasks, tool("github_pull_request_review_write", create),
               {"type": "text", "part": {"text": "published"}},
               {"type": "step_finish", "part": {"reason": "stop"}}]
     for event in events:
-        if event.get("type") == "tool_use" and event["part"]["tool"] == "subagent":
-            event["part"]["state"]["input"].update(changes.get("subagent", {}))
+        if event.get("type") == "tool_use" and event["part"]["tool"] == "task":
+            event["part"]["state"]["input"].update(changes.get("task", {}))
     return events
 
 
@@ -57,7 +60,7 @@ class MCPTrialTests(TestCase):
 
     def test_validate_events_rejects_background_child_or_stale_write(self):
         with self.assertRaises(ValueError):
-            mcp_trial.validate_events(direct_events(subagent={"background": True}), META)
+            mcp_trial.validate_events(direct_events(task={"background": True}), META)
         events = direct_events()
         events[3]["part"]["state"]["input"]["commitID"] = "c" * 40
         with self.assertRaises(ValueError):
@@ -73,13 +76,13 @@ class MCPTrialTests(TestCase):
             with mock.patch.dict(mcp_trial.os.environ, {"MODEL": "opencode/muse", "VARIANT": "xhigh"}):
                 path = mcp_trial.config(META, Path("/tmp/github-mcp"), "FULL", "FULL", Path(directory))
             data = json.loads(path.read_text())
-            self.assertEqual(data["mcp"]["servers"]["github"]["environment"]["GITHUB_PERSONAL_ACCESS_TOKEN"],
-                             "{env:SPOTTY_MCP_TOKEN}")
-            self.assertEqual(data["mcp"]["servers"]["github"]["command"][-1],
+            self.assertNotIn("environment", data["mcp"]["github"])
+            self.assertEqual(data["mcp"]["github"]["command"][-1],
                              "--tools=add_comment_to_pending_review,get_file_contents,pull_request_read,pull_request_review_write")
-            self.assertIn({"action": "github_pull_request_review_write", "resource": "*", "effect": "allow"}, data["agents"]["thermos-parent"]["permissions"])
+            self.assertEqual(data["agent"]["thermos-parent"]["permission"]["github_pull_request_review_write"], "allow")
             for role in mcp_trial.ROLES:
-                self.assertNotIn({"action": "github_pull_request_review_write", "resource": "*", "effect": "allow"}, data["agents"][role]["permissions"])
+                self.assertEqual(data["agent"][role]["permission"]["*"], "deny")
+                self.assertNotIn("github_pull_request_review_write", data["agent"][role]["permission"])
 
 
     def test_export_completion_and_child_permissions_are_required(self):
@@ -89,17 +92,17 @@ class MCPTrialTests(TestCase):
         for session, role in [("ses_root", "thermos-parent"), ("ses_correct", mcp_trial.ROLES[0]), ("ses_quality", mcp_trial.ROLES[1])]:
             exports[session] = {"info": {"id": session, "agent": role, "parentID": "ses_root",
                 "model": {"providerID": "opencode", "id": "muse", "variant": "xhigh"},
-                "outcome": "succeeded", "time": {"created": 1, "idle": 3}}, "messages": []}
+                "time": {"created": 1}}, "messages": [{"info": {"role": "assistant", "finish": "stop",
+                "providerID": "opencode", "modelID": "muse", "variant": "xhigh", "time": {"completed": 3}},
+                "parts": [{"type": "text", "text": json.dumps({"summary": "audited", "findings": [], "resolved": []})}]}]}
         for event, session in zip(events[1:3], ("ses_correct", "ses_quality")):
-            event["part"]["state"]["output"] = f'<subagent sessionID="{session}" state="completed">done</subagent>'
+            event["part"]["state"]["metadata"] = {"sessionId": session}
         mcp_trial.validate_sessions(events, exports, "opencode/muse", "xhigh")
-        exports["ses_quality"]["messages"] = [{"content": [{"type": "tool", "name": "shell"}]}]
-        with self.assertRaises(ValueError):
-            mcp_trial.validate_sessions(events, exports, "opencode/muse", "xhigh")
-        exports["ses_quality"]["messages"] = []
-        exports["ses_root"]["info"]["outcome"] = "failed"
-        with self.assertRaises(ValueError):
-            mcp_trial.validate_sessions(events, exports, "opencode/muse", "xhigh")
+        exports["ses_quality"]["messages"][0]["parts"].append({"type": "tool", "tool": "bash"})
+        with self.assertRaises(ValueError): mcp_trial.validate_sessions(events, exports, "opencode/muse", "xhigh")
+        exports["ses_quality"]["messages"][0]["parts"].pop()
+        exports["ses_root"]["messages"][0]["info"]["finish"] = "error"
+        with self.assertRaises(ValueError): mcp_trial.validate_sessions(events, exports, "opencode/muse", "xhigh")
 
     def test_file_reads_require_exact_head(self):
         events = direct_events()
@@ -107,3 +110,18 @@ class MCPTrialTests(TestCase):
         with self.assertRaises(ValueError): mcp_trial.validate_events(events, META)
         events[1]["part"]["state"]["input"]["sha"] = HEAD
         mcp_trial.validate_events(events, META)
+
+
+    def test_untrusted_config_templates_are_literal(self):
+        with tempfile.TemporaryDirectory() as directory, mock.patch.dict(mcp_trial.os.environ, {"MODEL": "opencode/muse"}):
+            payload = "{env:GH_TOKEN} {file:/tmp/private}"
+            path = mcp_trial.config(META, Path("/tmp/github-mcp"), payload, payload, Path(directory))
+            raw = path.read_text()
+            self.assertNotIn("{env:", raw)
+            self.assertNotIn("{file:", raw)
+            decoded = json.loads(raw)
+            self.assertIn(payload, decoded["agent"][mcp_trial.ROLES[0]]["prompt"])
+
+
+if __name__ == "__main__":
+    unittest.main()

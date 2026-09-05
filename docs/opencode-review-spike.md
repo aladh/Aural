@@ -245,5 +245,28 @@ V2 integration references: [CLI private servers](https://opencode.ai/v2/docs/cli
 
 A clean V2 runtime initially could not resolve the model because its default catalog endpoint
 returned HTTP 403 in this environment. Explicitly loading the public models.dev catalog restored
-Muse contributor-free `xhigh` without account credentials. The trial workflow supplies that catalog
-to the private runtime instead of relying on the workstation cache.
+Muse contributor-free `xhigh` without account credentials. The trial now checks in only the selected provider/model entry in `.github/review/models.json`,
+captured from models.dev on 2026-09-05, rather than resolving an unreviewed live catalog.
+
+
+The [first V2 Actions trial](https://github.com/aladh/Spotty/actions/runs/33975552723) completed both
+native audits but did not publish: its parent could not see MCP tools under the deny-by-default
+policy. Isolated probes proved that the beta connects to MCP and can make an actual GitHub read
+with broad permissions, but the tested scoped rules did not preserve that capability. V1 succeeded
+with the same read-only MCP server and a deny-by-default permission policy. The current native MCP
+workflow therefore retains pinned V1.18.29. The guided V2 timing result does not outweigh this
+permission regression; reconsider V2 when the intended tool policy passes the same integration test.
+
+The MCP launcher alone reads the short-lived token from private runtime storage; the OpenCode
+process environment contains no GitHub token. Untrusted prompt text is escaped against config
+`{env:...}` and `{file:...}` expansion. Children require completed, independent model-matched
+exports with actual JSON reports; the parent trace and live GitHub review must agree on the marked
+overview and inline comments. These remain post-run evidence checks, not a pre-call authorization
+proxy. Cancellation is disabled within a PR's publishing concurrency group to reduce orphaned
+pending reviews.
+
+The two implementations are a temporary comparison inside issue #233. Keep their responsibilities
+separate during the experiment, share path/hunk validation, and select one orchestration path before
+promoting a general reviewer; do not maintain two authoritative reviewers implementing the same
+contract. The MCP trial currently performs full reviews and creates a marked review per run. It has
+not replaced the control's incremental baseline or stable finding-resolution lifecycle.

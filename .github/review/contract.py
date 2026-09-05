@@ -73,3 +73,13 @@ def validate_finding(item, meta, *, allow_empty_id=False):
     body = bounded_text(item["body"], MAX_BODY, "finding body")
     return {"id": identity, "path": path, "line": line, "severity": severity,
             "title": title, "body": body}
+
+
+def _diff_right_lines(diff):
+    """Right-side ranges from a single file's diff, independent of quoted Git path headers."""
+    anchors = set()
+    for match in re.finditer(rb'^@@ -[0-9]+(?:,[0-9]+)? \+([0-9]+)(?:,([0-9]+))? @@', diff, re.MULTILINE):
+        start = int(match[1])
+        count = int(match[2]) if match[2] is not None else 1
+        anchors.update(range(start, start + count))
+    return sorted(anchors)

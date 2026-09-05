@@ -60,6 +60,7 @@ def thread(
     replies=(),
     reply_author="github-actions",
     reply_author_type="Bot",
+    commit=HEAD,
 ):
     comments = [
         {
@@ -72,7 +73,7 @@ def thread(
             "path": path,
             "line": line,
             "outdated": outdated,
-            "commit": {"oid": HEAD},
+            "commit": {"oid": commit},
             "url": url,
         }
     ]
@@ -190,6 +191,19 @@ class InlineCommentTests(unittest.TestCase):
         self.assertIn(HEAD, github.patched[0][1]["body"])
         self.assertEqual(github.replies, [])
         self.assertEqual(github.resolutions, [])
+
+    def test_same_anchor_on_old_commit_creates_current_comment(self):
+        existing = thread(commit=BASE, body=marker() + "\n\nOld text")
+        github = FakeGitHub([existing])
+        urls = inline_comments.sync(meta(), result([finding()]), "token", github.api,
+                                    self.check_current())
+
+        self.assertEqual(urls, ["https://github.example/pull/268#discussion_r99"])
+        self.assertEqual(len(github.created), 1)
+        self.assertEqual(github.created[0]["commit_id"], HEAD)
+        self.assertEqual(github.patched, [])
+        self.assertEqual(len(github.replies), 1)
+        self.assertEqual(github.resolutions, ["thread-41"])
 
     def test_reopened_resolved_finding_unresolves_and_updates_owned_thread(self):
         existing = thread(resolved=True, body=marker() + "\n\nOld text")

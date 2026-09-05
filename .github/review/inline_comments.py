@@ -375,9 +375,10 @@ def _create(api, check_current, meta, token, finding, body):
     return _rest_result(response)
 
 
-def _current(thread, finding):
+def _current(thread, finding, head):
     side = thread.get("side")
-    return (not thread.get("outdated") and thread.get("path") == finding["path"]
+    return (thread.get("commit") == head
+            and not thread.get("outdated") and thread.get("path") == finding["path"]
             and thread.get("line") == finding["line"] and side == "RIGHT")
 
 
@@ -404,7 +405,7 @@ def sync(meta, result, token, api, check_current):
     for finding in result["findings"]:
         identity = finding["id"]
         matches = owned.get(identity, [])
-        current = [thread for thread in matches if _current(thread, finding)]
+        current = [thread for thread in matches if _current(thread, finding, meta["head"])]
         canonical = current[-1] if current else None
         if canonical is None:
             body = _finding_body(meta, finding)

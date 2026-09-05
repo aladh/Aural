@@ -29,11 +29,14 @@ def finding(identity="F0123456789ab", line=2, title="A concrete bug"):
 
 class ReviewContractTests(unittest.TestCase):
     def test_path_policy_is_shared_by_runtime_and_inline_publisher(self):
-        for path in (PATH, "", "/absolute.swift", "../outside.swift", "Sources\\Changed.swift",
-                     ".git/config", "Sources/\x00.swift"):
+        cases = ((PATH, True), ("", False), ("/absolute.swift", False),
+                 ("../outside.swift", False), ("Sources\\Changed.swift", False),
+                 (".git/config", False), ("Sources/\x00.swift", False))
+        for path, expected in cases:
             with self.subTest(path=path):
-                self.assertEqual(contract.safe_path(path), review.safe_path(path))
-                self.assertEqual(contract.safe_path(path), inline_comments.safe_path(path))
+                self.assertEqual(contract.safe_path(path), expected)
+                self.assertEqual(review.safe_path(path), expected)
+                self.assertEqual(inline_comments.safe_path(path), expected)
 
     def test_finding_validation_and_canonical_id_are_shared(self):
         raw = finding(identity="", title="  A concrete bug  ")

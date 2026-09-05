@@ -16,6 +16,7 @@ import urllib.error
 import urllib.parse
 import urllib.request
 
+from contract import _diff_right_lines
 from contract import (MAX_BODY, MAX_RESOLUTION, MAX_TITLE, SEVERITIES,
                       bounded_text, canonical_finding_id, safe_path, validate_finding)
 
@@ -34,6 +35,7 @@ MAX_DISCUSSION_PAGE_SIZE = 100
 MAX_DISCUSSION_RECORDS = 20
 MAX_DISCUSSION_OMISSIONS = 100
 MAX_DISCUSSION_BODY = 2_000
+MAX_BASELINE_PAGE_SIZE = 100
 REVIEW_DIR = Path(__file__).resolve().parent
 THERMOS_DIR = REVIEW_DIR / 'thermos'
 SYNTHESIS_PROMPT = '.github/review/synthesis.txt'
@@ -73,6 +75,20 @@ def comments(repo, pr, token):
         if len(batch) < 100:
             return result
     raise ValueError('Comment pagination exceeded safety bound')
+
+
+def baseline_comments(repo, pr, token):
+    """Fetch the initial baseline window containing the stable overview comment.
+
+    A full-history fallback remains the caller's responsibility when a full
+    page cannot prove that no later verified baseline exists.
+    """
+    batch = api(
+        f'repos/{repo}/issues/{pr}/comments?'
+        f'per_page={MAX_BASELINE_PAGE_SIZE}&page=1', token
+    )
+    require(isinstance(batch, list), 'Invalid GitHub baseline comment response')
+    return batch
 
 
 def owned_comments(items):
@@ -226,14 +242,6 @@ def _copy_input_artifact(work, source, relative):
     _stage_input_json(work, relative, copy_from=source)
 
 
-def _diff_right_lines(diff):
-    """Right-side ranges from a single file's diff, independent of quoted Git path headers."""
-    anchors = set()
-    for match in re.finditer(rb'^@@ -[0-9]+(?:,[0-9]+)? \+([0-9]+)(?:,([0-9]+))? @@', diff, re.MULTILINE):
-        start = int(match[1])
-        count = int(match[2]) if match[2] is not None else 1
-        anchors.update(range(start, start + count))
-    return sorted(anchors)
 
 
 def check_current(meta, token):
@@ -259,7 +267,13 @@ def prepare(work):
     require(SHA.fullmatch(meta['head']) and SHA.fullmatch(meta['base']), 'Invalid revision')
     token = os.environ['GH_TOKEN']
     check_current(meta, token)
-    prior = find_baseline(comments(repo, pr['number'], token), meta, token)
+    bounded_history = baseline_comments(repo, pr['number'], token)
+    prior = find_baseline(bounded_history, meta, token)
+    if prior is None and len(bounded_history) == MAX_BASELINE_PAGE_SIZE:
+        # A full initial page is incomplete.  Search the existing bounded full
+        # history only when the window cannot prove that no later baseline is
+        # valid; never silently discard its findings.
+        prior = find_baseline(comments(repo, pr['number'], token), meta, token)
     baseline = prior if prior and compatible(prior, meta, is_ancestor) else None
     merge_base = git('merge-base', meta['base'], meta['head']).decode().strip()
     previous = prior['findings'] if prior else []

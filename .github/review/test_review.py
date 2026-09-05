@@ -159,7 +159,11 @@ class ReviewTests(unittest.TestCase):
         body = review.render({"meta": metadata, "result": result(findings or [finding(OLD_ID)])})
         return {"user": {"login": review.BOT}, "body": body}
 
-    def run_prepare_with_stubs(self, work, comment_items, policy, proof):
+    def run_prepare_with_stubs(
+        self, work, comment_items, policy, proof, bounded_items=None, full_items=None
+    ):
+        bounded_items = comment_items if bounded_items is None else bounded_items
+        full_items = comment_items if full_items is None else full_items
         event_path = work / "event.json"
         event_path.write_text(
             json.dumps({
@@ -185,12 +189,26 @@ class ReviewTests(unittest.TestCase):
         with patch.dict(os.environ, environment), patch.object(
             review, "policy_digest", return_value=policy
         ), patch.object(review, "check_current"), patch.object(
-            review, "comments", return_value=comment_items
+            review, "baseline_comments", return_value=bounded_items
+        ), patch.object(
+            review, "comments", return_value=full_items
         ), patch.object(review, "api", return_value=proof) as api, patch.object(
             review, "git", side_effect=stub_prepare_git
         ), patch.object(review, "snapshot", side_effect=stub_prepare_snapshot):
             review.prepare(work)
         return json.loads((work / "meta.json").read_text()), api
+
+    def test_baseline_comments_reads_initial_window_in_chronological_order(self):
+        oldest = {"id": 1}
+        newest = {"id": 2}
+        with patch.object(review, "api", return_value=[oldest, newest]) as api:
+            items = review.baseline_comments(REPO, 7, "token")
+
+        self.assertEqual(items, [oldest, newest])
+        api.assert_called_once_with(
+            "repos/acme/spotty/issues/7/comments?per_page=100&page=1",
+            "token",
+        )
 
     def test_prepare_carries_newest_verified_findings_but_forces_full_on_policy_change(self):
         with tempfile.TemporaryDirectory() as temporary:
@@ -242,6 +260,36 @@ class ReviewTests(unittest.TestCase):
             self.assertEqual(meta["previous"], [])
             self.assertIsNone(meta["baseline"])
             api.assert_called_once_with("repos/acme/spotty/actions/runs/12/attempts/1", "scoped-token")
+
+    def test_prepare_falls_back_to_full_history_when_initial_window_is_incomplete(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            work = Path(temporary) / "review"
+            work.mkdir()
+            older = self.baseline_comment(
+                findings=[finding(OLD_ID)], policy="new-policy", head=OLD_HEAD, run=10, attempt=1
+            )
+            bounded = [
+                {"user": {"login": "human"}, "body": "unrelated"}
+                for _ in range(review.MAX_BASELINE_PAGE_SIZE)
+            ]
+            proof = {
+                "conclusion": "success",
+                "event": "pull_request",
+                "head_sha": OLD_HEAD,
+                "path": review.WORKFLOW,
+                "head_repository": {"full_name": REPO},
+            }
+            meta, api = self.run_prepare_with_stubs(
+                work,
+                [older],
+                "new-policy",
+                proof,
+                bounded_items=bounded,
+                full_items=[older],
+            )
+
+            self.assertEqual([item["id"] for item in meta["previous"]], [OLD_ID])
+            self.assertEqual(api.call_count, 1)
 
     def test_find_baseline_requires_successful_run_provenance(self):
         meta = {"repo": REPO, "pr": 7, "base": BASE, "head": HEAD, "policy": "policy-digest"}
@@ -401,6 +449,8 @@ class ReviewTests(unittest.TestCase):
                 with patch.dict(os.environ, environment), patch.object(
                     review, "policy_digest", return_value="policy"
                 ), patch.object(review, "check_current"), patch.object(
+                    review, "baseline_comments", return_value=[]
+                ), patch.object(
                     review, "comments", return_value=[]
                 ):
                     review.prepare(work)
