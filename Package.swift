@@ -4,14 +4,9 @@ import Foundation
 import PackageDescription
 
 private let packageRoot = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
-private let playbackManifestURL =
-    packageRoot
-    .appendingPathComponent("Backend")
-    .appendingPathComponent("spotty-playback")
-    .appendingPathComponent("artifact-manifest.json")
 
-// BEGIN GENERATED PLAYBACK ARTIFACT PIN. Run Backend/spotty-playback/update-artifact-manifest.sh
-// after publishing a new immutable XCFramework; keep this block synchronized with the manifest.
+// BEGIN GENERATED PLAYBACK ARTIFACT PIN. Run Backend/spotty-playback/update-artifact-pin.sh
+// after publishing a new immutable XCFramework. This is the app dependency pin.
 private let generatedPlaybackArtifactURL =
     "https://github.com/aladh/Spotty/releases/download/spotty-playback-core-f050af3671acc4eb710221db5027bbb86b1edb2d575128f9e7231622debef690/SpottyPlaybackCore.xcframework.zip"
 private let generatedPlaybackArtifactChecksum = "eefae6eff025bb599a05ded52945c9d571a008663ff837215b087bb52c8bc357"
@@ -43,49 +38,13 @@ private func manifestString(
     return value
 }
 
-private func remotePlaybackTarget() -> Target {
-    guard
-        let data = try? Data(contentsOf: playbackManifestURL),
-        let object = try? JSONSerialization.jsonObject(with: data),
-        let manifest = object as? [String: Any],
-        let artifact = manifest["artifact"] as? [String: Any]
-    else {
-        fatalError("Unable to read playback artifact manifest at \(playbackManifestURL.path)")
-    }
-
-    let urlString = manifestString("url", from: artifact, context: "playback artifact")
-    guard
-        let url = URL(string: urlString),
-        url.scheme == "https",
-        url.host != nil,
-        url.query == nil,
-        url.fragment == nil
-    else {
-        fatalError("Playback artifact URL must be an immutable HTTPS URL without query or fragment")
-    }
-
-    let checksum = manifestString("checksum", from: artifact, context: "playback artifact")
-    guard checksum.range(of: "^[0-9a-fA-F]{64}$", options: .regularExpression) != nil else {
-        fatalError("Playback artifact checksum must be a 64-character SHA-256 hex string")
-    }
-    guard checksum.range(of: "^0{64}$", options: .regularExpression) == nil else {
-        fatalError("Playback artifact checksum is still the placeholder value")
-    }
-    guard
-        urlString == generatedPlaybackArtifactURL,
-        checksum.lowercased() == generatedPlaybackArtifactChecksum.lowercased()
-    else {
-        fatalError(
-            "artifact-manifest.json is out of sync with the generated Package.swift playback pin"
-        )
-    }
-
-    return .binaryTarget(name: "SpottyPlaybackCore", url: urlString, checksum: checksum)
-}
-
 private func playbackTarget() -> Target {
     guard let override = ProcessInfo.processInfo.environment["SPOTTY_PLAYBACK_LOCAL_XCFRAMEWORK"] else {
-        return remotePlaybackTarget()
+        return .binaryTarget(
+            name: "SpottyPlaybackCore",
+            url: generatedPlaybackArtifactURL,
+            checksum: generatedPlaybackArtifactChecksum
+        )
     }
 
     let url = URL(fileURLWithPath: override, relativeTo: packageRoot).standardizedFileURL

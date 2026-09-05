@@ -3,12 +3,16 @@ name: Publish playback artifact
 on:
   workflow_dispatch:
     inputs:
+      version:
+        description: Engine version, e.g. 0.1.0 (publishes playback-v0.1.0)
+        required: true
+        type: string
       source_ref:
-        description: Full 40-character reviewed source SHA covered by the candidate CI run
+        description: Full 40-character merged main SHA covered by the candidate CI run
         required: true
         type: string
       candidate_run_id:
-        description: Completed CI run with successful Rust and candidate Swift Debug/Release checks
+        description: Main push CI run with successful Rust and candidate Swift Debug/Release checks
         required: true
         type: string
       dry_run:
@@ -34,7 +38,8 @@ jobs:
       contents: read
     outputs:
       source_sha: ${{ steps.candidate.outputs.source_sha }}
-      engine_digest: ${{ steps.candidate.outputs.engine_digest }}
+      version: ${{ steps.candidate.outputs.version }}
+      release_tag: ${{ steps.candidate.outputs.release_tag }}
 
     steps:
       - name: Check out trusted promotion policy
@@ -47,9 +52,11 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           SOURCE_REF: ${{ inputs.source_ref }}
+          ENGINE_VERSION: ${{ inputs.version }}
           CANDIDATE_RUN_ID: ${{ inputs.candidate_run_id }}
         run: |
           python3 Scripts/playback_promotion.py \
+            --version "$ENGINE_VERSION" \
             --run-id "$CANDIDATE_RUN_ID" \
             --source-ref "$SOURCE_REF" \
             --output "$RUNNER_TEMP/spotty-playback-publication"
@@ -78,36 +85,28 @@ jobs:
           name: playback-publication-candidate
           path: ${{ runner.temp }}/spotty-playback-publication
 
-      - name: Publish without overwriting an existing release
+      - name: Refuse an existing engine tag
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
-          SOURCE_SHA: ${{ needs.prepare.outputs.source_sha }}
-          ENGINE_INPUT_DIGEST: ${{ needs.prepare.outputs.engine_digest }}
-          PLAYBACK_RELEASE_TAG: spotty-playback-core-${{ needs.prepare.outputs.engine_digest }}
-          PUBLICATION_ROOT: ${{ runner.temp }}/spotty-playback-publication
+          PLAYBACK_RELEASE_TAG: ${{ needs.prepare.outputs.release_tag }}
         run: |
           set -euo pipefail
-          if gh release view "$PLAYBACK_RELEASE_TAG" >/dev/null 2>&1; then
-            echo "Refusing to overwrite existing playback release $PLAYBACK_RELEASE_TAG" >&2
+          if gh api "repos/$GH_REPO/git/ref/tags/$PLAYBACK_RELEASE_TAG" >/dev/null 2>&1; then
+            echo "Refusing to reuse existing playback tag $PLAYBACK_RELEASE_TAG" >&2
             exit 1
           fi
-          gh release create "$PLAYBACK_RELEASE_TAG" \
-            "$PUBLICATION_ROOT/SpottyPlaybackCore.xcframework.zip" \
-            "$PUBLICATION_ROOT/SpottyPlaybackCore.xcframework.zip.sha256" \
-            "$PUBLICATION_ROOT/source-provenance.txt" \
-            "$PUBLICATION_ROOT/spotty_playback_provenance.json" \
-            "$PUBLICATION_ROOT/SpottyPlaybackCore-notices.zip" \
-            "$PUBLICATION_ROOT/LICENSE" \
-            "$PUBLICATION_ROOT/NOTICE" \
-            "$PUBLICATION_ROOT/THIRD_PARTY_NOTICES.md" \
-            --target "$SOURCE_SHA" \
-            --prerelease \
-            --title "SpottyPlaybackCore $SOURCE_SHA" \
-            --notes "$(cat <<EOF
-          > [!CAUTION]
-          > Experimental, unofficial, independent Spotty playback artifact. Spotty is not affiliated with Spotify and uses unsupported reverse-engineered interfaces.
 
-          Immutable macOS ARM64 SpottyPlaybackCore XCFramework built from source commit $SOURCE_SHA and engine input digest $ENGINE_INPUT_DIGEST. The archive includes its matching C headers, module map, source provenance, and required license notices. Update the reviewed artifact manifest with this release URL and SHA-256; published playback releases are never overwritten.
-          EOF
-          )"
+      - name: Publish versioned playback release
+        uses: ncipollo/release-action@339a81892b84b4eeb0f6e744e4574d79d0d9b8dd # v1.21.0
+        with:
+          tag: ${{ needs.prepare.outputs.release_tag }}
+          commit: ${{ needs.prepare.outputs.source_sha }}
+          name: SpottyPlaybackCore v${{ needs.prepare.outputs.version }}
+          artifacts: ${{ runner.temp }}/spotty-playback-publication/*
+          artifactErrorsFailBuild: true
+          allowUpdates: false
+          replacesArtifacts: false
+          immutableCreate: true
+          prerelease: true
+          makeLatest: false
