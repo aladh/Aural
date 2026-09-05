@@ -9,8 +9,6 @@
   "schedule": ["* * * * 0,6"],
   "dependencyDashboard": true,
   "labels": ["dependencies"],
-  "prConcurrentLimit": 3,
-  "prHourlyLimit": 2,
   "rebaseWhen": "conflicted",
   "packageRules": [
     {
