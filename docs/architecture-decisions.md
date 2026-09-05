@@ -29,6 +29,7 @@ by ADR 005. Consult it for historical reasoning, not current work instructions.
 
 - Record consequential context, decisions, alternatives, tradeoffs, and useful revisit triggers.
 - Correct facts and references in place; unchanged decisions do not need a new record.
-- For reversals, add the next numbered record, mark the old one superseded, and link both ways.
+- For reversals, add the next numbered record, explain what it replaces, mark the old one superseded,
+  and link both ways.
 - State each record's status (proposed, accepted, rejected, or superseded) and keep this index current.
 - Link to canonical owners for commands, fields, and behavior cases; omit delivery progress.

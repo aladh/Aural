@@ -2,8 +2,8 @@
 
 Spotty uses a reverse-engineered Spotify endpoint to populate the Popularity, BPM, and Key columns
 in shared catalog track tables.
-This unsupported API may change without notice or violate Spotify's Terms of Use. The wire format
-below supports maintenance of the integration.
+This unsupported API may change without notice; using it may violate Spotify's Terms of Use.
+The wire format below supports maintenance of the integration.
 
 ## Discovery notes
 

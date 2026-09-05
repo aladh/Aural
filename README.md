@@ -59,9 +59,9 @@ SwiftPM downloads the checksum-pinned playback XCFramework; ordinary app builds 
 The launch script replaces any running development copy. On first launch, choose **Connect** and
 complete Spotify authorization in the browser. See [build modes](CONTRIBUTING.md#build-and-run).
 
-Generated binaries stay out of Git. Version tags publish experimental prereleases; until Developer
-ID and notarization credentials are configured, their hardened-runtime ad-hoc signatures are not
-automatically trusted by macOS.
+Generated app bundles and engine archives stay out of Git. Version tags publish experimental
+prereleases; until Developer ID and notarization credentials are configured, their hardened-runtime
+ad-hoc signatures are not automatically trusted by macOS.
 
 ## Privacy and security
 
