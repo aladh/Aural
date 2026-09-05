@@ -58,11 +58,12 @@ source snapshot with no `.git` directory. Shell, writes, network tools, external
 subagents, skills, project configuration, external plugins, LSP, formatting and session sharing
 are disabled. Only read/search tools are allowed; the CLI still contacts the model provider.
 
-OpenCode Agent remains installed with **Only select repositories → aladh/Spotty**, as verified by
-the initial availability spike. This iteration does not use its broad installation token or OIDC.
+The initial availability spike tested OpenCode Agent with access only to `aladh/Spotty`. The App
+was subsequently uninstalled: this CLI-based workflow needs neither its installation nor its broad
+token or OIDC.
 The separate publisher uses the short-lived Actions token with `contents: read` and
 `pull-requests: write`; the model runner has read-only repository permissions and receives no token
-in its subprocess environment. Do not broaden the App installation. This is an owner-controlled
+in its subprocess environment. No GitHub App installation is required. This is an owner-controlled
 trial: orchestration code comes from this PR. Before enabling arbitrary contributors or making it
 a required gate, move orchestration and policy to a protected revision.
 
@@ -86,6 +87,14 @@ reported cost zero. The first diff-only PR response confidently misidentified th
 and the exported prompt; its [disposition](https://github.com/aladh/Spotty/pull/268#issuecomment-5549761593)
 is retained as a quality warning. Later diff-only responses had seen other reviewers' comments and
 are not independent benchmarks.
+
+The first source-aware [Actions run](https://github.com/aladh/Spotty/actions/runs/33950084958)
+passed on `d2302e1`: the model made nine source reads in 126 seconds, returned a validated
+no-findings result, and the separate scoped-token publisher posted the
+[advisory comment](https://github.com/aladh/Spotty/pull/268#issuecomment-5550007223).
+All 14 deterministic reviewer tests and normal PR CI passed. Separate local source-aware fixtures
+found a seeded Swift bounds regression, then retained its finding ID in an explicit resolution
+when the next revision fixed it. These are integration checks, not a review-quality benchmark.
 
 The source-aware iteration is evaluated in #268 with deterministic lifecycle/validation tests and
 live Actions results. Before making it authoritative, evaluate known bugs and clean changes without
