@@ -100,6 +100,11 @@ struct VisualStyleContractTests {
                         from: "    private var devicesMenu: some View",
                         through: "    private func deviceName"
                     )
+                    let playlistActionStrip = try visualStyleSourceSection(
+                        playlistDetail,
+                        from: "MediaDetailHeader(",
+                        through: "CatalogTableDivider()"
+                    )
 
                     #expect(
                         (home.contains("QuickAccessShelf(section: section")
@@ -114,7 +119,8 @@ struct VisualStyleContractTests {
                     #expect(
                         (playlistDetail.contains("MediaDetailHeader(")
                             && playlistDetail.contains("style: .playlist")
-                            && playlistDetail.contains("Spacer(minLength: 0)")
+                            && playlistActionStrip.contains("CircularPlayButton(")
+                            && playlistActionStrip.contains("Spacer(minLength: 0)")
                             && detailHeader.contains("pointSize: size")
                             && detailHeader.contains("LinearGradient(")
                             && detailHeader.contains("SpottyPalette.playlistHeroGradient")
@@ -169,7 +175,7 @@ struct VisualStyleContractTests {
                             && detailHeader.contains("CatalogLayout.contentPadding")) == true,
                         "playlist hero title is a responsive accessibility heading")
                     #expect(
-                        (playlistDetail.contains("CircularPlayButton(action:")
+                        (playlistDetail.contains("CircularPlayButton(")
                             && table.contains("struct CircularPlayButton")
                             && table.contains(".buttonBorderShape(.circle)")
                             && !table.contains(".opacity(isEnabled ? 1 : 0.45)")
