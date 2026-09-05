@@ -242,3 +242,24 @@ A request to open a PR authorizes the agent to create a branch, commit the compl
 push it, open the PR, monitor available checks/reviews during the run, and address automated
 findings. It does not authorize merge, release, tag, repository-setting changes, or issue closure
 unless the request says so.
+
+### Automated PR acceptance
+
+PR acceptance is fully automated. A PR is ready when all three conditions hold for its latest
+changes:
+
+1. CodeRabbit has approved the PR.
+2. All review threads are resolved, including findings from Cursor and other reviewers.
+3. Checks are green: every applicable check has passed, with only intentional conditional skips.
+
+Address valid findings, explain findings that do not apply, and resolve threads only after their
+disposition is documented. After pushing fixes, wait for checks and CodeRabbit review to cover the
+updated head. Cursor findings must be addressed, but a separate Cursor approval is not an acceptance
+criterion. A stale blocking review state must be cleared through the reviewer’s normal workflow;
+do not bypass repository protections.
+
+Manual app testing and human review are not PR acceptance gates. Report any limits of automated
+coverage honestly; separately requested manual verification may happen after merge. Live-account
+work still follows the [safe acceptance contract](docs/product-and-acceptance-contract.md#safe-acceptance-testing).
+Meeting these criteria establishes readiness, not permission to merge: merge authorization remains
+separate as described above.

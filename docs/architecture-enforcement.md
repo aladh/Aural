@@ -10,6 +10,9 @@ inspection of the affected code, tests, diff, and canonical decisions by the imp
 available automated reviewers. It is evidence, but it is weaker than compiler, deterministic test,
 ABI, or focused source enforcement and must never be described as machine proof.
 
+PR readiness follows the [automated acceptance criteria](../CONTRIBUTING.md#automated-pr-acceptance).
+Semantic agent review does not imply a required human review or manual app-testing gate.
+
 ## Enforcement order
 
 Use the strongest owner that can express the invariant without lying about what it proves:

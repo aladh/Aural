@@ -152,6 +152,10 @@ baselines.
 
 ## Safe acceptance testing
 
+PR readiness uses the [automated acceptance criteria](../CONTRIBUTING.md#automated-pr-acceptance).
+The live-account guidance below governs separately authorized interactive verification; it does not
+create a manual PR acceptance gate.
+
 Spotify Connect controls a live account and can interrupt playback on another device. Playback and
 account mutations are therefore **opt-in**, not part of routine acceptance testing.
 
