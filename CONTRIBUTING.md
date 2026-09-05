@@ -31,14 +31,14 @@ Useful modes:
 ```
 
 Authenticated launches require an Apple Development identity with a stable Team ID. When exactly one
-is available, the script selects it; otherwise set `SPOTTY_DEVELOPMENT_SIGNING_IDENTITY` to the exact
-name reported by `security find-identity -p codesigning -v`. See the setup guide for creating an
-identity and for Keychain recovery.
+is available, the script selects it; otherwise set `SPOTTY_DEVELOPMENT_SIGNING_IDENTITY` to the
+exact name reported by `security find-identity -p codesigning -v`. See the setup guide for creating
+an identity and for Keychain recovery.
 
 ## Normal verification
 
-Follow the local-verification policy in [AGENTS.md](AGENTS.md#local-verification). The complete non-playback
-gate is:
+Follow the local-verification policy in [AGENTS.md](AGENTS.md#local-verification). The complete
+non-playback gate is:
 
 ```bash
 ./Scripts/check.sh
@@ -48,16 +48,15 @@ The complete gate requires the engine toolchain. App-only development uses
 `SPOTTY_CHECK_SCOPE=swift ./Scripts/check.sh`, which resolves the binary dependency and never invokes
 Cargo, rustc, or cbindgen. Packaging uses this app-only gate.
 
-The complete gate checks tracked Swift formatting, Rust formatting, warning-clean Clippy, locked Rust tests,
-the pinned cbindgen output against the checked-in header,
-Rust/C export and header parity, Swift builds with project-owned warnings as errors, deterministic
-Swift tests, architecture contracts, CI policy, and packaging metadata. It does not sign in
-or initiate playback.
+The complete gate checks tracked Swift formatting, Rust formatting, warning-clean Clippy, locked
+Rust tests, the pinned cbindgen output against the checked-in header, Rust/C export and header
+parity, Swift builds with project-owned warnings as errors, deterministic Swift tests, architecture
+contracts, CI policy, and packaging metadata. It does not sign in or initiate playback.
 
 After changing a Rust ABI declaration, run `./Scripts/generate-c-header.sh` and commit the generated
 header. `--check` verifies reproducibility without modifying it. cbindgen is pinned in the
-[setup guide](docs/development-setup.md#fresh-clone); set `SPOTTY_CBINDGEN` when it is not on `PATH`.
-The wrapper validates its version and export set without installing tools.
+[engine setup guide](docs/development-setup.md#engine-development); set `SPOTTY_CBINDGEN` when it is not on `PATH`. The
+wrapper validates its version and export set without installing tools.
 
 `Backend/spotty-playback/cbindgen.toml` generates
 `Sources/SpottyPlaybackCore/include/spotty_playback_generated.h`. Edit the Rust declarations and
@@ -111,17 +110,17 @@ content-keyed engine artifacts, and configuration-safe SwiftPM caches; cache hit
 but never coverage. App lanes deliberately block Rust executables to detect accidental source-build
 fallbacks.
 
-Use `SPOTTY_CHECK_REPEATS=N ./Scripts/check.sh` with `N` from 1 through 25 when concurrency or lifetime
-work merits stress.
+Use `SPOTTY_CHECK_REPEATS=N ./Scripts/check.sh` with `N` from 1 through 25 when concurrency or
+lifetime work merits stress.
 
 ## Playback binary artifacts
 
-The artifact pin lives in `Backend/spotty-playback/artifact-manifest.json` and a generated declaration
-in `Package.swift`. The pin updater changes both together. Literal package declarations make pin
-changes visible to SwiftPM's manifest cache. They pin an immutable engine ZIP by URL and SHA-256.
-The artifact contains one macOS ARM64 static-library slice,
-its matching C headers/module map, provenance, and dependency notices. Ordinary SwiftPM builds
-resolve that dependency without Cargo or cbindgen. Never overwrite an existing published asset.
+The artifact pin lives in `Backend/spotty-playback/artifact-manifest.json` and a generated
+declaration in `Package.swift`. The pin updater changes both together. Literal package declarations
+make pin changes visible to SwiftPM's manifest cache. They pin an immutable engine ZIP by URL and
+SHA-256. The artifact contains one macOS ARM64 static-library slice, its matching C headers/module
+map, provenance, and dependency notices. Ordinary SwiftPM builds resolve that dependency without
+Cargo or cbindgen. Never overwrite an existing published asset.
 
 For engine development, install the pinned Rust and cbindgen tools and build an explicit local
 artifact:
@@ -136,23 +135,25 @@ SPOTTY_CHECK_SCOPE=swift ./Scripts/check.sh
 
 Rebuild that artifact and refresh the override after changing any engine input. Its default
 directory carries the engine digest, and the library filename carries both engine-input and binary
-digests. This changes the linker input when the engine changes; replacing a same-named static archive alone can leave a cached executable linked to
-old code in SwiftPM. The local override selects a binary; it does not arrange an implicit Cargo build. Unset it to return to the published dependency. Full Rust
-verification remains `SPOTTY_CHECK_SCOPE=rust ./Scripts/check.sh`.
+digests. This changes the linker input when the engine changes; replacing a same-named static
+archive alone can leave a cached executable linked to old code in SwiftPM. The local override
+selects a binary; it does not arrange an implicit Cargo build. Unset it to return to the published
+dependency. Full Rust verification remains `SPOTTY_CHECK_SCOPE=rust ./Scripts/check.sh`.
 
 Artifact production uses Python 3.11 or newer for dependency-notice generation in addition to the
-engine and Apple toolchains. Python is not an app-build prerequisite. The embedded notices travel into packaged
-apps without regeneration.
+engine and Apple toolchains. Python is not an app-build prerequisite. The embedded notices travel
+into packaged apps without regeneration.
 
 The artifact publication workflow builds the selected source revision with read-only repository
 permissions. The workflow itself runs from main, but `source_ref` can select a reviewed, unmerged
-engine PR commit; publish its artifact and update that PR’s pin before merging. A separate publisher uploads versioned assets without running candidate build code
-with release credentials. The resulting pin is updated in a reviewed source change; app and engine
-releases have separate identities. Verify the downloaded artifact with its checksum and source input
-digest before updating the manifest. Keep source revision, Cargo lock identity, headers, library,
-and required license/source material traceable together.
+engine PR commit; publish its artifact and update that PR’s pin before merging. A separate publisher
+uploads versioned assets without running candidate build code with release credentials. The
+resulting pin is updated in a reviewed source change; app and engine releases have separate
+identities. Verify the downloaded artifact with its checksum and source input digest before updating
+the manifest. Keep source revision, Cargo lock identity, headers, library, and required
+license/source material traceable together.
 
-After the publication workflow is on main, publish an explicitly authorized, reviewed engine commit:
+To publish an explicitly authorized, reviewed engine commit:
 
 ```bash
 gh workflow run playback-artifact.yml --ref main -f source_ref="$reviewed_source_sha"
@@ -185,8 +186,8 @@ and Release. Do not run
 destructive cleanup over unrelated work. `./Scripts/compile-release-spotty.sh` remains the local
 compile-only release command.
 
-Prefer behavior tests over source-text snapshots; regex is not the owner of concurrency, epochs, queue
-provenance, lifecycle, rollback, or payload correctness.
+Prefer behavior tests over source-text snapshots; regex is not the owner of concurrency, epochs,
+queue provenance, lifecycle, rollback, or payload correctness.
 
 ## Package, sign, and notarize
 
@@ -238,6 +239,6 @@ ignored `diagnostics/`. Handle reports according to [PRIVACY.md](PRIVACY.md).
 ## Pull-request execution
 
 A request to open a PR authorizes the agent to create a branch, commit the complete in-scope change,
-push it, open the PR, monitor available checks/reviews during the run, and address automated findings.
-It does not authorize merge, release, tag, repository-setting changes, or issue closure unless the
-request says so.
+push it, open the PR, monitor available checks/reviews during the run, and address automated
+findings. It does not authorize merge, release, tag, repository-setting changes, or issue closure
+unless the request says so.

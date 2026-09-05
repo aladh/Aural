@@ -1,11 +1,12 @@
 # Playback engine ownership
 
-Live inventory for [ADR 005](ADR-005-retain-librespot.md). [ADR 004](ADR-004-swift-owned-playback-logic.md)
-is historical; its staged migration is superseded. Production logic is either
-**librespot/protocol/runtime** in `Backend/spotty-playback` or **Spotty-owned** in Swift.
+Current responsibilities for the retained engine in [ADR 005](ADR-005-retain-librespot.md).
+Private protocol/runtime work stays in `Backend/spotty-playback`; Swift owns application policy and
+presentation. Rust also retains coordination tied to its object lifetimes and streaming cache.
 
-Product behavior belongs in the [product and acceptance contract](product-and-acceptance-contract.md);
-hard-rule owners belong in the [enforcement inventory](architecture-enforcement.md).
+Product behavior belongs in the [product and acceptance
+contract](product-and-acceptance-contract.md); hard-rule owners belong in the [enforcement
+inventory](architecture-enforcement.md).
 
 ## Swift (authoritative app state)
 
@@ -101,7 +102,9 @@ migration plan.
 ## Standing constraints
 
 - Keep PCM, Spirc, session connect, dealer cluster fetch, streaming, decryption, and decoding in
-  the retained Rust/librespot engine. A boundary change requires a new ADR and explicit evidence.
+  the retained Rust/librespot engine. A significant change to this decision requires evidence and a
+  replacement ADR; see the
+  [decision-log guidance](architecture-decisions.md#maintaining-the-decision-log).
 - Rehydrate before announcing readiness. Bootstrapping from the Web API on readiness reopens the
   stale-position window the `resume_pending` hold exists to close.
 - Do not reintroduce `device_name`, `reconnect_attempt`, `connected_since_ms`, or
@@ -129,16 +132,16 @@ and background are window open and closed in the same process.
 | Playing | Background | 20.80% | 262.39 MiB |
 
 Renderer backpressure: of 1,971 one-millisecond playing observations, 1,935 were in the renderer's
-deliberate producer sleep, with no allocator hotspot. A Core Media sample-buffer pool is not
-warranted; the cursor-based renderer is the lower-risk design.
+deliberate producer sleep, with no allocator hotspot. Those measurements did not justify a Core
+Media sample-buffer pool at the time; new optimization decisions need a current baseline.
 
 The measured browse path included surfaces that have since been removed. A rerun must record its
 own commit and surfaces.
 
 ### Binary size
 
-Every CI run's "Release distribution compile" job publishes a size table (app binary,
-the selected content-addressed playback archive, binary segment totals, archive exported symbol count) to the job
+Every CI run's "Release distribution compile" job publishes a size table (app binary, the selected
+content-addressed playback archive, binary segment totals, archive exported symbol count) to the job
 summary via `Scripts/report-size.sh`, and uploads the same data as the `size-report` artifact
 (`size-report.json`, 30-day retention).
 

@@ -1,64 +1,47 @@
 # ADR 005: Retain librespot as the playback engine
 
-Status: accepted on 2026-09-04.
-
-This record supersedes the incremental migration commitment in [ADR 004](ADR-004-swift-owned-playback-logic.md).
-[ADR 001](ADR-001-playback-engine.md)'s contained-boundary and application-ownership principles
-remain accepted. ADR 002 and ADR 003 are unchanged.
+Status: accepted on 2026-09-04. Supersedes [ADR 004](ADR-004-swift-owned-playback-logic.md).
+[ADR 001](ADR-001-playback-engine.md)'s containment decision remains current.
 
 ## Context
 
-Spotty has a working, contained Rust/librespot engine for the private Spotify session, Connect,
-streaming, decryption, decoding, reconnection, and PCM delivery. The merged Swift playback
-experiment created a second audio implementation and additional cross-language seams while the
-shipping path continued to use librespot. Maintaining both paths increases lifecycle, protocol,
-and verification cost without an established product or reliability benefit.
-
-The project therefore retains the existing engine and removes the abandoned replacement experiment
-as a surgical cleanup. The native macOS application, application policy, and AVFoundation output
-remain part of Spotty's architecture.
+Spotty has a working Rust/librespot leaf for private Spotify session, Connect, streaming, decryption,
+decoding, and reconnection. A Swift playback experiment introduced a second implementation and
+additional cross-language lifetimes without an established product or reliability benefit.
+Rewriting the engine would transfer private-protocol maintenance to Spotty rather than remove it.
 
 ## Decision
 
-- The pinned Rust/librespot engine is Spotty's sole production implementation for Spotify session,
-  Connect, streaming, decryption, decoding, reconnection, and playback protocol behavior.
-- Swift owns application policy and presentation: the atomic playback state and reducer, queue and
-  resume policy, catalog, OAuth, persistence, and user-facing error policy. `AudioRenderer` remains
-  the native AVFoundation output for bounded PCM delivered by the engine.
-- Swift reaches the engine through the existing narrow `SpottyPlaybackCore` C boundary and
-  `RustPlaybackEngine`. Typed snapshots carry protocol observations; PCM stays off the observable
-  UI state path. No alternate audio decoder, protocol implementation, engine shim, or runtime
-  selector is part of the production design.
-- The Rust leaf remains contained and replaceable at the boundary. Librespot changes are protocol
-  and license changes that require deliberate review; they are not routine dependency bumps.
-- The applicable ownership principles from ADR 004 remain: one reducer-owned app snapshot, explicit
-  dependency and lifetime ownership, typed boundary data, and behavior-preserving deterministic
-  checks. They do not create a migration roadmap.
+Keep the pinned Rust/librespot leaf as the sole production playback engine and remove the replacement
+experiment. Swift retains application policy and presentation, including playback state, queue and
+resume policy, catalog, OAuth, persistence, and user-facing errors. AVFoundation renders the bounded
+PCM supplied by the engine.
 
-## Consequences
+Keep the narrow C boundary from ADR 001. No alternate decoder, protocol stack, or runtime engine
+selector is part of the production design. The boundary remains replaceable, but there is no staged
+migration or eventual Rust-removal commitment. [ADR 002](ADR-002-playback-state-and-dependencies.md)
+and [ADR 003](ADR-003-playback-command-effects.md) continue to govern application state and effects.
 
-- Debug and Release share one playback implementation, which removes dual-path maintenance and
-  keeps playback behavior aligned with the pinned librespot revision.
-- Spotty continues to carry the Rust toolchain, C ABI, private-protocol compatibility risk, and
-  native PCM bridge. Those costs are accepted in exchange for retaining the working protocol and
-  decoder implementation.
-- Lifecycle, account/session, snapshot, and ABI hardening remain improvements within this retained
-  boundary. They must preserve generation, cancellation, ownership, privacy, and callback-lifetime
-  rules rather than introducing a second protocol state machine.
-- A live-account spike is not required to justify this architectural decision. Live playback and
-  account mutation remain subject to the [safe acceptance contract](product-and-acceptance-contract.md#safe-acceptance-testing).
+## Alternatives and tradeoffs
 
-## Options rejected
+- Continuing staged Swift replacement would retain two implementations and their verification
+  costs. A complete Swift protocol stack has no demonstrated benefit that justifies taking over
+  that maintenance.
+- A supported or desktop-controlled playback mechanism would change the standalone product
+  boundary and needs a separate product decision.
+- Retaining librespot accepts C ABI, callback-lifetime, and private-protocol compatibility costs
+  in exchange for the working implementation. Dependency updates require protocol and license
+  review, not routine version bumps.
 
-- Continue the staged Swift audio/session/Connect replacement: the second implementation would keep
-  the complexity this decision removes and has no established benefit to justify its maintenance.
-- Commit to a complete native Swift protocol stack: this would transfer private-protocol upkeep and
-  verification responsibility to Spotty without a demonstrated need.
-- Add a supported or desktop-controlled playback mechanism: that would change the native standalone
-  product boundary and requires a separate product and integration decision.
+Rust tooling remains necessary for engine development and source CI. Under
+[ADR 006](ADR-006-prebuilt-playback-engine.md), ordinary app builds consume a prebuilt artifact and
+need no Rust installation. This changes distribution, not engine ownership.
+
+Current responsibilities and retained-engine guarantees live in
+[playback engine ownership](playback-engine-ownership.md). Live-account testing remains governed by
+the [safe acceptance contract](product-and-acceptance-contract.md#safe-acceptance-testing).
 
 ## Revisit trigger
 
-Revisit this decision only through a new ADR when a material product requirement or supported
-playback capability changes the boundary, backed by measured reliability, resource, and maintenance
-evidence. This record creates no staged migration, live spike, or eventual Rust-removal commitment.
+Reconsider the engine choice when a material product requirement or supported playback capability
+changes the tradeoff, with evidence about reliability, resource use, and maintenance cost.
