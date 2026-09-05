@@ -62,7 +62,9 @@ claim that Muse matches Cursor's review quality.
 ## Source access and incremental behavior
 
 The model can read, glob and search `source/` at the PR head and `before/` at the comparison
-revision. Raw Git blobs are used, so candidate export-ignore attributes cannot hide source and
+revision. Both bounded diffs are supplied directly to every model pass as untrusted source data
+(identical full/incremental diffs are included once), so seeing changes does not depend on an
+optional file-read tool call. Raw Git blobs are used, so candidate export-ignore attributes cannot hide source and
 symlinks/submodules are never followed. The full PR diff remains available. Prior OpenCode findings
 and bounded event-snapshot PR intent are supplied as untrusted context. Other reviewers' discussion
 is available only to the later synthesis pass under the Thermos condition above.
@@ -151,7 +153,7 @@ The Thermos adaptation passed a local source-only fixture with both a bounds-che
 kept both. Early synthesis retained an unsupported future-edit-count claim; an explicit
 counterexample check removed that claim in the revised run. The fixed snapshot then produced zero
 active findings and explicit resolutions for both original IDs across all three passes. This
-fixture is an integration/calibration check, not a representative accuracy benchmark. Thirty-seven
+fixture is an integration/calibration check, not a representative accuracy benchmark. Focused
 standard-library tests cover lifecycle, parallel isolation, validation, and owned inline publication;
 the live GitHub GraphQL thread query was also verified read-only.
 
@@ -160,6 +162,16 @@ passed on `80d9991`, as did normal PR CI. Its independent quality audit identifi
 validation contracts; synthesis retained that P3 finding and the publisher updated the overview
 and created a [real inline finding](https://github.com/aladh/Spotty/pull/268#discussion_r3939838965).
 This exercises actual GitHub diff publication, beyond mocked API tests.
+
+The [follow-up run](https://github.com/aladh/Spotty/actions/runs/33952672829) on `2ab3f3a`
+retained that ID through a policy-triggered full review and correctly reported it fixed.
+Its traces show concurrent audit starts less than half a second apart, followed by synthesis
+reading both audit JSON files. Publication exposed a GraphQL/REST bot-login mismatch: the overview
+updated, but the inline thread stayed open. The corrected publisher requires GraphQL `Bot` type
+and login `github-actions`; REST retains `github-actions[bot]`. Running the corrected sync locally
+against that real validated report updated and resolved the thread through GitHub's API. This
+local recovery is separate from Actions evidence. The same trace audit motivated supplying diffs
+directly rather than assuming the model would open them.
 
 A separate local fixture adapted the missed-border-pixel bug from PR #261 without supplying
 the historical review or its answer. The correctness audit found the bug and the quality audit

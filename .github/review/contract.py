@@ -33,9 +33,9 @@ def bounded_text(value, limit, label):
     return value.strip()
 
 
-def canonical_finding_id(path, title):
+def canonical_finding_id(path, line, title):
     """Derive the stable ID used when a new model finding omits its ID."""
-    return "F" + hashlib.sha256((path + "\0" + title.casefold()).encode()).hexdigest()[:12]
+    return "F" + hashlib.sha256((path + "\0" + str(line) + "\0" + title.casefold()).encode()).hexdigest()[:12]
 
 
 def validate_finding(item, meta, *, allow_empty_id=False):

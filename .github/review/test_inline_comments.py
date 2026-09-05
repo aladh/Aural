@@ -51,12 +51,15 @@ def thread(
     *,
     resolved=False,
     outdated=False,
-    author=inline_comments.BOT,
+    author=inline_comments.GRAPHQL_BOT_LOGIN,
+    author_type=inline_comments.GRAPHQL_BOT_TYPE,
     body=None,
     comment_id=41,
     url="https://github.example/pull/268#discussion_r41",
     side="RIGHT",
     replies=(),
+    reply_author=inline_comments.GRAPHQL_BOT_LOGIN,
+    reply_author_type=inline_comments.GRAPHQL_BOT_TYPE,
 ):
     comments = [
         {
@@ -64,7 +67,7 @@ def thread(
             "databaseId": comment_id,
             "fullDatabaseId": str(comment_id),
             "body": body if body is not None else marker(identity) + "\n\nOld text",
-            "author": {"login": author},
+            "author": {"login": author, "__typename": author_type},
             "replyTo": None,
             "path": path,
             "line": line,
@@ -80,7 +83,7 @@ def thread(
                 "databaseId": comment_id + offset,
                 "fullDatabaseId": str(comment_id + offset),
                 "body": reply,
-                "author": {"login": inline_comments.BOT},
+                "author": {"login": reply_author, "__typename": reply_author_type},
                 "replyTo": {"id": str(comment_id)},
                 "path": path,
                 "line": line,
@@ -216,6 +219,35 @@ class InlineCommentTests(unittest.TestCase):
         self.assertEqual(github.replies[0][0], "repos/acme/spotty/pulls/268/comments/41/replies")
         self.assertEqual(github.resolutions, ["thread-41"])
 
+    def test_graphql_ownership_requires_bot_type_and_exact_login(self):
+        lookalikes = [
+            thread(author=inline_comments.GRAPHQL_BOT_LOGIN, author_type="User"),
+            thread(author=inline_comments.BOT, author_type=inline_comments.GRAPHQL_BOT_TYPE,
+                   comment_id=42),
+            thread(author="coderabbitai", author_type=inline_comments.GRAPHQL_BOT_TYPE,
+                   comment_id=43),
+        ]
+        github = FakeGitHub(lookalikes)
+        inline_comments.sync(meta(), result([finding()]), "token", github.api, self.check_current())
+
+        self.assertEqual(len(github.created), 1)
+        self.assertEqual(github.patched, [])
+        self.assertEqual(github.replies, [])
+        self.assertEqual(github.resolutions, [])
+
+    def test_supersession_reply_ownership_requires_graphql_bot_identity(self):
+        superseded = f"<!-- spotty-opencode-inline-superseded:v1 id={FINDING_ID} head={HEAD} -->"
+        owned = thread(path=OLD_PATH, line=1, outdated=True, replies=(superseded,))
+        github = FakeGitHub([owned])
+        inline_comments.sync(meta(), result([finding()]), "token", github.api, self.check_current())
+        self.assertEqual(github.replies, [])
+
+        lookalike = thread(path=OLD_PATH, line=1, outdated=True, replies=(superseded,),
+                           reply_author_type="User")
+        github = FakeGitHub([lookalike])
+        inline_comments.sync(meta(), result([finding()]), "token", github.api, self.check_current())
+        self.assertEqual(len(github.replies), 1)
+
     def test_explicit_resolution_updates_and_resolves_only_owned_thread(self):
         existing = thread()
         github = FakeGitHub([existing])
@@ -247,7 +279,7 @@ class InlineCommentTests(unittest.TestCase):
 
     def test_human_and_other_bot_threads_are_never_mutated(self):
         other_bot = thread(author="coderabbitai[bot]")
-        quoted = thread(author=inline_comments.BOT,
+        quoted = thread(author=inline_comments.GRAPHQL_BOT_LOGIN,
                         body="quoted text\n" + marker() + "\nquoted marker")
         github = FakeGitHub([other_bot, quoted])
         inline_comments.sync(meta(), result([finding()]), "token", github.api, self.check_current())

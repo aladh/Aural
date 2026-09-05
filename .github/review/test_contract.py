@@ -39,7 +39,7 @@ class ReviewContractTests(unittest.TestCase):
         raw = finding(identity="", title="  A concrete bug  ")
         normalized = contract.validate_finding(raw, meta(), allow_empty_id=True)
         self.assertEqual(normalized["title"], "A concrete bug")
-        self.assertEqual(contract.canonical_finding_id(PATH, normalized["title"]),
+        self.assertEqual(contract.canonical_finding_id(PATH, normalized["line"], normalized["title"]),
                          review.validate_result(
                              {"summary": "ok", "findings": [raw], "resolved": []},
                              {**meta(), "previous": []},

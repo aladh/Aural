@@ -13,6 +13,8 @@ from contract import MAX_RESOLUTION, bounded_text, safe_path, validate_finding
 
 
 BOT = "github-actions[bot]"
+GRAPHQL_BOT_LOGIN = "github-actions"
+GRAPHQL_BOT_TYPE = "Bot"
 INLINE_MARKER_PREFIX = "<!-- spotty-opencode-inline:v1"
 INLINE_MARKER = INLINE_MARKER_PREFIX
 INLINE_MARKER_RE = re.compile(r"^<!-- spotty-opencode-inline:v1 id=(F[0-9a-f]{12}) -->$")
@@ -45,7 +47,7 @@ query($owner:String!, $name:String!, $number:Int!, $after:String) {
               databaseId
               fullDatabaseId
               body
-              author { login }
+              author { __typename login }
               replyTo { id }
               path
               line
@@ -90,6 +92,11 @@ def _require(condition, message):
 def _escaped(value):
     """Escape untrusted model prose for the HTML-ish GitHub comment body."""
     return html.escape(value, quote=True).replace("@", "&#64;")
+
+
+def _graphql_bot(author):
+    return (isinstance(author, dict) and author.get("__typename") == GRAPHQL_BOT_TYPE
+            and author.get("login") == GRAPHQL_BOT_LOGIN)
 
 
 def _marker(identity):
@@ -251,11 +258,10 @@ def _discover_threads(meta, token, api):
             if not isinstance(first, dict):
                 continue
             author = first.get("author")
-            login = author.get("login") if isinstance(author, dict) else None
             identity = marker_id(first.get("body"))
             # A marker in a later reply, a quoted marker, or a marker from any
             # other actor does not make a thread ours.
-            if login != BOT or identity is None or first.get("replyTo") is not None:
+            if not _graphql_bot(author) or identity is None or first.get("replyTo") is not None:
                 continue
             thread_id = node.get("id")
             _require(isinstance(thread_id, str) and thread_id, "Invalid owned review-thread ID")
@@ -278,10 +284,9 @@ def _discover_threads(meta, token, api):
             reply_records = []
             for reply in comment_nodes[1:]:
                 if isinstance(reply, dict) and isinstance(reply.get("body"), str):
-                    reply_author = reply.get("author")
                     reply_records.append({
                         "body": reply["body"],
-                        "author": reply_author.get("login") if isinstance(reply_author, dict) else None,
+                        "author": reply.get("author"),
                     })
             commit = first.get("commit")
             threads.append({
@@ -343,7 +348,8 @@ def _comment_id(thread):
 
 
 def _reply_once(api, check_current, meta, token, finding, old_thread):
-    if any(record.get("author") == BOT and _superseded(record.get("body"), finding["id"], meta["head"])
+    if any(_graphql_bot(record.get("author"))
+           and _superseded(record.get("body"), finding["id"], meta["head"])
            for record in old_thread.get("replies", [])):
         return
     path = f"repos/{meta['repo']}/pulls/{meta['pr']}/comments/{_comment_id(old_thread)}/replies"
