@@ -57,8 +57,11 @@ or interactive acceptance.
   meaningful duplication.
 - Tests must catch plausible behavioral failures, not mirror implementation or duplicate coverage.
 - Skip obvious comments and production hooks added solely to test trivial code.
-- Keep docs concise and actionable; update the canonical owner instead of adding duplicate guides,
-  implementation narration, or task-history summaries.
+- Before adding documentation, check the canonical owner. Update or replace existing guidance
+  rather than appending another explanation. Keep details that affect decisions, safe execution,
+  or verification; omit task history, obvious code narration, and repeated rationale. Link to
+  existing rules, and remove wording made redundant by the change. Use judgment: brevity must not
+  erase useful constraints or tradeoffs.
 
 ## Local verification
 
