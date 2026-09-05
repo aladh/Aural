@@ -29,6 +29,87 @@ pub(crate) fn player_event_disposition(
     }
 }
 
+/// Identity owned by one player-event listener.
+///
+/// At the pinned librespot revision, `PlayerInternal::handle_command_load` emits
+/// `PlayRequestIdChanged` before `Loading`, and both a current-load failure and a preload failure
+/// emit `Unavailable`. The latter reuses the active Playing/Paused request id for the preload
+/// track. Keeping the latest request id and the track observed in its matching `Loading` event
+/// lets the adapter tell those cases apart without a process-global state owner.
+#[derive(Debug, Default, PartialEq, Eq)]
+struct PlayerRequestState {
+    current_play_request_id: Option<u64>,
+    loading_track_uri: Option<String>,
+}
+
+impl PlayerRequestState {
+    fn play_request_id_changed(&mut self, play_request_id: u64) {
+        self.current_play_request_id = Some(play_request_id);
+        self.loading_track_uri = None;
+    }
+
+    /// Records only a Loading event belonging to the latest request. A Loading event from an old
+    /// request must not arm the unavailable notice for a later event.
+    fn loading(&mut self, play_request_id: u64, track_uri: String) -> bool {
+        if self.current_play_request_id != Some(play_request_id) {
+            return false;
+        }
+        self.loading_track_uri = Some(track_uri);
+        true
+    }
+
+    /// Playing and Paused are terminal transitions for the pending load. A preload failure that
+    /// arrives while either state is active therefore cannot look like the current load failing,
+    /// even when librespot reuses the same request id and URI.
+    fn playing_or_paused(&mut self, play_request_id: u64) {
+        if self.current_play_request_id == Some(play_request_id) {
+            self.loading_track_uri = None;
+        }
+    }
+
+    fn stopped_or_ended(&mut self, play_request_id: u64) {
+        if self.current_play_request_id == Some(play_request_id) {
+            self.clear();
+        }
+    }
+
+    fn disconnected(&mut self) {
+        self.clear();
+    }
+
+    /// Consumes a matching pending load so duplicate Unavailable events can never emit a second
+    /// notice. The event id and URI are both checked because the pinned upstream event channel
+    /// can carry a late event for a prior request.
+    fn take_matching_unavailable(&mut self, play_request_id: u64, track_uri: &str) -> bool {
+        let matches = self.matches_current_unavailable(play_request_id, track_uri);
+        if matches {
+            self.clear();
+        }
+        matches
+    }
+
+    fn matches_current_unavailable(&self, play_request_id: u64, track_uri: &str) -> bool {
+        self.current_play_request_id == Some(play_request_id)
+            && self.loading_track_uri.as_deref() == Some(track_uri)
+    }
+
+    fn clear(&mut self) {
+        self.current_play_request_id = None;
+        self.loading_track_uri = None;
+    }
+}
+
+/// Reads the logical current-track identity without crossing into the callback. This is checked
+/// while the generation mutation gate is held before an unavailable event can change playback
+/// state, so a late event cannot overwrite a newer track's position or playing flag.
+fn current_track_uri_matches(track_uri: &str) -> bool {
+    CURRENT_TRACK_URI
+        .lock()
+        .unwrap_or_else(|error| error.into_inner())
+        .as_deref()
+        == Some(track_uri)
+}
+
 /// Live position captured at `SessionDisconnected`. Zero is how a missing baton reads, so a
 /// second disconnect after `Stopped` reset the live position must not overwrite a good one.
 pub(crate) fn resume_position_to_save_on_deactivation(live_position_ms: u32) -> Option<u32> {
@@ -52,6 +133,11 @@ pub(crate) fn start_player_event_pump(
     let (tx, mut rx) = mpsc::unbounded_channel::<()>();
     let player_keepalive = Arc::clone(&player);
     let task = RUNTIME.spawn(async move {
+        // The upstream PlayerEvent stream carries a PlayRequestIdChanged event before each
+        // requested load. Keep that identity with this listener so an Unavailable event can be
+        // distinguished from a preload failure without introducing another process-global
+        // owner. The state dies with this generation's listener.
+        let mut request_state = PlayerRequestState::default();
         loop {
             tokio::select! {
                 _ = rx.recv() => {
@@ -75,7 +161,7 @@ pub(crate) fn start_player_event_pump(
                         PlayerEventDisposition::IgnoreSuperseded => continue,
                         PlayerEventDisposition::ChannelClosed => break,
                         PlayerEventDisposition::Apply(event) => {
-                            apply_player_event(event, generation);
+                            apply_player_event(event, generation, &mut request_state);
                         }
                     }
                 }
@@ -105,13 +191,22 @@ impl PlayerEventNotification {
     }
 }
 
-fn apply_player_event(event: PlayerEvent, event_listener_generation: u64) {
+fn apply_player_event(
+    event: PlayerEvent,
+    event_listener_generation: u64,
+    request_state: &mut PlayerRequestState,
+) {
     let Some(applied) = with_current_generation_mutation(event_listener_generation, || {
         let mut applied = AppliedPlayerEvent {
             notifications: Vec::with_capacity(2),
             recovery: None,
         };
-        apply_player_event_locked(event, event_listener_generation, &mut applied);
+        apply_player_event_locked(
+            event,
+            event_listener_generation,
+            request_state,
+            &mut applied,
+        );
         applied
     }) else {
         return;
@@ -128,14 +223,23 @@ fn apply_player_event(event: PlayerEvent, event_listener_generation: u64) {
 fn apply_player_event_locked(
     event: PlayerEvent,
     event_listener_generation: u64,
+    request_state: &mut PlayerRequestState,
     applied: &mut AppliedPlayerEvent,
 ) {
     match event {
+        // Mirror librespot's Spirc request filter. The event is emitted before each load and
+        // carries no track, so the following Loading event supplies the URI for the identity
+        // check used by Unavailable.
+        PlayerEvent::PlayRequestIdChanged { play_request_id } => {
+            request_state.play_request_id_changed(play_request_id);
+        }
         PlayerEvent::Playing {
             track_id,
             position_ms,
+            play_request_id,
             ..
         } => {
+            request_state.playing_or_paused(play_request_id);
             let track_uri = track_id.to_string();
             debug!(
                 "PlayerEvent::Playing: logical track {} at {}ms",
@@ -169,8 +273,10 @@ fn apply_player_event_locked(
         PlayerEvent::Paused {
             track_id,
             position_ms,
+            play_request_id,
             ..
         } => {
+            request_state.playing_or_paused(play_request_id);
             let track_uri = track_id.to_string();
             debug!(
                 "PlayerEvent::Paused: logical track {} at {}ms",
@@ -204,7 +310,10 @@ fn apply_player_event_locked(
             );
             update_position(position_ms);
         }
-        PlayerEvent::Stopped { .. } => {
+        PlayerEvent::Stopped {
+            play_request_id, ..
+        } => {
+            request_state.stopped_or_ended(play_request_id);
             // Deliberately does not touch active-device state: playback
             // stopping is not the same as losing the active Connect role.
             // This used to clear it, which fought the cluster-derived value
@@ -222,7 +331,11 @@ fn apply_player_event_locked(
             IS_PLAYING.store(false, Ordering::SeqCst);
             update_position(0);
         }
-        PlayerEvent::EndOfTrack { track_id, .. } => {
+        PlayerEvent::EndOfTrack {
+            track_id,
+            play_request_id,
+        } => {
+            request_state.stopped_or_ended(play_request_id);
             // Logged with the position it ended at: a natural end and a
             // stream that stopped early are otherwise indistinguishable in
             // the log, because Spirc's auto-advance is silent on success.
@@ -288,10 +401,14 @@ fn apply_player_event_locked(
         PlayerEvent::Loading {
             track_id,
             position_ms,
+            play_request_id,
             ..
         } => {
             let track_uri_str = track_id.to_string();
             debug!("Loading event: {} at {}ms", track_uri_str, position_ms);
+            if !request_state.loading(play_request_id, track_uri_str.clone()) {
+                return;
+            }
 
             // Both, together. The position and the track URI are read as a
             // pair — a resume load seeks `POSITION_MS` within
@@ -310,6 +427,38 @@ fn apply_player_event_locked(
             // value. The baton is handed from the saved point to the live
             // one, and a retry after a load that never plays still finds it.
             RESUME_POSITION_MS.store(0, Ordering::SeqCst);
+        }
+        PlayerEvent::Unavailable {
+            track_id,
+            play_request_id,
+        } => {
+            let track_uri = track_id.to_string();
+            // The listener identity and the shared logical track must agree before this event
+            // can mutate any playback state. Keeping this comparison inside the generation gate
+            // closes the race with a newer Loading event.
+            let is_current_load = current_track_uri_matches(&track_uri)
+                && request_state.matches_current_unavailable(play_request_id, &track_uri);
+
+            // librespot reuses the active Playing/Paused request id when a preload fails. The
+            // listener state is armed only by a matching Loading event, so that case is ignored.
+            // Consume the listener-owned identity even when the device became inactive between
+            // receipt and application. A deactivated local device must still not mutate playback
+            // globals or surface an actionable notice for a remote owner.
+            if is_current_load
+                && request_state.take_matching_unavailable(play_request_id, &track_uri)
+                && is_active_device()
+            {
+                IS_PLAYING.store(false, Ordering::SeqCst);
+                update_position(0);
+                if let Some(notification) = capture_local_playback_unavailable(
+                    POSITION_MS.load(Ordering::SeqCst),
+                    event_listener_generation,
+                ) {
+                    applied
+                        .notifications
+                        .push(PlayerEventNotification::Playback(notification));
+                }
+            }
         }
         PlayerEvent::SetQueue {
             context_uri,
@@ -338,6 +487,7 @@ fn apply_player_event_locked(
             connection_id,
             user_name: _,
         } => {
+            request_state.disconnected();
             // Account identifiers stay out of public logs; connection_id is session context.
             debug!(
                 "[WAKE +{}ms] became inactive (SessionDisconnected): connection_id={}, listener_generation={}",
@@ -510,6 +660,207 @@ mod player_event_pump_policy {
         assert_eq!(resume_position_to_save_on_deactivation(0), None);
     }
 
+    #[test]
+    fn current_loading_request_is_consumed_once_for_unavailable() {
+        let mut state = PlayerRequestState::default();
+        state.play_request_id_changed(7);
+        state.loading(7, "spotify:track:current".to_string());
+
+        assert!(state.matches_current_unavailable(7, "spotify:track:current"));
+        assert!(state.take_matching_unavailable(7, "spotify:track:current"));
+        assert!(!state.take_matching_unavailable(7, "spotify:track:current"));
+    }
+
+    #[test]
+    fn stale_unavailable_does_not_consume_the_current_load() {
+        let mut state = PlayerRequestState::default();
+        state.play_request_id_changed(8);
+        state.loading(8, "spotify:track:current".to_string());
+
+        assert!(!state.take_matching_unavailable(7, "spotify:track:stale"));
+        assert!(state.take_matching_unavailable(8, "spotify:track:current"));
+    }
+
+    #[test]
+    fn preload_failure_for_the_same_track_is_not_a_current_load_failure() {
+        let mut state = PlayerRequestState::default();
+        state.play_request_id_changed(9);
+        state.loading(9, "spotify:track:same".to_string());
+        // The successful current load moved the listener out of Loading. Librespot's subsequent
+        // preload failure reuses this request id, so URI and id alone are insufficient.
+        state.playing_or_paused(9);
+
+        assert!(!state.take_matching_unavailable(9, "spotify:track:same"));
+    }
+
+    #[test]
+    fn inactive_unavailable_consumes_request_without_mutating_playback() {
+        let _guard = lock_lifecycle_test_globals();
+        let _restore = RestorePlaybackGlobals(capture_playback_globals());
+        let uri = "spotify:track:0000000000000000000004";
+        set_current_track_uri(uri.to_string());
+        store_active_device(false);
+        IS_PLAYING.store(true, Ordering::SeqCst);
+        POSITION_MS.store(4_321, Ordering::SeqCst);
+        let mut state = PlayerRequestState::default();
+        state.play_request_id_changed(10);
+        state.loading(10, uri.to_string());
+
+        apply_current_generation_event_with_state(
+            PlayerEvent::Unavailable {
+                play_request_id: 10,
+                track_id: parse_spotify_uri(uri).expect("synthetic track URI"),
+            },
+            1,
+            &mut state,
+        );
+
+        assert_eq!(state, PlayerRequestState::default());
+        assert!(IS_PLAYING.load(Ordering::SeqCst));
+        assert_eq!(POSITION_MS.load(Ordering::SeqCst), 4_321);
+    }
+
+    #[test]
+    fn stale_loading_does_not_disarm_the_newer_request() {
+        let mut state = PlayerRequestState::default();
+        state.play_request_id_changed(12);
+        state.loading(12, "spotify:track:new".to_string());
+
+        state.loading(11, "spotify:track:old".to_string());
+
+        assert!(state.take_matching_unavailable(12, "spotify:track:new"));
+    }
+
+    #[test]
+    fn deactivation_clears_pending_unavailable_identity() {
+        let mut state = PlayerRequestState::default();
+        state.play_request_id_changed(13);
+        state.loading(13, "spotify:track:inactive".to_string());
+
+        state.disconnected();
+
+        assert!(!state.take_matching_unavailable(13, "spotify:track:inactive"));
+    }
+
+    #[test]
+    fn mismatched_shared_track_leaves_playback_globals_untouched() {
+        let _guard = lock_lifecycle_test_globals();
+        let _restore = RestorePlaybackGlobals(capture_playback_globals());
+        *CURRENT_TRACK_URI
+            .lock()
+            .unwrap_or_else(|error| error.into_inner()) =
+            Some("spotify:track:0000000000000000000001".to_string());
+        IS_PLAYING.store(true, Ordering::SeqCst);
+        POSITION_MS.store(4_321, Ordering::SeqCst);
+        store_active_device(true);
+
+        let mut state = PlayerRequestState::default();
+        state.play_request_id_changed(14);
+        state.loading(14, "spotify:track:0000000000000000000002".to_string());
+        apply_current_generation_event_with_state(
+            PlayerEvent::Unavailable {
+                play_request_id: 14,
+                track_id: parse_spotify_uri("spotify:track:0000000000000000000002")
+                    .expect("synthetic track URI"),
+            },
+            1,
+            &mut state,
+        );
+
+        assert!(IS_PLAYING.load(Ordering::SeqCst));
+        assert_eq!(POSITION_MS.load(Ordering::SeqCst), 4_321);
+        assert!(state.matches_current_unavailable(14, "spotify:track:0000000000000000000002"));
+    }
+
+    #[test]
+    fn current_unavailable_emits_one_flagged_local_snapshot() {
+        static CALLBACK_COUNT: AtomicU32 = AtomicU32::new(0);
+        static CALLBACK_UNAVAILABLE: AtomicU8 = AtomicU8::new(0);
+
+        extern "C" fn capture(snapshot: *const SpottyPlaybackSnapshot) {
+            let snapshot = unsafe { &*snapshot };
+            CALLBACK_COUNT.fetch_add(1, Ordering::SeqCst);
+            CALLBACK_UNAVAILABLE.store(snapshot.track_unavailable, Ordering::SeqCst);
+        }
+
+        struct RestorePlaybackCallback(Option<PlaybackSnapshotCallback>);
+
+        impl Drop for RestorePlaybackCallback {
+            fn drop(&mut self) {
+                *CONTROL_CALLBACKS
+                    .playback_state
+                    .lock()
+                    .unwrap_or_else(|error| error.into_inner()) = self.0;
+            }
+        }
+
+        let _guard = lock_lifecycle_test_globals();
+        let _restore_globals = RestorePlaybackGlobals(capture_playback_globals());
+        let previous_callback = *CONTROL_CALLBACKS
+            .playback_state
+            .lock()
+            .unwrap_or_else(|error| error.into_inner());
+        let _restore_callback = RestorePlaybackCallback(previous_callback);
+        *CONTROL_CALLBACKS
+            .playback_state
+            .lock()
+            .unwrap_or_else(|error| error.into_inner()) = Some(capture);
+        CALLBACK_COUNT.store(0, Ordering::SeqCst);
+        CALLBACK_UNAVAILABLE.store(0, Ordering::SeqCst);
+
+        store_active_device(true);
+        let track_uri = "spotify:track:0000000000000000000003";
+        let track_id = parse_spotify_uri(track_uri).expect("synthetic track URI");
+        let mut state = PlayerRequestState::default();
+        apply_current_generation_event_with_state(
+            PlayerEvent::PlayRequestIdChanged {
+                play_request_id: 15,
+            },
+            1,
+            &mut state,
+        );
+        apply_current_generation_event_with_state(
+            PlayerEvent::Loading {
+                play_request_id: 15,
+                track_id: track_id.clone(),
+                position_ms: 0,
+            },
+            1,
+            &mut state,
+        );
+        apply_current_generation_event_with_state(
+            PlayerEvent::Loading {
+                play_request_id: 14,
+                track_id: parse_spotify_uri("spotify:track:0000000000000000000004")
+                    .expect("synthetic stale track URI"),
+                position_ms: 9_999,
+            },
+            1,
+            &mut state,
+        );
+        assert!(current_track_uri_matches(track_uri));
+        assert_eq!(POSITION_MS.load(Ordering::SeqCst), 0);
+        apply_current_generation_event_with_state(
+            PlayerEvent::Unavailable {
+                play_request_id: 15,
+                track_id: track_id.clone(),
+            },
+            1,
+            &mut state,
+        );
+        apply_current_generation_event_with_state(
+            PlayerEvent::Unavailable {
+                play_request_id: 15,
+                track_id,
+            },
+            1,
+            &mut state,
+        );
+
+        assert_eq!(CALLBACK_COUNT.load(Ordering::SeqCst), 1);
+        assert_eq!(CALLBACK_UNAVAILABLE.load(Ordering::SeqCst), 1);
+    }
+
     fn synthetic_track() -> SpotifyUri {
         parse_spotify_uri("spotify:track:0000000000000000000000").expect("synthetic track URI")
     }
@@ -523,8 +874,17 @@ mod player_event_pump_policy {
     }
 
     fn apply_current_generation_event(event: PlayerEvent, generation: u64) {
+        let mut request_state = PlayerRequestState::default();
+        apply_current_generation_event_with_state(event, generation, &mut request_state);
+    }
+
+    fn apply_current_generation_event_with_state(
+        event: PlayerEvent,
+        generation: u64,
+        request_state: &mut PlayerRequestState,
+    ) {
         let previous_generation = SESSION_GENERATION.swap(generation, Ordering::SeqCst);
-        apply_player_event(event, generation);
+        apply_player_event(event, generation, request_state);
         SESSION_GENERATION.store(previous_generation, Ordering::SeqCst);
     }
 
@@ -646,13 +1006,16 @@ mod player_event_pump_policy {
         *CURRENT_TRACK_URI.lock().unwrap_or_else(|e| e.into_inner()) =
             Some("spotify:track:outgoing".to_string());
 
-        apply_current_generation_event(
+        let mut request_state = PlayerRequestState::default();
+        request_state.play_request_id_changed(1);
+        apply_current_generation_event_with_state(
             PlayerEvent::Loading {
                 play_request_id: 1,
                 track_id: synthetic_track(),
                 position_ms: 250,
             },
             1,
+            &mut request_state,
         );
 
         assert_eq!(POSITION_MS.load(Ordering::SeqCst), 250);

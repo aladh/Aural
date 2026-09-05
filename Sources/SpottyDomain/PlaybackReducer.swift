@@ -50,6 +50,15 @@ public enum PlaybackReducer {
             reconcileOwner(owner, source: envelope.source, in: &candidate)
         case let .enginePlayback(snapshot):
             let incomingURI = playbackTrackURI(snapshot.trackURI)
+            // A one-shot failure that names anything other than an optimistic play target is a
+            // stale callback. Reject it before identity, transport, or source revision changes so
+            // the newer target remains visible and a later matching sample can still be accepted.
+            if snapshot.trackUnavailable,
+                let expectedURI = playbackTrackURI(candidate.pendingCommands[.transport]?.expectedTrack?.uri),
+                incomingURI != expectedURI
+            {
+                return false
+            }
             if shouldHoldOptimisticPlayTarget(incomingURI: incomingURI, in: candidate) {
                 applyEnginePlaybackOptions(snapshot, in: &candidate)
             } else {
@@ -78,8 +87,12 @@ public enum PlaybackReducer {
                 reconcileTransport(
                     candidate.currentTrack == nil ? .stopped : snapshot.transport,
                     incomingTrackURI: incomingURI,
+                    isTrackUnavailable: snapshot.trackUnavailable,
                     in: &candidate
                 )
+                if snapshot.trackUnavailable, incomingURI != nil {
+                    candidate.notice = PlaybackNotice(message: PlaybackNotice.trackUnavailableMessage)
+                }
             }
         case let .engineConnection(snapshot):
             if let session = snapshot.session { candidate.session = session }
@@ -296,6 +309,7 @@ public enum PlaybackReducer {
     private static func reconcileTransport(
         _ transport: PlaybackTransportState,
         incomingTrackURI: String?,
+        isTrackUnavailable: Bool = false,
         in state: inout PlaybackState
     ) {
         if let pending = state.pendingCommands[.transport],
@@ -307,7 +321,8 @@ public enum PlaybackReducer {
                 return
             }
             if let expected = pending.expectedTransport, transport != expected {
-                state.transport = expected
+                // A failed target overrides optimistic transport until command completion.
+                state.transport = isTrackUnavailable ? transport : expected
             } else {
                 state.transport = transport
                 if pending.expectedTransport == nil || pending.expectedTransport == transport {

@@ -82,7 +82,10 @@ Control observations for connection, playback, devices, and queue are typed C sn
 - `SpottyConnectionSnapshot`: `session_connected`, `spirc_ready`, `is_active_device`,
   `resume_pending`, `credentials_rejected`, `device_id`, `last_error`.
 - `SpottyPlaybackSnapshot`: protocol playing/paused flags, track URI, context URI, timing,
-  shuffle/repeat options, and the active-device fact needed for coherent transport projection.
+  shuffle/repeat options, the active-device fact needed for coherent transport projection, and a
+  one-observation `track_unavailable` flag for a failed current local load. Ordinary snapshots
+  clear the flag; Rust filters request identity and preload failures, while Swift owns the
+  actionable notice and its accepted-lifetime/optimistic-target presentation policy.
 - `SpottyDevicesSnapshot`: protocol members (`id`, `name`, type name) plus `active_device_id`.
 - `SpottyQueueSnapshot`: unfiltered protocol rows, slim current-track identity, `queue_revision`,
   and replacement-disallow flags.

@@ -39,6 +39,7 @@ nonisolated enum PlaybackCore {
             shuffle: snapshot.shuffle != 0,
             repeatTrack: snapshot.repeat_track != 0,
             repeatContext: snapshot.repeat_context != 0,
+            trackUnavailable: snapshot.track_unavailable != 0,
             isActiveDevice: snapshot.is_active_device != 0
         )
     }

@@ -47,6 +47,7 @@ public enum PlaybackSnapshotProjection: Sendable {
         shuffle: Bool?,
         repeatContext: Bool,
         repeatTrack: Bool,
+        trackUnavailable: Bool = false,
         isInitialSnapshot: Bool,
         isActiveDevice: Bool,
         receivedAt: Date
@@ -59,9 +60,10 @@ public enum PlaybackSnapshotProjection: Sendable {
             isActiveDevice: isActiveDevice
         )
         let flags = RepeatFlags(context: repeatContext, track: repeatTrack)
+        let resolvedURI = resolvedTrackURI(trackURI)
         return EnginePlaybackSnapshot(
             transport: transport,
-            trackURI: resolvedTrackURI(trackURI),
+            trackURI: resolvedURI,
             timing: PlaybackTiming(
                 position: playbackSnapshotPosition(
                     positionMilliseconds: positionMilliseconds,
@@ -73,6 +75,9 @@ public enum PlaybackSnapshotProjection: Sendable {
                 duration: TimeInterval(max(0, durationMilliseconds)) / 1_000,
                 anchoredAt: receivedAt
             ),
+            // The Rust flag is meaningful only for a local active observation with a concrete
+            // track identity. This prevents remote and empty-URI samples from becoming notices.
+            trackUnavailable: trackUnavailable && isActiveDevice && resolvedURI != nil,
             shuffle: shuffle,
             repeatMode: RepeatMode(context: flags.context, track: flags.track),
             repeatFlags: flags

@@ -330,13 +330,13 @@ extension PlaybackStore {
     }
 
     func showTransientCommandError(_ message: String) {
-        setNotice(message)
+        guard let noticeID = setNotice(message) else { return }
         effects.replace(
             .commandError,
             with: Task { [weak self] in
                 try? await self?.environment.clock.sleep(seconds: 4)
                 guard !Task.isCancelled else { return }
-                self?.setNotice(nil)
+                self?.dismissPlaybackNotice(id: noticeID)
             })
     }
 

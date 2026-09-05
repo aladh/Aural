@@ -1141,4 +1141,98 @@ struct PlaybackEventOutcomeTests {
         )
         await player.shutdownForTermination()
     }
+
+    @Test
+    @MainActor
+    func testPlaybackUnavailableIntakeSurfacesOnlyAcceptedLocalFailures() async {
+        let receivedAt = Date(timeIntervalSince1970: 1_800_000_100)
+        let localURI = "spotify:track:boundary-unavailable"
+        let local = playbackStore(outcomeEnvironment(remote: ImmediateMetadataRemote()))
+        seedReadyLocalPlayback(local, uri: localURI)
+
+        local.receive(
+            RustPlaybackState(
+                revision: 11,
+                sessionGeneration: local.engineGeneration,
+                isPlaying: false,
+                isPaused: true,
+                trackURI: localURI,
+                positionMS: 0,
+                durationMS: 180_000,
+                timestampMS: 0,
+                shuffle: false,
+                repeatTrack: false,
+                repeatContext: false,
+                trackUnavailable: true,
+                isActiveDevice: true
+            ),
+            revision: 11,
+            receivedAt: receivedAt
+        )
+        #expect(
+            (local.playbackNotice?.message) == (PlaybackNotice.trackUnavailableMessage),
+            "an accepted local engine failure reaches the store notice"
+        )
+        let noticeID = local.playbackNotice?.id
+        local.dismissPlaybackNotice(id: UUID())
+        #expect((local.playbackNotice?.id) == (noticeID), "dismissal ignores an unrelated notice identity")
+        if let noticeID {
+            local.dismissPlaybackNotice(id: noticeID)
+        }
+        #expect((local.playbackNotice) == nil, "the matching notice identity can be dismissed")
+
+        let remote = playbackStore(outcomeEnvironment(remote: ImmediateMetadataRemote()))
+        seedReadyLocalPlayback(remote, uri: "spotify:track:remote-unavailable")
+        _ = remote.send(
+            .owner(.remote(PlaybackDevice(id: "speaker", name: "Speaker", type: "speaker"))),
+            source: .engineConnection
+        )
+        remote.receive(
+            RustPlaybackState(
+                revision: 1,
+                sessionGeneration: remote.engineGeneration,
+                isPlaying: false,
+                isPaused: true,
+                trackURI: "spotify:track:remote-unavailable",
+                positionMS: 0,
+                durationMS: 180_000,
+                timestampMS: 0,
+                shuffle: false,
+                repeatTrack: false,
+                repeatContext: false,
+                trackUnavailable: true,
+                isActiveDevice: false
+            ),
+            revision: 1,
+            receivedAt: receivedAt
+        )
+        #expect((remote.playbackNotice) == nil, "a remote engine sample cannot create a notice")
+
+        let empty = playbackStore(outcomeEnvironment(remote: ImmediateMetadataRemote()))
+        seedReadyLocalPlayback(empty, uri: "spotify:track:empty-unavailable")
+        empty.receive(
+            RustPlaybackState(
+                revision: 1,
+                sessionGeneration: empty.engineGeneration,
+                isPlaying: false,
+                isPaused: true,
+                trackURI: "",
+                positionMS: 0,
+                durationMS: 0,
+                timestampMS: 0,
+                shuffle: false,
+                repeatTrack: false,
+                repeatContext: false,
+                trackUnavailable: true,
+                isActiveDevice: true
+            ),
+            revision: 1,
+            receivedAt: receivedAt
+        )
+        #expect((empty.playbackNotice) == nil, "an empty URI cannot create a notice")
+
+        await local.shutdownForTermination()
+        await remote.shutdownForTermination()
+        await empty.shutdownForTermination()
+    }
 }

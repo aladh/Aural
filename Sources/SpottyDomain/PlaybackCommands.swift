@@ -85,6 +85,9 @@ public enum PlaybackTransportCommandResolution: Equatable, Sendable {
 }
 
 public struct PlaybackNotice: Equatable, Sendable {
+    public static let trackUnavailableMessage =
+        "Spotify could not play that track. Try it again or choose another track."
+
     public let id: UUID
     public let message: String
 

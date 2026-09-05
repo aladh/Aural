@@ -26,6 +26,7 @@ struct EnginePayloadContractTests {
         snapshot.repeat_track = 0
         snapshot.repeat_context = 2
         snapshot.is_active_device = 2
+        snapshot.track_unavailable = 2
         snapshot.track_uri = UnsafePointer(track)
 
         let state = withUnsafePointer(to: &snapshot) { PlaybackCore.playbackState(from: $0) }
@@ -43,11 +44,14 @@ struct EnginePayloadContractTests {
         #expect((state?.repeatTrack) == (false), "track repeat flag is decoded")
         #expect((state?.repeatContext) == (true), "context repeat flag is decoded")
         #expect((state?.isActiveDevice) == (true), "active-device fact is decoded")
+        #expect((state?.trackUnavailable) == (true), "track-unavailable flag is decoded")
         #expect((state?.trackURI) == ("spotify:track:before"), "track URI is copied before callback return")
 
         snapshot.track_uri = nil
+        snapshot.track_unavailable = 0
         let missing = withUnsafePointer(to: &snapshot) { PlaybackCore.playbackState(from: $0) }
         #expect((missing?.trackURI) == (""), "a missing playback track maps to an empty identity")
+        #expect((missing?.trackUnavailable) == (false), "an ordinary playback snapshot is not unavailable")
     }
 
     @Test

@@ -84,6 +84,7 @@ func positiveImportContract() {
         let active: UnsafePointer<CChar>? = devices.active_device_id
         let playbackTrack: UnsafePointer<CChar>? = playback.track_uri
         let playbackContext: UnsafePointer<CChar>? = playback.context_uri
+        let playbackUnavailable: UInt8 = playback.track_unavailable
         _ = (
             next,
             previous,
@@ -95,7 +96,8 @@ func positiveImportContract() {
             key,
             active,
             playbackTrack,
-            playbackContext
+            playbackContext,
+            playbackUnavailable
         )
     }
 

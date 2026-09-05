@@ -2484,7 +2484,6 @@ dependencies = [
  "http",
  "librespot-connect",
  "librespot-core",
- "librespot-metadata",
  "librespot-playback",
  "librespot-protocol",
  "log",
@@ -2493,7 +2492,6 @@ dependencies = [
  "serde",
  "serde_json",
  "tokio",
- "tokio-stream",
 ]
 
 [[package]]

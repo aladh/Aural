@@ -188,6 +188,10 @@ pub(crate) fn send_connection_snapshot(
 pub(crate) struct PlaybackObservation {
     pub is_playing: bool,
     pub is_paused: bool,
+    /// True only for the one local snapshot that reports the current requested track's
+    /// unavailable event. Protocol snapshots and ordinary local transport updates keep this
+    /// false; Swift owns the presentation of the actionable notice.
+    pub track_unavailable: bool,
     pub track_uri: String,
     pub context_uri: String,
     pub position_ms: i64,
@@ -205,6 +209,10 @@ pub(crate) struct PlaybackObservation {
 ///
 /// `is_active_device` is the protocol active-member fact captured with this observation;
 /// it is independent of the arrival order of the connection callback.
+///
+/// `track_unavailable` is set only on the local callback corresponding to a current requested
+/// track whose load failed. It is never set on protocol snapshots, preload failures, stale
+/// request events, or snapshots from an inactive device.
 #[repr(C)]
 pub struct SpottyPlaybackSnapshot {
     pub revision: u64,
@@ -214,6 +222,7 @@ pub struct SpottyPlaybackSnapshot {
     pub timestamp_ms: i64,
     pub is_playing: u8,
     pub is_paused: u8,
+    pub track_unavailable: u8,
     pub shuffle: u8,
     pub repeat_track: u8,
     pub repeat_context: u8,
@@ -241,6 +250,7 @@ pub(crate) fn send_playback_snapshot(
         timestamp_ms: observation.timestamp_ms,
         is_playing: u8::from(observation.is_playing),
         is_paused: u8::from(observation.is_paused),
+        track_unavailable: u8::from(observation.track_unavailable),
         shuffle: u8::from(observation.shuffle),
         repeat_track: u8::from(observation.repeat_track),
         repeat_context: u8::from(observation.repeat_context),

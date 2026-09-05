@@ -18,6 +18,9 @@ nonisolated struct RustPlaybackState: Sendable {
     let shuffle: Bool
     let repeatTrack: Bool
     let repeatContext: Bool
+    /// One-shot local current-request failure from the retained engine. Synthetic callers that
+    /// predate the wire field receive the safe default.
+    let trackUnavailable: Bool
     /// Active-member fact captured with the same Connect player observation.
     /// The initializer defaults this for synthetic callers that predate the wire field.
     let isActiveDevice: Bool
@@ -34,6 +37,7 @@ nonisolated struct RustPlaybackState: Sendable {
         shuffle: Bool,
         repeatTrack: Bool,
         repeatContext: Bool,
+        trackUnavailable: Bool = false,
         isActiveDevice: Bool = false
     ) {
         self.revision = revision
@@ -47,6 +51,7 @@ nonisolated struct RustPlaybackState: Sendable {
         self.shuffle = shuffle
         self.repeatTrack = repeatTrack
         self.repeatContext = repeatContext
+        self.trackUnavailable = trackUnavailable
         self.isActiveDevice = isActiveDevice
     }
 }
@@ -537,8 +542,16 @@ final class PlaybackStore {
         send(.options(options), source: .user)
     }
 
-    func setNotice(_ message: String?) {
-        send(.notice(message.map { PlaybackNotice(message: $0) }), source: .user)
+    @discardableResult
+    func setNotice(_ message: String?) -> UUID? {
+        let notice = message.map { PlaybackNotice(message: $0) }
+        guard send(.notice(notice), source: .user) else { return nil }
+        return notice?.id
+    }
+
+    func dismissPlaybackNotice(id: UUID) {
+        guard state.notice?.id == id else { return }
+        _ = send(.notice(nil), source: .user)
     }
 }
 

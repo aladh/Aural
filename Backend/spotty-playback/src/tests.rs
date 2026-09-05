@@ -1048,6 +1048,7 @@ int main(void) {
     EMIT_FIELD(SpottyPlaybackSnapshot, timestamp_ms);
     EMIT_FIELD(SpottyPlaybackSnapshot, is_playing);
     EMIT_FIELD(SpottyPlaybackSnapshot, is_paused);
+    EMIT_FIELD(SpottyPlaybackSnapshot, track_unavailable);
     EMIT_FIELD(SpottyPlaybackSnapshot, shuffle);
     EMIT_FIELD(SpottyPlaybackSnapshot, repeat_track);
     EMIT_FIELD(SpottyPlaybackSnapshot, repeat_context);
@@ -1229,6 +1230,7 @@ int main(void) {
         timestamp_ms,
         is_playing,
         is_paused,
+        track_unavailable,
         shuffle,
         repeat_track,
         repeat_context,
@@ -1421,6 +1423,7 @@ fn playback_snapshot_callback_copies_nullable_fields() {
         assert_eq!(snapshot.session_generation, 4);
         assert_eq!(snapshot.is_playing, 1);
         assert_eq!(snapshot.is_paused, 0);
+        assert_eq!(snapshot.track_unavailable, 0);
         assert_eq!(snapshot.shuffle, 1);
         assert_eq!(snapshot.repeat_track, 0);
         assert_eq!(snapshot.repeat_context, 1);
@@ -1453,6 +1456,7 @@ fn playback_snapshot_callback_copies_nullable_fields() {
         &PlaybackObservation {
             is_playing: true,
             is_paused: false,
+            track_unavailable: false,
             track_uri: "spotify:track:fixtureNow".to_string(),
             context_uri: "spotify:playlist:fixtureContext".to_string(),
             position_ms: 1_250,
@@ -1465,12 +1469,42 @@ fn playback_snapshot_callback_copies_nullable_fields() {
         },
     );
 
+    extern "C" fn capture_unavailable(snapshot: *const SpottyPlaybackSnapshot) {
+        let snapshot = unsafe { &*snapshot };
+        assert_eq!(snapshot.track_unavailable, 1);
+        assert_eq!(snapshot.is_playing, 0);
+        assert_eq!(snapshot.is_paused, 1);
+    }
+
+    send_playback_snapshot(
+        capture_unavailable,
+        SnapshotStamp {
+            revision: 13,
+            session_generation: 4,
+        },
+        &PlaybackObservation {
+            is_playing: false,
+            is_paused: true,
+            track_unavailable: true,
+            track_uri: "spotify:track:fixtureUnavailable".to_string(),
+            context_uri: String::new(),
+            position_ms: 0,
+            duration_ms: 0,
+            shuffle: false,
+            repeat_track: false,
+            repeat_context: false,
+            is_active_device: true,
+            timestamp_ms: 1_700_000_000_001,
+        },
+    );
+
     extern "C" fn capture_empty_and_nul(snapshot: *const SpottyPlaybackSnapshot) {
         let snapshot = unsafe { &*snapshot };
         assert!(snapshot.track_uri.is_null());
         assert!(snapshot.context_uri.is_null());
         assert_eq!(snapshot.is_playing, 0);
         assert_eq!(snapshot.is_paused, 0);
+        assert_eq!(snapshot.track_unavailable, 0);
         assert_eq!(snapshot.is_active_device, 0);
     }
 
@@ -1483,6 +1517,7 @@ fn playback_snapshot_callback_copies_nullable_fields() {
         &PlaybackObservation {
             is_playing: false,
             is_paused: false,
+            track_unavailable: false,
             track_uri: String::new(),
             context_uri: "ctx\0uri".to_string(),
             position_ms: 0,

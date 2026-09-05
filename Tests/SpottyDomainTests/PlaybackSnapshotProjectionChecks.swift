@@ -136,6 +136,57 @@ struct PlaybackSnapshotProjectionTests {
             )
             #expect((firstLocal.transport) == (.paused), "first-local snapshot() presents paused")
             #expect((firstLocal.timing.position) == (40), "first-local snapshot() does not interpolate position")
+
+            let localUnavailable = PlaybackSnapshotProjection.snapshot(
+                isPlaying: false,
+                isPaused: true,
+                trackURI: "spotify:track:unavailable",
+                positionMilliseconds: 0,
+                durationMilliseconds: 200_000,
+                timestampMilliseconds: nil,
+                shuffle: false,
+                repeatContext: false,
+                repeatTrack: false,
+                trackUnavailable: true,
+                isInitialSnapshot: false,
+                isActiveDevice: true,
+                receivedAt: receivedAt
+            )
+            #expect((localUnavailable.trackUnavailable) == true, "an active track failure crosses projection")
+
+            let remoteUnavailable = PlaybackSnapshotProjection.snapshot(
+                isPlaying: false,
+                isPaused: true,
+                trackURI: "spotify:track:unavailable",
+                positionMilliseconds: 0,
+                durationMilliseconds: 200_000,
+                timestampMilliseconds: nil,
+                shuffle: false,
+                repeatContext: false,
+                repeatTrack: false,
+                trackUnavailable: true,
+                isInitialSnapshot: false,
+                isActiveDevice: false,
+                receivedAt: receivedAt
+            )
+            #expect((remoteUnavailable.trackUnavailable) == false, "a remote track failure stays out of notices")
+
+            let emptyUnavailable = PlaybackSnapshotProjection.snapshot(
+                isPlaying: false,
+                isPaused: true,
+                trackURI: "",
+                positionMilliseconds: 0,
+                durationMilliseconds: 0,
+                timestampMilliseconds: nil,
+                shuffle: false,
+                repeatContext: false,
+                repeatTrack: false,
+                trackUnavailable: true,
+                isInitialSnapshot: false,
+                isActiveDevice: true,
+                receivedAt: receivedAt
+            )
+            #expect((emptyUnavailable.trackUnavailable) == false, "an empty URI cannot become a failure notice")
         }
     }
 }

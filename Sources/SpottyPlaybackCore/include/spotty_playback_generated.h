@@ -73,6 +73,10 @@ typedef void (*DevicesCallback)(const struct SpottyDevicesSnapshot*);
 //
 // `is_active_device` is the protocol active-member fact captured with this observation;
 // it is independent of the arrival order of the connection callback.
+//
+// `track_unavailable` is set only on the local callback corresponding to a current requested
+// track whose load failed. It is never set on protocol snapshots, preload failures, stale
+// request events, or snapshots from an inactive device.
 typedef struct SpottyPlaybackSnapshot {
   uint64_t revision;
   uint64_t session_generation;
@@ -81,6 +85,7 @@ typedef struct SpottyPlaybackSnapshot {
   int64_t timestamp_ms;
   uint8_t is_playing;
   uint8_t is_paused;
+  uint8_t track_unavailable;
   uint8_t shuffle;
   uint8_t repeat_track;
   uint8_t repeat_context;
