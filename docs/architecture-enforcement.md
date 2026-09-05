@@ -34,7 +34,7 @@ Stable IDs preserve searchability in issue and code history. They are navigation
 | --- | --- | --- | --- |
 | `FMT-SWIFT-001`–`003` | One selected-toolchain `swift-format` contract; Spotty builds fail on warnings; wrapper discovery cannot drift | `CONTRIBUTING.md` | `Scripts/format-swift.sh`, its self-test, and warning flags in `Scripts/swiftpm-env.sh` / build scripts |
 | `FMT-RUST-001`–`002` | Rust is rustfmt-clean and Clippy warning-clean on locked targets | `CONTRIBUTING.md` | `cargo fmt --all -- --check`; `cargo clippy --locked --all-targets -- -D warnings` in `Scripts/check.sh` |
-| `CMP-PLT-001` | macOS 15+ on Apple Silicon is the supported runtime envelope | Product contract | `Package.swift`, pinned ARM64 Rust target/build, and ARM64 release workflow; support wording remains semantic |
+| `CMP-PLT-001` | macOS 15+ on Apple Silicon is the supported runtime envelope | Product contract | `Package.swift`, ARM64 XCFramework validation and app release checks; Rust source/artifact lanes also enforce the ARM64 target; support wording remains semantic |
 | `CMP-DEP-001`, `CMP-FFI-001` | Target direction is `SpottyApp -> SpottyCore -> SpottyDomain`; only SpottyCore depends on the C module | ADR 001–002 | SwiftPM target graph plus focused import checks |
 | `CMP-CHK-001`–`002` | Test targets never ship; pure tests do not depend on SpottyCore/Rust; boundary tests remain separate | ADR 002 | SwiftPM targets and `Scripts/check.sh` |
 | `CMP-TCA-001` | No TCA or generic Effect framework | ADR 003 | No external Swift effect-framework dependency in `Package.swift`, plus semantic review of generic effect abstractions |

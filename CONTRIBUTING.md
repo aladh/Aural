@@ -16,8 +16,8 @@ From the repository root:
 
 The script resolves the pinned playback XCFramework, runs the Swift verification gate, builds the
 SwiftPM executable, creates and signs a local `Spotty.app`, terminates any running development copy,
-and launches the replacement. It does not require Rust tools. Because that
-can disturb an authenticated session, use it only when the request authorizes launch or interactive
+and launches the replacement. It does not require Rust tools. Because this can disturb an
+authenticated session, use it only when the request authorizes launch or interactive
 acceptance; do not use it as a compile check. The path-specific contract is
 [`script/AGENTS.md`](script/AGENTS.md).
 
@@ -140,9 +140,9 @@ archive alone can leave a cached executable linked to old code in SwiftPM. The l
 selects a binary; it does not arrange an implicit Cargo build. Unset it to return to the published
 dependency. Full Rust verification remains `SPOTTY_CHECK_SCOPE=rust ./Scripts/check.sh`.
 
-Artifact production uses Python 3.11 or newer for dependency-notice generation in addition to the
-engine and Apple toolchains. Python is not an app-build prerequisite. The embedded notices travel
-into packaged apps without regeneration.
+Artifact production requires the additional tools in the
+[engine setup guide](docs/development-setup.md#engine-development). Embedded notices travel into
+packaged apps without regeneration.
 
 The artifact publication workflow builds the selected source revision with read-only repository
 permissions. The workflow itself runs from main, but `source_ref` can select a reviewed, unmerged

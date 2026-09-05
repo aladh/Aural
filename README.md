@@ -59,7 +59,7 @@ cd Spotty
 ./script/build_and_run.sh
 ```
 
-The first build downloads locked dependencies and takes longer than subsequent builds. The launch
+The first build downloads the pinned playback XCFramework and takes longer than subsequent builds. The launch
 script replaces any running development copy; see the
 [build-and-run details](CONTRIBUTING.md#build-and-run). On first launch, choose **Connect** and
 complete Spotify authorization in the browser.
