@@ -28,7 +28,7 @@ struct ConnectPanelContent: View {
                                 Spacer(minLength: 0)
                             }
                             .foregroundStyle(SpottyPalette.mediaGreen)
-                            Text(player.isPlaying ? "Playing on this device" : "Paused on this device")
+                            Text("\(player.isPlaying ? "Playing" : "Paused") on \(deviceName(device))")
                                 .font(.system(size: 14))
                                 .foregroundStyle(Color(white: 0.7))
                         }
@@ -36,7 +36,8 @@ struct ConnectPanelContent: View {
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .background(Color(white: 0.122), in: RoundedRectangle(cornerRadius: 8))
                         .accessibilityElement(children: .combine)
-                        .accessibilityLabel("Current device, \(device.name), \(player.isPlaying ? "Playing" : "Paused")")
+                        .accessibilityLabel(
+                            "Current device, \(deviceName(device)), \(player.isPlaying ? "Playing" : "Paused")")
                     }
 
                     VStack(spacing: 0) {
@@ -58,14 +59,12 @@ struct ConnectPanelContent: View {
                 .padding(.horizontal, 8)
             }
 
-
         }
     }
 
     private func deviceName(_ device: ConnectDevice) -> String {
         device.id == player.localDeviceID ? "This computer" : device.name
     }
-
 
 }
 

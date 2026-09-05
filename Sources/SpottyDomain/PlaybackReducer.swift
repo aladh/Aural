@@ -67,7 +67,6 @@ public enum PlaybackReducer {
                 if let context = snapshot.contextURI {
                     candidate.playbackContextURI = playbackTrackURI(context)
                 }
-                if incomingURI == nil { candidate.playbackContextURI = nil }
                 reconcileSeekTiming(
                     snapshot.timing,
                     incomingTrackURI: incomingURI,

@@ -29,6 +29,7 @@ struct SidebarView: View {
                             SidebarFolderRow(node: row.node, isExpanded: expandedFolders.contains(row.id)) {
                                 if !expandedFolders.insert(row.id).inserted { expandedFolders.remove(row.id) }
                             }
+                            .selectionDisabled()
                         }
                     }
                     .padding(.leading, CGFloat(row.depth) * 16)
@@ -136,7 +137,7 @@ private struct SidebarPlaylistRow: View {
         .contentShape(Rectangle())
         .pointingHandCursor(isHovering: $isHovering)
         .onDisappear { isHovering = false }
-        .accessibilityElement(children: .combine)
+        .accessibilityElement(children: .contain)
         .accessibilityAddTraits(isSelected ? .isSelected : [])
         .accessibilityLabel(playlist.title)
         .accessibilityValue(playlist.subtitle.isEmpty ? "Playlist" : playlist.subtitle)

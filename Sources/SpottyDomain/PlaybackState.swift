@@ -6,7 +6,7 @@ public struct PlaybackState: Equatable, Sendable {
     public var owner: PlaybackOwner
     public var transport: PlaybackTransportState
     public var currentTrack: CurrentTrack?
-    public var playbackContextURI: String?
+    public internal(set) var playbackContextURI: String?
     public var timing: PlaybackTiming
     public var options: PlaybackOptions
     public var queue: PlaybackQueueSnapshot

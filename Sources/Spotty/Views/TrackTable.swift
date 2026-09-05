@@ -271,7 +271,7 @@ struct TrackTable: View {
             }
         }
         .frame(maxWidth: .infinity, minHeight: CatalogLayout.playlistRowContentHeight, alignment: .leading)
-        .accessibilityElement(children: .combine)
+        .accessibilityElement(children: .contain)
     }
 
     private func playlistList(width: CGFloat) -> some View {

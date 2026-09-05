@@ -268,7 +268,10 @@ struct RootView: View {
     }
 
     private func navigate(to model: MediaSelectionModel) {
-        guard model.selection != selection else { return }
+        guard model.selection != selection else {
+            mediaSelectionRawValue = model.rawValue
+            return
+        }
         backHistory.append(mediaSelectionRawValue)
         if backHistory.count > 100 { backHistory.removeFirst() }
         forwardHistory.removeAll()

@@ -17,7 +17,8 @@ struct PlaylistSearch {
         guard !query.isEmpty else { return result }
         var start = text.startIndex
         while start < text.endIndex,
-            let match = text.range(of: query, options: [.caseInsensitive, .diacriticInsensitive], range: start..<text.endIndex)
+            let match = text.range(
+                of: query, options: [.caseInsensitive, .diacriticInsensitive], range: start..<text.endIndex)
         {
             if let lower = AttributedString.Index(match.lowerBound, within: result),
                 let upper = AttributedString.Index(match.upperBound, within: result)

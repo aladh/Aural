@@ -5,7 +5,9 @@ import Testing
 @Suite("Catalog Navigation")
 struct CatalogNavigationTests {
     @Test func preservesArtistAndAlbumDestinations() throws {
-        let data = Data(#"{"uri":"spotify:track:track","name":"Song","artists":{"items":[{"uri":"spotify:artist:first","profile":{"name":"First"}},{"uri":"spotify:artist:second","profile":{"name":"Second"}}]},"albumOfTrack":{"uri":"spotify:album:album","name":"Album"}}"#.utf8)
+        let data = Data(
+            #"{"uri":"spotify:track:track","name":"Song","artists":{"items":[{"uri":"spotify:artist:first","profile":{"name":"First"}},{"uri":"spotify:artist:second","profile":{"name":"Second"}}]},"albumOfTrack":{"uri":"spotify:album:album","name":"Album"}}"#
+                .utf8)
         let track = try JSONDecoder().decode(PathfinderTrack.self, from: data)
         let mapped = try #require(CatalogMapping.searchTrack(from: track))
         #expect(mapped.artists.map(\.uri) == ["spotify:artist:first", "spotify:artist:second"])

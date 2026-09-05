@@ -291,7 +291,8 @@ private struct QueueUpcomingRow: View {
         let info = metadata.displayInfo(for: entry.uri)
         QueueTrackRow(
             title: info.title,
-            artist: info.title == "Unknown track" ? entry.sourceLabel : info.artist,
+            artist: metadata.knownTrack(for: entry.uri) == nil && metadata.knownItem(for: entry.uri) == nil
+                ? entry.sourceLabel : info.artist,
             artists: metadata.knownTrack(for: entry.uri)?.artists ?? [],
             onSelect: onSelect,
             artworkURL: metadata.knownTrack(for: entry.uri)?.artworkURL,

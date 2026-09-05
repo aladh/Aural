@@ -41,7 +41,7 @@ nonisolated enum PlaybackCore {
             repeatContext: snapshot.repeat_context != 0,
             trackUnavailable: snapshot.track_unavailable != 0,
             isActiveDevice: snapshot.is_active_device != 0,
-            contextURI: optionalCString(snapshot.context_uri) ?? ""
+            contextURI: optionalCString(snapshot.context_uri)
         )
     }
 

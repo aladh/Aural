@@ -32,7 +32,8 @@ enum SpottyPalette {
     /// Data columns (BPM, key, time signature, popularity, duration, relative times). Measures
     /// ≥4.5:1 against `catalogCanvas`, meeting WCAG AA for normal text.
     static let dataText = Color(white: 0.64)
-    /// Spotify's #ffffff4d rail composited over the black player background.
+    /// Spotify's #ffffff4d rail over black intentionally retains its subdued ~2.48:1 contrast.
+    /// The white played portion and hover thumb provide the higher-contrast progress indicator.
     static let progressTrack = Color(white: 77.0 / 255)
 
     static func mediaCardSurface(isHovering: Bool) -> Color {

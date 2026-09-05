@@ -11,6 +11,9 @@ struct VisualContrastTests {
     func testVisualContrast() {
         do {
             #expect(
+                contrastRatio(SpottyPalette.progressTrack, .black) >= 2.4,
+                "the intentionally subdued unfilled rail retains Spotify-like contrast over black")
+            #expect(
                 (contrastRatio(SpottyPalette.dataText, SpottyPalette.catalogCanvas) >= 4.5) == true,
                 "data column text clears WCAG AA normal-text contrast on the catalog canvas")
             #expect(

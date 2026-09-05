@@ -43,7 +43,8 @@ struct PlaylistLibraryNode: Identifiable, Equatable, Sendable {
     static func visibleRows(_ nodes: [Self], expanded: Set<String>, depth: Int = 0) -> [VisibleRow] {
         nodes.flatMap { node in
             [VisibleRow(node: node, depth: depth)]
-                + (expanded.contains(node.id) ? visibleRows(node.children ?? [], expanded: expanded, depth: depth + 1) : [])
+                + (expanded.contains(node.id)
+                    ? visibleRows(node.children ?? [], expanded: expanded, depth: depth + 1) : [])
         }
     }
 }

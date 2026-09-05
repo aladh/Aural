@@ -12,7 +12,9 @@ struct CatalogTextLink: View {
 
     var body: some View {
         if let item, let onSelect {
-            Button { onSelect(item) } label: {
+            Button {
+                onSelect(item)
+            } label: {
                 Text(PlaylistSearch(searchQuery).highlighted(title))
                     .underline(isHovering)
                     .foregroundStyle(isHovering ? SpottyPalette.textPrimary : color)
@@ -43,7 +45,8 @@ struct CatalogArtistLinks: View {
             HStack(spacing: 0) {
                 ForEach(Array(artists.enumerated()), id: \.offset) { index, artist in
                     if index > 0 { Text(", ").foregroundStyle(color) }
-                    CatalogTextLink(title: artist.title, item: artist, color: color,
+                    CatalogTextLink(
+                        title: artist.title, item: artist, color: color,
                         searchQuery: searchQuery, onSelect: onSelect)
                 }
             }
