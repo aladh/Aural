@@ -2,112 +2,75 @@ name: OpenCode advisory review
 
 on:
   pull_request:
-    types: [opened, synchronize, reopened]
+    types: [opened, ready_for_review]
 
 permissions:
   contents: read
 
 concurrency:
   group: opencode-review-${{ github.event.pull_request.number }}
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 env:
   OPENCODE_VERSION: '1.18.29'
   OPENCODE_SHA256: ea800b7ff56226b70952126c9fc1e2517ca4c4b5682fd9d3f9e87449697a1194
+  GITHUB_MCP_VERSION: '1.12.0'
+  GITHUB_MCP_SHA256: f34de295acd8f1012c7f2c0e3b909d87361d0993b9489b57ee92ac72b85d7cca
   MODEL: opencode/muse-spark-1.3-contributor-free
   VARIANT: xhigh
   PYTHONDONTWRITEBYTECODE: '1'
 
 jobs:
   review:
-    # Owner-controlled trial only. Candidate workflow code is not a fork trust boundary.
-    if: github.event.pull_request.head.repo.full_name == github.repository && github.head_ref == 'codex/opencode-review-spike'
-    name: Source-aware OpenCode review
+    # Explicit owner-controlled experiment; this is not trusted fork orchestration.
+    if: github.event.pull_request.draft == false && github.event.pull_request.head.repo.full_name == github.repository && github.head_ref == 'codex/opencode-review-spike'
+    name: Native audits and direct GitHub MCP review
     runs-on: ubuntu-24.04
-    timeout-minutes: 25
+    timeout-minutes: 15
     permissions:
       contents: read
-      pull-requests: read
-      actions: read # Authenticate prior successful run/attempt before reusing its baseline.
+      pull-requests: write
+      actions: read # Avoid repeating a successfully completed review.
     steps:
-      - name: Checkout reviewer implementation
+      - name: Checkout trial implementation
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ github.event.pull_request.head.sha }}
           fetch-depth: 0
           persist-credentials: false
 
-      - name: Test reviewer boundaries
+      - name: Test review boundaries
         run: python3 -B -m unittest discover -s .github/review -p 'test_*.py'
 
-      - name: Prepare immutable source and review baseline
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: python3 .github/review/review.py prepare "$RUNNER_TEMP/opencode-review"
-
-      - name: Install pinned OpenCode CLI
+      - name: Install pinned OpenCode and GitHub MCP binaries
         run: |
           set -euo pipefail
-          cd "$RUNNER_TEMP/opencode-review"
+          mkdir -p "$RUNNER_TEMP/opencode-mcp-bin"
+          cd "$RUNNER_TEMP/opencode-mcp-bin"
           curl --fail --silent --show-error --location --retry 2 --max-time 120 \
             "https://github.com/anomalyco/opencode/releases/download/v$OPENCODE_VERSION/opencode-linux-x64.tar.gz" \
             -o opencode.tar.gz
           printf '%s  opencode.tar.gz\n' "$OPENCODE_SHA256" | sha256sum --check
-          mkdir bin
-          tar -xzf opencode.tar.gz -C bin
+          tar -xzf opencode.tar.gz
+          curl --fail --silent --show-error --location --retry 2 --max-time 120 \
+            "https://github.com/github/github-mcp-server/releases/download/v$GITHUB_MCP_VERSION/github-mcp-server_Linux_x86_64.tar.gz" \
+            -o github-mcp.tar.gz
+          printf '%s  github-mcp.tar.gz\n' "$GITHUB_MCP_SHA256" | sha256sum --check
+          tar -xzf github-mcp.tar.gz
 
-      - name: Run independent Thermos audits in parallel
-        timeout-minutes: 11
-        run: python3 .github/review/review.py audit "$RUNNER_TEMP/opencode-review" "$RUNNER_TEMP/opencode-review/bin/opencode"
-
-      - name: Collect discussion after independent audits
+      - name: Let native reviewers investigate and publish through MCP
         env:
           GH_TOKEN: ${{ github.token }}
-        run: python3 .github/review/review.py discussion "$RUNNER_TEMP/opencode-review"
+          OPENCODE_MODELS_PATH: ${{ github.workspace }}/.github/review/models.json
+        run: |
+          python3 .github/review/mcp_trial.py "$RUNNER_TEMP/opencode-mcp-trial" \
+            "$RUNNER_TEMP/opencode-mcp-bin/opencode" "$RUNNER_TEMP/opencode-mcp-bin/github-mcp-server"
 
-      - name: Synthesize source-verified findings without GitHub credentials
-        timeout-minutes: 11
-        run: python3 .github/review/review.py synthesize "$RUNNER_TEMP/opencode-review" "$RUNNER_TEMP/opencode-review/bin/opencode"
-
-      - name: Save validated review
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
-        with:
-          name: opencode-review-${{ github.run_id }}-${{ github.run_attempt }}
-          path: ${{ runner.temp }}/opencode-review/output/report.json
-          if-no-files-found: error
-          retention-days: 14
-
-      - name: Save diagnostic evidence
+      - name: Save experiment evidence
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
-          name: opencode-evidence-${{ github.run_id }}-${{ github.run_attempt }}
-          path: ${{ runner.temp }}/opencode-review/output/
+          name: opencode-mcp-evidence-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/opencode-mcp-trial/output/
           if-no-files-found: warn
           retention-days: 7
-
-  publish:
-    needs: review
-    name: Publish advisory findings
-    runs-on: ubuntu-24.04
-    timeout-minutes: 5
-    permissions:
-      contents: write # GitHub requires this for resolveReviewThread; this job runs no model.
-      pull-requests: write # Advisory findings and owned thread lifecycle; no OIDC or App token.
-    steps:
-      - name: Checkout publisher implementation
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          ref: ${{ github.event.pull_request.head.sha }}
-          persist-credentials: false
-
-      - name: Download this attempt's validated review
-        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
-        with:
-          name: opencode-review-${{ github.run_id }}-${{ github.run_attempt }}
-          path: ${{ runner.temp }}/opencode-publish
-
-      - name: Validate revision and publish advisory comment
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: python3 .github/review/review.py publish "$RUNNER_TEMP/opencode-publish"

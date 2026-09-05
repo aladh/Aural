@@ -42,14 +42,28 @@ def direct_events(**changes):
 
 
 class MCPTrialTests(TestCase):
-    def test_attach_diffs_keeps_distinct_inputs_and_deduplicates_equal(self):
-        separate = mcp_trial.attach_diffs("audit", "FULL", "DELTA")
-        self.assertEqual(separate.count("FULL"), 1)
-        self.assertEqual(separate.count("DELTA"), 1)
-        self.assertIn("UNTRUSTED", separate)
-        same = mcp_trial.attach_diffs("audit", "FULL", "FULL")
-        self.assertEqual(same.count("FULL"), 1)
-        self.assertIn("byte-identical", same)
+    def test_full_diff_is_attached_once_as_untrusted_data(self):
+        prompt = mcp_trial.attach_diff("audit", "FULL")
+        self.assertEqual(prompt.count("FULL"), 1)
+        self.assertIn("UNTRUSTED", prompt)
+
+    def test_successful_review_is_terminal_even_after_head_changes(self):
+        old_head = "c" * 40
+        review = {"body": f"<!-- spotty-opencode-mcp:v1 run=12 attempt=1 head={old_head} -->\nreview",
+                  "state": "COMMENTED", "commit_id": old_head,
+                  "user": {"login": "github-actions[bot]"}, "html_url": "https://github.example/review"}
+        proof = {"conclusion": "success", "event": "pull_request", "head_sha": old_head,
+                 "path": ".github/workflows/opencode-spike.yml", "head_repository": {"full_name": META["repo"]}}
+        with mock.patch.object(mcp_trial, "listed_reviews", return_value=[review]), mock.patch.object(mcp_trial, "gh_json", return_value=proof):
+            self.assertEqual(mcp_trial.completed_review(META, "token"), review["html_url"])
+            self.assertEqual(mcp_trial.completed_review({**META, "run": 12, "attempt": 2}, "token"), review["html_url"])
+            for key, invalid in (("conclusion", "failure"), ("path", ".github/workflows/other.yml")):
+                original = proof[key]
+                proof[key] = invalid
+                self.assertIsNone(mcp_trial.completed_review(META, "token"))
+                proof[key] = original
+            review["user"]["login"] = "someone-else"
+            self.assertIsNone(mcp_trial.completed_review(META, "token"))
 
     def test_parse_events_rejects_non_object_json(self):
         with self.assertRaises(ValueError):
@@ -65,6 +79,36 @@ class MCPTrialTests(TestCase):
         events[3]["part"]["state"]["input"]["commitID"] = "c" * 40
         with self.assertRaises(ValueError):
             mcp_trial.validate_events(events, META)
+
+    def test_pending_review_path_accepts_inline_and_requires_submission(self):
+        events = direct_events()
+        create = events[3]["part"]["state"]["input"]
+        body = create.pop("body")
+        create.pop("event")
+        inline = {"owner": META["owner"], "repo": META["name"], "pullNumber": META["pr"],
+                  "path": "file.py", "line": 4, "side": "RIGHT", "subjectType": "LINE",
+                  "body": "<!-- spotty-opencode-mcp-finding:v1 id=F123456789abc -->\nP2: fixture"}
+        submit = {"owner": META["owner"], "repo": META["name"], "pullNumber": META["pr"],
+                  "method": "submit_pending", "event": "COMMENT", "body": body}
+        events[4:4] = [tool("github_add_comment_to_pending_review", inline),
+                       tool("github_pull_request_review_write", submit)]
+        self.assertEqual(mcp_trial.validate_events(events, META), (body, [inline]))
+        events.pop(5)
+        with self.assertRaises(ValueError):
+            mcp_trial.validate_events(events, META)
+
+    def test_verify_inline_hydrates_legacy_review_comment_coordinates(self):
+        body = direct_events()[3]["part"]["state"]["input"]["body"]
+        expected = {"path": "file.py", "line": 4, "side": "RIGHT", "body": "finding"}
+        review = {"id": 42, "body": body, "state": "COMMENTED", "commit_id": HEAD,
+                  "user": {"login": "github-actions[bot]"}, "html_url": "https://github.example/review"}
+        full = {**expected, "id": 43, "commit_id": HEAD, "pull_request_review_id": 42,
+                "user": {"login": "github-actions[bot]"}}
+        with mock.patch.object(mcp_trial, "listed_reviews", return_value=[review]), mock.patch.object(
+                mcp_trial, "gh_json", side_effect=[[{"id": 43, "position": 2}], full]) as api:
+            result = mcp_trial.verify_review(META, "token", body, [expected])
+        self.assertEqual(result["inline_count"], 1)
+        self.assertEqual(api.call_args.args[0], "https://api.github.com/repos/aladh/Spotty/pulls/comments/43")
 
     def test_bounded_diff_refuses_oversized_output(self):
         with mock.patch.object(mcp_trial, "git", return_value=b"x" * (mcp_trial.MAX_DIFF + 1)):
@@ -130,7 +174,7 @@ class MCPTrialTests(TestCase):
     def test_config_exposes_only_parent_mcp_and_child_deny(self):
         with tempfile.TemporaryDirectory() as directory:
             with mock.patch.dict(mcp_trial.os.environ, {"MODEL": "opencode/muse", "VARIANT": "xhigh"}):
-                path = mcp_trial.config(META, Path("/tmp/github-mcp"), "FULL", "FULL", Path(directory))
+                path = mcp_trial.config(META, Path("/tmp/github-mcp"), "FULL", Path(directory))
             data = json.loads(path.read_text())
             self.assertNotIn("environment", data["mcp"]["github"])
             self.assertEqual(data["mcp"]["github"]["command"][-1],
@@ -200,7 +244,7 @@ class MCPTrialTests(TestCase):
     def test_untrusted_config_templates_are_literal(self):
         with tempfile.TemporaryDirectory() as directory, mock.patch.dict(mcp_trial.os.environ, {"MODEL": "opencode/muse"}):
             payload = "{env:GH_TOKEN} {file:/tmp/private}"
-            path = mcp_trial.config(META, Path("/tmp/github-mcp"), payload, payload, Path(directory))
+            path = mcp_trial.config(META, Path("/tmp/github-mcp"), payload, Path(directory))
             raw = path.read_text()
             self.assertNotIn("{env:", raw)
             self.assertNotIn("{file:", raw)
