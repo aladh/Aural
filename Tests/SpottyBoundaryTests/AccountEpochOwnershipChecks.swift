@@ -155,59 +155,6 @@ private func epochEnvironment(
     )
 }
 
-private func spottySourceFile(_ relativePath: String) throws -> String {
-    let checksDirectory = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
-    let repositoryRoot = checksDirectory.deletingLastPathComponent().deletingLastPathComponent()
-    let url = repositoryRoot.appending(path: "Sources").appending(path: relativePath)
-    return try String(contentsOf: url, encoding: .utf8)
-}
-
-private func containsToken(_ source: String, _ token: String) -> Bool {
-    source.contains(token)
-}
-
-private func functionBody(_ source: String, named name: String) -> String? {
-    guard let header = source.range(of: "func \(name)") else { return nil }
-    guard let open = source[header.lowerBound...].firstIndex(of: "{") else { return nil }
-    var depth = 0
-    var index = open
-    while index < source.endIndex {
-        switch source[index] {
-        case "{": depth += 1
-        case "}":
-            depth -= 1
-            if depth == 0 {
-                return String(source[open...index])
-            }
-        default: break
-        }
-        index = source.index(after: index)
-    }
-    return nil
-}
-
-private func epochAdvancesBeforeConnectionCancel(in accountSource: String) -> Bool {
-    guard let body = functionBody(accountSource, named: "invalidateAccountIdentity") else { return false }
-    guard let advance = body.range(of: "advanceEpoch()") else { return false }
-    guard let cancel = body.range(of: "staleTask?.cancel()") else { return false }
-    return advance.lowerBound < cancel.lowerBound
-}
-
-private func playbackStoreWritableAccountEpochMutations(_ source: String) -> [String] {
-    let assignment = try! NSRegularExpression(
-        pattern: #"(?:self\.)?accountEpoch\s*(?:\+|&\+)?=(?!=)"#
-    )
-    return source.split(separator: "\n", omittingEmptySubsequences: false).compactMap { line in
-        let trimmed = line.trimmingCharacters(in: .whitespaces)
-        if trimmed.hasPrefix("//") { return nil }
-        if trimmed.contains("@ObservationIgnored var accountEpoch") { return String(line) }
-        let nsLine = trimmed as NSString
-        let range = NSRange(location: 0, length: nsLine.length)
-        guard assignment.firstMatch(in: trimmed, range: range) != nil else { return nil }
-        return String(line)
-    }
-}
-
 @Suite("Account Epoch Ownership")
 struct AccountEpochOwnershipTests {
     @Test
@@ -345,40 +292,5 @@ struct AccountEpochOwnershipTests {
                 (player.state.accountEpoch) == (current), "inert work did not drift reducer state from AccountStore")
         }
 
-        do {
-            do {
-                do {
-                    let session = try spottySourceFile("Spotty/Spotify/PlaybackStore+Session.swift")
-                    let store = try spottySourceFile("Spotty/Spotify/PlaybackStore.swift")
-                    let commands = try spottySourceFile("Spotty/Spotify/PlaybackStore+Commands.swift")
-                    let engineEvents = try spottySourceFile("Spotty/Spotify/PlaybackStore+EngineEvents.swift")
-                    let history = try spottySourceFile("Spotty/Spotify/PlaybackStore+History.swift")
-                    let queue = try spottySourceFile("Spotty/Spotify/PlaybackStore+Queue.swift")
-                    let transport = try spottySourceFile("Spotty/Spotify/PlaybackStore+Transport.swift")
-                    let projections = try spottySourceFile("Spotty/Spotify/PlaybackStore+Projections.swift")
-                    let account = try spottySourceFile("Spotty/Spotify/AccountStore.swift")
-                    let sources = [session, store, commands, engineEvents, history, queue, transport, projections]
-                    let mutations = sources.flatMap(playbackStoreWritableAccountEpochMutations)
-                    #expect(
-                        (mutations) == ([String]()), "PlaybackStore files have no accountEpoch increment or assignment")
-                    #expect(
-                        (containsToken(store, "var accountEpoch: UInt64 { accountStore.epoch }")
-                            && !containsToken(store, "@ObservationIgnored var accountEpoch")) == true,
-                        "PlaybackStore.accountEpoch is a read-only AccountStore projection")
-                    #expect(
-                        (!containsToken(session, "accountEpoch = accountStore.epoch")) == true,
-                        "teardown no longer resyncs a PlaybackStore mirror after AccountStore completes")
-                    #expect(
-                        (account.components(separatedBy: "epoch &+= 1").count == 2) == true,
-                        "AccountStore.advanceEpoch is the only epoch increment")
-                    #expect(
-                        (epochAdvancesBeforeConnectionCancel(in: account)) == true,
-                        "invalidateAccountIdentity advances the epoch before cancelling connection work")
-
-                } catch {
-                    Issue.record("\("PlaybackStore sources are readable"): unexpected error \(error)")
-                }
-            }
-        }
     }
 }

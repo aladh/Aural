@@ -112,19 +112,6 @@ private actor IdleQueueWeb: WebQueueClient {
     func queue() async throws -> [CatalogTrack] { throw URLError(.badServerResponse) }
 }
 
-private final class IdleQueueAccount: AccountSession, @unchecked Sendable {
-    func authorizeInteractively() async throws -> KeymasterTokens { throw CancellationError() }
-    func hasGrant() async -> Bool { false }
-    func accessToken() async throws -> String { "fixture-access" }
-    func adopt(_: KeymasterTokens) async throws {}
-    func clear() async {}
-    func revocations() -> AsyncStream<Void> { AsyncStream { $0.finish() } }
-}
-
-private final class IdleQueueLifecycle: SystemLifecycleEvents, @unchecked Sendable {
-    func events() -> AsyncStream<SystemLifecycleEvent> { AsyncStream { $0.finish() } }
-}
-
 private actor IdleQueuePreferences: PlaybackPreferences {
     func shuffleEnabled() -> Bool { false }
     func setShuffleEnabled(_: Bool) {}
@@ -132,24 +119,6 @@ private actor IdleQueuePreferences: PlaybackPreferences {
     func setLastRemoteDeviceID(_: String?) {}
     func shuffleHistory() -> [String: TimeInterval] { [:] }
     func setShuffleHistory(_: [String: TimeInterval]) {}
-}
-
-private struct IdleQueueAudio: AudioOutputPreparing { func prepareForPlayback() throws {} }
-private struct IdleQueueAttributes: TrackAttributesProviding {
-    func attributes(for _: [String]) async throws -> [String: TrackAttributes] { [:] }
-}
-
-private enum QueueCheckFailure: Error { case unavailable }
-
-private struct IdleQueueCatalog: CatalogProviding {
-    func searchTracks(_: String, limit _: Int) async throws -> [PathfinderTrack] { throw QueueCheckFailure.unavailable }
-    func home() async throws -> PathfinderHome { throw QueueCheckFailure.unavailable }
-    func libraryPlaylists() async throws -> [PathfinderPlaylist] { throw QueueCheckFailure.unavailable }
-    func libraryAlbums() async throws -> [PathfinderAlbum] { throw QueueCheckFailure.unavailable }
-    func libraryArtists() async throws -> [PathfinderArtist] { throw QueueCheckFailure.unavailable }
-    func libraryTracks() async throws -> [PathfinderLibraryTrackItem] { throw QueueCheckFailure.unavailable }
-    func profile() async throws -> PathfinderProfile { throw QueueCheckFailure.unavailable }
-    func playlist(id _: String) async throws -> PathfinderPlaylistUnion { throw QueueCheckFailure.unavailable }
 }
 
 private func isolatedQueueService(
@@ -176,14 +145,14 @@ private func queueEnvironment(
         remote: remote,
         local: local,
         webQueue: IdleQueueWeb(),
-        account: IdleQueueAccount(),
-        audioOutput: IdleQueueAudio(),
+        account: BoundaryIdleAccount(),
+        audioOutput: BoundaryIdleAudio(),
         preferences: IdleQueuePreferences(),
-        lifecycle: IdleQueueLifecycle(),
+        lifecycle: BoundaryIdleLifecycle(),
         clock: clock,
-        catalog: IdleQueueCatalog(),
+        catalog: BoundaryIdleCatalog(),
         playlistMutations: UnavailablePlaylistMutations(),
-        trackAttributes: IdleQueueAttributes(),
+        trackAttributes: BoundaryIdleAttributes(),
         queueServiceHook: queueServiceHook
     )
 }
@@ -274,17 +243,6 @@ private func seedAuthoritativeQueue(_ player: PlaybackStore, revision: UInt64 = 
 @MainActor
 private func yieldPasses(_ count: Int = 8) async {
     for _ in 0..<count { await Task.yield() }
-}
-
-private func spottySourceFile(_ relativePath: String) throws -> String {
-    let checksDirectory = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
-    let repositoryRoot = checksDirectory.deletingLastPathComponent().deletingLastPathComponent()
-    let url = repositoryRoot.appending(path: "Sources").appending(path: relativePath)
-    return try String(contentsOf: url, encoding: .utf8)
-}
-
-private func containsToken(_ source: String, _ token: String) -> Bool {
-    source.contains(token)
 }
 
 private func jsonStringMap(_ value: Any?) -> [String: String] {
@@ -1225,90 +1183,5 @@ struct QueueManagementTests {
                 (await replaceHook.committedReplacementIsParked()) == (false), "a second replacement resume is inert")
         }
 
-        do {
-            do {
-                do {
-                    let table = try spottySourceFile("Spotty/Views/TrackTable.swift")
-                    let panel = try spottySourceFile("Spotty/Views/SidePanelView.swift")
-                    let queue = try spottySourceFile("Spotty/Spotify/PlaybackStore+Queue.swift")
-                    let engine = try spottySourceFile("Spotty/Spotify/RustPlaybackEngine.swift")
-                    let control = try spottySourceFile("Spotty/Spotify/PlaybackCore.swift")
-                    let engineEvents = try spottySourceFile("Spotty/Spotify/PlaybackStore+EngineEvents.swift")
-                    let queueService = try spottySourceFile("Spotty/Spotify/QueueService.swift")
-                    let projections = try spottySourceFile("Spotty/Spotify/PlaybackStore+Projections.swift")
-                    let models = try spottySourceFile("SpottyDomain/PlaybackPanelModels.swift")
-                    let queueProjection = try spottySourceFile("SpottyDomain/QueueMutation.swift")
-                    #expect(
-                        (containsToken(engineEvents, "QueueProtocolProjection.upcomingEntries(from: protocolNext)")
-                            && containsToken(queueProjection, "uid: track.uid")
-                            && containsToken(models, "uid: String")) == true,
-                        "Connect intake binds occurrence uids into selectable identity")
-                    #expect(
-                        (containsToken(
-                            table, "playback.addToQueue(QueueMutationSelection.addURIs(from: selectedTracks))"))
-                            == true, "Add to Queue is available for multi-selection in visible order")
-                    #expect(
-                        (containsToken(panel, "List(selection: $upcomingSelection)")
-                            && containsToken(panel, "onDeleteCommand")
-                            && containsToken(panel, "QueueMutationSelection.keyboardCommand")
-                            && containsToken(panel, "canRemoveUpcomingQueue(selectedIDs: upcomingSelection)")
-                            && containsToken(panel, "primaryAction:")
-                            && !containsToken(panel, "QueueRow(")) == true,
-                        "upcoming queue rows use native selection rather than play buttons")
-                    #expect(
-                        (containsToken(queue, ".setQueue(")
-                            && containsToken(queue, "performRemote")
-                            && containsToken(queue, "queueReplacement")
-                            && containsToken(queue, "queueReplacementToken")
-                            && containsToken(queue, "finishQueueReplacementIfCurrent")
-                            && containsToken(queue, "recordCommittedReplacement")
-                            && !containsToken(queue, "state.queue.entries =")) == true,
-                        "removal goes through coordinator set_queue and does not assign queue entries")
-                    #expect(
-                        (containsToken(queue, "effects.cancel(.queueRefresh)")
-                            && containsToken(queue, "effects.cancel(.queueSnapshot)")
-                            && !containsToken(queue, "effects.cancel(.connectQueueAccept)")
-                            && !containsToken(queue, "effects.cancel(.queueReplacement)")) == true,
-                        "inspector close cancels only view-owned queue refresh")
-                    #expect(
-                        (containsToken(queue, "engineEpoch: state.sessionGeneration")
-                            && containsToken(queue, "generation: state.sessionGeneration")
-                            && !containsToken(queue, "if state.sessionGeneration == nil")) == true,
-                        "queue snapshot refresh stamps decoded payload generation")
-                    #expect(
-                        (containsToken(engineEvents, "connectQueueAccept")
-                            && containsToken(engineEvents, "Task.isCancelled")
-                            && containsToken(engineEvents, "accountEpoch == epoch")
-                            && containsToken(engineEvents, "engineGeneration <= engineEpoch")) == true,
-                        "Connect queue accept is registered on the effect registry")
-                    #expect(
-                        (containsToken(
-                            engineEvents,
-                            "receive(state, revision: state.revision, engineEpoch: state.sessionGeneration)")
-                            && containsToken(engineEvents, "capturedEngineEpoch ?? state.sessionGeneration")
-                            && !containsToken(
-                                engineEvents, "capturedEngineEpoch ?? state.sessionGeneration ?? engineGeneration"))
-                            == true,
-                        "Connect queue callbacks stamp payload sessionGeneration rather than the engineGeneration mirror"
-                    )
-                    #expect(
-                        (containsToken(queueService, "occurrence: item.occurrence")
-                            && containsToken(projections, "occurrence: $0.occurrence")
-                            && !containsToken(queueService, "queueOccurrence(")
-                            && !containsToken(projections, "queueOccurrence(")
-                            && !containsToken(queueService, "split(separator: \"-\"")
-                            && !containsToken(projections, "split(separator: \"-\"")) == true,
-                        "typed occurrence crosses queue merge and presentation without reparsing identity")
-                    #expect(
-                        (!containsToken(engine, "setQueue")
-                            && !containsToken(control, "spotty_playback_set_queue")
-                            && containsToken(control, "spotty_playback_add_to_queue")) == true,
-                        "local engine still has no set_queue operation")
-
-                } catch {
-                    Issue.record("\("queue mutation sources are readable"): unexpected error \(error)")
-                }
-            }
-        }
     }
 }

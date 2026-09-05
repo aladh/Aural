@@ -95,23 +95,6 @@ private actor IdleFeedbackWebQueue: WebQueueClient {
     }
 }
 
-private final class IdleFeedbackAccount: AccountSession, @unchecked Sendable {
-    func authorizeInteractively() async throws -> KeymasterTokens { throw CancellationError() }
-    func hasGrant() async -> Bool { false }
-    func accessToken() async throws -> String { "fixture-access" }
-    func adopt(_: KeymasterTokens) async throws {}
-    func clear() async {}
-    func revocations() -> AsyncStream<Void> {
-        AsyncStream { $0.finish() }
-    }
-}
-
-private final class IdleFeedbackLifecycle: SystemLifecycleEvents, @unchecked Sendable {
-    func events() -> AsyncStream<SystemLifecycleEvent> {
-        AsyncStream { $0.finish() }
-    }
-}
-
 private actor IdleFeedbackPreferences: PlaybackPreferences {
     func shuffleEnabled() -> Bool { false }
     func setShuffleEnabled(_: Bool) {}
@@ -119,27 +102,6 @@ private actor IdleFeedbackPreferences: PlaybackPreferences {
     func setLastRemoteDeviceID(_: String?) {}
     func shuffleHistory() -> [String: TimeInterval] { [:] }
     func setShuffleHistory(_: [String: TimeInterval]) {}
-}
-
-private struct IdleFeedbackAudio: AudioOutputPreparing { func prepareForPlayback() throws {} }
-
-private struct IdleFeedbackAttributes: TrackAttributesProviding {
-    func attributes(for _: [String]) async throws -> [String: TrackAttributes] { [:] }
-}
-
-private enum FeedbackCheckFailure: Error { case unavailable }
-
-private struct IdleFeedbackCatalog: CatalogProviding {
-    func searchTracks(_: String, limit _: Int) async throws -> [PathfinderTrack] {
-        throw FeedbackCheckFailure.unavailable
-    }
-    func home() async throws -> PathfinderHome { throw FeedbackCheckFailure.unavailable }
-    func libraryPlaylists() async throws -> [PathfinderPlaylist] { throw FeedbackCheckFailure.unavailable }
-    func libraryAlbums() async throws -> [PathfinderAlbum] { throw FeedbackCheckFailure.unavailable }
-    func libraryArtists() async throws -> [PathfinderArtist] { throw FeedbackCheckFailure.unavailable }
-    func libraryTracks() async throws -> [PathfinderLibraryTrackItem] { throw FeedbackCheckFailure.unavailable }
-    func profile() async throws -> PathfinderProfile { throw FeedbackCheckFailure.unavailable }
-    func playlist(id _: String) async throws -> PathfinderPlaylistUnion { throw FeedbackCheckFailure.unavailable }
 }
 
 /// Sleeps until `releaseNext()` or `releaseAll()`. Does not consult Task cancellation, so a
@@ -189,14 +151,14 @@ private func feedbackEnvironment(
         remote: remote,
         local: local,
         webQueue: IdleFeedbackWebQueue(),
-        account: IdleFeedbackAccount(),
-        audioOutput: IdleFeedbackAudio(),
+        account: BoundaryIdleAccount(),
+        audioOutput: BoundaryIdleAudio(),
         preferences: IdleFeedbackPreferences(),
-        lifecycle: IdleFeedbackLifecycle(),
+        lifecycle: BoundaryIdleLifecycle(),
         clock: clock,
-        catalog: IdleFeedbackCatalog(),
+        catalog: BoundaryIdleCatalog(),
         playlistMutations: UnavailablePlaylistMutations(),
-        trackAttributes: IdleFeedbackAttributes()
+        trackAttributes: BoundaryIdleAttributes()
     )
 }
 
@@ -232,17 +194,6 @@ private func seedRemoteOwner(_ player: PlaybackStore) {
         .owner(.remote(PlaybackDevice(id: "speaker", name: "Speaker", type: "speaker", isActive: true))),
         source: .command
     )
-}
-
-private func spottySourceFile(_ relativePath: String) throws -> String {
-    let checksDirectory = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
-    let repositoryRoot = checksDirectory.deletingLastPathComponent().deletingLastPathComponent()
-    let url = repositoryRoot.appending(path: "Sources").appending(path: relativePath)
-    return try String(contentsOf: url, encoding: .utf8)
-}
-
-private func containsToken(_ source: String, _ token: String) -> Bool {
-    source.contains(token)
 }
 
 @Suite("Transient Feedback")
@@ -461,78 +412,5 @@ struct TransientFeedbackTests {
             clock.releaseAll()
         }
 
-        do {
-            do {
-                do {
-                    let banner = try spottySourceFile("Spotty/Views/TransientFeedbackBanner.swift")
-                    let root = try spottySourceFile("Spotty/RootView.swift")
-                    let app = try spottySourceFile("Spotty/SpottyApp.swift")
-                    let queue = try spottySourceFile("Spotty/Spotify/PlaybackStore+Queue.swift")
-                    let commands = try spottySourceFile("Spotty/Spotify/PlaybackStore+Commands.swift")
-                    let presenter = try spottySourceFile("Spotty/TransientFeedback.swift")
-                    let store = try spottySourceFile("Spotty/Spotify/PlaybackStore.swift")
-                    let domain = try spottySourceFile("SpottyDomain/PlaybackState.swift")
-
-                    #expect(
-                        (containsToken(root, ".overlay(alignment: .bottom)")
-                            && containsToken(root, "TransientFeedbackBanner(feedback: feedback)")
-                            && containsToken(root, "NowPlayingBar(player: player, showsSidePanel: $showsSidePanel)"))
-                            == true, "the banner is overlay-based at the root above the player")
-                    #expect(
-                        (containsToken(banner, ".allowsHitTesting(false)")
-                            && !containsToken(root, ".allowsHitTesting(false)")) == true,
-                        "the banner disables hit testing")
-                    #expect(
-                        (containsToken(banner, ".focusable(false)")
-                            && containsToken(banner, ".accessibilityRespondsToUserInteraction(false)")) == true,
-                        "the banner does not steal focus or user interaction")
-                    #expect(
-                        (containsToken(banner, "accessibilityReduceMotion")
-                            && containsToken(banner, "reduceMotion ? nil")
-                            && containsToken(banner, "reduceMotion ? .opacity")) == true,
-                        "Reduce Motion controls presentation animation")
-                    #expect(
-                        (containsToken(banner, ".accessibilityLabel(spokenText(for: message))")
-                            && containsToken(banner, "AccessibilityNotification.Announcement")) == true,
-                        "VoiceOver uses a label and a native announcement")
-                    #expect(
-                        (!containsToken(banner, ".alert(")
-                            && !containsToken(banner, ".sheet(")
-                            && !containsToken(banner, ".popover(")
-                            && !containsToken(banner, "Button(")
-                            && !containsToken(presenter, "NotificationCenter")
-                            && !containsToken(presenter, "[TransientFeedbackMessage]")) == true,
-                        "the banner is not a modal, stack, or action control")
-                    #expect(
-                        (containsToken(app, "TransientFeedbackPresenter(clock: environment.clock)")
-                            && containsToken(app, "PlaybackStore(environment: environment, feedback: feedback)")
-                            && containsToken(
-                                app, "RootView(player: player, catalog: player.catalog, feedback: feedback)"))
-                            == true, "app composition injects one presenter into the store and root")
-                    #expect(
-                        (containsToken(store, "feedback: TransientFeedbackPresenter")
-                            && !containsToken(store, "TransientFeedbackPresenter?")
-                            && !containsToken(store, "?? TransientFeedbackPresenter")) == true,
-                        "PlaybackStore requires the composed feedback owner")
-                    #expect(
-                        (containsToken(queue, "presentAddToQueueFeedback")
-                            && containsToken(queue, "feedback.success")
-                            && containsToken(queue, "feedback.informational")
-                            && containsToken(queue, "feedback.failure(")
-                            && !containsToken(queue, "showTransientCommandError")) == true,
-                        "Add to Queue reports through the presenter, not playback notice")
-                    #expect(
-                        (containsToken(commands, "func showTransientCommandError")
-                            && containsToken(commands, "setNotice(message)")) == true,
-                        "transport command notices stay on the playback owner")
-                    #expect(
-                        (!containsToken(domain, "TransientFeedback")) == true,
-                        "transient mutation feedback is not reducer-owned domain state")
-
-                } catch {
-                    Issue.record("\("banner, root, app, and queue sources are readable"): unexpected error \(error)")
-                }
-            }
-        }
     }
 }

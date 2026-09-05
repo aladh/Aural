@@ -48,7 +48,7 @@ Stable IDs preserve searchability in issue and code history. They are navigation
 
 | IDs | Invariant | Canonical decision | Primary enforcement |
 | --- | --- | --- | --- |
-| `TST-STATE-001` | `PlaybackState` is one atomic snapshot and `PlaybackReducer` is its mutation entrance | ADR 002 | Reducer/writer/projection tests in `SpottyDomainTests` |
+| `TST-STATE-001` | `PlaybackState` is one atomic snapshot and `PlaybackReducer` is its mutation entrance | ADR 002 | Domain reducer/lifecycle/presentation tests, real-store boundary tests, and compiler mutation-access probes |
 | `TST-CMD-001` | Store/coordinator/registry ownership, acceptance gating, same-lifetime reconciliation, and inert stale outcomes | ADR 003 | Command lifecycle, presentation, failure, parity, registry, and event-outcome suites |
 | `TST-EPC-001`, `TST-ENV-001` | Generations, revisions, cancellation, stale-result protection, ordered callback delivery, and lock-safe fan-out | ADR 002 | Session/epoch/fan-out Swift checks plus Rust generation/listener tests |
 | `TST-LIF-001` | Rust lifecycle writes serialize; reconnect and init revalidate generations under the owner mutex | ADR 001–002 | `lifecycle_serialization_tests.rs`, `session_lifecycle.rs` tests, and related Rust suites |
@@ -86,7 +86,10 @@ These rules are intentionally lexical; they complement rather than replace seman
 | `SRC-DEP-001` | Views and named feature stores do not construct live auth/network/playback dependencies | `Scripts/check.sh`; new store paths require semantic scope review |
 | `SRC-ISO-001` | Shipping Swift contains no `nonisolated(unsafe)` | `Scripts/check.sh` |
 | `SRC-UI-001` | Fixed dark appearance has one owner and shipping code does not add appearance-mode branching | `Scripts/check.sh` plus product acceptance |
-| `SRC-PROJ-001` | Playback projections expose no explicit setters | Swift projection contract checks |
+| `SRC-PROJ-001` | Playback projections expose no external mutation access | Compiler positive/negative probes in `Scripts/check-playback-projection-access.sh`, after the Debug boundary build |
+| `SRC-KEY-001` | `KeychainManager.swift` contains no data-protection Keychain or access-group API references | `Scripts/check.sh`, with allowed/forbidden identifier fixtures; storage and signing semantics remain behavior-tested or reviewed |
+| `SRC-RUST-FFI-001` | C exports enter named panic barriers; direct `RUNTIME.block_on` stays in the runtime owner | Retained Rust source scanner plus barrier panic/nested-runtime behavior tests |
+| `SRC-RUST-PLAY-001` | Production `IS_PLAYING=true` writes stay in the Playing event owner | Retained Rust source scanner plus player-event behavior tests; the scanner is not proof of execution ordering |
 | `SRC-INOUT-001` | Revision gates do not use `lastRevision: inout` | `Scripts/check.sh`; epoch correctness remains behavior-tested |
 | `SRC-HYG-001`–`004` | No tracked generated/private artifacts, security placeholders, mock/demo tombstones, or shipping `LogicChecks` directory | `Scripts/check.sh`, gitignore, and privacy review |
 | `SRC-DUP-004` | View code does not introduce the intentionally unsupported drag APIs | `Scripts/check.sh` and product contract |
@@ -126,3 +129,33 @@ review under `DOC-CI-001` and `DOC-REL-001`.
 | `DOC-GEN-001`, `DOC-DEP-001` | Generated/private state stays untracked; Actions/dependencies remain pinned and deliberately reviewed | Development setup and operations guide |
 | `DOC-SEC-001`–`002` | Credentials/private data never enter Git; authenticated launch uses a stable Apple-issued Team ID | PRIVACY, SECURITY, development setup, `script/AGENTS.md`, signature checks |
 | `DOC-ARCH-001` | New async/callback/provider/optimistic flows define owner, lifetime, cancellation, ordering, stale behavior, failure policy, and coverage | `Sources/Spotty/Spotify/AGENTS.md` |
+
+## Source-reading proof audit (issues 187–188)
+
+Repository source and Markdown are not runtime fixtures. The cleanup keeps each assertion at the
+boundary it can actually observe; deleting a spelling check does not turn a review obligation into
+automated behavior coverage.
+
+| Former check or subject | Current proof and limits |
+| --- | --- |
+| Domain store-state writer/projection scanners | Real reducer and store behavior suites plus compiler access probes. A private setter blocks external mutation; it does not prove that every method inside the owner routes through the reducer. That remains an ownership review obligation. |
+| Historical `PlaybackCommandEffectSpike` | The experimental runner duplicated production coordination. Current domain lifecycle/follow-up policy and real-store command failure, lifecycle parity, and event outcome suites own the assertions. |
+| Account epoch source order and assignment counters | `AccountEpochOwnershipChecks` exercises revoke, replacement, teardown, and stale work; compiler probes reject writes to the store's epoch projection. Exact internal statement order is reviewed, not inferred from substring positions. |
+| Connect name setter-before-init text order | `ConnectDeviceIdentityChecks` exercises name formatting; Rust tests exercise configured names through the FFI. Swift native initialization call order remains boundary review, not claimed as runtime-tested by a text offset. |
+| Renderer allocator-name presence | PCM wait/backpressure behavior remains tested. Matching Core Foundation allocation, Core Media ownership transfer, and failure cleanup require semantic memory-ownership review; the removed token conjunction never exercised these paths. |
+| Keymaster storage wiring and signing prose | Durable write ordering, typed failures, stale-grant behavior, and grant decoding remain executable tests. `SRC-KEY-001` owns the narrow forbidden API references; default production storage wiring and signing policy remain reviewed. |
+| Visual style source fragments, control counts, RGB values, VoiceOver prose, and animation spellings | Retain Home section and remote-banner behavior assertions in `VisualStyleContractChecks`. Layout, native controls, accessibility wiring, and Reduce Motion remain product/semantic review; source-token presence was not UI execution evidence. |
+| Playback keyboard shortcut spelling | Native text-field navigation and shortcut interaction remain product/semantic review. The removed exact `.keyboardShortcut` strings neither dispatched a command nor exercised a text field. |
+| Engine intake token conjunction | `EnginePayloadContractChecks` now constructs typed C playback/connection snapshots, converts them, mutates borrowed strings, and checks copied values and absent fields. Domain projection and store event suites retain session/presentation behavior; owned-string freeing remains FFI ownership review. |
+| Playlist/catalog source topology and product-contract prose | Playlist mutation suites retain occurrence-UID writes, stale-account rejection, mutation success versus reload failure, and retry behavior. `TrackTableDisplayCacheChecks` retains collection-version/cache behavior; existing `SRC-DEP-001` and `SRC-DUP-004` own dependency and unsupported drag API boundaries. Native menus, stale-warning UI wiring, protocol responsibility, and prose stay semantic review. |
+| Queue management UI/coordinator/callback spelling | Queue management and event outcome suites exercise occurrence identity, remote removal, generation stamps, cancellation, and stale callbacks. Native selection wiring and the lack of a local queue-mutation capability remain boundary/product review. |
+| Repeat transport helper-name absence | `RepeatTransitionChecks` exercises pending state, rollback, reconciliation, duplicate refusal, and lifetime cancellation; absence of old helper names added no behavior proof. |
+| Transient feedback UI/composition spelling | Presenter and injected workflow tests retain feedback replacement/lifetime and mutation-result behavior. Hit testing, focus, VoiceOver announcement wiring, and Reduce Motion remain semantic UI review. |
+| Rust C export entry-point scanner | Retained as `SRC-RUST-FFI-001`; named entry wrappers and direct runtime-call placement are lexical. Panic sentinel and nested-runtime behavior have separate executable tests. |
+| Rust playing-state writer scanner | Retained as `SRC-RUST-PLAY-001`; player-event tests exercise Playing, Paused, Stopped, EndOfTrack, and cleanup. Text location alone cannot prove control flow. |
+| Rust ABI signature fixture and generated C consumer probe | Retained ABI evidence, not source/prose snapshots. Parser helper fixtures remain only to exercise the retained lexical scans. |
+| Test fixture and persistence file reads | Retained when loading synthetic payloads or checking durable writes. These read data under test, not implementation spelling. |
+
+The Rust lexical guards stay with the Rust suite invoked by `Scripts/check.sh`; duplicating their
+scanner in shell would add an enforcement owner without stronger proof. Changing any Rust test
+source also changes the engine artifact identity, so this audit leaves that source and pin intact.

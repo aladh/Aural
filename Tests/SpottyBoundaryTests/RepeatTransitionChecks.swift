@@ -145,25 +145,6 @@ private actor IdleRepeatWebQueue: WebQueueClient {
     }
 }
 
-private final class IdleRepeatAccount: AccountSession, @unchecked Sendable {
-    func authorizeInteractively() async throws -> KeymasterTokens {
-        throw CancellationError()
-    }
-    func hasGrant() async -> Bool { false }
-    func accessToken() async throws -> String { "fixture-access" }
-    func adopt(_: KeymasterTokens) async throws {}
-    func clear() async {}
-    func revocations() -> AsyncStream<Void> {
-        AsyncStream { $0.finish() }
-    }
-}
-
-private final class IdleRepeatLifecycle: SystemLifecycleEvents, @unchecked Sendable {
-    func events() -> AsyncStream<SystemLifecycleEvent> {
-        AsyncStream { $0.finish() }
-    }
-}
-
 private actor IdleRepeatPreferences: PlaybackPreferences {
     func shuffleEnabled() -> Bool { false }
     func setShuffleEnabled(_: Bool) {}
@@ -173,43 +154,11 @@ private actor IdleRepeatPreferences: PlaybackPreferences {
     func setShuffleHistory(_: [String: TimeInterval]) {}
 }
 
-private struct IdleRepeatAudio: AudioOutputPreparing { func prepareForPlayback() throws {} }
-
 private struct StickyRepeatClock: PlaybackClock {
     func now() -> Date { Date(timeIntervalSince1970: 1_800_000_000) }
     func sleep(seconds _: TimeInterval) async throws {
         try await Task.sleep(nanoseconds: 60_000_000_000)
     }
-}
-
-private struct IdleRepeatAttributes: TrackAttributesProviding {
-    func attributes(for _: [String]) async throws -> [String: TrackAttributes] { [:] }
-}
-
-private func spottySourceFile(_ relativePath: String) throws -> String {
-    let checksDirectory = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
-    let repositoryRoot = checksDirectory.deletingLastPathComponent().deletingLastPathComponent()
-    let url = repositoryRoot.appending(path: "Sources").appending(path: relativePath)
-    return try String(contentsOf: url, encoding: .utf8)
-}
-
-private func containsToken(_ source: String, _ token: String) -> Bool {
-    source.contains(token)
-}
-
-private enum RepeatCatalogFailure: Error { case unavailable }
-
-private struct IdleRepeatCatalog: CatalogProviding {
-    func searchTracks(_: String, limit _: Int) async throws -> [PathfinderTrack] {
-        throw RepeatCatalogFailure.unavailable
-    }
-    func home() async throws -> PathfinderHome { throw RepeatCatalogFailure.unavailable }
-    func libraryPlaylists() async throws -> [PathfinderPlaylist] { throw RepeatCatalogFailure.unavailable }
-    func libraryAlbums() async throws -> [PathfinderAlbum] { throw RepeatCatalogFailure.unavailable }
-    func libraryArtists() async throws -> [PathfinderArtist] { throw RepeatCatalogFailure.unavailable }
-    func libraryTracks() async throws -> [PathfinderLibraryTrackItem] { throw RepeatCatalogFailure.unavailable }
-    func profile() async throws -> PathfinderProfile { throw RepeatCatalogFailure.unavailable }
-    func playlist(id _: String) async throws -> PathfinderPlaylistUnion { throw RepeatCatalogFailure.unavailable }
 }
 
 private func repeatEnvironment(
@@ -220,14 +169,14 @@ private func repeatEnvironment(
         remote: remote,
         local: local,
         webQueue: IdleRepeatWebQueue(),
-        account: IdleRepeatAccount(),
-        audioOutput: IdleRepeatAudio(),
+        account: BoundaryIdleAccount(),
+        audioOutput: BoundaryIdleAudio(),
         preferences: IdleRepeatPreferences(),
-        lifecycle: IdleRepeatLifecycle(),
+        lifecycle: BoundaryIdleLifecycle(),
         clock: StickyRepeatClock(),
-        catalog: IdleRepeatCatalog(),
+        catalog: BoundaryIdleCatalog(),
         playlistMutations: UnavailablePlaylistMutations(),
-        trackAttributes: IdleRepeatAttributes()
+        trackAttributes: BoundaryIdleAttributes()
     )
 }
 
@@ -896,19 +845,5 @@ struct RepeatTransitionTests {
             await duplicateStore.shutdownForTermination()
         }
 
-        do {
-            do {
-                do {
-                    let transport = try spottySourceFile("Spotty/Spotify/PlaybackStore+Transport.swift")
-                    #expect(
-                        (!containsToken(transport, "setRepeat(")
-                            && !containsToken(transport, "reconcileRepeatCommandFailure")) == true,
-                        "cycleRepeat no longer assigns presentation outside the reducer")
-
-                } catch {
-                    Issue.record("\("PlaybackStore transport source is readable"): unexpected error \(error)")
-                }
-            }
-        }
     }
 }

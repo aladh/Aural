@@ -232,6 +232,9 @@ for (( run = 1; run <= repeat_count; run++ )); do
     swift test "${boundary_test_arguments[@]}"
 done
 
+# Check mutation access against the actual testable Debug module built by the boundary suite.
+"$project_root/Scripts/check-playback-projection-access.sh"
+
 # Architectural dependency rules. The domain must stay portable and deterministic,
 # and the C ABI remains isolated behind the playback adapter boundary.
 forbidden_domain_imports="$(rg -n '^import (AppKit|SwiftUI|AVFoundation|SpottyPlaybackCore)$' \
@@ -311,6 +314,25 @@ if ! rg -q --fixed-strings 'SPOTTY_DEVELOPMENT_SIGNING_IDENTITY' \
     print -u2 "Authenticated development signing policy is incomplete"
     exit 1
 fi
+
+# Lexical API boundary only: the app's legacy Keychain owner must not reference these
+# opt-in APIs. This does not prove credential storage behavior or signing correctness.
+legacy_keychain_api_pattern='\b(kSecUseDataProtectionKeychain|kSecAttrAccessGroup)\b'
+if rg -n "$legacy_keychain_api_pattern" \
+    "$project_root/Sources/Spotty/Spotify/KeychainManager.swift"; then
+    print -u2 "KeychainManager must not reference data-protection or access-group APIs"
+    exit 1
+fi
+if rg -q "$legacy_keychain_api_pattern" <<< 'let query = [kSecClass: kSecClassGenericPassword]'; then
+    print -u2 "Legacy Keychain API check rejected an allowed fixture"
+    exit 1
+fi
+for forbidden_keychain_api in kSecUseDataProtectionKeychain kSecAttrAccessGroup; do
+    if ! rg -q "$legacy_keychain_api_pattern" <<< "let query = [$forbidden_keychain_api: true]"; then
+        print -u2 "Legacy Keychain API check missed a forbidden fixture"
+        exit 1
+    fi
+done
 
 # Passing one PlaybackStore field as inout while the callee touches another field on the same
 # store traps at runtime under Swift's exclusivity enforcement. Keep engine revision gates keyed

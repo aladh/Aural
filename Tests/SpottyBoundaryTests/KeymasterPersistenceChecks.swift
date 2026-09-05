@@ -136,29 +136,6 @@ struct KeymasterPersistenceTests {
     }
 }
 
-@Suite("Keymaster Persistence Source Contract")
-struct KeymasterPersistenceSourceContractTests {
-    @Test @MainActor
-    func testKeymasterPersistenceSourceContract() {
-        do {
-            let session = try sourceFile("Spotty/Spotify/KeymasterSession.swift")
-            let store = try sourceFile("Spotty/Spotify/KeymasterTokenStore.swift")
-            let keychain = try sourceFile("Spotty/Spotify/KeychainManager.swift")
-            #expect(session.contains("private typealias DefaultKeymasterTokenStore = KeymasterKeychainStore"))
-            #expect(!store.contains("UserDefaults.standard.data"))
-            #expect(store.contains("UserDefaults.standard.removeObject"))
-            #expect(keychain.contains("KeymasterStoredGrantCodec.decode(data)"))
-            #expect(!keychain.contains("load(key: keymasterTokensKey, service: retiredKeymasterService)"))
-            #expect(!keychain.contains("kSecUseDataProtectionKeychain as String"))
-            #expect(!keychain.contains("kSecAttrAccessGroup"))
-            #expect(keychain.contains("Self-signed development signatures are build-only"))
-            #expect(keychain.contains("requires an Apple-issued team signature"))
-        } catch {
-            Issue.record("token persistence sources are readable: unexpected error \(error)")
-        }
-    }
-}
-
 private func persistenceGrant(access: String, refresh: String, expiresAt: Date = Date().addingTimeInterval(3_600))
     -> KeymasterTokens
 {
@@ -263,13 +240,4 @@ private final class GatedPersistenceStore: KeymasterTokenStoring, @unchecked Sen
     }
 
     func releaseFirstSave() { firstSaveGate.signal() }
-}
-
-private func sourceFile(_ relativePath: String) throws -> String {
-    let checksDirectory = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
-    let repositoryRoot = checksDirectory.deletingLastPathComponent().deletingLastPathComponent()
-    return try String(
-        contentsOf: repositoryRoot.appending(path: "Sources").appending(path: relativePath),
-        encoding: .utf8
-    )
 }
