@@ -4,9 +4,8 @@ Status: accepted on 2026-09-04.
 
 ## Context
 
-Retaining Rust/librespot does not require every app developer to maintain its toolchain. The previous
-static archive also lived outside SwiftPM's dependency graph, leaving callers responsible for
-freshness and relinking.
+The previous static archive lived outside SwiftPM's dependency graph, leaving callers responsible
+for freshness, relinking, and Rust tooling even during app-only work.
 
 ## Decision
 
@@ -24,19 +23,15 @@ Replacing an archive under the same name was insufficient in the tested toolchai
 
 ## Alternatives and tradeoffs
 
-Source-only integration keeps distribution simple but imposes Rust tooling on ordinary Swift work.
-Checking binaries into Git would grow repository history without providing SwiftPM's remote artifact
-resolution. The binary target removes that build dependency while retaining the existing C ABI.
-Keeping the Swift adapter in source avoids compiled Swift-module compatibility requirements.
+Source-only integration simplifies distribution but requires Rust tooling for Swift work. Committing
+engine binaries grows Git history without remote artifact resolution. A binary target retains the
+C ABI; keeping the Swift adapter in source avoids compiled Swift-module compatibility requirements.
 
 Artifact availability, checksums, provenance, and license material become part of the build contract.
 Engine changes require a validated artifact and pin update; Rust debugging still needs the source
 toolchain. Apple SDK and signing requirements are unchanged.
 
-CI verifies source-built candidates before publication and the published dependency before merge,
-with Rust blocked in app lanes. [Agent operations](../CONTRIBUTING.md#playback-binary-artifacts) owns
-build, publication, and pin-update commands; the [enforcement inventory](architecture-enforcement.md)
-owns the coverage map.
-
-This decision changes build distribution, not [ADR 005](ADR-005-retain-librespot.md)'s engine choice
-or runtime ownership.
+CI verifies source-built candidates before publication and published artifacts before merge, with
+Rust blocked in app lanes. See [agent operations](../CONTRIBUTING.md#playback-binary-artifacts) for
+commands and the [enforcement inventory](architecture-enforcement.md) for coverage.
+[ADR 005](ADR-005-retain-librespot.md) still owns engine choice and runtime ownership.
