@@ -273,6 +273,7 @@ if [[ -n "$manifest_path" ]]; then
     fi
     artifact_checksum="$(manifest_value artifact.checksum)"
     [[ "$artifact_checksum" =~ ^[0-9a-fA-F]{64}$ ]] || fail "artifact checksum is not SHA-256"
+    require_equal "manifest archive name" "${artifact_url##*/}" "$(manifest_value artifact.archive)"
     require_equal "manifest source revision" \
         "$(provenance_value source.sourceRevision)" "$(manifest_value source.sourceRevision)"
     require_equal "manifest source dirty flag" \

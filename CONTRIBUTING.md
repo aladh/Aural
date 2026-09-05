@@ -118,7 +118,8 @@ work merits stress.
 
 The artifact pin lives in `Backend/spotty-playback/artifact-manifest.json` and a generated declaration
 in `Package.swift`. The pin updater changes both together. Literal package declarations make pin
-changes visible to SwiftPM's manifest cache. They pin an immutable engine ZIP by URL and SHA-256. The artifact contains one macOS ARM64 static-library slice,
+changes visible to SwiftPM's manifest cache. They pin an immutable engine ZIP by URL and SHA-256.
+The artifact contains one macOS ARM64 static-library slice,
 its matching C headers/module map, provenance, and dependency notices. Ordinary SwiftPM builds
 resolve that dependency without Cargo or cbindgen. Never overwrite an existing published asset.
 
@@ -133,16 +134,14 @@ SPOTTY_CHECK_SCOPE=swift ./Scripts/check.sh
 ./Scripts/compile-release-spotty.sh
 ```
 
-Rebuild that artifact and refresh the override after changing any engine input. Both its default
+Rebuild that artifact and refresh the override after changing any engine input. Its default
 directory carries the engine digest, and the library filename carries both engine-input and binary
-digests. This changes the linker input when the
-engine changes; replacing a same-named static archive alone can leave a cached executable linked to
-old code in SwiftPM. The local override selects a binary; it does
-not arrange an implicit Cargo build. Unset it to return to the published dependency. Full Rust
+digests. This changes the linker input when the engine changes; replacing a same-named static archive alone can leave a cached executable linked to
+old code in SwiftPM. The local override selects a binary; it does not arrange an implicit Cargo build. Unset it to return to the published dependency. Full Rust
 verification remains `SPOTTY_CHECK_SCOPE=rust ./Scripts/check.sh`.
 
-Artifact production uses Python 3.11 or newer for dependency-notice generation in addition to the engine and
-Apple toolchains. Python is not an app-build prerequisite. The embedded notices travel into packaged
+Artifact production uses Python 3.11 or newer for dependency-notice generation in addition to the
+engine and Apple toolchains. Python is not an app-build prerequisite. The embedded notices travel into packaged
 apps without regeneration.
 
 The artifact publication workflow builds the selected source revision with read-only repository
@@ -151,6 +150,26 @@ with release credentials. The resulting pin is updated in a reviewed source chan
 releases have separate identities. Verify the downloaded artifact with its checksum and source input
 digest before updating the manifest. Keep source revision, Cargo lock identity, headers, library,
 and required license/source material traceable together.
+
+After the publication workflow is on main, publish an explicitly authorized, reviewed engine commit:
+
+```bash
+gh workflow run playback-artifact.yml --ref main -f source_ref="$reviewed_source_sha"
+```
+
+Download the resulting release ZIP, then update both pin declarations from its embedded provenance:
+
+```bash
+./Backend/spotty-playback/update-artifact-manifest.sh \
+  --archive /absolute/path/SpottyPlaybackCore.xcframework.zip \
+  --url "$published_artifact_url"
+unset SPOTTY_PLAYBACK_LOCAL_XCFRAMEWORK
+SPOTTY_CHECK_SCOPE=swift ./Scripts/check.sh
+./Scripts/compile-release-spotty.sh
+```
+
+Commit the pin update in a PR. Publication rejects dirty source and existing release identities;
+normal app builds fail clearly when the pinned artifact is unavailable rather than compiling Rust.
 
 ## Clean and risk-specific verification
 
