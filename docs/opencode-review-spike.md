@@ -41,6 +41,15 @@ usage remains separate from model pricing.
 
 ## Evidence before adoption
 
+The first [Actions run](https://github.com/aladh/Spotty/actions/runs/33947896871) at input head
+`a84ec470972f99603328bfb09987d8167e87d97f` succeeded in 1m22s and posted an App comment with `xhigh`
+selected. A separate local xhigh synthetic bounds-check review found the seeded bug and reported
+cost zero. However, the first PR review incorrectly claimed the exported `PROMPT` was unused and
+that the official upstream was a fork. The [maintainer disposition](https://github.com/aladh/Spotty/pull/268#issuecomment-5549761593)
+records the evidence and remaining limitations. The integration works; this result does not justify
+an authoritative gate. The official runner posts ordinary comments, with no built-in incremental
+baseline, finding deduplication, or approval-state lifecycle.
+
 Record the workflow run, reviewed revision, latency, errors, and findings in the spike PR. Compare
 findings with existing reviewers and independently check each claim. A successful request is only
 permission to proceed with the reviewer implementation, not evidence for making it required.
