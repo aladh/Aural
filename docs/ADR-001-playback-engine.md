@@ -22,8 +22,8 @@ clone of any particular implementation.
 
 Keep the embedded Rust/librespot core, but treat it as a replaceable leaf:
 
-- Swift reaches it only through `Sources/SpottyPlaybackCore`, `PlaybackCore.swift`, and
-  `RustPlaybackEngine`.
+- Swift reaches it through the `SpottyPlaybackCore` C module,
+  `Sources/Spotty/Spotify/PlaybackCore.swift`, and `RustPlaybackEngine`.
 - Swift owns application logic: state, queue policy, presentation, resume policy, catalog, OAuth,
   persistence, and error policy. `AudioRenderer` stays native AVFoundation.
 - `SpottyCore` is the testable Swift application implementation, not another playback

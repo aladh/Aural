@@ -1,9 +1,8 @@
 # Architecture enforcement inventory
 
-This is the routing table for Spotty's hard rules. It tells agents where a rule is decided, how it is
-proved, and where enforcement is intentionally semantic rather than mechanical. It is not a second
-architecture manual and it does not repeat complete requirements from ADRs, product contracts, or
-agent instruction files.
+This routing table names each hard rule's decision owner and strongest available proof. It also
+marks rules that require semantic review instead of mechanical enforcement. Complete requirements
+remain in the ADRs, product contract, and agent instructions.
 
 Spotty has no human implementation or review path. In this document, **semantic agent review** means
 inspection of the affected code, tests, diff, and canonical decisions by the implementing agent and
@@ -24,8 +23,7 @@ Do not promote concurrency, epochs, queue provenance, lifecycle, optimistic roll
 correctness into regex snapshots. Conversely, do not rely on prose when the package graph or a small
 source check can own an exact boundary.
 
-Stable IDs below preserve searchability for existing issue and code history. They are navigation, not
-an API and not a reason to create one row per implementation detail.
+Stable IDs preserve searchability in issue and code history. They are navigation, not an API.
 
 ## Mechanically enforced families
 
@@ -55,7 +53,7 @@ an API and not a reason to create one row per implementation detail.
 | `TST-DEV-001` | `ConnectDeviceProjection` owns device activity, sort, and empty-type fallback; the engine sends a typed C device-list snapshot (protocol members plus `active_device_id`) | ADR 005 | Domain suite for presentation; Rust C-snapshot layout/callback coverage for the wire |
 | `TST-CON-001` | `ConnectionSnapshotProjection` owns session phase and empty-device-ID fallback; the engine sends a typed C connection snapshot (session flags, `credentials_rejected`, `device_id`, `last_error`) | ADR 005 | Domain suite for presentation; Rust C-snapshot layout/callback coverage for the wire |
 | `TST-PBK-001` | `PlaybackSnapshotProjection` owns engine playback transport, empty-URI identity, timestamp correction, and omitted-repeat fallback; the engine sends a typed C playback snapshot (protocol playing/paused flags, track URI, context URI, timing, options, and active-device fact) | ADR 005 | Domain suite for presentation; Rust C-snapshot layout/callback coverage for the wire |
-| `TST-RES-001` | User-resume and reconnect-rehydration load targets come from one Swift `ResumeLoadPlan` over sticky resume-load URIs issued through seek-capable `spotty_playback_load`; the engine holds readiness open behind `resume_pending` and Swift issues one load sequence per engine session generation | ADR 005 | `ResumeLoadPlanChecks.swift`, store capture vs presentation, `ResumeLoadSequence` for both callers in `ResumeLoadSequenceChecks.swift`, the once-per-generation and stale-window triggers in the workflow suite, and Rust identity / window / export-signature coverage |
+| `TST-RES-001` | One Swift `ResumeLoadPlan` supplies sticky resume-load targets for user resume and reconnect rehydration. The engine holds readiness behind `resume_pending`; Swift issues at most one load sequence per engine session generation. | ADR 005 | `ResumeLoadPlanChecks.swift`, `ResumeLoadSequenceChecks.swift`, workflow stale-window coverage, and Rust identity/window/export-signature coverage |
 | `TST-PCM-001` | PCM bypasses observable UI state and callbacks stay bounded | ADR 001–002 | PCM write-space/backpressure boundary checks plus semantic timing review |
 | `TST-PLM-001`, `TST-FBK-001` | Playlist writes stay behind mutation owners; transient mutation feedback stays out of playback state | ADR 002 and product contract | Playlist/editability and transient-feedback suites |
 | `TST-DEP-001` | Live dependencies are assembled at composition; views/stores use narrow injected boundaries | ADR 002 | Package/source topology plus injected workflow checks |

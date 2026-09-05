@@ -3,9 +3,7 @@
 This conventional filename is retained for repository tooling and links. Start with
 [AGENTS.md](AGENTS.md), then load only the procedure needed for the task.
 
-## Environment
-
-See the canonical prerequisites and toolchain versions in the
+Prerequisites, toolchain pins, signing setup, and generated local state are in the
 [development setup guide](docs/development-setup.md#fresh-clone).
 
 ## Build and run
@@ -32,14 +30,10 @@ Useful modes:
 ./script/build_and_run.sh --telemetry
 ```
 
-Authenticated launches require an Apple Development identity with a stable Team ID. A free Xcode
-Personal Team is sufficient for local personal use. When exactly one identity is installed, the
-script selects it; otherwise set `SPOTTY_DEVELOPMENT_SIGNING_IDENTITY` to the exact name from
-`security find-identity -p codesigning -v`.
-
-The generated identity under ignored `.build/spotty-signing/` is for build/package verification only.
-It is not trusted, is not a distribution identity, must not be used to sign in, and must never be
-installed in the login keychain or committed.
+Authenticated launches require an Apple Development identity with a stable Team ID. When exactly one
+is available, the script selects it; otherwise set `SPOTTY_DEVELOPMENT_SIGNING_IDENTITY` to the exact
+name reported by `security find-identity -p codesigning -v`. See the setup guide for creating an
+identity and for Keychain recovery.
 
 ## Normal verification
 
@@ -60,29 +54,21 @@ Rust/C export and header parity, Swift builds with project-owned warnings as err
 Swift tests, architecture contracts, CI policy, and packaging metadata. It does not sign in
 or initiate playback.
 
-After changing a generated ABI declaration, run `./Scripts/generate-c-header.sh` and commit the
-result with the Rust change. `./Scripts/generate-c-header.sh --check` verifies reproducibility without
-modifying the header. Install the version listed in the [setup guide](docs/development-setup.md#fresh-clone),
-or set `SPOTTY_CBINDGEN` to that executable's path. The wrapper checks the version and ABI export
-set and never installs tools; CI installs the pin explicitly. Generation does not replace the
-C/Rust layout, signature, ownership, or callback-lifetime checks.
+After changing a Rust ABI declaration, run `./Scripts/generate-c-header.sh` and commit the generated
+header. `--check` verifies reproducibility without modifying it. cbindgen is pinned in the
+[setup guide](docs/development-setup.md#fresh-clone); set `SPOTTY_CBINDGEN` when it is not on `PATH`.
+The wrapper validates its version and export set without installing tools.
 
-`Backend/spotty-playback/cbindgen.toml` generates all playback function declarations and snapshot
-layouts from Rust into `Sources/SpottyPlaybackCore/include/spotty_playback_generated.h`. Edit the Rust
-declarations and their ownership documentation, then regenerate; do not edit that artifact by hand.
-The public `spotty_playback.h` remains the umbrella include.
+`Backend/spotty-playback/cbindgen.toml` generates
+`Sources/SpottyPlaybackCore/include/spotty_playback_generated.h`. Edit the Rust declarations and
+their ownership documentation, then regenerate; never edit the generated header. Keep Swift-specific
+nullable-pointer and open-enum annotations in `spotty_playback_annotations.h`. Do not enable
+cbindgen's global nullable-pointer annotation: it would make required callback pointers nullable.
+The umbrella include remains `spotty_playback.h`.
 
-The small handwritten `spotty_playback_annotations.h` owns Swift's open-enum and nullable-pointer
-annotations. Rust uses matching primitive and typed-pointer aliases without runtime conversions.
-The generated declarations retain the existing assumed-nonnull contract. Do not enable cbindgen's
-global nullable-pointer annotation: it also marks required callback pointers nullable. Keep semantic
-annotations separate from generated field lists and function signatures.
-
-`Scripts/check-c-header-imports.sh` type-checks the Swift import contract and expected failures for
-nullable pointers used without unwrapping. It never links or executes the fixtures. Extend these
-probes when introducing another pointer shape. The C compiler independently checks the unchanged
-`abi-signatures.txt` contract through typedef aliases; the Rust assignments and C layout checks
-remain separate proof.
+`Scripts/check-c-header-imports.sh` compile-checks Swift imports, including nullable-pointer failures,
+without linking or running playback. Extend it for a new pointer shape. The full gate separately
+checks C/Rust layouts, signatures, exports, and callback lifetimes.
 
 Swift formatting uses the selected Swift 6.3 toolchain's `swift-format`:
 
@@ -100,9 +86,7 @@ The two non-shipping Swift Testing targets are:
 - `SpottyBoundaryTests`: concrete codecs, fixtures, stores, coordinators, queue flows, and other
   injected SpottyCore boundaries.
 
-Their sources live under `Tests/SpottyDomainTests/` and `Tests/SpottyBoundaryTests/`. Each behavior
-area is grouped in a named Swift Testing `@Suite`; parameterized suites are used for deterministic
-input matrices where the expected result is independent for each case.
+Their sources live under `Tests/SpottyDomainTests/` and `Tests/SpottyBoundaryTests/`.
 
 Use standard SwiftPM filtering for focused iteration:
 

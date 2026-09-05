@@ -11,7 +11,7 @@ linking errors, not to silently change its decision.
 | --- | --- | --- |
 | [ADR 001: Playback engine boundary](ADR-001-playback-engine.md) | Accepted; retained by ADR 005 | Keep librespot as a contained, replaceable leaf behind one adapter and one C header; Swift owns application logic. |
 | [ADR 002: Atomic playback state and explicit dependency ownership](ADR-002-playback-state-and-dependencies.md) | Accepted | Use one reducer-owned playback snapshot, explicit dependency assembly, and generation-aware async ownership. |
-| [ADR 003: Keep PlaybackEffectRegistry; reject TCA and a generic Effect type](ADR-003-playback-command-effects.md) | Accepted | Keep store-level `PlaybackEffectRegistry`; do not adopt TCA or a generic Effect type. Reducer acceptance gates follow-ups through `playbackCommandFollowUp`; captured same-lifetime resolution and matching-snapshot reconciliation are the documented exceptions, consume-only acceptance cannot report coordinator failure, and one reconnect rule applies. |
+| [ADR 003: Keep PlaybackEffectRegistry; reject TCA and a generic Effect type](ADR-003-playback-command-effects.md) | Accepted | Keep the store-level `PlaybackEffectRegistry`; reducer acceptance gates command follow-ups and reconnect recovery. |
 | [ADR 004: Move Spotty-owned playback logic into Swift incrementally](ADR-004-swift-owned-playback-logic.md) | Superseded by ADR 005 | Historical incremental ownership decision; applicable ownership principles are retained by ADR 005. |
 | [ADR 005: Retain librespot as the playback engine](ADR-005-retain-librespot.md) | Accepted | Keep the pinned Rust/librespot engine as the sole production playback implementation; Swift owns application policy and native presentation behind the narrow C boundary. |
 | [ADR 006: Prebuilt playback engine through SwiftPM](ADR-006-prebuilt-playback-engine.md) | Accepted | Ordinary app builds consume a checksum-pinned static XCFramework; Rust tools remain in the explicit engine-development and artifact-production workflow. |
@@ -26,7 +26,7 @@ These documents are supporting evidence or protocol notes, not accepted ADRs:
 
 - [Private extended-metadata protocol](extended-metadata.md)
 - [Playback engine ownership](playback-engine-ownership.md): live Swift/Rust classification, FFI
-  surface, implemented retained-engine guarantees, and the measured resource baseline
+  surface, retained-engine guarantees, and the historical resource baseline
 
 ## Maintaining these records
 

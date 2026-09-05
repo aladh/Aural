@@ -16,9 +16,11 @@ playback services, plus artwork hosts returned by Spotify. It has no Spotty-oper
 
 ## Local storage
 
-- Spotify OAuth credentials are stored in macOS Keychain in every build. Local development
-  packaging reuses a stable project-local signing identity so Keychain access policy survives
-  rebuilds. Retired plaintext and Keychain credentials are deleted without being imported.
+- Spotify OAuth credentials are stored in macOS Keychain. Authenticated development launches
+  use an Apple-issued signing identity with a stable Team ID so Keychain authorization survives
+  rebuilds; see [signing setup](docs/development-setup.md#fresh-clone). Self-signed packages are
+  build-only and must not be used to sign in. Retired plaintext and Keychain credentials are
+  deleted without being imported.
 - Local preferences also retain a random installation/device identifier, UI preferences, shuffle
   history, and playback preferences.
 - Artwork is held in a bounded ephemeral URL cache and in-memory image cache; the app purges its

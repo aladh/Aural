@@ -42,40 +42,36 @@ caches it. The artifact includes the matching C headers and static library. App 
 tests, and packaging do not require Cargo, rustc, or cbindgen. The Apple SDK and Clang remain necessary
 for the C import and native link. No Spotify sign-in or playback occurs in the verification gate.
 
-For authenticated development, sign in to Xcode with an Apple Account and select its free Personal
-Team; paid Apple Developer Program membership is not required for local personal use. Create an
-Apple Development certificate in Xcode's Accounts settings. If that control is unavailable for a
-Personal Team, create a disposable macOS App project, select the Personal Team under **Signing &
-Capabilities**, and let Xcode manage signing once; the disposable project can then be discarded.
-`build_and_run.sh` automatically uses the identity when exactly one is available. If the machine has
-multiple Apple Development identities, select one explicitly using the exact name printed by
-`security find-identity -p codesigning -v`:
+For an authenticated launch, sign in to Xcode with an Apple Account and create an Apple Development
+certificate under its free Personal Team; paid membership is unnecessary for local personal use. If
+Xcode does not offer that control, create a disposable macOS App project, select the Personal Team
+under **Signing & Capabilities**, and let Xcode manage signing once.
+
+`build_and_run.sh` selects the only available Apple Development identity. When several are available,
+choose one with its exact name from `security find-identity -p codesigning -v`:
 
 ```bash
 export SPOTTY_DEVELOPMENT_SIGNING_IDENTITY='Apple Development: Your Name (TEAMID)'
 ```
 
-Then build, package, sign, and launch the development app:
+Then build, package, sign, and launch the development app. This replaces a running development copy,
+so use it only for an authorized launch or interactive acceptance:
 
 ```bash
 ./script/build_and_run.sh
 ```
 
-The launch script requires an Apple-issued signing identity with a Team ID. The stable Team ID is
-the Keychain authorization boundary that survives changes to the app's per-build CDHash. A
-self-signed certificate cannot provide that invariant on current macOS: Keychain records the
-changing CDHash in the password item's partition ACL and prompts again after later rebuilds.
+The launch script requires an Apple-issued identity with a Team ID. That stable identity preserves
+the Keychain authorization boundary across rebuilds; self-signed certificates do not.
 
-`Scripts/package-app.sh` can still create a build-only self-signed bundle using an isolated identity
-and keychain under `.build/spotty-signing/`. That path exists for deterministic packaging checks; it
-is local-only, unsuitable for distribution, and must not be used to sign in. `build_and_run.sh`
-fails before terminating or launching the Spotty executable when no Apple-issued team identity is
-available.
+`Scripts/package-app.sh` can create a build-only self-signed bundle with an isolated identity and
+keychain under `.build/spotty-signing/`. It is local-only, unsuitable for distribution or sign-in.
+`build_and_run.sh` fails before terminating or launching Spotty when no Apple-issued Team identity
+is available. Never install the generated identity in the login keychain or commit it.
 
-Sandboxed development tools may require permission for the packaging or launch script to invoke
-macOS `security` and `codesign`. Grant the script as a unit instead of approving individual
-commands. Signing with an Apple Development identity can require the identity's private-key access
-once; it must not require Spotty to reauthorize its stored Spotify credential after every rebuild.
+Sandboxed development tools may need permission for the packaging or launch script to invoke
+`security` and `codesign`. Apple Development signing can require private-key access once; Spotty
+should not reauthorize its stored Spotify credential after later rebuilds.
 
 If the current item's authorization cannot be repaired, delete only that item as a fallback:
 
@@ -86,14 +82,13 @@ security delete-generic-password \
 ```
 
 Deleting the item removes the stored Spotify grant and requires browser authorization again. Do not
-repeat it as a workaround for later builds; a later prompt means the app is not using the same Apple
-team identity and should be diagnosed with `codesign -dvvv Spotty.app`.
+repeat it for later prompts; diagnose those with `codesign -dvvv Spotty.app` and the selected Team
+identity.
 
-On first launch, choose Connect and complete Spotify authorization in the browser. The grant is
-stored in the macOS Keychain. Authentication state is machine-local and intentionally not stored in Git.
-Follow the
-[product and acceptance contract](product-and-acceptance-contract.md) before exercising a live
-Spotify account; playback is opt-in during acceptance testing.
+On first launch, choose Connect and authorize Spotify in the browser. The grant stays in the macOS
+Keychain and is never stored in Git. Before exercising a live account, follow the
+[product and acceptance contract](product-and-acceptance-contract.md); playback is opt-in during
+acceptance testing.
 
 ## Engine development
 
@@ -113,14 +108,14 @@ published artifact throughout.
 
 ## Generated local state
 
-The following are reproducible, ignored outputs and may be deleted at any time:
+The following are ignored local outputs. Remove them only when cleanup is authorized; do not treat
+signing material as disposable build output:
 
 - `.build/` and `Backend/spotty-playback/target/` — Swift and Rust build products;
 - `Backend/lib/*.a` — intermediate static archives for explicit engine builds;
 - `Spotty.app/` and `dist/` — local packages and archives;
-- `diagnostics/` — local diagnostic exports that must be reviewed before sharing;
-- `SpottyArtwork/` — the bounded artwork cache;
-- `.DS_Store` and `.swiftpm/` — local tooling metadata.
+- `diagnostics/` — local reports; review them before sharing;
+- `SpottyArtwork/`, `.DS_Store`, and `.swiftpm/` — artwork cache and local tooling metadata.
 
 When changing the master app artwork in `Assets/SpottyIcon.png`, regenerate every standard macOS
 icon representation with `./Scripts/generate-icon.sh`. Every representation is derived from that

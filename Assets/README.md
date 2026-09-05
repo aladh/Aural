@@ -1,8 +1,8 @@
 # App icon
 
-`SpottyIcon.png` is the square source artwork for the native macOS app icon. The mark uses five
-connected audio spots to form a compact waveform on a charcoal tile. It is intentionally distinct
-from Spotify's three-line logo and contains no Spotify artwork.
+[SpottyIcon.png](SpottyIcon.png) is the square source artwork for the native macOS app icon. Five
+connected audio spots form a compact waveform on a charcoal tile. The mark is distinct from
+Spotify's three-line logo and contains no Spotify artwork.
 
 The source artwork was generated with Codex's built-in image-generation tool from this design brief:
 
@@ -12,6 +12,6 @@ The source artwork was generated with Codex's built-in image-generation tool fro
 > 16 px. Use no text, letters, musical notes, headphones, play triangle, equalizer bars, watermark,
 > or imitation of Spotify's logo.
 
-Run `./Scripts/generate-icon.sh` from the repository root after changing the source PNG. The script
-downsamples that exact artwork into every macOS icon representation, generates `Spotty.icns` with
-Finder-compatible legacy encodings, and verifies every representation survives a round trip.
+The generated `Spotty.icns` contains every standard macOS icon size, with Finder-compatible legacy
+encodings. After changing the source PNG, follow the
+[icon regeneration procedure](../docs/development-setup.md#generated-local-state).
