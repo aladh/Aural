@@ -101,8 +101,9 @@ baselines.
   in flight, silently refuse another removal: cancelling the local task cannot undo an accepted
   `set_queue`. Cancelled or account-epoch-invalidated in-flight removals also retain the queue
   without transient feedback.
-- Local-owner removal is disabled: librespot `Spirc` at the pinned revision exposes `add_to_queue`
-  only, and inbound `SetQueue` is not a public local command. Any future support must remain within
+- Local-owner removal is disabled: librespot `Spirc` at the pinned revision exposes append and
+  clear operations, but not selected-occurrence removal, and inbound `SetQueue` is not a public
+  local command. Any future support must remain within
   the retained engine boundary and pass focused checks. Add to Queue remains available for local
   and remote owners, including multiple selected tracks in visible order.
 
