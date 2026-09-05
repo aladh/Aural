@@ -63,7 +63,7 @@ if [[ ! -s "$native_icon_catalog" ]]; then
     exit 1
 fi
 if [[ ! -s "$legacy_icon" ]]; then
-    print -u2 "Missing legacy app icon fallback: $legacy_icon"
+    print -u2 "Missing legacy app icon file: $legacy_icon"
     exit 1
 fi
 if [[ "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIconName' "$info_plist")" != "Spotty" ]]; then
@@ -71,7 +71,7 @@ if [[ "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIconName' "$info_plist")" !=
     exit 1
 fi
 if [[ "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIconFile' "$info_plist")" != "Spotty" ]]; then
-    print -u2 "App bundle must retain the Spotty.icns fallback with CFBundleIconFile=Spotty"
+    print -u2 "App bundle must retain the Spotty.icns resource with CFBundleIconFile=Spotty"
     exit 1
 fi
 
