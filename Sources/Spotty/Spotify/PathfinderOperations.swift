@@ -115,11 +115,6 @@ nonisolated struct PathfinderOperation: Sendable, Equatable {
         sha256Hash: playlistMutationHash,
     )
 
-    static let moveItemsInPlaylist = PathfinderOperation(
-        name: "moveItemsInPlaylist",
-        sha256Hash: playlistMutationHash,
-    )
-
     private static let playlistMutationHash =
         "47b2a1234b17748d332dd0431534f22450e9ecbb3d5ddcdacbd83368636a0990"
 

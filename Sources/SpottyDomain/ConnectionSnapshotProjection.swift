@@ -22,20 +22,7 @@ public enum ConnectionSnapshotProjection: Sendable {
     public static func sessionPhase(
         connected: Bool,
         spircReady: Bool,
-        lastError: String?
-    ) -> PlaybackSessionPhase? {
-        sessionPhase(
-            connected: connected,
-            spircReady: spircReady,
-            credentialsRejected: false,
-            lastError: lastError
-        )
-    }
-
-    public static func sessionPhase(
-        connected: Bool,
-        spircReady: Bool,
-        credentialsRejected: Bool,
+        credentialsRejected: Bool = false,
         lastError: String?
     ) -> PlaybackSessionPhase? {
         if credentialsRejected {

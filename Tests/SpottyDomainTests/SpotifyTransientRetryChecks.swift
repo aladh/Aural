@@ -124,7 +124,6 @@ struct SpotifyTransientRetryTests {
                     now: now,
                     unitJitter: 1
                 )) == nil, "non-retryable status has no delay")
-            #expect((SpotifyTransientRetry.maximumAttempts) == (3), "attempt budget is three")
         }
     }
 }

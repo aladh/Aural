@@ -24,7 +24,6 @@ final class SearchStore {
     private(set) var isSearching = false
 
     // Compatibility projections retained for the small boundary-check executable.
-    var results: [CatalogTrack] { tracks }
     var error: String? {
         Section.allCases.lazy.compactMap { self.errors[$0] }.first
     }

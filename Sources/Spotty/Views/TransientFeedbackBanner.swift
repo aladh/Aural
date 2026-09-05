@@ -63,8 +63,7 @@ struct TransientFeedbackBanner: View {
 
     private func iconStyle(for kind: TransientFeedbackKind) -> some ShapeStyle {
         switch kind {
-        case .success: Color.secondary
-        case .informational: Color.secondary
+        case .success, .informational: Color.secondary
         case .failure: Color.orange
         }
     }

@@ -179,14 +179,6 @@ nonisolated struct PlaylistItemPosition: Encodable, Sendable {
     var fromUid: String?
 
     static let bottom = PlaylistItemPosition(moveType: .bottom)
-
-    static func before(uid: String) -> PlaylistItemPosition {
-        PlaylistItemPosition(moveType: .beforeUid, fromUid: uid)
-    }
-
-    static func after(uid: String) -> PlaylistItemPosition {
-        PlaylistItemPosition(moveType: .afterUid, fromUid: uid)
-    }
 }
 
 /// The variables `fetchPlaylist` takes.
@@ -210,10 +202,4 @@ nonisolated struct PathfinderAddVariables: Encodable, Sendable {
 nonisolated struct PathfinderRemoveVariables: Encodable, Sendable {
     var playlistUri: String
     var uids: [String]
-}
-
-nonisolated struct PathfinderMoveVariables: Encodable, Sendable {
-    var playlistUri: String
-    var uids: [String]
-    var newPosition: PlaylistItemPosition
 }

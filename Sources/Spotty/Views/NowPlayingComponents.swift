@@ -181,8 +181,12 @@ struct NowPlayingTimeControls: View {
     var body: some View {
         HStack(spacing: 8) {
             Button {
-                withAnimationIfAllowed(.snappy(duration: 0.2), reduceMotion: reduceMotion) {
+                if reduceMotion {
                     showsSidePanel.toggle()
+                } else {
+                    withAnimation(.snappy(duration: 0.2)) {
+                        showsSidePanel.toggle()
+                    }
                 }
             } label: {
                 Image(systemName: "list.bullet")

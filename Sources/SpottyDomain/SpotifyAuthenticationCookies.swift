@@ -8,13 +8,13 @@ public enum SpotifyAuthenticationCookies {
     }
 
     /// Spotify's registrable domain, including a leading-dot cookie domain and subdomains.
-    public static func matchesDomain(_ domain: String) -> Bool {
+    private static func matchesDomain(_ domain: String) -> Bool {
         let host = normalizeDomain(domain)
         return host == "spotify.com" || host.hasSuffix(".spotify.com")
     }
 
     /// Cookie paths are origin-form (`/` or a subdirectory). Anything else is not ours to remove.
-    public static func matchesPath(_ path: String) -> Bool {
+    private static func matchesPath(_ path: String) -> Bool {
         path.hasPrefix("/")
     }
 

@@ -1,8 +1,7 @@
 import Foundation
 
 func formatDuration(_ interval: TimeInterval) -> String {
-    let total = boundedDurationSeconds(interval, rounding: .down)
-    return String(format: "%d:%02d", total / 60, total % 60)
+    formatMinutesSeconds(boundedDurationSeconds(interval, rounding: .down))
 }
 
 func roundedCatalogDurationSeconds(_ interval: TimeInterval) -> Int {
@@ -10,8 +9,11 @@ func roundedCatalogDurationSeconds(_ interval: TimeInterval) -> Int {
 }
 
 func formatCatalogDuration(_ interval: TimeInterval) -> String {
-    let total = roundedCatalogDurationSeconds(interval)
-    return String(format: "%d:%02d", total / 60, total % 60)
+    formatMinutesSeconds(roundedCatalogDurationSeconds(interval))
+}
+
+private func formatMinutesSeconds(_ total: Int) -> String {
+    String(format: "%d:%02d", total / 60, total % 60)
 }
 
 private func boundedDurationSeconds(
@@ -27,4 +29,22 @@ private func boundedDurationSeconds(
 
 func formatDateAdded(_ date: Date?) -> String {
     date?.formatted(date: .abbreviated, time: .omitted) ?? "—"
+}
+
+func formatPlaylistDuration(_ interval: TimeInterval) -> String {
+    let totalSeconds = roundedCatalogDurationSeconds(interval)
+    let hours = totalSeconds / 3_600
+    if hours > 0 {
+        let minutes = (totalSeconds % 3_600) / 60
+        return minutes == 0 ? "\(hours) hr" : "\(hours) hr \(minutes) min"
+    }
+    let minutes = totalSeconds / 60
+    let seconds = totalSeconds % 60
+    if minutes == 0 {
+        return "\(seconds) sec"
+    }
+    if seconds == 0 {
+        return "\(minutes) min"
+    }
+    return "\(minutes) min \(seconds) sec"
 }

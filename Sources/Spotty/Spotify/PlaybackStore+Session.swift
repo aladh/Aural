@@ -149,15 +149,4 @@ extension PlaybackStore {
         send(.reset(session: .signedOut), source: .account)
         await accountStore.completeShutdownForTermination(staleConnectionTask: staleConnectionTask)
     }
-
-    func clearCurrentTrackMetadata() {
-        effects.cancel(.trackMetadata)
-        guard let track = state.currentTrack else { return }
-        setPresentation(
-            track: CurrentTrack(uri: track.uri),
-            transport: state.transport,
-            timing: PlaybackTiming(anchoredAt: environment.clock.now()),
-            source: .metadata
-        )
-    }
 }

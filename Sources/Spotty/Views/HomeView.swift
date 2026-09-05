@@ -196,7 +196,7 @@ struct MediaCard: View {
                     .lineLimit(2)
                     .frame(minHeight: 30, alignment: .topLeading)
             }
-            .frame(width: CatalogLayout.cardWidth, alignment: .leading)
+            .frame(width: CatalogLayout.cardArtwork, alignment: .leading)
             .padding(CatalogLayout.cardPadding)
             .contentShape(RoundedRectangle(cornerRadius: CatalogLayout.cardCornerRadius, style: .continuous))
             .background(

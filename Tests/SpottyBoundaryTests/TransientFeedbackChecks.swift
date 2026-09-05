@@ -339,7 +339,7 @@ struct TransientFeedbackTests {
             )
             #expect((player.feedback === feedback) == true, "the store keeps the composed presenter")
 
-            player.addToQueue(uri: "spotify:track:fixture")
+            player.addToQueue(uris: ["spotify:track:fixture"])
             #expect(
                 (feedback.message?.text) == ("Connect Spotify before adding to the queue."),
                 "disconnected add reports through the injected presenter")
@@ -360,7 +360,7 @@ struct TransientFeedbackTests {
                 feedback: localSuccessFeedback
             )
             seedReady(localSuccess)
-            localSuccess.addToQueue(uri: "spotify:track:local-ok")
+            localSuccess.addToQueue(uris: ["spotify:track:local-ok"])
             _ = await waitUntil { localSuccessFeedback.message?.kind == .success }
             #expect((localSuccessFeedback.message?.text) == ("Added to Queue"), "local add success")
             #expect((localSuccess.transientCommandError) == nil, "local add success is not a playback notice")
@@ -372,7 +372,7 @@ struct TransientFeedbackTests {
                 feedback: localFailureFeedback
             )
             seedReady(localFailure)
-            localFailure.addToQueue(uri: "spotify:track:local-fail")
+            localFailure.addToQueue(uris: ["spotify:track:local-fail"])
             _ = await waitUntil { localFailureFeedback.message?.kind == .failure }
             #expect(
                 (localFailureFeedback.message?.text) == ("Could not add that track to the queue."), "local add failure")
@@ -389,7 +389,7 @@ struct TransientFeedbackTests {
                 .owner(.remote(PlaybackDevice(id: "speaker", name: "Speaker", type: "speaker", isActive: true))),
                 source: .command
             )
-            joining.addToQueue(uri: "spotify:track:joining")
+            joining.addToQueue(uris: ["spotify:track:joining"])
             #expect(
                 (joiningFeedback.message?.text) == ("Spotty is still joining Spotify Connect."),
                 "waiting for Connect identity is a mutation failure")
@@ -403,7 +403,7 @@ struct TransientFeedbackTests {
                 feedback: remoteSuccessFeedback
             )
             seedRemoteOwner(remoteSuccess)
-            remoteSuccess.addToQueue(uri: "spotify:track:remote-ok")
+            remoteSuccess.addToQueue(uris: ["spotify:track:remote-ok"])
             _ = await waitUntil { remoteSuccessFeedback.message?.kind == .success }
             #expect((remoteSuccessFeedback.message?.text) == ("Added to Queue"), "remote add success")
             #expect((await remote.sendCount) == (1), "remote add still sends add_to_queue")
@@ -417,7 +417,7 @@ struct TransientFeedbackTests {
                 feedback: remoteFailureFeedback
             )
             seedRemoteOwner(remoteFailure)
-            remoteFailure.addToQueue(uri: "spotify:track:remote-fail")
+            remoteFailure.addToQueue(uris: ["spotify:track:remote-fail"])
             _ = await waitUntil { remoteFailureFeedback.message?.kind == .failure }
             #expect(
                 (remoteFailureFeedback.message?.text) == ("Could not add that track to the queue."),
@@ -431,7 +431,7 @@ struct TransientFeedbackTests {
                 feedback: cancelledFeedback
             )
             seedRemoteOwner(cancelled)
-            cancelled.addToQueue(uri: "spotify:track:cancel")
+            cancelled.addToQueue(uris: ["spotify:track:cancel"])
             #expect(
                 (await waitUntil { await parkedRemote.sendCount == 1 }) == true,
                 "cancelled add started the remote command")
@@ -448,7 +448,7 @@ struct TransientFeedbackTests {
                 feedback: staleFeedback
             )
             seedRemoteOwner(staleAccount)
-            staleAccount.addToQueue(uri: "spotify:track:stale")
+            staleAccount.addToQueue(uris: ["spotify:track:stale"])
             #expect(
                 (await waitUntil { await staleRemote.sendCount == 1 }) == true,
                 "stale-account add started the remote command")

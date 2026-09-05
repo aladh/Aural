@@ -283,20 +283,6 @@ nonisolated struct PartnerAPI: Sendable {
             ))
     }
 
-    func moveInPlaylist(
-        playlistId: String,
-        uids: [String],
-        position: PlaylistItemPosition,
-    ) async throws {
-        try await mutate(
-            .moveItemsInPlaylist,
-            variables: PathfinderMoveVariables(
-                playlistUri: "spotify:playlist:\(playlistId)",
-                uids: uids,
-                newPosition: position,
-            ))
-    }
-
     // MARK: - Library
 
     /// The user's saved playlists, walked to the end.
