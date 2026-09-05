@@ -123,8 +123,8 @@ fn capture_local_playback_state_with_owner(
                 is_paused: !is_playing,
                 track_uri,
                 // Local PlayerEvent has no protocol context. Sticky CURRENT_CONTEXT_URI is
-                // resume-load input only; publishing it here would expose it as a playback
-                // presentation context.
+                // resume-load input only; publishing it here would restore a session-lifetime
+                // playlist after a cluster snapshot cleared Swift's playbackContextURI.
                 context_uri: String::new(),
                 position_ms: position_ms as i64,
                 duration_ms: duration_ms as i64,

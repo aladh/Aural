@@ -274,7 +274,11 @@ struct PlaybackCommandPresentationTests {
                         PlaybackPresentationSnapshot(
                             currentTrack: nil,
                             transport: .stopped,
-                            timing: priorSeekTiming
+                            timing: PlaybackTiming(
+                                position: 0,
+                                duration: 0,
+                                anchoredAt: presentationDate
+                            )
                         ))
                 )
             )

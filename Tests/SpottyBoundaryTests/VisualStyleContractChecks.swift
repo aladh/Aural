@@ -130,7 +130,7 @@ struct VisualStyleContractTests {
                     #expect(
                         (playlistDetail.contains("store.description")
                             && playlistDetail.contains("songCountText")
-                            && playlistDetail.contains("formatPlaylistDuration(totalDuration)")
+                            && playlistDetail.contains("formatPlaylistDuration(store.totalDuration)")
                             && playlistDetail.contains("guard showsPlaylistMetadata else { return nil }")
                             && !playlistDetail.contains("ownerText")
                             && detailHeader.contains("[item.subtitle, detail, itemCount ?? \"\"]")) == true,

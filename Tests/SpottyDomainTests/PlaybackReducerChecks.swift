@@ -712,10 +712,10 @@ struct PlaybackReducerTests {
                 envelope(
                     source: .enginePlayback,
                     revision: 2,
-                    event: .presentation(
-                        PlaybackPresentationSnapshot(
-                            currentTrack: track,
+                    event: .enginePlayback(
+                        EnginePlaybackSnapshot(
                             transport: .paused,
+                            trackURI: track.uri,
                             timing: PlaybackTiming(position: 0, duration: track.duration, anchoredAt: traceDate)
                         ))
                 ),
@@ -741,10 +741,10 @@ struct PlaybackReducerTests {
                 envelope: envelope(
                     source: .enginePlayback,
                     revision: 1,
-                    event: .presentation(
-                        PlaybackPresentationSnapshot(
-                            currentTrack: CurrentTrack(uri: pausedURI),
+                    event: .enginePlayback(
+                        EnginePlaybackSnapshot(
                             transport: .paused,
+                            trackURI: pausedURI,
                             timing: PlaybackTiming(anchoredAt: traceDate)
                         ))
                 )
@@ -760,10 +760,10 @@ struct PlaybackReducerTests {
                 envelope: envelope(
                     source: .enginePlayback,
                     revision: 2,
-                    event: .presentation(
-                        PlaybackPresentationSnapshot(
-                            currentTrack: nil,
+                    event: .enginePlayback(
+                        EnginePlaybackSnapshot(
                             transport: .stopped,
+                            trackURI: nil,
                             timing: PlaybackTiming(anchoredAt: traceDate)
                         ))
                 )
@@ -864,10 +864,10 @@ struct PlaybackReducerTests {
                 envelope: envelope(
                     source: .enginePlayback,
                     revision: 1,
-                    event: .presentation(
-                        PlaybackPresentationSnapshot(
-                            currentTrack: CurrentTrack(uri: pausedURI),
+                    event: .enginePlayback(
+                        EnginePlaybackSnapshot(
                             transport: .paused,
+                            trackURI: pausedURI,
                             timing: PlaybackTiming(anchoredAt: traceDate)
                         ))
                 )

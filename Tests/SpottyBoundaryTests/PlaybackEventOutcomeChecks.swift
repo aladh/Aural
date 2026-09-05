@@ -429,7 +429,8 @@ struct PlaybackEventOutcomeTests {
             invalidations.increment()
         }
 
-        _ = player.setTiming(position: 42)
+        #expect(player.setTiming(position: 42), "the timing sample is accepted")
+        #expect(player.position == 42, "authoritative timing advances without notifying catalog observers")
         #expect(
             (player.currentTrackIndicator) == (initialIndicator),
             "position samples preserve the coarse track/transport indicator"
@@ -949,16 +950,10 @@ struct PlaybackEventOutcomeTests {
                 (launch.state.devices.lastRemoteDeviceID) == ("phone"),
                 "the store stamps last-remote context onto the snapshot")
             _ = launch.send(
-                .presentation(
-                    PlaybackPresentationSnapshot(
-                        currentTrack: CurrentTrack(
-                            uri: pausedURI,
-                            title: "Paused",
-                            artist: "Artist",
-                            duration: 180,
-                            metadataSource: .connect
-                        ),
+                .enginePlayback(
+                    EnginePlaybackSnapshot(
                         transport: .paused,
+                        trackURI: pausedURI,
                         timing: PlaybackTiming(position: 0, duration: 180)
                     )),
                 source: .enginePlayback,
