@@ -79,6 +79,19 @@ def write_audit_artifact(work, role, audit_result):
     return artifact
 
 
+def stub_prepare_git(*args, check=True):
+    if args[0] == "merge-base":
+        return BASE.encode()
+    if "--name-only" in args:
+        return (PATH + "\0").encode()
+    return b"@@ -1 +1 @@\n"
+
+
+def stub_prepare_snapshot(revision, destination):
+    destination.mkdir(parents=True, exist_ok=True)
+    return {PATH: 4}, []
+
+
 class ReviewTests(unittest.TestCase):
     def test_compatible_requires_matching_identity_and_ancestry(self):
         meta = {"repo": REPO, "pr": 7, "base": BASE, "head": HEAD, "policy": "p"}
@@ -132,11 +145,96 @@ class ReviewTests(unittest.TestCase):
         )
         self.assertEqual(review._diff_right_lines(diff), [2, 12, 13, 14])
 
-    def baseline_comment(self, **overrides):
+    def baseline_comment(self, findings=None, **overrides):
         metadata = render_meta()
-        metadata.update(head=OLD_HEAD, **overrides)
-        body = review.render({"meta": metadata, "result": result([finding(OLD_ID)])})
+        metadata["head"] = OLD_HEAD
+        metadata.update(overrides)
+        body = review.render({"meta": metadata, "result": result(findings or [finding(OLD_ID)])})
         return {"user": {"login": review.BOT}, "body": body}
+
+    def run_prepare_with_stubs(self, work, comment_items, policy, proof):
+        event_path = work / "event.json"
+        event_path.write_text(
+            json.dumps({
+                "pull_request": {
+                    "number": 7,
+                    "head": {"sha": HEAD, "repo": {"full_name": REPO}},
+                    "base": {"sha": BASE},
+                    "title": "Prepare fixture",
+                    "body": "Fixture body",
+                }
+            })
+        )
+        environment = {
+            "GITHUB_EVENT_PATH": str(event_path),
+            "GITHUB_REPOSITORY": REPO,
+            "GITHUB_RUN_ID": "20",
+            "GITHUB_RUN_ATTEMPT": "1",
+            "GH_TOKEN": "scoped-token",
+            "MODEL": "model",
+            "VARIANT": "xhigh",
+            "OPENCODE_VERSION": "test",
+        }
+        with patch.dict(os.environ, environment), patch.object(
+            review, "policy_digest", return_value=policy
+        ), patch.object(review, "check_current"), patch.object(
+            review, "comments", return_value=comment_items
+        ), patch.object(review, "api", return_value=proof) as api, patch.object(
+            review, "git", side_effect=stub_prepare_git
+        ), patch.object(review, "snapshot", side_effect=stub_prepare_snapshot):
+            review.prepare(work)
+        return json.loads((work / "meta.json").read_text()), api
+
+    def test_prepare_carries_newest_verified_findings_but_forces_full_on_policy_change(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            work = Path(temporary) / "review"
+            work.mkdir()
+            older = self.baseline_comment(
+                findings=[finding(OLD_ID)], policy="new-policy", head=OLD_HEAD, run=10, attempt=1
+            )
+            latest = self.baseline_comment(
+                findings=[finding(OLD_ID), finding(SECOND_ID)],
+                policy="old-policy",
+                head=HEAD,
+                run=12,
+                attempt=1,
+            )
+            proof = {
+                "conclusion": "success",
+                "event": "pull_request",
+                "head_sha": HEAD,
+                "path": review.WORKFLOW,
+                "head_repository": {"full_name": REPO},
+            }
+            meta, api = self.run_prepare_with_stubs(work, [older, latest], "new-policy", proof)
+
+            self.assertEqual(meta["mode"], "full")
+            self.assertEqual(meta["start"], BASE)
+            self.assertIsNone(meta["baseline"])
+            self.assertEqual(meta["policy"], "new-policy")
+            self.assertEqual([item["id"] for item in meta["previous"]], [OLD_ID, SECOND_ID])
+            api.assert_called_once_with("repos/acme/spotty/actions/runs/12/attempts/1", "scoped-token")
+
+    def test_prepare_discards_prior_findings_when_run_proof_failed(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            work = Path(temporary) / "review"
+            work.mkdir()
+            failed = self.baseline_comment(
+                findings=[finding(OLD_ID)], policy="new-policy", head=OLD_HEAD, run=12, attempt=1
+            )
+            proof = {
+                "conclusion": "failure",
+                "event": "pull_request",
+                "head_sha": OLD_HEAD,
+                "path": review.WORKFLOW,
+                "head_repository": {"full_name": REPO},
+            }
+            meta, api = self.run_prepare_with_stubs(work, [failed], "new-policy", proof)
+
+            self.assertEqual(meta["mode"], "full")
+            self.assertEqual(meta["previous"], [])
+            self.assertIsNone(meta["baseline"])
+            api.assert_called_once_with("repos/acme/spotty/actions/runs/12/attempts/1", "scoped-token")
 
     def test_find_baseline_requires_successful_run_provenance(self):
         meta = {"repo": REPO, "pr": 7, "base": BASE, "head": HEAD, "policy": "policy-digest"}
@@ -240,6 +338,84 @@ class ReviewTests(unittest.TestCase):
             self.assertEqual(omitted, ["link.txt"])
             self.assertEqual((destination / "hidden.txt").read_text(), "source remains visible\n")
             self.assertFalse((destination / "link.txt").exists())
+
+    def test_prepare_uses_literal_pathspec_for_wildcard_filenames(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            repo = Path(temporary)
+            subprocess.run(["git", "init", "-q"], cwd=repo, check=True)
+            subprocess.run(["git", "config", "user.email", "test@example.invalid"], cwd=repo, check=True)
+            subprocess.run(["git", "config", "user.name", "Review tests"], cwd=repo, check=True)
+            wildcard = "feature*.swift"
+            sibling = "feature-extra.swift"
+            wildcard_lines = [f"line{index}" for index in range(1, 21)]
+            (repo / wildcard).write_text("\n".join(wildcard_lines) + "\n")
+            (repo / sibling).write_text("old\n")
+            subprocess.run(["git", "add", "-A"], cwd=repo, check=True)
+            subprocess.run(["git", "commit", "-qm", "base"], cwd=repo, check=True)
+            base = subprocess.run(
+                ["git", "rev-parse", "HEAD"], cwd=repo, check=True, capture_output=True, text=True
+            ).stdout.strip()
+            wildcard_lines[9] = "changed"
+            (repo / wildcard).write_text("\n".join(wildcard_lines) + "\n")
+            (repo / sibling).write_text("new\n")
+            subprocess.run(["git", "add", "-A"], cwd=repo, check=True)
+            subprocess.run(["git", "commit", "-qm", "head"], cwd=repo, check=True)
+            head = subprocess.run(
+                ["git", "rev-parse", "HEAD"], cwd=repo, check=True, capture_output=True, text=True
+            ).stdout.strip()
+
+            work = repo / "review-work"
+            work.mkdir()
+            event_path = work / "event.json"
+            event_path.write_text(
+                json.dumps({
+                    "pull_request": {
+                        "number": 7,
+                        "head": {"sha": head, "repo": {"full_name": REPO}},
+                        "base": {"sha": base},
+                        "title": "Wildcard path fixture",
+                        "body": "Fixture body",
+                    }
+                })
+            )
+            environment = {
+                "GITHUB_EVENT_PATH": str(event_path),
+                "GITHUB_REPOSITORY": REPO,
+                "GITHUB_RUN_ID": "20",
+                "GITHUB_RUN_ATTEMPT": "1",
+                "GH_TOKEN": "scoped-token",
+                "MODEL": "model",
+                "VARIANT": "xhigh",
+                "OPENCODE_VERSION": "test",
+            }
+            previous_cwd = Path.cwd()
+            os.chdir(repo)
+            try:
+                with patch.dict(os.environ, environment), patch.object(
+                    review, "policy_digest", return_value="policy"
+                ), patch.object(review, "check_current"), patch.object(
+                    review, "comments", return_value=[]
+                ):
+                    review.prepare(work)
+            finally:
+                os.chdir(previous_cwd)
+
+            meta = json.loads((work / "meta.json").read_text())
+            self.assertEqual(set(meta["changed"]), {wildcard, sibling})
+            literal_diff = subprocess.run(
+                ["git", "--literal-pathspecs", "diff", base, head, "--", wildcard],
+                cwd=repo,
+                check=True,
+                capture_output=True,
+            ).stdout
+            wildcard_diff = subprocess.run(
+                ["git", "diff", base, head, "--", wildcard],
+                cwd=repo,
+                check=True,
+                capture_output=True,
+            ).stdout
+            self.assertEqual(meta["diff_lines"][wildcard], review._diff_right_lines(literal_diff))
+            self.assertNotEqual(meta["diff_lines"][wildcard], review._diff_right_lines(wildcard_diff))
 
     def test_validate_generates_canonical_id_and_accepts_revalidation(self):
         meta = validation_meta()

@@ -7,8 +7,9 @@ overview publisher can keep ownership of its existing issue comment.
 
 import html
 import re
-from pathlib import PurePosixPath
 from urllib.parse import quote
+
+from contract import MAX_RESOLUTION, bounded_text, safe_path, validate_finding
 
 
 BOT = "github-actions[bot]"
@@ -24,9 +25,6 @@ MAX_THREAD_PAGES = 10
 MAX_THREAD_PAGE_SIZE = 100
 MAX_THREAD_COMMENTS = 100
 MAX_COMMENT_BYTES = 60_000
-MAX_TITLE = 160
-MAX_BODY = 1_500
-MAX_RESOLUTION = 1_000
 
 
 THREADS_QUERY = """
@@ -87,12 +85,6 @@ mutation($threadId:ID!) {
 def _require(condition, message):
     if not condition:
         raise ValueError(message)
-
-
-def _safe_path(path):
-    parsed = PurePosixPath(path)
-    return bool(path) and not parsed.is_absolute() and ".." not in parsed.parts \
-        and "\\" not in path and all(ord(char) >= 32 for char in path) and ".git" not in parsed.parts
 
 
 def _escaped(value):
@@ -192,13 +184,13 @@ def _validate_inputs(meta, result, token, api, check_current):
     diff_lines = meta.get("diff_lines")
     _require(isinstance(changed, (list, tuple)) and isinstance(files, dict)
              and isinstance(diff_lines, dict), "Missing inline source metadata")
-    _require(all(isinstance(path, str) and _safe_path(path) for path in changed),
+    _require(all(isinstance(path, str) and safe_path(path) for path in changed),
              "Invalid changed path metadata")
     for path, count in files.items():
-        _require(isinstance(path, str) and _safe_path(path) and type(count) is int and count >= 0,
+        _require(isinstance(path, str) and safe_path(path) and type(count) is int and count >= 0,
                  "Invalid source line metadata")
     for path, anchors in diff_lines.items():
-        _require(isinstance(path, str) and _safe_path(path) and isinstance(anchors, (list, tuple, set)),
+        _require(isinstance(path, str) and safe_path(path) and isinstance(anchors, (list, tuple, set)),
                  "Invalid diff anchor metadata")
         _require(all(type(line) is int and line > 0 for line in anchors), "Invalid diff anchor line")
 
@@ -209,22 +201,9 @@ def _validate_inputs(meta, result, token, api, check_current):
              "Invalid inline summary")
     seen = set()
     for finding in findings:
-        _require(isinstance(finding, dict)
-                 and set(finding) == {"id", "path", "line", "severity", "title", "body"},
-                 "Invalid inline finding schema")
-        identity, path, line = finding["id"], finding["path"], finding["line"]
-        _require(isinstance(identity, str) and re.fullmatch(r"F[0-9a-f]{12}", identity)
-                 and identity not in seen, "Invalid or duplicate inline finding ID")
-        _require(isinstance(path, str) and path in changed and path in files and _safe_path(path),
-                 "Inline finding is outside reviewed source")
-        _require(type(line) is int and 1 <= line <= files[path], "Invalid inline finding line")
-        _require(path in diff_lines and line in diff_lines[path],
-                 "Inline finding line is not a right-side diff anchor")
-        _require(finding["severity"] in ("P1", "P2", "P3"), "Invalid inline finding severity")
-        _require(isinstance(finding["title"], str) and 0 < len(finding["title"].strip()) <= MAX_TITLE,
-                 "Invalid inline finding title")
-        _require(isinstance(finding["body"], str) and 0 < len(finding["body"].strip()) <= MAX_BODY,
-                 "Invalid inline finding body")
+        normalized = validate_finding(finding, meta)
+        identity = normalized["id"]
+        _require(identity not in seen, "Invalid or duplicate inline finding ID")
         seen.add(identity)
     for item in resolved:
         _require(isinstance(item, dict) and set(item) == {"id", "reason"},
@@ -232,8 +211,7 @@ def _validate_inputs(meta, result, token, api, check_current):
         identity = item["id"]
         _require(isinstance(identity, str) and re.fullmatch(r"F[0-9a-f]{12}", identity)
                  and identity not in seen, "Invalid or duplicate inline resolution ID")
-        _require(isinstance(item["reason"], str) and 0 < len(item["reason"].strip()) <= MAX_RESOLUTION,
-                 "Invalid inline resolution reason")
+        bounded_text(item["reason"], MAX_RESOLUTION, "inline resolution reason")
         seen.add(identity)
 
 

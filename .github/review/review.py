@@ -7,7 +7,7 @@ import hashlib
 import html
 import json
 import os
-from pathlib import Path, PurePosixPath
+from pathlib import Path
 import re
 import subprocess
 import sys
@@ -15,6 +15,9 @@ import time
 import urllib.error
 import urllib.parse
 import urllib.request
+
+from contract import (MAX_BODY, MAX_RESOLUTION, MAX_TITLE, SEVERITIES,
+                      bounded_text, canonical_finding_id, safe_path, validate_finding)
 
 MARKER = '<!-- spotty-opencode-review:v1 -->'
 WORKFLOW = '.github/workflows/opencode-spike.yml'
@@ -93,9 +96,9 @@ def decode_state(body):
                 and item['id'] not in identities, 'Invalid baseline finding ID')
         require(isinstance(item['path'], str) and safe_path(item['path'])
                 and type(item['line']) is int and item['line'] > 0, 'Invalid baseline location')
-        require(item['severity'] in ('P1', 'P2', 'P3'), 'Invalid baseline severity')
-        bounded_text(item['title'], 160, 'baseline title')
-        bounded_text(item['body'], 1500, 'baseline body')
+        require(item['severity'] in SEVERITIES, 'Invalid baseline severity')
+        bounded_text(item['title'], MAX_TITLE, 'baseline title')
+        bounded_text(item['body'], MAX_BODY, 'baseline body')
         identities.add(item['id'])
     return state
 
@@ -103,6 +106,7 @@ def decode_state(body):
 def policy_files():
     """All runtime and prompt inputs must exist and participate in the baseline digest."""
     return [WORKFLOW, '.github/review/review.py', '.github/review/inline_comments.py',
+            '.github/review/contract.py',
             '.github/review/prompt.txt', SYNTHESIS_PROMPT, '.github/review/thermos/correctness.md',
             '.github/review/thermos/quality.md', '.github/review/thermos/orchestration.md']
 
@@ -130,11 +134,18 @@ def is_ancestor(base, head):
 
 
 def find_baseline(items, meta, token):
+    """Return the newest verified prior state; coverage narrowing is separate."""
     for item in reversed(owned_comments(items)):
         try:
             state = decode_state(item['body'])
-            if not compatible(state, meta, is_ancestor):
-                continue
+            require(state.get('repo') == meta['repo'] and state.get('pr') == meta['pr'],
+                    'Baseline belongs to another pull request')
+            require(isinstance(state.get('base'), str) and SHA.fullmatch(state['base']) is not None,
+                    'Invalid baseline base revision')
+            require(isinstance(state.get('head'), str) and SHA.fullmatch(state['head']) is not None,
+                    'Invalid baseline head revision')
+            require(isinstance(state.get('policy'), str) and state['policy'],
+                    'Invalid baseline policy digest')
             run, attempt = state['run'], state['attempt']
             require(type(run) is int and run > 0 and type(attempt) is int and attempt > 0, 'Invalid run identity')
             proof = api(f"repos/{meta['repo']}/actions/runs/{run}/attempts/{attempt}", token)
@@ -144,15 +155,9 @@ def find_baseline(items, meta, token):
             require(isinstance(state['findings'], list) and len(state['findings']) <= MAX_FINDINGS, 'Invalid baseline findings')
             return state
         except (ValueError, KeyError, TypeError, RuntimeError):
-            # Invalid/incompatible state only causes MORE coverage, never an empty success.
+            # Invalid/unverified state only causes MORE coverage, never an empty success.
             continue
     return None
-
-
-def safe_path(name):
-    path = PurePosixPath(name)
-    return bool(name) and not path.is_absolute() and '..' not in path.parts and '\\' not in name \
-        and all(ord(char) >= 32 for char in name) and '.git' not in path.parts
 
 
 def snapshot(revision, destination):
@@ -254,9 +259,10 @@ def prepare(work):
     require(SHA.fullmatch(meta['head']) and SHA.fullmatch(meta['base']), 'Invalid revision')
     token = os.environ['GH_TOKEN']
     check_current(meta, token)
-    baseline = find_baseline(comments(repo, pr['number'], token), meta, token)
+    prior = find_baseline(comments(repo, pr['number'], token), meta, token)
+    baseline = prior if prior and compatible(prior, meta, is_ancestor) else None
     merge_base = git('merge-base', meta['base'], meta['head']).decode().strip()
-    previous = baseline['findings'] if baseline else []
+    previous = prior['findings'] if prior else []
     incremental = baseline is not None and baseline['head'] != meta['head']
     start = baseline['head'] if incremental else merge_base
     meta.update(mode='incremental' if incremental else 'full', start=start,
@@ -272,19 +278,14 @@ def prepare(work):
         (source / name).write_text(diff.decode('utf-8'))
     changed = git('diff', '--name-only', '-z', '--no-renames', merge_base, meta['head'], '--').decode().split('\0')
     changed = [path for path in changed if path]
-    diff_lines = {path: _diff_right_lines(git('diff', '--no-ext-diff', '--no-textconv', '--no-renames',
-                                             merge_base, meta['head'], '--', path))
+    diff_lines = {path: _diff_right_lines(git('--literal-pathspecs', 'diff', '--no-ext-diff', '--no-textconv',
+                                             '--no-renames', merge_base, meta['head'], '--', path))
                   for path in changed if path in files}
     meta.update(files=files, before_files=files_before, changed=changed,
                 omitted=omitted, omitted_before=omitted_before, diff_lines=diff_lines)
     (source / 'review-input.json').write_text(json.dumps(meta, indent=2))
     (work / 'meta.json').write_text(json.dumps(meta))
     print(f"Prepared {meta['mode']} review: {len(meta['changed'])} PR files, {len(previous)} open findings")
-
-
-def bounded_text(value, limit, label):
-    require(isinstance(value, str) and 0 < len(value.strip()) <= limit, 'Invalid ' + label)
-    return value.strip()
 
 
 def validate_result(result, meta):
@@ -296,30 +297,24 @@ def validate_result(result, meta):
     seen = set()
     findings = []
     for item in result['findings']:
-        require(isinstance(item, dict) and set(item) == {'id', 'path', 'line', 'severity', 'title', 'body'}, 'Invalid finding schema')
-        path, line = item['path'], item['line']
-        require(isinstance(path, str) and path in meta['changed'] and path in meta['files'], 'Finding outside reviewed source')
-        require(type(line) is int and 1 <= line <= meta['files'][path], 'Invalid finding line')
-        require(line in meta['diff_lines'].get(path, ()), 'Finding line is not in a changed diff hunk')
-        require(item['severity'] in ('P1', 'P2', 'P3'), 'Invalid severity')
-        title = bounded_text(item['title'], 160, 'title')
-        body = bounded_text(item['body'], 1500, 'finding body')
-        identity = item['id']
-        canonical = 'F' + hashlib.sha256((path + '\0' + title.casefold()).encode()).hexdigest()[:12]
+        finding = validate_finding(item, meta, allow_empty_id=True)
+        path, title = finding['path'], finding['title']
+        identity = finding['id']
+        canonical = canonical_finding_id(path, title)
         require(isinstance(identity, str) and (not identity or identity in previous or identity == canonical), 'Unknown finding ID')
         if not identity:
             identity = canonical
             require(identity not in previous, 'Existing finding must retain its ID')
         require(identity not in seen, 'Duplicate finding ID')
         seen.add(identity)
-        findings.append(dict(id=identity, path=path, line=line, severity=item['severity'], title=title, body=body))
+        findings.append(dict(finding, id=identity))
     resolved = []
     for item in result['resolved']:
         require(isinstance(item, dict) and set(item) == {'id', 'reason'}, 'Invalid resolution schema')
         identity = item['id']
         require(isinstance(identity, str) and identity in previous and identity not in seen, 'Unknown/duplicate resolution')
         seen.add(identity)
-        resolved.append({'id': identity, 'reason': bounded_text(item['reason'], 1000, 'resolution reason')})
+        resolved.append({'id': identity, 'reason': bounded_text(item['reason'], MAX_RESOLUTION, 'resolution reason')})
     require(previous.keys() <= seen, 'A previous finding was silently dropped')
     return {'summary': summary, 'findings': findings, 'resolved': resolved}
 

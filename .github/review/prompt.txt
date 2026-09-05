@@ -57,6 +57,9 @@ Separate measured source facts from predictions: branch counts and line counts d
 how many edits a future change requires. Support effort, performance, or failure-frequency claims
 with a concrete traced scenario, or omit the claim. Do not retain unsupported claims merely by
 softening their wording.
+Unified diffs normally omit unchanged lines outside their context hunks; this is not truncation.
+Only report truncation or omitted input when the supplied metadata records it. Use full snapshots
+to inspect unchanged context, and distinguish unavailable callers from truncated files.
 
 Return ONLY one JSON object with exactly these fields and no prose or markdown fences:
 {
@@ -69,7 +72,10 @@ Return ONLY one JSON object with exactly these fields and no prose or markdown f
 }
 
 Use P1 for major correctness, security, privacy, session, or data-loss risk; P2 for other
-actionable bugs or material structural regressions; P3 for minor actionable defects. New findings
+actionable bugs or material structural regressions; P3 for minor actionable defects. P1 requires
+a traced major consequence, such as a crash in a normal workflow, data loss, or a security breach.
+A helper contract violation alone does not establish that consequence; when callers or impact
+are unavailable, disclose that limit and use P2 for the demonstrated bug. New findings
 must have an empty id. Existing findings must retain their supplied id even when their line moves;
 never create a new finding for an existing issue. Every previous id in review-input.json must
 appear exactly once in findings or resolved. An active disposition keeps that id and includes

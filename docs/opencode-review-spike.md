@@ -69,7 +69,9 @@ is available only to the later synthesis pass under the Thermos condition above.
 
 A prior result narrows the review to new commits only when its repository, PR, base SHA and
 reviewer-policy digest match, its head is an ancestor, and its recorded workflow run/attempt
-completed successfully. The model must still recheck **every** previously open finding. Each ID
+completed successfully. A policy/base/history change forces full coverage while preserving findings
+from the latest verified same-PR result for reassessment. The model must still recheck **every**
+previously open finding. Each ID
 must be retained or explicitly resolved; omissions, unknown IDs and duplicate IDs fail validation.
 New findings receive deterministic IDs, and the publisher updates its existing comment instead
 of posting duplicate overview comments on each push. Inline comments use the same finding IDs;
@@ -149,12 +151,25 @@ The Thermos adaptation passed a local source-only fixture with both a bounds-che
 kept both. Early synthesis retained an unsupported future-edit-count claim; an explicit
 counterexample check removed that claim in the revised run. The fixed snapshot then produced zero
 active findings and explicit resolutions for both original IDs across all three passes. This
-fixture is an integration/calibration check, not a representative accuracy benchmark. Thirty
+fixture is an integration/calibration check, not a representative accuracy benchmark. Thirty-seven
 standard-library tests cover lifecycle, parallel isolation, validation, and owned inline publication;
 the live GitHub GraphQL thread query was also verified read-only.
 
-The earlier Actions runs predate the two-audit Thermos adaptation. The current iteration is evaluated in #268 with deterministic lifecycle/validation tests and
-live Actions results. Before making it authoritative, evaluate known bugs and clean changes without
+The first [two-audit Actions run](https://github.com/aladh/Spotty/actions/runs/33951942958)
+passed on `80d9991`, as did normal PR CI. Its independent quality audit identified duplicated
+validation contracts; synthesis retained that P3 finding and the publisher updated the overview
+and created a [real inline finding](https://github.com/aladh/Spotty/pull/268#discussion_r3939838965).
+This exercises actual GitHub diff publication, beyond mocked API tests.
+
+A separate local fixture adapted the missed-border-pixel bug from PR #261 without supplying
+the historical review or its answer. The correctness audit found the bug and the quality audit
+reported no structural issue; a Swift probe independently confirmed that the transparent pixel
+was accepted. Initial synthesis inflated severity to P1. Clarifying that P1 requires a traced
+major consequence yielded P2 while retaining the same bug. Restoring the exact scan then yielded
+zero active findings and an explicit resolution of that original ID. This is one reduced historical case,
+not evidence of parity with Cursor or a representative false-positive rate.
+
+Before making it authoritative, evaluate known bugs and clean changes without
 other reviewers' answers, measure false positives and latency, and implement revision-bound
 approval/check publication using trusted orchestration. Do not promote
 this advisory trial to a required review gate solely because its Actions jobs pass.

@@ -127,12 +127,12 @@ class FakeGitHub:
                         }
                     }
                 }
-            if "resolveReviewThread" in query:
-                self.resolutions.append(data["variables"]["threadId"])
-                return {"data": {"resolveReviewThread": {"thread": {"isResolved": True}}}}
             if "unresolveReviewThread" in query:
                 self.unresolutions.append(data["variables"]["threadId"])
                 return {"data": {"unresolveReviewThread": {"thread": {"isResolved": False}}}}
+            if "resolveReviewThread" in query:
+                self.resolutions.append(data["variables"]["threadId"])
+                return {"data": {"resolveReviewThread": {"thread": {"isResolved": True}}}}
             raise AssertionError("unexpected GraphQL query")
         if method == "POST" and path.endswith("/comments"):
             self.created.append(data)
@@ -187,6 +187,20 @@ class InlineCommentTests(unittest.TestCase):
         self.assertIn(HEAD, github.patched[0][1]["body"])
         self.assertEqual(github.replies, [])
         self.assertEqual(github.resolutions, [])
+
+    def test_reopened_resolved_finding_unresolves_and_updates_owned_thread(self):
+        existing = thread(resolved=True, body=marker() + "\n\nOld text")
+        github = FakeGitHub([existing])
+        value = finding(body="The reopened explanation.")
+        urls = inline_comments.sync(meta(), result([value]), "token", github.api,
+                                    self.check_current())
+
+        self.assertEqual(urls, [existing["comments"]["nodes"][0]["url"]])
+        self.assertEqual(github.created, [])
+        self.assertEqual(github.unresolutions, ["thread-41"])
+        self.assertEqual(github.resolutions, [])
+        self.assertEqual(len(github.patched), 1)
+        self.assertIn("reopened explanation", github.patched[0][1]["body"])
 
     def test_moved_finding_creates_new_anchor_then_supersedes_old_owned_thread(self):
         old = thread(path=OLD_PATH, line=1, outdated=True)
