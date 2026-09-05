@@ -693,7 +693,7 @@ struct PlaybackReducerTests {
             let track = CurrentTrack(
                 uri: "spotify:track:paused", title: "Paused Track", artist: "Artist", duration: 240,
                 metadataSource: .connect)
-            var state = PlaybackState(accountEpoch: 1, engineEpoch: 1, session: .ready)
+            var state = PlaybackState(accountEpoch: 1, engineEpoch: 1, session: .ready, currentTrack: track)
             let trace = TraceHarness(initialState: state) { state, event in
                 _ = PlaybackReducer.reduce(&state, envelope: event)
             }
@@ -702,10 +702,10 @@ struct PlaybackReducerTests {
                 envelope(
                     source: .enginePlayback,
                     revision: 1,
-                    event: .presentation(
-                        PlaybackPresentationSnapshot(
-                            currentTrack: track,
-                            transport: .paused,
+                    event: .enginePlayback(
+                        EnginePlaybackSnapshot(
+                            transport: .playing,
+                            trackURI: track.uri,
                             timing: PlaybackTiming(position: 0, duration: track.duration, anchoredAt: traceDate)
                         ))
                 ),
