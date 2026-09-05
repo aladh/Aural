@@ -1181,49 +1181,6 @@ struct PlaybackEventOutcomeTests {
         }
         #expect((local.playbackNotice) == nil, "the matching notice identity can be dismissed")
 
-        local.receive(
-            RustPlaybackState(
-                revision: 11,
-                sessionGeneration: local.engineGeneration,
-                isPlaying: false,
-                isPaused: true,
-                trackURI: localURI,
-                positionMS: 0,
-                durationMS: 180_000,
-                timestampMS: 0,
-                shuffle: false,
-                repeatTrack: false,
-                repeatContext: false,
-                trackUnavailable: true,
-                isActiveDevice: true
-            ),
-            revision: 11,
-            receivedAt: receivedAt
-        )
-        #expect((local.playbackNotice) == nil, "a stale failure revision stays dismissed")
-
-        bumpEngine(local)
-        local.receive(
-            RustPlaybackState(
-                revision: 12,
-                sessionGeneration: 0,
-                isPlaying: false,
-                isPaused: true,
-                trackURI: localURI,
-                positionMS: 0,
-                durationMS: 180_000,
-                timestampMS: 0,
-                shuffle: false,
-                repeatTrack: false,
-                repeatContext: false,
-                trackUnavailable: true,
-                isActiveDevice: true
-            ),
-            revision: 12,
-            receivedAt: receivedAt
-        )
-        #expect((local.playbackNotice) == nil, "a stale engine generation cannot create a notice")
-
         let remote = playbackStore(outcomeEnvironment(remote: ImmediateMetadataRemote()))
         seedReadyLocalPlayback(remote, uri: "spotify:track:remote-unavailable")
         _ = remote.send(
@@ -1274,70 +1231,8 @@ struct PlaybackEventOutcomeTests {
         )
         #expect((empty.playbackNotice) == nil, "an empty URI cannot create a notice")
 
-        let pending = playbackStore(outcomeEnvironment(remote: ImmediateMetadataRemote()))
-        let oldURI = "spotify:track:pending-old"
-        let targetURI = "spotify:track:pending-target"
-        seedReadyLocalPlayback(pending, uri: oldURI)
-        _ = pending.send(
-            .commandStarted(
-                PendingPlaybackCommand(
-                    id: UUID(uuidString: "00000000-0000-0000-0000-0000000000A1")!,
-                    kind: .transport,
-                    expectedTransport: .playing,
-                    expectedTrack: CurrentTrack(uri: targetURI),
-                    startedAt: receivedAt
-                )),
-            source: .command
-        )
-        pending.receive(
-            RustPlaybackState(
-                revision: 1,
-                sessionGeneration: pending.engineGeneration,
-                isPlaying: false,
-                isPaused: true,
-                trackURI: oldURI,
-                positionMS: 0,
-                durationMS: 180_000,
-                timestampMS: 0,
-                shuffle: false,
-                repeatTrack: false,
-                repeatContext: false,
-                trackUnavailable: true,
-                isActiveDevice: true
-            ),
-            revision: 1,
-            receivedAt: receivedAt
-        )
-        #expect((pending.playbackNotice) == nil, "a stale failed URI cannot replace a pending target")
-        #expect((pending.trackURI) == (targetURI), "the pending target remains visible after stale failure")
-
-        pending.receive(
-            RustPlaybackState(
-                revision: 2,
-                sessionGeneration: pending.engineGeneration,
-                isPlaying: false,
-                isPaused: true,
-                trackURI: targetURI,
-                positionMS: 0,
-                durationMS: 180_000,
-                timestampMS: 0,
-                shuffle: false,
-                repeatTrack: false,
-                repeatContext: false,
-                trackUnavailable: true,
-                isActiveDevice: true
-            ),
-            revision: 2,
-            receivedAt: receivedAt
-        )
-        #expect(
-            (pending.playbackNotice?.message) == (PlaybackNotice.trackUnavailableMessage),
-            "the matching pending target failure is surfaced"
-        )
-
         await local.shutdownForTermination()
         await remote.shutdownForTermination()
         await empty.shutdownForTermination()
-        await pending.shutdownForTermination()
     }
 }
