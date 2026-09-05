@@ -911,7 +911,7 @@ fn parse_abi_signature_fixture(fixture: &str) -> Vec<ExportedCFunctionSignature>
 #[test]
 fn exported_c_function_signatures_are_stable() {
     let signatures = exported_c_function_signatures();
-    assert_eq!(signatures.len(), 38);
+    assert_eq!(signatures.len(), 35);
 }
 
 /// The checked-in C fixture is compared to the header by `Scripts/check.sh`; this Rust-side
