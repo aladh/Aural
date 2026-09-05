@@ -35,6 +35,7 @@ fi
 # the fallback is the project-local toolchain provisioned by the development
 # bootstrap on this workspace.
 if [[ "$check_scope" != swift ]]; then
+    python3 -B -m unittest discover -s "$project_root/Scripts" -p test_playback_promotion.py
     cargo_bin="${SPOTTY_CARGO:-}"
     if [[ -z "$cargo_bin" ]]; then
         cargo_bin="$(command -v cargo || true)"
@@ -456,7 +457,6 @@ if rg -q 'brew install swift-format|brew install swiftlint' "$ci_workflow"; then
     print -u2 "CI must use the selected toolchain swift-format, not a Homebrew Swift linter"
     exit 1
 fi
-changes_job="$(sed -n '/^  changes:/,/^  rust:/p' "$ci_workflow")"
 rust_job="$(sed -n '/^  rust:/,/^  checks:/p' "$ci_workflow")"
 checks_job="$(sed -n '/^  checks:/,/^  candidate:/p' "$ci_workflow")"
 candidate_job="$(sed -n '/^  candidate:/,/^  release:/p' "$ci_workflow")"
@@ -464,8 +464,10 @@ release_job="$(sed -n '/^  release:/,/^  gate:/p' "$ci_workflow")"
 gate_job="$(sed -n '/^  gate:/,$p' "$ci_workflow")"
 checkout_without_credentials=$'uses: actions/checkout@[0-9a-f]{40} # v[^\n]+\n        with:\n          persist-credentials: false'
 blocked_rust_tools=$'for tool in cargo rustc rustup cbindgen; do\n'
-if ! rg -q --fixed-strings 'test_playback_promotion.py' <<< "$changes_job" \
-    || ! rg -q --fixed-strings 'runs-on: macos-26' <<< "$rust_job" \
+if ! rg -q --fixed-strings 'runs-on: macos-26' <<< "$rust_job" \
+    || ! rg -q --fixed-strings 'name: Rust checks' <<< "$rust_job" \
+    || ! rg -q --fixed-strings 'engineInputDigest' <<< "$rust_job" \
+    || ! rg -q --fixed-strings 'candidate_needed' <<< "$rust_job" \
     || ! rg -U -q "$checkout_without_credentials" <<< "$rust_job" \
     || ! rg -q 'key: macos-rust-.*Cargo\.lock' <<< "$rust_job" \
     || ! rg -q --fixed-strings 'source-input-digest.sh' <<< "$rust_job" \
@@ -477,8 +479,9 @@ if ! rg -q --fixed-strings 'test_playback_promotion.py' <<< "$changes_job" \
     || ! rg -U -q --fixed-strings -- "$blocked_rust_tools" <<< "$checks_job" \
     || ! rg -q 'key: macos-swiftpm-debug-.*artifact-manifest\.json' <<< "$checks_job" \
     || ! rg -U -q --fixed-strings -- $'- name: Run checks\n        run: SPOTTY_CHECK_SCOPE=swift ./Scripts/check.sh' <<< "$checks_job" \
-    || ! rg -q --fixed-strings 'needs: [changes, rust]' <<< "$candidate_job" \
+    || ! rg -q --fixed-strings 'needs: [rust]' <<< "$candidate_job" \
     || ! rg -q --fixed-strings "if: needs.rust.outputs.candidate_needed == 'true' && needs.rust.result == 'success'" <<< "$candidate_job" \
+    || ! rg -q --fixed-strings 'name: Candidate Swift ${{ matrix.configuration }}' <<< "$candidate_job" \
     || ! rg -q --fixed-strings 'configuration: [debug, release]' <<< "$candidate_job" \
     || ! rg -q --fixed-strings 'SPOTTY_PLAYBACK_LOCAL_XCFRAMEWORK=' <<< "$candidate_job" \
     || ! rg -U -q --fixed-strings -- "$blocked_rust_tools" <<< "$candidate_job" \
@@ -492,7 +495,7 @@ if ! rg -q --fixed-strings 'test_playback_promotion.py' <<< "$changes_job" \
     || ! rg -U -q --fixed-strings -- $'- name: Compile release Spotty with SPOTTY_DISTRIBUTION\n        run: ./Scripts/compile-release-spotty.sh' <<< "$release_job" \
     || ! rg -q --fixed-strings 'report-size.sh' <<< "$release_job" \
     || ! rg -q --fixed-strings 'if: always()' <<< "$gate_job" \
-    || ! rg -q --fixed-strings 'needs: [changes, rust, checks, candidate, release]' <<< "$gate_job" \
+    || ! rg -q --fixed-strings 'needs: [rust, checks, candidate, release]' <<< "$gate_job" \
     || ! rg -U -q --fixed-strings -- $'test "$RUST_RESULT" = success\n          test "$CHECKS_RESULT" = success\n          if [[ "$CANDIDATE_NEEDED" == true ]]; then\n            test "$CANDIDATE_RESULT" = success' <<< "$gate_job" \
     || ! rg -q --fixed-strings 'test "$CANDIDATE_RESULT" = skipped' <<< "$gate_job" \
     || ! rg -q --fixed-strings 'test "$RELEASE_RESULT" = success' <<< "$gate_job"; then

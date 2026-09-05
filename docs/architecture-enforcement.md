@@ -96,17 +96,12 @@ the package graph, deterministic suites, current focused checks, or semantic rev
 
 ### CI and release workflow
 
-Artifact promotion uses the tested CI candidate without rebuilding. `Scripts/test_playback_promotion.py`
-covers source/run identity, required job results, stale artifacts, checksum/provenance tampering, and
-license payload mismatches; the Linux CI job runs it. Publisher permissions and trusted workflow
-identity remain semantic workflow-review obligations.
-
 | IDs | Invariant | Primary enforcement |
 | --- | --- | --- |
 | `CI-WF-001`, `CI-RG-001` | CI workflow exists and acquires ripgrep only when absent | `Scripts/check.sh` workflow assertions |
 | `CI-RUST-001` | Rust cache key/content stays tied to runner architecture, toolchain, and lockfile | `Scripts/check.sh` plus semantic workflow review |
 | `CI-FMT-001` | CI uses the selected toolchain formatter, not Homebrew Swift formatting/lint tools | `Scripts/check.sh` |
-| `CI-REL-001` | Rust, published-artifact Swift/architecture and Release lanes, plus candidate Debug/Release lanes when the engine digest differs from the pin, feed the aggregate | workflow commands/dependencies asserted from `Scripts/check.sh` |
+| `CI-REL-001` | Rust, published-artifact Swift/architecture and Release lanes, plus candidate Debug/Release lanes when the engine digest differs from the pin, feed the aggregate | workflow commands/dependencies asserted from `Scripts/check.sh`; `test_playback_promotion.py` in the Rust/full gate covers promotion origin, job results, artifact integrity, and provenance |
 | `CI-TOOL-001` | CI lanes select the documented toolchain, run on the pinned macOS runner, check out without persisted credentials, and restore caches by the exact content keys | literal workflow fragments asserted from `Scripts/check.sh`; the pin values are owned by the development setup guide and change together |
 
 Action SHA pins, least permissions, cache contents beyond asserted fragments, tag/version agreement,

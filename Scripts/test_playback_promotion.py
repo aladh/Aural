@@ -6,7 +6,7 @@ import unittest
 import zipfile
 
 from playback_promotion import (
-    REQUIRED_JOBS, validate_artifact, validate_checkout, validate_payload, validate_run,
+    promote, validate_artifact, validate_checkout, validate_payload, validate_run,
 )
 
 
@@ -58,7 +58,7 @@ class PromotionTests(unittest.TestCase):
             "pull_requests": [{"base": {"sha": BASE}}],
         }
         self.jobs = [{"name": name, "conclusion": "success", "started_at": "2026-09-05T12:00:00Z",
-                      "completed_at": "2026-09-05T12:10:00Z"} for name in REQUIRED_JOBS]
+                      "completed_at": "2026-09-05T12:10:00Z"} for name in ("Rust checks", "Candidate Swift debug", "Candidate Swift release")]
         for job in self.jobs[1:]:
             job["started_at"] = "2026-09-05T12:11:00Z"
         self.artifact = {"expired": False, "created_at": "2026-09-05T12:09:00Z"}
@@ -68,6 +68,57 @@ class PromotionTests(unittest.TestCase):
         validate_checkout(self.run, MERGE, [BASE, HEAD], base_is_trusted=True)
         validate_artifact(self.artifact, self.jobs)
         self.assertEqual(validate_payload(payload(), HEAD), (MERGE, DIGEST))
+
+    def promotion_inputs(self):
+        bundle = zip_bytes(payload())
+        return dict(
+            run=self.run, jobs=self.jobs,
+            artifacts=[{**self.artifact, "name": f"playback-candidate-{MERGE}",
+                        "digest": "sha256:" + hashlib.sha256(bundle).hexdigest()}],
+            bundle=bundle, commit={"parents": [{"sha": BASE}, {"sha": HEAD}]},
+            comparison="ahead", workflow_bytes=b"trusted CI", trusted_ci=b"trusted CI",
+            source_ref=HEAD, repo="owner/repo")
+
+    def test_complete_promotion_returns_exact_publication_bytes(self):
+        args = self.promotion_inputs()
+        source, digest, assets = promote(**args)
+        self.assertEqual((source, digest), (MERGE, DIGEST))
+        # Compare to the actual bundle contents, including unchanged archive bytes.
+        with zipfile.ZipFile(io.BytesIO(args["bundle"])) as archive:
+            self.assertEqual(assets, {name: archive.read(name) for name in archive.namelist()})
+
+    def test_promotion_rejects_missing_or_ambiguous_candidates(self):
+        args = self.promotion_inputs()
+        for artifacts in ([], args["artifacts"] * 2, [{"name": "size-report"}]):
+            with self.subTest(artifacts=artifacts), self.assertRaises(ValueError):
+                promote(**{**args, "artifacts": artifacts})
+
+    def test_promotion_rejects_untrusted_bytes_workflow_or_base(self):
+        for change in ({"bundle": b"tampered"}, {"workflow_bytes": b"modified CI"},
+                       {"comparison": "diverged"}, {"comparison": "behind"}):
+            with self.subTest(change=change), self.assertRaises(ValueError):
+                promote(**{**self.promotion_inputs(), **change})
+
+    def test_promotion_rejects_missing_asset(self):
+        args = self.promotion_inputs()
+        files = payload()
+        del files["LICENSE"]
+        args["bundle"] = zip_bytes(files)
+        args["artifacts"][0]["digest"] = "sha256:" + hashlib.sha256(args["bundle"]).hexdigest()
+        with self.assertRaises(KeyError):
+            promote(**args)
+
+    def test_push_promotion_uses_exact_reviewed_checkout(self):
+        args = self.promotion_inputs()
+        args["run"] = {**self.run, "event": "push", "head_sha": MERGE}
+        args["source_ref"] = MERGE
+        args["comparison"] = None
+        files = payload()
+        files["source-provenance.txt"] = files["source-provenance.txt"].replace(
+            f"source_ref={HEAD}".encode(), f"source_ref={MERGE}".encode())
+        args["bundle"] = zip_bytes(files)
+        args["artifacts"][0]["digest"] = "sha256:" + hashlib.sha256(args["bundle"]).hexdigest()
+        self.assertEqual(promote(**args)[:2], (MERGE, DIGEST))
 
     def test_wrong_origin_or_source_is_rejected(self):
         for key, value in (("head_sha", BASE), ("event", "workflow_dispatch"),

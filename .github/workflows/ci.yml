@@ -13,22 +13,8 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  changes:
-    name: Artifact promotion policy
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
-    steps:
-      - name: Check out source
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-
-      - name: Test artifact promotion policy
-        run: python3 -B -m unittest discover -s Scripts -p "test_playback_promotion.py"
-
   rust:
     name: Rust checks
-    needs: [changes]
     runs-on: macos-26
     timeout-minutes: 30
     outputs:
@@ -190,7 +176,7 @@ jobs:
 
   candidate:
     name: Candidate Swift ${{ matrix.configuration }}
-    needs: [changes, rust]
+    needs: [rust]
     if: needs.rust.outputs.candidate_needed == 'true' && needs.rust.result == 'success'
     runs-on: macos-26
     timeout-minutes: 45
@@ -326,21 +312,19 @@ jobs:
   gate:
     name: Debug quality gate
     if: always()
-    needs: [changes, rust, checks, candidate, release]
+    needs: [rust, checks, candidate, release]
     runs-on: ubuntu-latest
     timeout-minutes: 5
 
     steps:
       - name: Require every quality lane
         env:
-          CHANGES_RESULT: ${{ needs.changes.result }}
           CANDIDATE_NEEDED: ${{ needs.rust.outputs.candidate_needed }}
           RUST_RESULT: ${{ needs.rust.result }}
           CHECKS_RESULT: ${{ needs.checks.result }}
           CANDIDATE_RESULT: ${{ needs.candidate.result }}
           RELEASE_RESULT: ${{ needs.release.result }}
         run: |
-          test "$CHANGES_RESULT" = success
           test "$RUST_RESULT" = success
           test "$CHECKS_RESULT" = success
           if [[ "$CANDIDATE_NEEDED" == true ]]; then

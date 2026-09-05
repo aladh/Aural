@@ -109,6 +109,29 @@ def validate_payload(assets, source_ref):
     return sidecar["source_sha"], digest
 
 
+def candidate_artifact(artifacts):
+    candidates = [a for a in artifacts if a["name"].startswith("playback-candidate-")]
+    require(len(candidates) == 1, "Expected one immutable playback candidate")
+    return candidates[0]
+
+
+def promote(run, jobs, artifacts, bundle, commit, comparison, workflow_bytes,
+            trusted_ci, source_ref, repo):
+    validate_run(run, jobs, repo, source_ref)
+    artifact = candidate_artifact(artifacts)
+    validate_artifact(artifact, jobs)
+    require(artifact.get("digest") == "sha256:" + hashlib.sha256(bundle).hexdigest(),
+            "Downloaded artifact does not match GitHub's immutable digest")
+    assets = read_payload(bundle)
+    source_sha, digest = validate_payload(assets, source_ref)
+    require(artifact["name"] == f"playback-candidate-{source_sha}", "Artifact name/checkout mismatch")
+    parents = [p["sha"] for p in commit["parents"]]
+    validate_checkout(run, source_sha, parents, comparison in ("ahead", "identical"))
+    require(workflow_bytes == trusted_ci,
+            "Candidate CI definition differs from the trusted publisher checkout; run current CI")
+    return source_sha, digest, assets
+
+
 def api(path, raw=False):
     result = subprocess.check_output(["gh", "api", "--allow-escape-sequences", path])
     return result if raw else json.loads(result)
@@ -138,26 +161,21 @@ def main():
     jobs = pages(f"{run_path}/attempts/{run['run_attempt']}/jobs", "jobs")
     validate_run(run, jobs, repo, args.source_ref)
     artifacts = pages(f"{run_path}/artifacts", "artifacts")
-    candidates = [a for a in artifacts if a["name"].startswith("playback-candidate-")]
-    require(len(candidates) == 1, "Expected one immutable playback candidate")
-    artifact = candidates[0]
-    validate_artifact(artifact, jobs)
+    artifact = candidate_artifact(artifacts)
     data = api(f"{root}/actions/artifacts/{artifact['id']}/zip", raw=True)
-    require(artifact.get("digest") == "sha256:" + hashlib.sha256(data).hexdigest(),
-            "Downloaded artifact does not match GitHub's immutable digest")
-    assets = read_payload(data)
-    source_sha, digest = validate_payload(assets, args.source_ref)
-    require(artifact["name"] == f"playback-candidate-{source_sha}", "Artifact name/checkout mismatch")
+    # Parse the checkout only to fetch its GitHub metadata; promote validates before any writes.
+    with zipfile.ZipFile(io.BytesIO(data)) as archive:
+        source_sha = json.loads(archive.read("spotty_playback_provenance.json"))["source"]["sourceRevision"]
+    require(re.fullmatch(r"[0-9a-f]{40}", source_sha), "Invalid candidate checkout SHA")
     commit = api(f"{root}/commits/{source_sha}")
     parents = [p["sha"] for p in commit["parents"]]
-    base_is_trusted = False
+    comparison = None
     if source_sha != run["head_sha"] and len(parents) == 2:
-        comparison = api(f"{root}/compare/{parents[0]}...{os.environ['GITHUB_SHA']}")
-        base_is_trusted = comparison["status"] in ("ahead", "identical")
-    validate_checkout(run, source_sha, parents, base_is_trusted)
+        comparison = api(f"{root}/compare/{parents[0]}...{os.environ['GITHUB_SHA']}")["status"]
     workflow = api(f"{root}/contents/.github/workflows/ci.yml?ref={source_sha}")
-    require(base64.b64decode(workflow["content"]) == Path(".github/workflows/ci.yml").read_bytes(),
-            "Candidate CI definition differs from the trusted publisher checkout; run current CI")
+    source_sha, digest, assets = promote(
+        run, jobs, artifacts, data, commit, comparison, base64.b64decode(workflow["content"]),
+        Path(".github/workflows/ci.yml").read_bytes(), args.source_ref, repo)
     args.output.mkdir(parents=True, exist_ok=False)
     for name, content in assets.items():
         (args.output / name).write_bytes(content)
