@@ -53,4 +53,3 @@ nonisolated func debugLog(_ module: String, _ message: String) {
         fputs("[\(timestamp) DEBUG \(module)] \(message)\n", stderr)
     #endif
 }
-

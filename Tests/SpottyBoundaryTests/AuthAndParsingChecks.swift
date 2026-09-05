@@ -355,4 +355,3 @@ private final class CleanupCounter: @unchecked Sendable {
         return value
     }
 }
-
