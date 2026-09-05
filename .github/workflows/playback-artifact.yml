@@ -44,6 +44,14 @@ jobs:
       - name: Select Xcode 26.6
         run: sudo xcode-select -s /Applications/Xcode_26.6.app
 
+      - name: Install verification tools
+        run: |
+          if command -v rg >/dev/null 2>&1; then
+            rg --version
+          else
+            brew install ripgrep
+          fi
+
       - name: Install pinned cbindgen
         run: |
           set -euo pipefail
@@ -135,7 +143,7 @@ jobs:
           name: playback-publication-candidate
           path: |
             ${{ runner.temp }}/spotty-playback-publication/*
-            !${{ runner.temp }}/spotty-playback-publication/SpottyPlaybackCore.xcframework
+            !${{ runner.temp }}/spotty-playback-publication/SpottyPlaybackCore.xcframework/**
           if-no-files-found: error
           retention-days: 14
 

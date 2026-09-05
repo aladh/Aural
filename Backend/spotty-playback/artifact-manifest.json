@@ -1,9 +1,9 @@
 {
   "artifact" : {
     "archive" : "SpottyPlaybackCore.xcframework.zip",
-    "checksum" : "0552b741592585910bada8a5cede419db5218a41824c74dda763a541b1c9d44e",
+    "checksum" : "c6e5a528bf4eb5a500a31c5a8f2b024ab199cd4efb849f5a6542701e25e3ed2c",
     "name" : "SpottyPlaybackCore",
-    "url" : "https:\/\/github.com\/aladh\/Spotty\/releases\/download\/spotty-playback-core-4cd95a9923747bc6dd52971a2e635ebe7d68f258e0229f552d8c8277f1a6414f\/SpottyPlaybackCore.xcframework.zip"
+    "url" : "https:\/\/github.com\/aladh\/Spotty\/releases\/download\/spotty-playback-core-5a45cacc6a9921418f60214d26eebabeb54d45c662025c0a4f3a3e5d84df4675\/SpottyPlaybackCore.xcframework.zip"
   },
   "licensing" : {
     "archiveLicenseDirectory" : "Notices\/licenses",
@@ -17,7 +17,7 @@
     ]
   },
   "module" : {
-    "library" : "libSpottyPlaybackCore_4cd95a9923747bc6dd52971a2e635ebe7d68f258e0229f552d8c8277f1a6414f_e1ec14036ddcfff38e7dc082b51f11d75d33ca69e10f60c12a2195c504549e6b.a",
+    "library" : "libSpottyPlaybackCore_5a45cacc6a9921418f60214d26eebabeb54d45c662025c0a4f3a3e5d84df4675_052f24bf04a6bdbe0441b7b6cddb416b921005cc01ea7d7f5a6b6199f5ab6007.a",
     "moduleMap" : "module.modulemap",
     "name" : "SpottyPlaybackCore",
     "umbrellaHeader" : "spotty_playback.h",
@@ -36,11 +36,11 @@
   "source" : {
     "canonicalHeadersSHA256" : "9b4ec642768c3c40ce558347558c84e46c209a475c2cc2706864ff186f965a11",
     "cargoLockSHA256" : "77f059bc1a58d7478723b979255cbb8eea87681ae2683feb35d722b7f7147092",
-    "engineInputDigest" : "4cd95a9923747bc6dd52971a2e635ebe7d68f258e0229f552d8c8277f1a6414f",
+    "engineInputDigest" : "5a45cacc6a9921418f60214d26eebabeb54d45c662025c0a4f3a3e5d84df4675",
     "librespotRevision" : "9c7d75615fc093bdcbdb29adbce3fed38c531852",
     "rustToolchain" : "1.98.0",
     "sourceDirty" : false,
-    "sourceRevision" : "05ce613056a8b68d5f6db8ff8583b3c418197e88",
+    "sourceRevision" : "b65318efdcfd85687ee0251b15be63f48b25dcc9",
     "target" : "aarch64-apple-darwin"
   }
 }

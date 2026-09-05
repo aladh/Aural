@@ -273,6 +273,7 @@ if [[ -n "$manifest_path" ]]; then
     fi
     artifact_checksum="$(manifest_value artifact.checksum)"
     [[ "$artifact_checksum" =~ ^[0-9a-fA-F]{64}$ ]] || fail "artifact checksum is not SHA-256"
+    [[ "$artifact_checksum" != "$(printf '%064d' 0)" ]] || fail "artifact checksum is not pinned"
     require_equal "manifest archive name" "${artifact_url##*/}" "$(manifest_value artifact.archive)"
     require_equal "manifest source revision" \
         "$(provenance_value source.sourceRevision)" "$(manifest_value source.sourceRevision)"
@@ -287,10 +288,6 @@ if [[ "$for_publish" == true ]]; then
     [[ -n "$archive_path" ]] || fail "--for-publish requires --archive"
     require_equal "provenance source dirty flag" false "$(provenance_value source.sourceDirty)"
     require_equal "provenance source input digest" "$source_digest" "$(provenance_value source.engineInputDigest)"
-    if [[ -n "$manifest_path" ]]; then
-        zero_checksum="$(printf '%064d' 0)"
-        [[ "$artifact_checksum" != "$zero_checksum" ]] || fail "artifact checksum is not pinned"
-    fi
 fi
 
 print "Validated SpottyPlaybackCore XCFramework: $xcframework_path"
