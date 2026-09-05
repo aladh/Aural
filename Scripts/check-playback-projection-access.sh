@@ -112,6 +112,8 @@ swift_arguments=(
 # make each access-control promise observable. The compiler's diagnostic wording is intentionally
 # the only assertion here: no production source or generated interface is parsed by the script.
 negative_probes=(
+    "NEG_CURRENT_TRACK_INDICATOR:currentTrackIndicator private setter"
+    "NEG_CATALOG_PLAYBACK_AVAILABILITY:catalogPlaybackAvailability private setter"
     "NEG_STATE:state private setter"
     "NEG_STATE_MEMBER:nested state member mutation"
     "NEG_REQUIRES_REAUTHENTICATION:requiresReauthentication private setter"

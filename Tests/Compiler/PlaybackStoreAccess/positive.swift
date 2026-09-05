@@ -7,6 +7,8 @@ import SpottyDomain
 // projections without depending on source spelling or linking the playback archive.
 @MainActor
 func readPlaybackStoreAccess(_ store: PlaybackStore) {
+    _ = store.currentTrackIndicator
+    _ = store.catalogPlaybackAvailability
     _ = store.state
     _ = store.requiresReauthentication
     _ = store.accountEpoch

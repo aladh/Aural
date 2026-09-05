@@ -6,7 +6,11 @@ import SpottyDomain
 // because PlaybackStore.state has a private setter and all presentation projections are reads.
 @MainActor
 func rejectPlaybackStoreWrite(_ store: PlaybackStore) {
-    #if NEG_STATE
+    #if NEG_CURRENT_TRACK_INDICATOR
+        store.currentTrackIndicator = store.currentTrackIndicator
+    #elseif NEG_CATALOG_PLAYBACK_AVAILABILITY
+        store.catalogPlaybackAvailability = store.catalogPlaybackAvailability
+    #elseif NEG_STATE
         store.state = store.state
     #elseif NEG_STATE_MEMBER
         store.state.transport = store.state.transport
