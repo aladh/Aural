@@ -4,10 +4,12 @@ import json
 import os
 import subprocess
 import tempfile
+import threading
 import unittest
 from pathlib import Path
 from unittest.mock import patch
 
+import inline_comments
 import review
 
 
@@ -18,6 +20,7 @@ HEAD = "a" * 40
 OLD_HEAD = "d" * 40
 OLD_ID = "F0123456789ab"
 NEW_ID = "Fabcdef012345"
+SECOND_ID = "F123456789abc"
 
 
 def validation_meta(previous=()):
@@ -25,6 +28,7 @@ def validation_meta(previous=()):
         "previous": list(previous),
         "changed": [PATH],
         "files": {PATH: 4},
+        "diff_lines": {PATH: [1, 2, 3, 4]},
     }
 
 
@@ -58,6 +62,7 @@ def render_meta():
         "variant": "xhigh",
         "omitted": [],
         "omitted_before": [],
+        "diff_lines": {PATH: [1, 2, 3, 4]},
         **validation_meta(),
     }
 
@@ -65,6 +70,13 @@ def render_meta():
 def encoded_state_body(state):
     encoded = base64.b64encode(json.dumps(state, separators=(",", ":")).encode()).decode()
     return review.MARKER + "\n<!-- state:" + encoded + " -->"
+
+
+def write_audit_artifact(work, role, audit_result):
+    artifact = work / "output" / f"audit-{role}.json"
+    artifact.parent.mkdir(parents=True, exist_ok=True)
+    artifact.write_text(json.dumps({"result": audit_result, "seconds": 0.1, "tool_calls": 1}))
+    return artifact
 
 
 class ReviewTests(unittest.TestCase):
@@ -107,6 +119,18 @@ class ReviewTests(unittest.TestCase):
             with self.subTest(response=response), patch.object(review, "api", return_value=response):
                 with self.assertRaises(ValueError):
                     review.check_current(meta, "token")
+
+    def test_diff_right_lines_handles_ranges_deleted_hunks_and_quoted_headers(self):
+        diff = (
+            b'--- "a/Sources/\303\251.swift"\n'
+            b'+++ "b/Sources/\303\251.swift"\n'
+            b'@@ -1,0 +2,1 @@\n'
+            b'+@@ -90,1 +91,2 @@ content that only resembles a hunk header\n'
+            b'@@ -10,2 +12,3 @@\n'
+            b' context\n'
+            b'@@ -20,3 +25,0 @@ deleted-only hunk\n'
+        )
+        self.assertEqual(review._diff_right_lines(diff), [2, 12, 13, 14])
 
     def baseline_comment(self, **overrides):
         metadata = render_meta()
@@ -308,11 +332,10 @@ class ReviewTests(unittest.TestCase):
         ]
         self.assertEqual(review.owned_comments(comments), [owned])
 
-    def test_run_model_passes_scrubbed_environment_to_subprocess(self):
+    def test_each_model_pass_gets_scrubbed_environment(self):
         with tempfile.TemporaryDirectory() as temporary:
             work = Path(temporary)
             (work / "input").mkdir()
-            (work / "output").mkdir()
             meta = render_meta()
             (work / "meta.json").write_text(json.dumps(meta))
             binary = work / "opencode"
@@ -331,7 +354,11 @@ class ReviewTests(unittest.TestCase):
                 os.environ,
                 {"PATH": "/safe/bin", "GH_TOKEN": "secret", "ACTIONS_ID_TOKEN_REQUEST_TOKEN": "secret"},
             ), patch.object(review.subprocess, "run", side_effect=fake_run) as run:
-                review.run_model(work, binary)
+                metrics = review._run_pass(
+                    work, binary, "correctness", "audit prompt",
+                    output_dir=work / "output" / "audit-correctness",
+                    runtime_name="audit-correctness",
+                )
 
             environment = run.call_args.kwargs["env"]
             self.assertEqual(environment["PATH"], "/safe/bin")
@@ -340,8 +367,226 @@ class ReviewTests(unittest.TestCase):
             config = json.loads(environment["OPENCODE_CONFIG_CONTENT"])
             self.assertEqual(config["share"], "disabled")
             self.assertEqual(config["permission"]["*"], "deny")
-            report = json.loads((work / "output/report.json").read_text())
-            self.assertEqual(report["result"]["findings"], [])
+            self.assertEqual(config["permission"]["bash"], "deny")
+            self.assertEqual(
+                environment["XDG_CONFIG_HOME"],
+                str(work / "runtime" / "audit-correctness" / "config"),
+            )
+            self.assertEqual(metrics["result"], result())
+
+    def test_audit_runs_both_passes_concurrently_before_staging_peers(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            work = Path(temporary)
+            (work / "input").mkdir()
+            (work / "output").mkdir()
+            (work / "meta.json").write_text(json.dumps(render_meta()))
+            barrier = threading.Barrier(2)
+            entered = []
+
+            def fake_audit(work_arg, binary, role):
+                entered.append((role, threading.current_thread().name))
+                barrier.wait(timeout=3)
+                self.assertFalse((work / "input" / "audits").exists())
+                self.assertFalse((work / "input" / "discussion.json").exists())
+                write_audit_artifact(work, role, result())
+                return {"result": result(), "seconds": 0.1, "tool_calls": 1}
+
+            with patch.object(review, "_audit_one", side_effect=fake_audit):
+                review.audit(work, Path("/tmp/opencode"))
+
+            self.assertEqual({role for role, _ in entered}, {"correctness", "quality"})
+            self.assertEqual(len({thread for _, thread in entered}), 2)
+            self.assertEqual(
+                set(path.name for path in (work / "input" / "audits").iterdir()),
+                {"correctness.json", "quality.json"},
+            )
+
+    def test_audit_failure_prevents_staging_any_peer_artifact(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            work = Path(temporary)
+            (work / "input").mkdir()
+            (work / "output").mkdir()
+            (work / "meta.json").write_text(json.dumps(render_meta()))
+
+            def fake_audit(work_arg, binary, role):
+                if role == "quality":
+                    raise ValueError("invalid quality response")
+                write_audit_artifact(work, role, result())
+                return {"result": result(), "seconds": 0.1, "tool_calls": 1}
+
+            with patch.object(review, "_audit_one", side_effect=fake_audit):
+                with self.assertRaises(RuntimeError):
+                    review.audit(work, Path("/tmp/opencode"))
+
+            self.assertFalse((work / "input" / "audits").exists())
+            self.assertFalse((work / "input" / "discussion.json").exists())
+
+    def test_discussion_requires_completed_audit_and_skips_without_p1_or_p2(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            work = Path(temporary)
+            (work / "input").mkdir()
+            (work / "output").mkdir()
+            (work / "meta.json").write_text(json.dumps(render_meta()))
+            with patch.object(review, "api") as api:
+                with self.assertRaises(ValueError):
+                    review.discussion(work)
+                api.assert_not_called()
+
+            p3 = dict(finding(), severity="P3")
+            write_audit_artifact(work, "correctness", result([p3]))
+            with patch.object(review, "api") as api:
+                with self.assertRaises(ValueError):
+                    review.discussion(work)
+                api.assert_not_called()
+
+            write_audit_artifact(work, "quality", result())
+            with patch.object(review, "api") as api:
+                review.discussion(work)
+                api.assert_not_called()
+
+            staged = json.loads((work / "input" / "discussion.json").read_text())
+            self.assertEqual(staged["status"], "skipped")
+            self.assertEqual(staged["reason"], "No P1/P2 correctness findings")
+
+    def test_discussion_bounds_records_bodies_pages_and_excludes_owned_comment(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            work = Path(temporary)
+            (work / "input").mkdir()
+            (work / "output").mkdir()
+            (work / "meta.json").write_text(json.dumps(render_meta()))
+            p1 = dict(finding(), severity="P1")
+            write_audit_artifact(work, "correctness", result([p1]))
+            write_audit_artifact(work, "quality", result())
+            owned = {"id": 999, "user": {"login": review.BOT}, "body": review.MARKER + "\nquoted"}
+            public = [
+                {"id": index, "user": {"login": "reviewer"}, "body": "public"}
+                for index in range(1, review.MAX_DISCUSSION_RECORDS + 2)
+            ]
+            public[-1]["body"] = "x" * (review.MAX_DISCUSSION_BODY + 1)
+            batch = [owned] + public
+            calls = []
+
+            def fake_api(path, token, method="GET", data=None):
+                calls.append(path)
+                return list(batch)
+
+            with patch.dict(os.environ, {"GH_TOKEN": "discussion-token"}), patch.object(
+                review, "api", side_effect=fake_api
+            ):
+                review.discussion(work)
+
+            self.assertEqual(len(calls), 3)
+            self.assertTrue(all("page=1" in path for path in calls))
+            self.assertTrue(all("page=2" not in path for path in calls))
+            staged = json.loads((work / "input" / "discussion.json").read_text())
+            self.assertEqual(staged["status"], "available")
+            self.assertEqual(len(staged["issue_comments"]), review.MAX_DISCUSSION_RECORDS)
+            self.assertEqual(len(staged["reviews"]), review.MAX_DISCUSSION_RECORDS)
+            self.assertEqual(len(staged["review_comments"]), review.MAX_DISCUSSION_RECORDS)
+            self.assertEqual(staged["omitted_count"], 6)
+            self.assertTrue(staged["truncated"])
+            self.assertEqual(len(staged["issue_comments"][-1]["body"]), review.MAX_DISCUSSION_BODY)
+            self.assertTrue(all(item["id"] != owned["id"] for item in staged["issue_comments"]))
+
+    def synthesis_fixture(self, temporary):
+        work = Path(temporary)
+        (work / "input" / "audits").mkdir(parents=True)
+        (work / "output").mkdir()
+        previous = [finding(OLD_ID), finding(SECOND_ID)]
+        meta = dict(render_meta(), previous=previous)
+        (work / "meta.json").write_text(json.dumps(meta))
+        audit_result = result(previous)
+        for role in ("correctness", "quality"):
+            artifact = write_audit_artifact(work, role, audit_result)
+            (work / "input" / "audits" / f"{role}.json").write_bytes(artifact.read_bytes())
+        binary = work / "opencode"
+        binary.write_text("placeholder")
+        return work, binary, previous
+
+    def test_synthesize_rejects_invalid_output_before_writing_report(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            work, binary, previous = self.synthesis_fixture(temporary)
+
+            def fake_run(command, **kwargs):
+                invalid = result([previous[0]])
+                kwargs["stdout"].write(
+                    json.dumps({"type": "text", "part": {"text": json.dumps(invalid)}}) + "\n"
+                )
+                kwargs["stdout"].write(
+                    json.dumps({"type": "step_finish", "part": {"reason": "stop"}}) + "\n"
+                )
+                return subprocess.CompletedProcess(command, 0)
+
+            with patch.object(review.subprocess, "run", side_effect=fake_run):
+                with self.assertRaises(ValueError):
+                    review.synthesize(work, binary)
+            self.assertFalse((work / "output" / "report.json").exists())
+
+    def test_synthesize_disposes_every_previous_id_in_final_result(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            work, binary, previous = self.synthesis_fixture(temporary)
+            final = result(
+                [previous[0]],
+                [{"id": previous[1]["id"], "reason": "The final pass found no remaining defect."}],
+            )
+
+            def fake_run(command, **kwargs):
+                kwargs["stdout"].write(
+                    json.dumps({"type": "text", "part": {"text": json.dumps(final)}}) + "\n"
+                )
+                kwargs["stdout"].write(
+                    json.dumps({"type": "step_finish", "part": {"reason": "stop"}}) + "\n"
+                )
+                return subprocess.CompletedProcess(command, 0)
+
+            with patch.object(review.subprocess, "run", side_effect=fake_run):
+                review.synthesize(work, binary)
+
+            report = json.loads((work / "output" / "report.json").read_text())
+            disposed = {item["id"] for item in report["result"]["findings"]}
+            disposed.update(item["id"] for item in report["result"]["resolved"])
+            self.assertEqual(disposed, {item["id"] for item in previous})
+            self.assertEqual(set(report["passes"]), {"correctness", "quality", "synthesis"})
+
+    def test_inline_sync_failure_prevents_overview_publication(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            work = Path(temporary)
+            event_path = work / "event.json"
+            summary_path = work / "summary.md"
+            event_path.write_text(
+                json.dumps({
+                    "pull_request": {
+                        "number": 7,
+                        "head": {"sha": HEAD},
+                        "base": {"sha": BASE},
+                    }
+                })
+            )
+            report = {
+                "meta": dict(render_meta(), policy=review.policy_digest()),
+                "result": result([finding()]),
+            }
+            (work / "report.json").write_text(json.dumps(report))
+            current = {"state": "open", "head": {"sha": HEAD}, "base": {"sha": BASE}}
+            environment = {
+                "GITHUB_EVENT_PATH": str(event_path),
+                "GITHUB_REPOSITORY": REPO,
+                "GITHUB_RUN_ID": "11",
+                "GITHUB_RUN_ATTEMPT": "2",
+                "GH_TOKEN": "scoped-token",
+                "GITHUB_STEP_SUMMARY": str(summary_path),
+            }
+            with patch.dict(os.environ, environment), patch.object(
+                review, "api", return_value=current
+            ) as api, patch.object(
+                inline_comments, "sync", side_effect=RuntimeError("inline publication failed")
+            ) as sync:
+                with self.assertRaises(RuntimeError):
+                    review.publish(work)
+
+            sync.assert_called_once()
+            api.assert_called_once_with("repos/acme/spotty/pulls/7", "scoped-token")
+            self.assertFalse(summary_path.exists())
 
     def test_publish_rechecks_revision_before_comment_mutation(self):
         with tempfile.TemporaryDirectory() as temporary:
@@ -388,58 +633,71 @@ class ReviewTests(unittest.TestCase):
 
     def test_publish_upserts_owned_comment_and_rechecks_revision(self):
         with tempfile.TemporaryDirectory() as temporary:
-            work = Path(temporary)
-            event_path = work / "event.json"
-            summary_path = work / "summary.md"
-            event_path.write_text(
-                json.dumps({
-                    "pull_request": {
-                        "number": 7,
-                        "head": {"sha": HEAD},
-                        "base": {"sha": BASE},
-                    }
-                })
-            )
-            report = {"meta": dict(render_meta(), policy=review.policy_digest()), "result": result()}
-            (work / "report.json").write_text(json.dumps(report))
             existing = dict(self.baseline_comment(), id=123)
             current = {"state": "open", "head": {"sha": HEAD}, "base": {"sha": BASE}}
-            calls = []
-            expected_body = review.render(report)
-
-            def fake_api(path, token, method="GET", data=None):
-                calls.append((path, method, data))
-                if path == "repos/acme/spotty/pulls/7":
-                    return current
-                if path == "repos/acme/spotty/issues/7/comments?per_page=100&page=1":
-                    return [existing]
-                if path == "repos/acme/spotty/issues/comments/123":
-                    self.assertEqual(method, "PATCH")
-                    self.assertEqual(data, {"body": expected_body})
-                    return {"html_url": "https://github.example/comment/123"}
-                raise AssertionError(f"unexpected API path: {path}")
-
-            environment = {
-                "GITHUB_EVENT_PATH": str(event_path),
-                "GITHUB_REPOSITORY": REPO,
-                "GITHUB_RUN_ID": "11",
-                "GITHUB_RUN_ATTEMPT": "2",
-                "GH_TOKEN": "scoped-token",
-                "GITHUB_STEP_SUMMARY": str(summary_path),
-            }
-            with patch.dict(os.environ, environment), patch.object(review, "api", side_effect=fake_api):
-                review.publish(work)
-
-            self.assertEqual(
-                [path for path, _, _ in calls],
-                [
-                    "repos/acme/spotty/pulls/7",
-                    "repos/acme/spotty/issues/7/comments?per_page=100&page=1",
-                    "repos/acme/spotty/issues/comments/123",
-                    "repos/acme/spotty/pulls/7",
-                ],
+            cases = (
+                ("PATCH", [existing], "repos/acme/spotty/issues/comments/123", "https://github.example/comment/123"),
+                ("POST", [], "repos/acme/spotty/issues/7/comments", "https://github.example/comment/new"),
             )
-            self.assertEqual(summary_path.read_text(), "[Advisory review](https://github.example/comment/123) for `" + HEAD + "`; no approval issued.\n")
+            for method, comment_items, target, html_url in cases:
+                with self.subTest(method=method):
+                    work = Path(temporary) / method.lower()
+                    work.mkdir()
+                    event_path = work / "event.json"
+                    summary_path = work / "summary.md"
+                    event_path.write_text(
+                        json.dumps({
+                            "pull_request": {
+                                "number": 7,
+                                "head": {"sha": HEAD},
+                                "base": {"sha": BASE},
+                            }
+                        })
+                    )
+                    report = {"meta": dict(render_meta(), policy=review.policy_digest()), "result": result()}
+                    (work / "report.json").write_text(json.dumps(report))
+                    expected_body = review.render(report)
+                    calls = []
+
+                    def fake_api(path, token, api_method="GET", data=None):
+                        calls.append((path, api_method, data))
+                        if path == "repos/acme/spotty/pulls/7":
+                            return current
+                        if path == "repos/acme/spotty/issues/7/comments?per_page=100&page=1":
+                            return comment_items
+                        if path == target:
+                            self.assertEqual(api_method, method)
+                            self.assertEqual(data, {"body": expected_body})
+                            return {"html_url": html_url}
+                        raise AssertionError(f"unexpected API path: {path}")
+
+                    environment = {
+                        "GITHUB_EVENT_PATH": str(event_path),
+                        "GITHUB_REPOSITORY": REPO,
+                        "GITHUB_RUN_ID": "11",
+                        "GITHUB_RUN_ATTEMPT": "2",
+                        "GH_TOKEN": "scoped-token",
+                        "GITHUB_STEP_SUMMARY": str(summary_path),
+                    }
+                    with patch.dict(os.environ, environment), patch.object(
+                        review, "api", side_effect=fake_api
+                    ):
+                        review.publish(work)
+
+                    self.assertEqual(
+                        [path for path, _, _ in calls],
+                        [
+                            "repos/acme/spotty/pulls/7",
+                            "repos/acme/spotty/issues/7/comments?per_page=100&page=1",
+                            "repos/acme/spotty/pulls/7",
+                            target,
+                            "repos/acme/spotty/pulls/7",
+                        ],
+                    )
+                    self.assertEqual(
+                        summary_path.read_text(),
+                        f"[Advisory review]({html_url}) for `{HEAD}`; no approval issued.\n",
+                    )
 
 
 if __name__ == "__main__":

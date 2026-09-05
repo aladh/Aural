@@ -24,7 +24,7 @@ jobs:
     if: github.event.pull_request.head.repo.full_name == github.repository && github.head_ref == 'codex/opencode-review-spike'
     name: Source-aware OpenCode review
     runs-on: ubuntu-24.04
-    timeout-minutes: 15
+    timeout-minutes: 25
     permissions:
       contents: read
       pull-requests: read
@@ -56,9 +56,18 @@ jobs:
           mkdir bin
           tar -xzf opencode.tar.gz -C bin
 
-      - name: Review without GitHub credentials
+      - name: Run independent Thermos audits in parallel
         timeout-minutes: 11
-        run: python3 .github/review/review.py run "$RUNNER_TEMP/opencode-review" "$RUNNER_TEMP/opencode-review/bin/opencode"
+        run: python3 .github/review/review.py audit "$RUNNER_TEMP/opencode-review" "$RUNNER_TEMP/opencode-review/bin/opencode"
+
+      - name: Collect discussion after independent audits
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 .github/review/review.py discussion "$RUNNER_TEMP/opencode-review"
+
+      - name: Synthesize source-verified findings without GitHub credentials
+        timeout-minutes: 11
+        run: python3 .github/review/review.py synthesize "$RUNNER_TEMP/opencode-review" "$RUNNER_TEMP/opencode-review/bin/opencode"
 
       - name: Save validated review
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
