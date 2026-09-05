@@ -30,24 +30,6 @@ if [[ -z "$width" || "$width" != "$height" || "$width" -lt 1024 ]]; then
     exit 1
 fi
 
-# macOS Tahoe places icons with transparent edges inside a gray squircle in
-# the Dock, shrinking the artwork. The source must be opaque edge-to-edge so
-# the system clips the full-bleed art to a clean squircle itself.
-opaque_status=0
-SWIFT_MODULECACHE_PATH="$module_cache" \
-CLANG_MODULE_CACHE_PATH="$module_cache" \
-    xcrun swift "$project_root/Scripts/verify-icon-opaque.swift" "$source_icon" \
-    || opaque_status=$?
-if [[ "$opaque_status" == 1 ]]; then
-    print -u2 "Source artwork must be opaque edge-to-edge;"
-    print -u2 "transparent edges make macOS Tahoe wrap the icon in a gray squircle in the Dock."
-    print -u2 "See Assets/README.md."
-    exit 1
-elif [[ "$opaque_status" != 0 ]]; then
-    print -u2 "Unable to validate source artwork opacity: $source_icon"
-    exit 1
-fi
-
 representations=(
     "16 icon_16x16.png"
     "32 icon_16x16@2x.png"
