@@ -186,6 +186,25 @@ other reviewers' answers, measure false positives and latency, and implement rev
 approval/check publication using trusted orchestration. Do not promote
 this advisory trial to a required review gate solely because its Actions jobs pass.
 
+## Native OpenCode subagent experiment
+
+A local trial of pinned OpenCode's native `task` tool created two child sessions under one parent.
+Background tasks were unsuitable for the current CLI invocation: the parent emitted a launch
+acknowledgment and stopped before synthesizing. A fresh trial issued two foreground task calls
+together. The child sessions were created 12 ms apart, completed independently, and the parent
+combined the seeded correctness and structural findings. Exported parent/child sessions confirmed
+Muse contributor-free with `xhigh`; the children used only read tools and created no nested tasks.
+The fresh input contained source, before, diffs and metadata, with no previous audit answers.
+
+This establishes native delegation and synthesis, using reduced review prompts on one synthetic
+fixture. It does not establish review-quality or latency superiority over the full Thermos rubrics.
+The CI implementation still uses the independently validated audit processes above. Adopting native
+delegation should validate completed child outputs and exports, reject early/background-only
+completion, preserve finding IDs, and retain the credential-free boundary around conditional
+post-audit discussion. Configure each child's permissions explicitly: parent-agent permissions do
+not by themselves constrain children. Either inherit both model and variant, or pin both on each
+child; setting only a child model suppresses parent variant inheritance in this OpenCode version.
+
 Official references: [GitHub integration](https://opencode.ai/docs/github/),
 [model/privacy terms](https://opencode.ai/docs/zen/),
 [tool permissions](https://opencode.ai/docs/permissions/), and

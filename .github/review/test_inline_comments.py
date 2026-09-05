@@ -51,15 +51,15 @@ def thread(
     *,
     resolved=False,
     outdated=False,
-    author=inline_comments.GRAPHQL_BOT_LOGIN,
-    author_type=inline_comments.GRAPHQL_BOT_TYPE,
+    author="github-actions",
+    author_type="Bot",
     body=None,
     comment_id=41,
     url="https://github.example/pull/268#discussion_r41",
     side="RIGHT",
     replies=(),
-    reply_author=inline_comments.GRAPHQL_BOT_LOGIN,
-    reply_author_type=inline_comments.GRAPHQL_BOT_TYPE,
+    reply_author="github-actions",
+    reply_author_type="Bot",
 ):
     comments = [
         {
