@@ -32,12 +32,12 @@ inventory](architecture-enforcement.md).
 | `ffi.rs`, `runtime.rs` | Protocol/runtime adapter | Panic barrier, C string delivery, nested-runtime refusal |
 | `proxy_sink.rs` | Protocol/runtime adapter | Librespot's decoded PCM to the bounded Swift audio callback; no UI state crosses this path |
 | `session_lifecycle.rs` | Adapter | Serialized authorization, initialization exports, health checks, and reconnect orchestration. |
-| `session_construction.rs` | Adapter | Transactional session/player/Spirc construction, publication, and rollback guards. |
+| `session_construction.rs` | Adapter | Transactional session/player/Spirc construction, publication, and rollback guards. Player configuration is fixed at 320 kbps and gapless; Connect registers at full volume while Swift owns output volume. |
 | `engine_resources.rs` | Adapter | Shared resource extraction, graceful task shutdown, and cancellation-safe cleanup. |
 | `credentials_cache.rs` | App policy | Streaming cache path selection, retired-directory cleanup, and logout cache clearing. |
 | `lifecycle_serialization.rs` | Spotty-owned coordination that must stay with Rust globals | One async lifecycle mutex, reconnect unit outcomes, generation revalidation |
 | `connect.rs` | Mixed | Dealer subscribe, hidden-member bootstrap PUT, and protobuf parse are protocol. Device-list and connection-snapshot presentation are Swift-owned. `cluster_offer_decision`, bootstrap-vs-push linearization, and `is_active_in_cluster` (this engine's Connect role) remain Rust-owned Connect logic. |
-| `queue.rs` | Adapter | Forwards unfiltered `ProvidedTrack` rows and slim current-track identity as `SpottyQueueSnapshot`. Cluster protocol playback flags and the ABI `context_uri` field cross as `SpottyPlaybackSnapshot`; Swift currently drops that context until a presentation consumer exists. Does **not** own delimiter hiding, upcoming presentation, or transport presentation. |
+| `queue.rs` | Adapter | Forwards unfiltered `ProvidedTrack` rows and slim current-track identity as `SpottyQueueSnapshot`. Cluster protocol playback flags cross as `SpottyPlaybackSnapshot`; sticky context remains available only through the resume getter. Does **not** own delimiter hiding, upcoming presentation, or transport presentation. |
 | `state.rs` | Mixed | Librespot object slots (`SESSION`, `SPIRC`, `PLAYER`, `MIXER`). Snapshot stamps and connection aggregation live here. Queue, connection, playback, and device-list observations use typed C snapshots. |
 | `transport.rs` | Adapter | Seek-capable `load_at_position`, one-target `LoadRequest` construction, playing-event waits, and the reconnect rehydration window (`has_resume_identity`, `wait_for_rehydration`). Target order and capture are Swift-owned for user resume and reconnect alike. |
 | `player_control.rs` | Adapter | Spirc play/pause/seek/shuffle/repeat/transfer/queue-add, plus FFI getters for sticky resume URIs |
@@ -79,7 +79,7 @@ Control observations for connection, playback, devices, and queue are typed C sn
 
 - `SpottyConnectionSnapshot`: `session_connected`, `spirc_ready`, `is_active_device`,
   `resume_pending`, `credentials_rejected`, `device_id`, `last_error`.
-- `SpottyPlaybackSnapshot`: protocol playing/paused flags, track URI, context URI, timing,
+- `SpottyPlaybackSnapshot`: protocol playing/paused flags, track URI, timing,
   shuffle/repeat options, the active-device fact needed for coherent transport projection, and a
   one-observation `track_unavailable` flag for a failed current local load. Ordinary snapshots
   clear the flag; Rust filters request identity and preload failures, while Swift owns the
