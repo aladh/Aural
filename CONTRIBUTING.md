@@ -258,9 +258,13 @@ changes:
 2. All review threads are resolved, including findings from Cursor and other reviewers.
 3. Checks are green: every applicable check has passed, with only intentional conditional skips.
 
-Address valid findings, explain findings that do not apply, and resolve threads only after their
-disposition is documented. After pushing fixes, wait for checks and CodeRabbit review to cover the
-updated head. Cursor findings must be addressed, but a separate Cursor approval is not an acceptance
+Evaluate review feedback using engineering judgment. Addressing feedback does not require agreeing
+with or implementing every suggestion. Fix valid issues; when declining a suggestion, explain the
+reasoning, tradeoff, or scope boundary in the thread. Resolve threads only after documenting their
+disposition.
+
+After pushing fixes, wait for checks and CodeRabbit review to cover the updated head.
+Cursor findings must be addressed, but a separate Cursor approval is not an acceptance
 criterion. A stale blocking review state must be cleared through the reviewer’s normal workflow;
 do not bypass repository protections.
 
