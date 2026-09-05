@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="Assets/SpottyIcon.png" width="112" height="112" alt="Spotty" style="border-radius: 22%">
+  <img src="Assets/SpottyIcon.png" width="112" height="112" alt="Spotty">
 </p>
 
 # Spotty

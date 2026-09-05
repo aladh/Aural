@@ -32,6 +32,7 @@ do {
     let width = bitmap.pixelsWide, height = bitmap.pixelsHigh
     let alphaOffset = bitmap.bitmapFormat.contains(.alphaFirst) ? 0 : 3
     var transparent = 0
+    // The side scan skips the corner rows so each border pixel counts once.
     for x in 0..<width {
         for y in [0, height - 1] {
             if samples[y * bitmap.bytesPerRow + x * 4 + alphaOffset] != 255 {
@@ -39,10 +40,12 @@ do {
             }
         }
     }
-    for y in 0..<height {
-        for x in [0, width - 1] {
-            if samples[y * bitmap.bytesPerRow + x * 4 + alphaOffset] != 255 {
-                transparent += 1
+    if height > 2 {
+        for y in 1..<(height - 1) {
+            for x in [0, width - 1] {
+                if samples[y * bitmap.bytesPerRow + x * 4 + alphaOffset] != 255 {
+                    transparent += 1
+                }
             }
         }
     }
