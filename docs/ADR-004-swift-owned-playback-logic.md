@@ -14,7 +14,3 @@ with deterministic checks, instead of attempting a big-bang engine rewrite.
 The later Swift playback experiment introduced a second implementation and additional lifetime and
 verification costs without an established benefit. ADR 005 retired the replacement roadmap and
 retained librespot as the sole production engine.
-
-One reducer-owned snapshot, explicit lifetime ownership, typed boundary data, and behavior-preserving
-checks remain current principles. Current responsibilities are listed in
-[playback engine ownership](playback-engine-ownership.md), not in this historical record.

@@ -25,6 +25,9 @@ audio or protocol implementation.
 
 ## Boundary invariants
 
+- For new async boundaries, define the owner, lifetime, cancellation, ordering, stale-result and
+  failure policy, and verification coverage before adding the flow.
+
 - `PlaybackCore.swift` is the only Swift importer of `SpottyPlaybackCore`;
   `RustPlaybackEngine.swift` is its only caller. Keep the C header, Rust exports, ownership, pointer
   lifetimes, callback threading, and typed C snapshots aligned.

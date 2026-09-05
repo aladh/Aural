@@ -12,9 +12,11 @@ inventory](architecture-enforcement.md).
 
 | Owner | Responsibility |
 | --- | --- |
+| `AccountStore` | Owns account lifecycle and the only writable account epoch, `AccountStore.epoch`. `PlaybackStore.accountEpoch` is a read-only projection; `PlaybackState.accountEpoch` is reducer-accepted snapshot state, not another lifecycle counter. |
 | `PlaybackState` / `PlaybackReducer` | Atomic presentation snapshot; stale/revision/epoch rejection |
 | `PlaybackStore` / `PlaybackCoordinator` / `PlaybackEffectRegistry` | MainActor actions, serialized effects, task lifetimes |
-| `QueueService` | Source precedence, context identity, Connect mutation snapshot |
+| `QueueService` | Owns source precedence, context identity, and the Connect mutation snapshot. Same-context Web `/me/player/queue` results may enrich labels only; they cannot replace authoritative Connect occurrence order or its `revision` / `receivedAt`. `PlaybackStore.queueMutation` is a read-only projection. |
+| `PlaybackStore.connectQueueCallback` / `ConnectQueueCallbackWatermark` | Owns Connect callback generation/revision identity separately from merged queue state. Adopting an engine epoch does not clear that watermark. |
 | `QueueProtocolProjection` | Upcoming-rail rows from protocol `next` tracks; occurrence removal |
 | `ConnectDeviceProjection` | Device-list activity, display sort, empty-type fallback |
 | `ConnectionSnapshotProjection` | Connection session phase, empty-device-id fallback |
