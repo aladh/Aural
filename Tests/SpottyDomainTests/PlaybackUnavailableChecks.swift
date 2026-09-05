@@ -167,9 +167,33 @@ struct PlaybackUnavailableTests {
             "a failed optimistic target is accepted"
         )
         #expect((staleFailure.currentTrack?.uri) == (targetURI), "the target remains current")
+        #expect((staleFailure.transport) == (.paused), "an unavailable target adopts the paused snapshot transport")
+        #expect(
+            (staleFailure.pendingCommands[.transport]?.id) == (commandID),
+            "the unavailable snapshot leaves command completion responsible for clearing the pending play"
+        )
         #expect(
             (staleFailure.notice?.message) == (PlaybackNotice.trackUnavailableMessage),
             "the matching target failure is surfaced"
+        )
+        #expect(
+            PlaybackReducer.reduce(
+                &staleFailure,
+                envelope: unavailableEnvelope(
+                    source: .command,
+                    event: .commandFinished(id: commandID, accepted: true, notice: nil)
+                )
+            ),
+            "the accepted play completion clears the pending command after the failure snapshot"
+        )
+        #expect((staleFailure.pendingCommands[.transport]) == nil, "command completion clears the pending play")
+        #expect(
+            (staleFailure.transport) == (.paused),
+            "command completion does not restore the optimistic playing state"
+        )
+        #expect(
+            (staleFailure.notice?.message) == (PlaybackNotice.trackUnavailableMessage),
+            "command completion preserves the unavailable-track notice"
         )
 
         var unrelatedFailure = PlaybackState(

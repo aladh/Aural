@@ -87,6 +87,7 @@ public enum PlaybackReducer {
                 reconcileTransport(
                     candidate.currentTrack == nil ? .stopped : snapshot.transport,
                     incomingTrackURI: incomingURI,
+                    isTrackUnavailable: snapshot.trackUnavailable,
                     in: &candidate
                 )
                 if snapshot.trackUnavailable, incomingURI != nil {
@@ -308,6 +309,7 @@ public enum PlaybackReducer {
     private static func reconcileTransport(
         _ transport: PlaybackTransportState,
         incomingTrackURI: String?,
+        isTrackUnavailable: Bool = false,
         in state: inout PlaybackState
     ) {
         if let pending = state.pendingCommands[.transport],
@@ -319,7 +321,8 @@ public enum PlaybackReducer {
                 return
             }
             if let expected = pending.expectedTransport, transport != expected {
-                state.transport = expected
+                // A failed target overrides optimistic transport until command completion.
+                state.transport = isTrackUnavailable ? transport : expected
             } else {
                 state.transport = transport
                 if pending.expectedTransport == nil || pending.expectedTransport == transport {

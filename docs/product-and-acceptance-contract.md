@@ -56,7 +56,8 @@ baselines.
 
 - With no current track, Play is disabled. Pause appears only for observed playing state.
 - If the active local engine cannot load its current requested track, show an actionable playback
-  notice offering retry or another track, without raw upstream details or a claim of permanent
+  notice explaining that the user can retry or choose another track through the existing playback
+  and browsing controls, without raw upstream details or a claim of permanent
   unavailability. Preload failures, superseded requests, stale account/engine lifetimes, and
   observations held behind a newer optimistic play target must not surface that notice. The notice
   appears above the player controls with a keyboard-accessible dismiss button and a VoiceOver
