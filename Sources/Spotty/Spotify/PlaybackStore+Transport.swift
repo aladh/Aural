@@ -262,8 +262,8 @@ extension PlaybackStore {
         )
     }
 
-    /// Sticky resume-load identity read through the engine getters, never presentation
-    /// `playbackContextURI`. Shared by user resume and reconnect rehydration.
+    /// Sticky resume-load identity read through the engine getters, never presentation state.
+    /// Shared by user resume and reconnect rehydration.
     func resumeLoadPlan() -> ResumeLoadPlan {
         ResumeLoadPlan.capture(
             savedAtDeactivation: environment.local.resumePositionMilliseconds(),

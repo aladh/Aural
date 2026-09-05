@@ -48,14 +48,11 @@ public enum PlaybackReducer {
             candidate.session = session
         case let .owner(owner):
             reconcileOwner(owner, source: envelope.source, in: &candidate)
-        case let .transport(transport):
-            reconcileTransport(transport, incomingTrackURI: nil, in: &candidate)
         case let .enginePlayback(snapshot):
             let incomingURI = playbackTrackURI(snapshot.trackURI)
             if shouldHoldOptimisticPlayTarget(incomingURI: incomingURI, in: candidate) {
                 applyEnginePlaybackOptions(snapshot, in: &candidate)
             } else {
-                candidate.playbackContextURI = snapshot.contextURI
                 supersedeOptimisticPlayTargetIfNeeded(incomingURI: incomingURI, in: &candidate)
                 let previousURI = candidate.currentTrack?.uri
                 reconcileSeekTiming(
@@ -114,29 +111,6 @@ public enum PlaybackReducer {
             candidate.currentTrack = track
             if metadata.duration > 0 {
                 candidate.timing.duration = metadata.duration
-            }
-        case let .currentTrack(track):
-            let incomingURI = playbackTrackURI(track?.uri)
-            if shouldHoldOptimisticPlayTarget(incomingURI: incomingURI, in: candidate) {
-                break
-            }
-            supersedeOptimisticPlayTargetIfNeeded(incomingURI: incomingURI, in: &candidate)
-            let previousURI = candidate.currentTrack?.uri
-            if candidate.pendingCommands[.seek] != nil,
-                incomingURI == nil || playbackTrackURI(candidate.currentTrack?.uri) != incomingURI
-            {
-                candidate.pendingCommands[.seek] = nil
-            }
-            candidate.currentTrack = track
-            adoptOwnerAfterTrackURIChange(
-                previousURI: previousURI,
-                incomingURI: incomingURI,
-                source: envelope.source,
-                in: &candidate
-            )
-            if track == nil {
-                candidate.transport = .stopped
-                candidate.timing = PlaybackTiming(anchoredAt: envelope.receivedAt)
             }
         case let .timing(position, duration, anchoredAt):
             reconcileSeekTiming(

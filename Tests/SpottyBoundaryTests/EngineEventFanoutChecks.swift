@@ -419,7 +419,6 @@ private func playbackEvent() -> RustPlaybackEvent {
             isPlaying: false,
             isPaused: true,
             trackURI: "spotify:track:a",
-            contextURI: "",
             positionMS: 0,
             durationMS: 1,
             timestampMS: 0,

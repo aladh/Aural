@@ -56,7 +56,7 @@ extension PlaybackStore {
         )
     }
 
-    func receive(_ state: RustPlaybackState, revision: UInt64?, receivedAt: Date) {
+    func receive(_ state: RustPlaybackState, revision: UInt64, receivedAt: Date) {
         guard !isTearingDown else { return }
         let isInitialSnapshot = !hasReceivedPlaybackSnapshot
         let previousTrackURI = trackURI
@@ -68,14 +68,12 @@ extension PlaybackStore {
             isPlaying: state.isPlaying,
             isPaused: state.isPaused,
             trackURI: state.trackURI,
-            contextURI: state.contextURI,
             positionMilliseconds: state.positionMS,
             durationMilliseconds: state.durationMS,
             timestampMilliseconds: state.timestampMS,
             shuffle: state.shuffle,
             repeatContext: state.repeatContext,
             repeatTrack: state.repeatTrack,
-            previousRepeat: self.state.options.repeatFlags,
             isInitialSnapshot: isInitialSnapshot,
             isActiveDevice: snapshotIsActiveDevice,
             receivedAt: receivedAt
@@ -110,7 +108,7 @@ extension PlaybackStore {
 
     func receive(
         _ state: RustQueueState,
-        revision: UInt64?,
+        revision: UInt64,
         mayAdoptPlaybackIdentity: Bool = true,
         accountEpoch capturedAccountEpoch: UInt64? = nil,
         engineEpoch capturedEngineEpoch: UInt64? = nil
@@ -300,7 +298,7 @@ extension PlaybackStore {
         }
     }
 
-    func receive(_ state: RustConnectionState, revision: UInt64?, receivedAt: Date) {
+    func receive(_ state: RustConnectionState, revision: UInt64, receivedAt: Date) {
         guard !isTearingDown else { return }
         let resolvedLocalID = ConnectionSnapshotProjection.resolvedDeviceID(
             wire: state.deviceID,

@@ -4,17 +4,14 @@ import Foundation
 import Observation
 import OSLog
 
-/// Engine playback observation. Transport, empty-URI identity, and option
-/// fallbacks are projected at intake (`PlaybackSnapshotProjection`). Protocol
-/// `context_uri` is forwarded as playlist/album/artist identity, not QueueService
-/// mutation identity.
+/// Engine playback observation. Transport, empty-URI identity, and option values
+/// are projected at intake (`PlaybackSnapshotProjection`).
 nonisolated struct RustPlaybackState: Sendable {
     let revision: UInt64
     let sessionGeneration: UInt64
     let isPlaying: Bool
     let isPaused: Bool
     let trackURI: String
-    let contextURI: String
     let positionMS: Int64
     let durationMS: Int64
     let timestampMS: Int64
@@ -31,7 +28,6 @@ nonisolated struct RustPlaybackState: Sendable {
         isPlaying: Bool,
         isPaused: Bool,
         trackURI: String,
-        contextURI: String,
         positionMS: Int64,
         durationMS: Int64,
         timestampMS: Int64,
@@ -45,7 +41,6 @@ nonisolated struct RustPlaybackState: Sendable {
         self.isPlaying = isPlaying
         self.isPaused = isPaused
         self.trackURI = trackURI
-        self.contextURI = contextURI
         self.positionMS = positionMS
         self.durationMS = durationMS
         self.timestampMS = timestampMS
@@ -118,6 +113,36 @@ nonisolated struct RustDevicesState: Sendable {
     let devices: [ConnectProtocolDevice]
 }
 
+/// The small playback projection catalog rows need. It deliberately excludes timing so position
+/// samples do not invalidate the rows that only draw current-track and transport state.
+struct CurrentTrackIndicator: Equatable, Sendable {
+    let trackURI: String?
+    let isPlaying: Bool
+
+    init(trackURI: String? = nil, isPlaying: Bool = false) {
+        self.trackURI = trackURI
+        self.isPlaying = isPlaying
+    }
+
+    init(state: PlaybackState) {
+        let uri = state.currentTrack?.uri
+        self.init(trackURI: uri?.isEmpty == false ? uri : nil, isPlaying: state.transport == .playing)
+    }
+}
+
+/// Coarse catalog-facing capabilities derived from the reducer snapshot. Keeping these facts
+/// separate from `state` lets catalog ancestors observe connection and command transitions without
+/// subscribing to high-frequency timing changes.
+struct CatalogPlaybackAvailability: Equatable, Sendable {
+    let isConnected: Bool
+    let hasPendingPlaybackCommand: Bool
+
+    init(state: PlaybackState) {
+        isConnected = state.session == .ready
+        hasPendingPlaybackCommand = state.pendingCommands.keys.contains { $0 != .queue }
+    }
+}
+
 nonisolated let spottyAudioRendererResult: Result<AudioRenderer, AudioRendererError> = {
     do {
         return .success(try AudioRenderer())
@@ -133,6 +158,14 @@ final class PlaybackStore {
     typealias Phase = PlaybackSessionPhase
 
     private(set) var state = PlaybackState(accountEpoch: 1)
+    /// Coarse track/transport observation for catalog rows. Timing changes never rewrite this
+    /// value, so its observers only wake when the current track or playing state changes.
+    private(set) var currentTrackIndicator = CurrentTrackIndicator()
+    /// Coarse connection and command capability observation for catalog ancestors. This is a
+    /// projection of accepted reducer state, not a second state owner.
+    private(set) var catalogPlaybackAvailability = CatalogPlaybackAvailability(
+        state: PlaybackState(accountEpoch: 1)
+    )
 
     /// A typed engine credential rejection keeps the independent Keymaster grant intact while
     /// making the next account action an explicit browser reauthorization.
@@ -381,6 +414,14 @@ final class PlaybackStore {
         if accepted {
             state = next
             engineGeneration = next.engineEpoch
+            let nextIndicator = CurrentTrackIndicator(state: next)
+            if currentTrackIndicator != nextIndicator {
+                currentTrackIndicator = nextIndicator
+            }
+            let nextAvailability = CatalogPlaybackAvailability(state: next)
+            if catalogPlaybackAvailability != nextAvailability {
+                catalogPlaybackAvailability = nextAvailability
+            }
             return true
         }
         SpottyLog.playback.debug(
@@ -457,22 +498,6 @@ final class PlaybackStore {
             engineEpoch: engineEpoch,
             accountEpoch: accountEpoch
         )
-    }
-
-    func setTransport(_ transport: PlaybackTransportState, anchoredAt: Date? = nil) {
-        if let anchoredAt {
-            setPresentation(
-                track: state.currentTrack,
-                transport: transport,
-                timing: PlaybackTiming(
-                    position: position,
-                    duration: duration,
-                    anchoredAt: anchoredAt
-                )
-            )
-        } else {
-            send(.transport(transport), source: .user)
-        }
     }
 
     @discardableResult

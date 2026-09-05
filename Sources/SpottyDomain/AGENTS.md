@@ -17,7 +17,6 @@ changing state transitions, queue/device policy, parsing, sorting, or lifetime s
   is pure. Preserve occurrence identity, authoritative ordering/provenance, the distinction between
   protocol state and metadata labels, the session-phase/empty-device-ID semantics in
   `ConnectionSnapshotProjection`, and transport/empty-URI/timestamp semantics in
-  `PlaybackSnapshotProjection`. `playbackContextURI` is protocol playlist/album/artist
-  identity from authoritative engine playback, not `queue.contextURI`. Resume-load target
-  order for user resume and reconnect rehydration lives in `ResumeLoadPlan`, captured from
-  sticky resume-load URIs rather than presentation `playbackContextURI`.
+  `PlaybackSnapshotProjection`. Resume-load target order for user resume and reconnect
+  rehydration lives in `ResumeLoadPlan`, captured from sticky resume-load URIs rather than
+  presentation snapshots.

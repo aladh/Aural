@@ -2,10 +2,9 @@ import Foundation
 
 /// App-facing engine playback from protocol playing/paused flags.
 ///
-/// The engine reports `is_playing`, `is_paused`, track URI, context URI, timing, and
-/// options. Transport, empty-URI identity, timestamp correction, and optional-option
-/// fallbacks are Swift-owned. Resume-load target order stays in the engine until Swift
-/// can issue seek-capable loads.
+/// The engine reports `is_playing`, `is_paused`, track URI, timing, and options.
+/// Transport, empty-URI identity, and timestamp correction are Swift-owned. Resume-load
+/// target ordering is captured separately by `ResumeLoadPlan`.
 public enum PlaybackSnapshotProjection: Sendable {
     /// Empty wire URIs are missing, not a distinct identity.
     public static func resolvedTrackURI(_ uri: String) -> String? {
@@ -38,29 +37,16 @@ public enum PlaybackSnapshotProjection: Sendable {
         return resolvedTrackURI(trackURI) == nil ? .stopped : .paused
     }
 
-    public static func repeatFlags(
-        context: Bool?,
-        track: Bool?,
-        previous: RepeatFlags
-    ) -> RepeatFlags {
-        RepeatFlags(
-            context: context ?? previous.context,
-            track: track ?? previous.track
-        )
-    }
-
     public static func snapshot(
         isPlaying: Bool,
         isPaused: Bool,
         trackURI: String,
-        contextURI: String,
         positionMilliseconds: Int64,
         durationMilliseconds: Int64,
         timestampMilliseconds: Int64?,
         shuffle: Bool?,
-        repeatContext: Bool?,
-        repeatTrack: Bool?,
-        previousRepeat: RepeatFlags,
+        repeatContext: Bool,
+        repeatTrack: Bool,
         isInitialSnapshot: Bool,
         isActiveDevice: Bool,
         receivedAt: Date
@@ -72,15 +58,10 @@ public enum PlaybackSnapshotProjection: Sendable {
             isInitialSnapshot: isInitialSnapshot,
             isActiveDevice: isActiveDevice
         )
-        let flags = repeatFlags(
-            context: repeatContext,
-            track: repeatTrack,
-            previous: previousRepeat
-        )
+        let flags = RepeatFlags(context: repeatContext, track: repeatTrack)
         return EnginePlaybackSnapshot(
             transport: transport,
             trackURI: resolvedTrackURI(trackURI),
-            contextURI: resolvedTrackURI(contextURI),
             timing: PlaybackTiming(
                 position: playbackSnapshotPosition(
                     positionMilliseconds: positionMilliseconds,

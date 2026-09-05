@@ -268,7 +268,15 @@ struct PlaybackCommandPresentationTests {
             )
             _ = PlaybackReducer.reduce(
                 &nilCurrentTrackSeek,
-                envelope: presentationEnvelope(source: .user, event: .currentTrack(nil))
+                envelope: presentationEnvelope(
+                    source: .user,
+                    event: .presentation(
+                        PlaybackPresentationSnapshot(
+                            currentTrack: nil,
+                            transport: .stopped,
+                            timing: priorSeekTiming
+                        ))
+                )
             )
             #expect(
                 (nilCurrentTrackSeek.pendingCommands[.seek]) == nil,
@@ -493,7 +501,12 @@ struct PlaybackCommandPresentationTests {
                 &currentTrackSwitch,
                 envelope: presentationEnvelope(
                     source: .user,
-                    event: .currentTrack(CurrentTrack(uri: "spotify:track:b"))
+                    event: .presentation(
+                        PlaybackPresentationSnapshot(
+                            currentTrack: CurrentTrack(uri: "spotify:track:b"),
+                            transport: .playing,
+                            timing: priorSeekTiming
+                        ))
                 )
             )
             #expect(
@@ -687,7 +700,6 @@ struct PlaybackCommandPresentationTests {
                 session: .ready,
                 transport: .playing,
                 currentTrack: trackA,
-                playbackContextURI: "spotify:playlist:a",
                 timing: priorPlayingTiming
             )
             startPlay(&playingA, id: playID)
@@ -711,15 +723,11 @@ struct PlaybackCommandPresentationTests {
                         EnginePlaybackSnapshot(
                             transport: .playing,
                             trackURI: trackA.uri,
-                            contextURI: "spotify:playlist:stale",
                             timing: laggingATiming
                         ))
                 )
             )
             #expect((playingA.currentTrack) == (trackB), "a lagging A snapshot keeps the optimistic B track")
-            #expect(
-                (playingA.playbackContextURI) == ("spotify:playlist:a"),
-                "a lagging A snapshot does not adopt protocol context")
             #expect((playingA.timing) == (optimisticTiming), "a lagging A snapshot keeps B timing")
             #expect((playingA.pendingCommands[.transport]?.id) == (playID), "a lagging A snapshot does not confirm B")
             #expect((playingA.transportCommandResolutions[playID]) == nil, "a lagging A snapshot is not a confirmation")
@@ -736,9 +744,6 @@ struct PlaybackCommandPresentationTests {
                 )
             )
             #expect((playingA.currentTrack) == (trackA), "a rejected play restores track A")
-            #expect(
-                (playingA.playbackContextURI) == ("spotify:playlist:a"),
-                "a rejected play keeps the pre-command playback context")
             #expect((playingA.transport) == (.playing), "a rejected play restores playing")
             #expect((playingA.timing) == (priorPlayingTiming), "a rejected play restores exact prior timing")
             #expect((playingA.pendingCommands[.transport]) == nil, "a rejected play clears its pending command")

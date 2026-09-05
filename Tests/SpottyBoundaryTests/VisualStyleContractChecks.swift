@@ -160,8 +160,11 @@ struct VisualStyleContractTests {
                     #expect(
                         (table.contains("displayCache.displayPosition(for: row)")
                             && table.contains("speaker.wave.2.fill")
-                            && table.contains("if isCurrentTrack && playback.isPlaying")
-                            && catalogPlaybackAccess.contains("var isPlaying: Bool { player.isPlaying }")
+                            && table.contains("let currentTrackIndicator = playback.currentTrackIndicator")
+                            && table.contains("if isCurrentTrack && currentTrackIndicator.isPlaying")
+                            && catalogPlaybackAccess.contains(
+                                "var currentTrackIndicator: CurrentTrackIndicator { player.currentTrackIndicator }")
+                            && !table.contains("playback.isPlaying")
                             && table.contains("playlistRowMinimumHeight")
                             && table.contains("Current track, track \\(position) of \\(total)")
                             && table.contains("formatCatalogDuration(row.track.duration)")

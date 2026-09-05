@@ -35,12 +35,10 @@ extension PlaybackStore {
         }
     }
     var localDeviceID: String? { state.devices.localDeviceID }
-    var isPlaybackCommandPending: Bool {
-        state.pendingCommands.keys.contains { $0 != .queue }
-    }
+    var isPlaybackCommandPending: Bool { catalogPlaybackAvailability.hasPendingPlaybackCommand }
     var hasCurrentTrackMetadata: Bool { (state.currentTrack?.metadataSource ?? .none) != .none }
     var transientCommandError: String? { state.notice?.message }
-    var isConnected: Bool { phase == .ready }
+    var isConnected: Bool { catalogPlaybackAvailability.isConnected }
     var catalogCurrentTrack: CatalogTrack? {
         guard !trackURI.isEmpty else { return nil }
         return catalog.metadata.knownTrack(for: trackURI)

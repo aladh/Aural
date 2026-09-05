@@ -952,7 +952,6 @@ struct WorkflowTests {
                             isPlaying: true,
                             isPaused: false,
                             trackURI: "spotify:track:stale",
-                            contextURI: "",
                             positionMS: 1_000,
                             durationMS: 10_000,
                             timestampMS: 0,

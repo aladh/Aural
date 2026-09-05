@@ -5,7 +5,6 @@ import Foundation
 public struct EnginePlaybackSnapshot: Equatable, Sendable {
     public let transport: PlaybackTransportState
     public let trackURI: String?
-    public let contextURI: String?
     public let timing: PlaybackTiming
     public let shuffle: Bool?
     public let repeatMode: RepeatMode?
@@ -14,7 +13,6 @@ public struct EnginePlaybackSnapshot: Equatable, Sendable {
     public init(
         transport: PlaybackTransportState,
         trackURI: String?,
-        contextURI: String? = nil,
         timing: PlaybackTiming,
         shuffle: Bool? = nil,
         repeatMode: RepeatMode? = nil,
@@ -22,7 +20,6 @@ public struct EnginePlaybackSnapshot: Equatable, Sendable {
     ) {
         self.transport = transport
         self.trackURI = trackURI
-        self.contextURI = contextURI
         self.timing = timing
         self.shuffle = shuffle
         self.repeatMode = repeatMode

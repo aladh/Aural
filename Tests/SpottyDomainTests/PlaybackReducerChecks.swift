@@ -21,6 +21,19 @@ private func envelope(
     )
 }
 
+private func enginePlaybackEvent(
+    transport: PlaybackTransportState,
+    trackURI: String? = "spotify:track:current"
+) -> PlaybackEvent {
+    .enginePlayback(
+        EnginePlaybackSnapshot(
+            transport: transport,
+            trackURI: trackURI,
+            timing: PlaybackTiming(anchoredAt: traceDate)
+        )
+    )
+}
+
 private func item(
     _ suffix: String,
     occurrence: Int = 0,
@@ -107,7 +120,12 @@ struct PlaybackReducerTests {
             let beforeStaleEngine = state
             let staleEngineAccepted = PlaybackReducer.reduce(
                 &state,
-                envelope: envelope(account: 4, engine: 6, source: .enginePlayback, event: .transport(.playing))
+                envelope(
+                    account: 4,
+                    engine: 6,
+                    source: .enginePlayback,
+                    event: enginePlaybackEvent(transport: .playing)
+                )
             )
             #expect((!staleEngineAccepted) == true, "a pre-restart engine callback is rejected")
             #expect((state) == (beforeStaleEngine), "a pre-restart engine callback cannot mutate state")
@@ -152,7 +170,11 @@ struct PlaybackReducerTests {
             var state = PlaybackState(accountEpoch: 1, engineEpoch: 1, session: .ready)
             let firstAccepted = PlaybackReducer.reduce(
                 &state,
-                envelope: envelope(source: .enginePlayback, revision: 10, event: .transport(.playing))
+                envelope: envelope(
+                    source: .enginePlayback,
+                    revision: 10,
+                    event: enginePlaybackEvent(transport: .playing)
+                )
             )
             #expect((firstAccepted) == true, "the first revision is accepted")
             #expect((state.sourceRevisions[.enginePlayback]) == (10), "accepted revisions are recorded")
@@ -160,14 +182,22 @@ struct PlaybackReducerTests {
             let afterFirst = state
             let olderAccepted = PlaybackReducer.reduce(
                 &state,
-                envelope: envelope(source: .enginePlayback, revision: 9, event: .transport(.paused))
+                envelope: envelope(
+                    source: .enginePlayback,
+                    revision: 9,
+                    event: enginePlaybackEvent(transport: .paused)
+                )
             )
             #expect((!olderAccepted) == true, "an older source revision is rejected")
             #expect((state) == (afterFirst), "an older source revision changes nothing")
 
             let duplicateAccepted = PlaybackReducer.reduce(
                 &state,
-                envelope: envelope(source: .enginePlayback, revision: 10, event: .transport(.paused))
+                envelope: envelope(
+                    source: .enginePlayback,
+                    revision: 10,
+                    event: enginePlaybackEvent(transport: .paused)
+                )
             )
             #expect((!duplicateAccepted) == true, "a duplicate source revision is rejected")
             #expect((state) == (afterFirst), "a duplicate source revision changes nothing")
@@ -230,7 +260,11 @@ struct PlaybackReducerTests {
             var state = PlaybackState(accountEpoch: 1, engineEpoch: 1, session: .ready)
             _ = PlaybackReducer.reduce(
                 &state,
-                envelope: envelope(source: .enginePlayback, revision: 4, event: .transport(.playing))
+                envelope: envelope(
+                    source: .enginePlayback,
+                    revision: 4,
+                    event: enginePlaybackEvent(transport: .playing)
+                )
             )
             let beforeQuery = state
 
@@ -314,7 +348,11 @@ struct PlaybackReducerTests {
 
             _ = PlaybackReducer.reduce(
                 &state,
-                envelope: envelope(source: .enginePlayback, revision: 1, event: .transport(.playing))
+                envelope: envelope(
+                    source: .enginePlayback,
+                    revision: 1,
+                    event: enginePlaybackEvent(transport: .playing)
+                )
             )
             #expect((state.transport) == (.paused), "a contradictory stale snapshot cannot undo the optimistic pause")
             #expect(
@@ -323,7 +361,11 @@ struct PlaybackReducerTests {
 
             _ = PlaybackReducer.reduce(
                 &state,
-                envelope: envelope(source: .enginePlayback, revision: 2, event: .transport(.paused))
+                envelope: envelope(
+                    source: .enginePlayback,
+                    revision: 2,
+                    event: enginePlaybackEvent(transport: .paused)
+                )
             )
             #expect((state.transport) == (.paused), "a matching authoritative snapshot keeps the expected state")
             #expect(
@@ -657,8 +699,26 @@ struct PlaybackReducerTests {
             }
             let states = trace.replay([
                 envelope(source: .engineDevices, revision: 1, event: .owner(.remote(remote))),
-                envelope(source: .enginePlayback, revision: 1, event: .currentTrack(track)),
-                envelope(source: .enginePlayback, revision: 2, event: .transport(.paused)),
+                envelope(
+                    source: .enginePlayback,
+                    revision: 1,
+                    event: .presentation(
+                        PlaybackPresentationSnapshot(
+                            currentTrack: track,
+                            transport: .paused,
+                            timing: PlaybackTiming(position: 0, duration: track.duration, anchoredAt: traceDate)
+                        ))
+                ),
+                envelope(
+                    source: .enginePlayback,
+                    revision: 2,
+                    event: .presentation(
+                        PlaybackPresentationSnapshot(
+                            currentTrack: track,
+                            transport: .paused,
+                            timing: PlaybackTiming(position: 0, duration: track.duration, anchoredAt: traceDate)
+                        ))
+                ),
             ])
             state = states.last ?? state
             #expect((state.owner) == (.remote(remote)), "paused playback retains the remote owner")
@@ -681,7 +741,12 @@ struct PlaybackReducerTests {
                 envelope: envelope(
                     source: .enginePlayback,
                     revision: 1,
-                    event: .currentTrack(CurrentTrack(uri: pausedURI))
+                    event: .presentation(
+                        PlaybackPresentationSnapshot(
+                            currentTrack: CurrentTrack(uri: pausedURI),
+                            transport: .paused,
+                            timing: PlaybackTiming(anchoredAt: traceDate)
+                        ))
                 )
             )
             #expect(
@@ -692,7 +757,16 @@ struct PlaybackReducerTests {
                 "devices-then-track stays remote-routable")
             _ = PlaybackReducer.reduce(
                 &launch,
-                envelope: envelope(source: .enginePlayback, revision: 2, event: .currentTrack(nil))
+                envelope: envelope(
+                    source: .enginePlayback,
+                    revision: 2,
+                    event: .presentation(
+                        PlaybackPresentationSnapshot(
+                            currentTrack: nil,
+                            transport: .stopped,
+                            timing: PlaybackTiming(anchoredAt: traceDate)
+                        ))
+                )
             )
             #expect((launch.owner) == (.none), "clearing the URI drops an uncertain last-remote owner")
 
@@ -790,7 +864,12 @@ struct PlaybackReducerTests {
                 envelope: envelope(
                     source: .enginePlayback,
                     revision: 1,
-                    event: .currentTrack(CurrentTrack(uri: pausedURI))
+                    event: .presentation(
+                        PlaybackPresentationSnapshot(
+                            currentTrack: CurrentTrack(uri: pausedURI),
+                            transport: .paused,
+                            timing: PlaybackTiming(anchoredAt: traceDate)
+                        ))
                 )
             )
             #expect(
@@ -1094,7 +1173,17 @@ struct PlaybackReducerTests {
 
             _ = PlaybackReducer.reduce(
                 &state,
-                envelope: envelope(account: 2, engine: 3, source: .user, event: .transport(.paused))
+                envelope(
+                    account: 2,
+                    engine: 3,
+                    source: .user,
+                    event: .presentation(
+                        PlaybackPresentationSnapshot(
+                            currentTrack: state.currentTrack,
+                            transport: .paused,
+                            timing: state.timing
+                        ))
+                )
             )
             #expect((state.timing.anchoredAt) == (traceDate), "pause transport keeps the existing timing anchor")
 
@@ -1132,58 +1221,6 @@ struct PlaybackReducerTests {
             #expect(
                 (state.sourceRevisions[.enginePlayback]) == (7),
                 "engine playback records the backend revision separately")
-        }
-
-        do {
-            var state = PlaybackState(
-                accountEpoch: 1,
-                engineEpoch: 1,
-                session: .ready,
-                playbackContextURI: "spotify:playlist:old"
-            )
-            state.queue = queue(
-                [item("now")],
-                source: .connect,
-                completeness: .complete,
-                revision: 1,
-                contextURI: "spotify:track:now"
-            )
-            _ = PlaybackReducer.reduce(
-                &state,
-                envelope: envelope(
-                    source: .enginePlayback,
-                    revision: 1,
-                    event: .enginePlayback(
-                        EnginePlaybackSnapshot(
-                            transport: .playing,
-                            trackURI: "spotify:track:now",
-                            contextURI: "spotify:playlist:ctx",
-                            timing: PlaybackTiming(anchoredAt: traceDate)
-                        ))
-                )
-            )
-            #expect(
-                (state.playbackContextURI) == ("spotify:playlist:ctx"), "playback context is the protocol playlist URI")
-            #expect((state.queue.contextURI) == ("spotify:track:now"), "queue mutation identity is unchanged")
-
-            _ = PlaybackReducer.reduce(
-                &state,
-                envelope: envelope(
-                    source: .enginePlayback,
-                    revision: 2,
-                    event: .enginePlayback(
-                        EnginePlaybackSnapshot(
-                            transport: .stopped,
-                            trackURI: nil,
-                            contextURI: nil,
-                            timing: PlaybackTiming(anchoredAt: traceDate)
-                        ))
-                )
-            )
-            #expect((state.playbackContextURI) == nil, "an empty protocol context clears playback context")
-            #expect(
-                (state.queue.contextURI) == ("spotify:track:now"),
-                "queue mutation identity still survives a missing protocol context")
         }
 
         do {
