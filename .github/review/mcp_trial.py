@@ -238,11 +238,16 @@ def verify_review(meta, token, expected_body, expected):
 def export_session(binary, session, cwd, env, output, token):
     require(re.fullmatch(r"ses_[A-Za-z0-9]+", session or ""), "invalid session ID")
     path = output / (session + ".json")
-    with path.open("w") as stream:
-        result = subprocess.run([str(binary), "export", session], cwd=cwd, env=env,
-                                stdout=stream, stderr=subprocess.PIPE, timeout=60)
-    require(result.returncode == 0 and path.stat().st_size <= MAX_EVENTS, "session export failed or too large")
-    raw = path.read_bytes(); path.write_bytes(raw.replace(token.encode(), b"[REDACTED]"))
+    private = output.parent / "runtime" / (session + ".json")
+    try:
+        with private.open("w") as stream:
+            result = subprocess.run([str(binary), "export", session], cwd=cwd, env=env,
+                                    stdout=stream, stderr=subprocess.PIPE, timeout=60)
+    finally:
+        size = private.stat().st_size if private.exists() else 0
+        raw = private.read_bytes() if private.exists() and size <= MAX_EVENTS else b'{"error":"export missing or oversized"}'
+        path.write_bytes(raw.replace(token.encode(), b"[REDACTED]")); path.chmod(0o600)
+    require(result.returncode == 0 and size <= MAX_EVENTS, "session export failed or too large")
     return json.loads(raw)
 
 
@@ -328,5 +333,5 @@ def main(argv):
 
 if __name__ == "__main__":
     try: raise SystemExit(main(sys.argv))
-    except (ValueError, RuntimeError, OSError, json.JSONDecodeError) as error:
-        print(f"mcp trial failed: {error}", file=sys.stderr); raise SystemExit(1)
+    except (ValueError, RuntimeError, OSError, KeyError, subprocess.SubprocessError) as error:
+        print(f"mcp trial failed: {str(error)[:300]}", file=sys.stderr); raise SystemExit(1)

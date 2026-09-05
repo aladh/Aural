@@ -78,17 +78,21 @@ def comments(repo, pr, token):
 
 
 def baseline_comments(repo, pr, token):
-    """Fetch the initial baseline window containing the stable overview comment.
-
-    A full-history fallback remains the caller's responsibility when a full
-    page cannot prove that no later verified baseline exists.
-    """
-    batch = api(
-        f'repos/{repo}/issues/{pr}/comments?'
-        f'per_page={MAX_BASELINE_PAGE_SIZE}&page=1', token
-    )
-    require(isinstance(batch, list), 'Invalid GitHub baseline comment response')
-    return batch
+    """Newest comment window; older history remains necessary if none verifies."""
+    owner, name = repo.split('/')
+    query = """query($owner:String!,$name:String!,$number:Int!){
+      repository(owner:$owner,name:$name){pullRequest(number:$number){
+        comments(last:100){nodes{databaseId body author{__typename login}}}
+      }}
+    }"""
+    response = api('graphql', token, 'POST', {'query': query, 'variables': {'owner': owner, 'name': name, 'number': pr}})
+    require(isinstance(response, dict) and not response.get('errors'), 'Baseline comment query failed')
+    nodes = response['data']['repository']['pullRequest']['comments']['nodes']
+    require(isinstance(nodes, list) and len(nodes) <= MAX_BASELINE_PAGE_SIZE, 'Invalid baseline comment window')
+    return [{'id': item['databaseId'], 'body': item['body'],
+             'user': {'login': BOT if (item.get('author') or {}).get('__typename') == 'Bot'
+                      and item['author'].get('login') == 'github-actions' else None}}
+            for item in nodes]
 
 
 def owned_comments(items):
@@ -270,8 +274,8 @@ def prepare(work):
     bounded_history = baseline_comments(repo, pr['number'], token)
     prior = find_baseline(bounded_history, meta, token)
     if prior is None and len(bounded_history) == MAX_BASELINE_PAGE_SIZE:
-        # A full initial page is incomplete.  Search the existing bounded full
-        # history only when the window cannot prove that no later baseline is
+        # A full newest window is incomplete.  Search the existing bounded full
+        # history only when the window cannot prove that no older baseline is
         # valid; never silently discard its findings.
         prior = find_baseline(comments(repo, pr['number'], token), meta, token)
     baseline = prior if prior and compatible(prior, meta, is_ancestor) else None

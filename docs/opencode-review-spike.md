@@ -101,7 +101,7 @@ are disabled. Only read/search tools are allowed; the CLI still contacts the mod
 The initial availability spike tested OpenCode Agent with access only to `aladh/Spotty`. The App
 was subsequently uninstalled: this CLI-based workflow needs neither its installation nor its broad
 token or OIDC.
-The separate publisher uses the short-lived Actions token with `contents: read` and
+The separate control publisher uses the short-lived Actions token with `contents: write` and
 `pull-requests: write`; the model runner has read-only repository permissions and receives no token
 in its subprocess environment. No GitHub App installation is required. This is an owner-controlled
 trial: orchestration code comes from this PR. Before enabling arbitrary contributors or making it
@@ -270,3 +270,19 @@ separate during the experiment, share path/hunk validation, and select one orche
 promoting a general reviewer; do not maintain two authoritative reviewers implementing the same
 contract. The MCP trial currently performs full reviews and creates a marked review per run. It has
 not replaced the control's incremental baseline or stable finding-resolution lifecycle.
+
+
+The [native V1 Actions run](https://github.com/aladh/Spotty/actions/runs/33977771271) passed on
+`b21dc9a`: both Muse `xhigh` children completed, starting 34 ms apart, and the parent verified
+candidates through immutable MCP file reads before posting the
+[advisory review](https://github.com/aladh/Spotty/pull/268#pullrequestreview-5122040155).
+The root trace contains two native tasks, seven MCP reads and one MCP review write. No inline
+findings were warranted; MCP inline publication remains unexercised live. Native execution took
+about 284 seconds on this PR; it is not a controlled latency benchmark.
+
+The same-head control run exposed a separate thread-resolution permission failure after creating a
+replacement inline finding. GitHub documents that
+[`resolveReviewThread` may require contents-write for installation tokens](https://github.com/github/gh-aw/issues/35726).
+Only the control's separate publisher job receives that permission; no model runs there and checkout
+credentials are not persisted. The MCP trial still uses contents-read/PR-write and does not resolve
+threads. This is another constraint to handle before introducing an authoritative general reviewer.

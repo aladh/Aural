@@ -92,8 +92,8 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     permissions:
-      contents: read
-      pull-requests: write # Advisory comment only; no OIDC or broad App installation token.
+      contents: write # GitHub requires this for resolveReviewThread; this job runs no model.
+      pull-requests: write # Advisory findings and owned thread lifecycle; no OIDC or App token.
     steps:
       - name: Checkout publisher implementation
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1

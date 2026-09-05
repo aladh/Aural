@@ -198,17 +198,20 @@ class ReviewTests(unittest.TestCase):
             review.prepare(work)
         return json.loads((work / "meta.json").read_text()), api
 
-    def test_baseline_comments_reads_initial_window_in_chronological_order(self):
-        oldest = {"id": 1}
-        newest = {"id": 2}
-        with patch.object(review, "api", return_value=[oldest, newest]) as api:
-            items = review.baseline_comments(REPO, 7, "token")
-
-        self.assertEqual(items, [oldest, newest])
-        api.assert_called_once_with(
-            "repos/acme/spotty/issues/7/comments?per_page=100&page=1",
-            "token",
-        )
+    def test_baseline_comments_reads_newest_graphql_window(self):
+        response = {"data": {"repository": {"pullRequest": {"comments": {"nodes": [
+            {"databaseId": 1, "body": "older", "author": {"__typename": "User", "login": "github-actions"}},
+            {"databaseId": 2, "body": "newer", "author": {"__typename": "Bot", "login": "github-actions"}},
+            {"databaseId": 3, "body": "deleted author", "author": None},
+        ]}}}}}
+        with patch.object(review, "api", return_value=response) as api:
+            items = review.baseline_comments("acme/spotty", 7, "token")
+        self.assertEqual([item["body"] for item in items], ["older", "newer", "deleted author"])
+        self.assertIsNone(items[0]["user"]["login"])
+        self.assertIsNone(items[2]["user"]["login"])
+        self.assertEqual(items[1]["user"]["login"], review.BOT)
+        self.assertIn("comments(last:100)", api.call_args.args[3]["query"])
+        self.assertEqual(api.call_args.args[3]["variables"], {"owner": "acme", "name": "spotty", "number": 7})
 
     def test_prepare_carries_newest_verified_findings_but_forces_full_on_policy_change(self):
         with tempfile.TemporaryDirectory() as temporary:

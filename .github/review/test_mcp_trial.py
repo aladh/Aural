@@ -71,6 +71,62 @@ class MCPTrialTests(TestCase):
             with self.assertRaises(ValueError):
                 mcp_trial.bounded_diff(Path("/tmp/repo"), META["base"], META["head"])
 
+    def test_export_failure_and_timeout_redact_token_from_artifact(self):
+        token = "super-secret-token"
+        payload = json.dumps({"token": token}, separators=(",", ":"))
+
+        def write_payload(stdout):
+            stdout.write(payload)
+            stdout.flush()
+
+        def failed_export(command, **kwargs):
+            write_payload(kwargs["stdout"])
+            return mcp_trial.subprocess.CompletedProcess(command, 1)
+
+        def timed_out_export(command, **kwargs):
+            write_payload(kwargs["stdout"])
+            raise mcp_trial.subprocess.TimeoutExpired(command, 60)
+
+        cases = (
+            ("ses_failed", failed_export, ValueError),
+            ("ses_timeout", timed_out_export, mcp_trial.subprocess.TimeoutExpired),
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            output = root / "output"
+            output.mkdir()
+            (root / "runtime").mkdir()
+            for session, side_effect, error in cases:
+                with self.subTest(session=session), mock.patch.object(
+                    mcp_trial.subprocess, "run", side_effect=side_effect
+                ):
+                    with self.assertRaises(error):
+                        mcp_trial.export_session(Path("/tmp/opencode"), session, root, {}, output, token)
+                artifact = (output / (session + ".json")).read_bytes()
+                self.assertNotIn(token.encode(), artifact)
+                self.assertIn(b"[REDACTED]", artifact)
+
+    def test_oversized_export_writes_safe_placeholder(self):
+        token = "super-secret-token"
+        with tempfile.TemporaryDirectory() as directory, mock.patch.object(mcp_trial, "MAX_EVENTS", 8):
+            root = Path(directory)
+            output = root / "output"
+            output.mkdir()
+            (root / "runtime").mkdir()
+
+            def oversized_export(command, **kwargs):
+                kwargs["stdout"].write(token + "-overflow")
+                kwargs["stdout"].flush()
+                return mcp_trial.subprocess.CompletedProcess(command, 0)
+
+            with mock.patch.object(mcp_trial.subprocess, "run", side_effect=oversized_export):
+                with self.assertRaises(ValueError):
+                    mcp_trial.export_session(Path("/tmp/opencode"), "ses_oversized", root, {}, output, token)
+
+            artifact = (output / "ses_oversized.json").read_bytes()
+            self.assertEqual(artifact, b'{"error":"export missing or oversized"}')
+            self.assertNotIn(token.encode(), artifact)
+
     def test_config_exposes_only_parent_mcp_and_child_deny(self):
         with tempfile.TemporaryDirectory() as directory:
             with mock.patch.dict(mcp_trial.os.environ, {"MODEL": "opencode/muse", "VARIANT": "xhigh"}):
