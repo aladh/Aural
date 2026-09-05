@@ -21,7 +21,9 @@ nonisolated enum CatalogMapping {
             album: track.albumOfTrack?.name ?? "",
             duration: TimeInterval(track.durationMs ?? 0) / 1_000,
             artworkURL: track.albumOfTrack?.coverArt?.largestURL.flatMap(URL.init(string:)),
-            addedAt: nil
+            addedAt: nil,
+            artists: artistItems(track.artists),
+            albumItem: albumItem(uri: track.albumOfTrack?.uri, name: track.albumOfTrack?.name)
         )
     }
 
@@ -133,7 +135,9 @@ nonisolated enum CatalogMapping {
             album: album.name ?? "",
             duration: TimeInterval(track.duration?.totalMilliseconds ?? 0) / 1_000,
             artworkURL: album.coverArt?.largestURL.flatMap(URL.init(string:)),
-            addedAt: nil
+            addedAt: nil,
+            artists: artistItems(track.artists),
+            albumItem: albumItem(uri: album.uri, name: album.name)
         )
     }
 
@@ -147,7 +151,9 @@ nonisolated enum CatalogMapping {
             album: track.albumOfTrack?.name ?? "",
             duration: TimeInterval(track.durationMs ?? 0) / 1_000,
             artworkURL: track.albumOfTrack?.coverArt?.largestURL.flatMap(URL.init(string:)),
-            addedAt: nil
+            addedAt: nil,
+            artists: artistItems(track.artists),
+            albumItem: albumItem(uri: track.albumOfTrack?.uri, name: track.albumOfTrack?.name)
         )
     }
 
@@ -161,8 +167,24 @@ nonisolated enum CatalogMapping {
             album: track.albumOfTrack?.name ?? "",
             duration: TimeInterval(track.trackDuration?.totalMilliseconds ?? 0) / 1_000,
             artworkURL: track.albumOfTrack?.coverArt?.largestURL.flatMap(URL.init(string:)),
-            addedAt: spotifyDate(from: entry.addedAt?.isoString)
+            addedAt: spotifyDate(from: entry.addedAt?.isoString),
+            artists: artistItems(track.artists),
+            albumItem: albumItem(uri: track.albumOfTrack?.uri, name: track.albumOfTrack?.name)
         )
+    }
+
+    private static func artistItems(_ artists: PathfinderArtistList?) -> [CatalogItem] {
+        (artists?.items ?? []).compactMap { artist in
+            guard let uri = artist.uri, SpotifyURI.id(from: uri, kind: "artist") != nil,
+                let name = artist.name
+            else { return nil }
+            return CatalogItem(id: uri, uri: uri, title: name, subtitle: "Artist", artworkURL: nil, kind: .artist)
+        }
+    }
+
+    private static func albumItem(uri: String?, name: String?) -> CatalogItem? {
+        guard let uri, SpotifyURI.id(from: uri, kind: "album") != nil, let name else { return nil }
+        return CatalogItem(id: uri, uri: uri, title: name, subtitle: "Album", artworkURL: nil, kind: .album)
     }
 
     static func profileUserURI(from profile: PathfinderProfile) -> String? {

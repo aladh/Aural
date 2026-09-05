@@ -50,7 +50,8 @@ public enum PlaybackSnapshotProjection: Sendable {
         trackUnavailable: Bool = false,
         isInitialSnapshot: Bool,
         isActiveDevice: Bool,
-        receivedAt: Date
+        receivedAt: Date,
+        contextURI: String = ""
     ) -> EnginePlaybackSnapshot {
         let transport = transport(
             isPlaying: isPlaying,
@@ -80,7 +81,8 @@ public enum PlaybackSnapshotProjection: Sendable {
             trackUnavailable: trackUnavailable && isActiveDevice && resolvedURI != nil,
             shuffle: shuffle,
             repeatMode: RepeatMode(context: flags.context, track: flags.track),
-            repeatFlags: flags
+            repeatFlags: flags,
+            contextURI: isActiveDevice && contextURI.isEmpty ? nil : contextURI
         )
     }
 }

@@ -12,6 +12,7 @@ import Foundation
 @Observable
 final class CatalogMetadataRepository {
     enum TrackSource: Int, CaseIterable {
+        case nowPlaying
         case queue
         case search
         case playlist
