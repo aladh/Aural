@@ -160,7 +160,7 @@ baselines.
 
 ## Safe acceptance testing
 
-PR readiness uses the [automated acceptance criteria](../CONTRIBUTING.md#automated-pr-acceptance).
+PR readiness uses the [acceptance criteria](../CONTRIBUTING.md#pr-acceptance).
 The live-account guidance below governs separately authorized interactive verification; it does not
 create a manual PR acceptance gate.
 
