@@ -171,33 +171,6 @@ private actor IdleWebQueue: WebQueueClient {
     }
 }
 
-private final class IdleAccount: AccountSession, @unchecked Sendable {
-    private let lock = NSLock()
-    private var storedAuthorizeCount = 0
-
-    var authorizeCount: Int {
-        lock.withLock { storedAuthorizeCount }
-    }
-
-    func authorizeInteractively() async throws -> KeymasterTokens {
-        lock.withLock { storedAuthorizeCount += 1 }
-        throw CancellationError()
-    }
-    func hasGrant() async -> Bool { false }
-    func accessToken() async throws -> String { "fixture-access" }
-    func adopt(_: KeymasterTokens) async throws {}
-    func clear() async {}
-    func revocations() -> AsyncStream<Void> {
-        AsyncStream { $0.finish() }
-    }
-}
-
-private final class IdleLifecycle: SystemLifecycleEvents, @unchecked Sendable {
-    func events() -> AsyncStream<SystemLifecycleEvent> {
-        AsyncStream { $0.finish() }
-    }
-}
-
 private actor IdlePreferences: PlaybackPreferences {
     func shuffleEnabled() -> Bool { false }
     func setShuffleEnabled(_: Bool) {}
@@ -207,32 +180,11 @@ private actor IdlePreferences: PlaybackPreferences {
     func setShuffleHistory(_: [String: TimeInterval]) {}
 }
 
-private struct IdleAudio: AudioOutputPreparing { func prepareForPlayback() throws {} }
-
 private struct StickyClock: PlaybackClock {
     func now() -> Date { Date(timeIntervalSince1970: 1_800_000_000) }
     func sleep(seconds _: TimeInterval) async throws {
         try await Task.sleep(nanoseconds: 60_000_000_000)
     }
-}
-
-private struct IdleAttributes: TrackAttributesProviding {
-    func attributes(for _: [String]) async throws -> [String: TrackAttributes] { [:] }
-}
-
-private enum LifecycleCheckFailure: Error { case unavailable }
-
-private struct IdleCatalog: CatalogProviding {
-    func searchTracks(_: String, limit _: Int) async throws -> [PathfinderTrack] {
-        throw LifecycleCheckFailure.unavailable
-    }
-    func home() async throws -> PathfinderHome { throw LifecycleCheckFailure.unavailable }
-    func libraryPlaylists() async throws -> [PathfinderPlaylist] { throw LifecycleCheckFailure.unavailable }
-    func libraryAlbums() async throws -> [PathfinderAlbum] { throw LifecycleCheckFailure.unavailable }
-    func libraryArtists() async throws -> [PathfinderArtist] { throw LifecycleCheckFailure.unavailable }
-    func libraryTracks() async throws -> [PathfinderLibraryTrackItem] { throw LifecycleCheckFailure.unavailable }
-    func profile() async throws -> PathfinderProfile { throw LifecycleCheckFailure.unavailable }
-    func playlist(id _: String) async throws -> PathfinderPlaylistUnion { throw LifecycleCheckFailure.unavailable }
 }
 
 private let lifecycleTrackA = CurrentTrack(
@@ -281,20 +233,20 @@ private let lifecycleRepeatPlan = RepeatTransitionPlan.planning(
 private func lifecycleEnvironment(
     local: any LocalPlaybackEngine,
     remote: any RemotePlaybackClient,
-    account: IdleAccount = IdleAccount()
+    account: BoundaryIdleAccount = BoundaryIdleAccount()
 ) -> PlaybackEnvironment {
     PlaybackEnvironment(
         remote: remote,
         local: local,
         webQueue: IdleWebQueue(),
         account: account,
-        audioOutput: IdleAudio(),
+        audioOutput: BoundaryIdleAudio(),
         preferences: IdlePreferences(),
-        lifecycle: IdleLifecycle(),
+        lifecycle: BoundaryIdleLifecycle(),
         clock: StickyClock(),
-        catalog: IdleCatalog(),
+        catalog: BoundaryIdleCatalog(),
         playlistMutations: UnavailablePlaylistMutations(),
-        trackAttributes: IdleAttributes()
+        trackAttributes: BoundaryIdleAttributes()
     )
 }
 
@@ -511,7 +463,7 @@ struct PlaybackCommandLifecycleParityTests {
                 for kind in LifecycleKind.allCases {
                     let label = "\(route.rawValue) \(kind.rawValue)"
 
-                    let successAccount = IdleAccount()
+                    let successAccount = BoundaryIdleAccount()
                     let success = lifecycleStore(
                         lifecycleEnvironment(
                             local: LifecycleLocalEngine(result: .ok, gated: false),
@@ -552,7 +504,7 @@ struct PlaybackCommandLifecycleParityTests {
                     await rejected.shutdownForTermination()
 
                     if route == .local {
-                        let reconnectAccount = IdleAccount()
+                        let reconnectAccount = BoundaryIdleAccount()
                         let reconnectEngine = LifecycleLocalEngine(
                             result: PlaybackEngineResult(rawValue: -2),
                             gated: false

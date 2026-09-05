@@ -201,27 +201,6 @@ private actor IdleWebQueue: WebQueueClient {
     }
 }
 
-private final class IdleAccount: AccountSession, @unchecked Sendable {
-    private let lock = NSLock()
-    private var storedAuthorizeCount = 0
-
-    var authorizeCount: Int {
-        lock.withLock { storedAuthorizeCount }
-    }
-
-    func authorizeInteractively() async throws -> KeymasterTokens {
-        lock.withLock { storedAuthorizeCount += 1 }
-        throw CancellationError()
-    }
-    func hasGrant() async -> Bool { false }
-    func accessToken() async throws -> String { "fixture-access" }
-    func adopt(_: KeymasterTokens) async throws {}
-    func clear() async {}
-    func revocations() -> AsyncStream<Void> {
-        AsyncStream { $0.finish() }
-    }
-}
-
 /// An account with a stored grant, so `restore()` reaches `.ready` without interactive auth.
 private final class GrantedAccount: AccountSession, @unchecked Sendable {
     private let lock = NSLock()
@@ -245,12 +224,6 @@ private final class GrantedAccount: AccountSession, @unchecked Sendable {
     func adopt(_: KeymasterTokens) async throws {}
     func clear() async {}
     func revocations() -> AsyncStream<Void> {
-        AsyncStream { $0.finish() }
-    }
-}
-
-private final class IdleLifecycle: SystemLifecycleEvents, @unchecked Sendable {
-    func events() -> AsyncStream<SystemLifecycleEvent> {
         AsyncStream { $0.finish() }
     }
 }
@@ -283,32 +256,11 @@ private actor RecordingPreferences: PlaybackPreferences {
     func setShuffleHistory(_: [String: TimeInterval]) {}
 }
 
-private struct IdleAudio: AudioOutputPreparing { func prepareForPlayback() throws {} }
-
 private struct StickyClock: PlaybackClock {
     func now() -> Date { Date(timeIntervalSince1970: 1_800_000_000) }
     func sleep(seconds _: TimeInterval) async throws {
         try await Task.sleep(nanoseconds: 60_000_000_000)
     }
-}
-
-private struct IdleAttributes: TrackAttributesProviding {
-    func attributes(for _: [String]) async throws -> [String: TrackAttributes] { [:] }
-}
-
-private enum CommandCheckFailure: Error { case unavailable }
-
-private struct IdleCatalog: CatalogProviding {
-    func searchTracks(_: String, limit _: Int) async throws -> [PathfinderTrack] {
-        throw CommandCheckFailure.unavailable
-    }
-    func home() async throws -> PathfinderHome { throw CommandCheckFailure.unavailable }
-    func libraryPlaylists() async throws -> [PathfinderPlaylist] { throw CommandCheckFailure.unavailable }
-    func libraryAlbums() async throws -> [PathfinderAlbum] { throw CommandCheckFailure.unavailable }
-    func libraryArtists() async throws -> [PathfinderArtist] { throw CommandCheckFailure.unavailable }
-    func libraryTracks() async throws -> [PathfinderLibraryTrackItem] { throw CommandCheckFailure.unavailable }
-    func profile() async throws -> PathfinderProfile { throw CommandCheckFailure.unavailable }
-    func playlist(id _: String) async throws -> PathfinderPlaylistUnion { throw CommandCheckFailure.unavailable }
 }
 
 @MainActor
@@ -327,7 +279,7 @@ private func localCommandOutcome(
 private func commandEnvironment(
     local: any LocalPlaybackEngine,
     remote: any RemotePlaybackClient,
-    account: any AccountSession = IdleAccount(),
+    account: any AccountSession = BoundaryIdleAccount(),
     preferences: any PlaybackPreferences = IdlePreferences()
 ) -> PlaybackEnvironment {
     PlaybackEnvironment(
@@ -335,13 +287,13 @@ private func commandEnvironment(
         local: local,
         webQueue: IdleWebQueue(),
         account: account,
-        audioOutput: IdleAudio(),
+        audioOutput: BoundaryIdleAudio(),
         preferences: preferences,
-        lifecycle: IdleLifecycle(),
+        lifecycle: BoundaryIdleLifecycle(),
         clock: StickyClock(),
-        catalog: IdleCatalog(),
+        catalog: BoundaryIdleCatalog(),
         playlistMutations: UnavailablePlaylistMutations(),
-        trackAttributes: IdleAttributes()
+        trackAttributes: BoundaryIdleAttributes()
     )
 }
 
@@ -496,7 +448,10 @@ struct PlaybackCommandFailureTests {
             let action = "Pause was rejected"
 
             @MainActor
-            func runLocal(_ result: PlaybackEngineResult, account: IdleAccount = IdleAccount()) async -> (
+            func runLocal(
+                _ result: PlaybackEngineResult,
+                account: BoundaryIdleAccount = BoundaryIdleAccount()
+            ) async -> (
                 completions: [Bool],
                 notice: String?,
                 authorizeCount: Int,
@@ -528,7 +483,7 @@ struct PlaybackCommandFailureTests {
             #expect((rejected.authorizeCount) == (0), "local rejection does not reconnect")
             await rejected.player.shutdownForTermination()
 
-            let reconnectAccount = IdleAccount()
+            let reconnectAccount = BoundaryIdleAccount()
             let reconnect = await runLocal(PlaybackEngineResult(rawValue: -2), account: reconnectAccount)
             #expect((reconnect.completions) == ([false]), "reconnect-required completion")
             #expect((reconnect.notice) == (action), "reconnect-required uses the action notice")

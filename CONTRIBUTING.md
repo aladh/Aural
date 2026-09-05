@@ -110,6 +110,12 @@ content-keyed engine artifacts, and configuration-safe SwiftPM caches; cache hit
 but never coverage. App lanes deliberately block Rust executables to detect accidental source-build
 fallbacks.
 
+After building the Debug boundary target, `Scripts/check-playback-projection-access.sh` type-checks
+reads and expected-failing writes against the actual `SpottyCore` module. The full/Swift gate runs
+it after boundary tests; it does not link or launch playback. The [enforcement inventory](docs/architecture-enforcement.md#source-reading-proof-audit-issues-187188)
+records which former source/prose assertions are now compiler checks, behavior tests, or semantic
+review obligations.
+
 Use `SPOTTY_CHECK_REPEATS=N ./Scripts/check.sh` with `N` from 1 through 25 when concurrency or
 lifetime work merits stress.
 

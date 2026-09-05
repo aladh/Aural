@@ -165,23 +165,6 @@ private actor SuspendedWebQueue: WebQueueClient {
     }
 }
 
-private final class IdleAccount: AccountSession, @unchecked Sendable {
-    func authorizeInteractively() async throws -> KeymasterTokens { throw CancellationError() }
-    func hasGrant() async -> Bool { false }
-    func accessToken() async throws -> String { "fixture-access" }
-    func adopt(_: KeymasterTokens) async throws {}
-    func clear() async {}
-    func revocations() -> AsyncStream<Void> {
-        AsyncStream { $0.finish() }
-    }
-}
-
-private final class IdleLifecycle: SystemLifecycleEvents, @unchecked Sendable {
-    func events() -> AsyncStream<SystemLifecycleEvent> {
-        AsyncStream { $0.finish() }
-    }
-}
-
 private actor IdlePreferences: PlaybackPreferences {
     func shuffleEnabled() -> Bool { false }
     func setShuffleEnabled(_: Bool) {}
@@ -203,20 +186,12 @@ private actor RecordingOwnerPreferences: PlaybackPreferences {
     func setShuffleHistory(_: [String: TimeInterval]) {}
 }
 
-private struct IdleAudio: AudioOutputPreparing { func prepareForPlayback() throws {} }
-
 private struct StickyClock: PlaybackClock {
     func now() -> Date { Date(timeIntervalSince1970: 1_800_000_000) }
     func sleep(seconds _: TimeInterval) async throws {
         try await Task.sleep(nanoseconds: 60_000_000_000)
     }
 }
-
-private struct IdleAttributes: TrackAttributesProviding {
-    func attributes(for _: [String]) async throws -> [String: TrackAttributes] { [:] }
-}
-
-private enum OutcomeCheckFailure: Error { case unavailable }
 
 private final class ObservationCounter: @unchecked Sendable {
     private let lock = NSLock()
@@ -235,19 +210,6 @@ private final class ObservationCounter: @unchecked Sendable {
     }
 }
 
-private struct IdleCatalog: CatalogProviding {
-    func searchTracks(_: String, limit _: Int) async throws -> [PathfinderTrack] {
-        throw OutcomeCheckFailure.unavailable
-    }
-    func home() async throws -> PathfinderHome { throw OutcomeCheckFailure.unavailable }
-    func libraryPlaylists() async throws -> [PathfinderPlaylist] { throw OutcomeCheckFailure.unavailable }
-    func libraryAlbums() async throws -> [PathfinderAlbum] { throw OutcomeCheckFailure.unavailable }
-    func libraryArtists() async throws -> [PathfinderArtist] { throw OutcomeCheckFailure.unavailable }
-    func libraryTracks() async throws -> [PathfinderLibraryTrackItem] { throw OutcomeCheckFailure.unavailable }
-    func profile() async throws -> PathfinderProfile { throw OutcomeCheckFailure.unavailable }
-    func playlist(id _: String) async throws -> PathfinderPlaylistUnion { throw OutcomeCheckFailure.unavailable }
-}
-
 private func outcomeEnvironment(
     local: any LocalPlaybackEngine = IdleLocalEngine(),
     remote: any RemotePlaybackClient,
@@ -258,14 +220,14 @@ private func outcomeEnvironment(
         remote: remote,
         local: local,
         webQueue: webQueue,
-        account: IdleAccount(),
-        audioOutput: IdleAudio(),
+        account: BoundaryIdleAccount(),
+        audioOutput: BoundaryIdleAudio(),
         preferences: preferences,
-        lifecycle: IdleLifecycle(),
+        lifecycle: BoundaryIdleLifecycle(),
         clock: StickyClock(),
-        catalog: IdleCatalog(),
+        catalog: BoundaryIdleCatalog(),
         playlistMutations: UnavailablePlaylistMutations(),
-        trackAttributes: IdleAttributes()
+        trackAttributes: BoundaryIdleAttributes()
     )
 }
 
